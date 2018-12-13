@@ -33,7 +33,6 @@ Source: openvswitch-%{version}.tar.gz
 #Source1: openvswitch-init
 Buildroot: /tmp/openvswitch-xen-rpm
 Provides: kmod-openvswitch
-Conflicts: kmod-openvswitch
 
 %description
 Open vSwitch provides standard network bridging functions augmented with
