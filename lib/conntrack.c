@@ -893,14 +893,13 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
         if (nat_action_info) {
             nc->nat_info = xmemdup(nat_action_info, sizeof *nc->nat_info);
 
-            if (alg_exp) {
-                if (alg_exp->nat_rpl_dst) {
+            if (alg_exp && alg_exp->nat_action) {
+                if (alg_exp->nat_action & NAT_ACTION_SRC) {
                     nc->rev_key.dst.addr = alg_exp->alg_nat_repl_addr;
-                    nc->nat_info->nat_action = NAT_ACTION_SRC;
                 } else {
                     nc->rev_key.src.addr = alg_exp->alg_nat_repl_addr;
-                    nc->nat_info->nat_action = NAT_ACTION_DST;
                 }
+                nc->nat_info->nat_action = alg_exp->nat_action;
                 *conn_for_un_nat_copy = *nc;
                 ct_rwlock_wrlock(&ct->resources_lock);
                 bool new_insert = nat_conn_keys_insert(&ct->nat_conn_keys,
@@ -2700,27 +2699,34 @@ expectation_create(struct conntrack *ct, ovs_be16 dst_port,
 {
     struct ct_addr src_addr;
     struct ct_addr dst_addr;
-    struct ct_addr alg_nat_repl_addr;
     struct alg_exp_node *alg_exp_node = xzalloc(sizeof *alg_exp_node);
 
     if (reply) {
         src_addr = master_conn->key.src.addr;
         dst_addr = master_conn->key.dst.addr;
-        if (skip_nat) {
-            alg_nat_repl_addr = dst_addr;
-        } else {
-            alg_nat_repl_addr = master_conn->rev_key.dst.addr;
+        if (!skip_nat && master_conn->nat_info) {
+            if (master_conn->nat_info->nat_action & NAT_ACTION_SRC) {
+                alg_exp_node->nat_action = NAT_ACTION_SRC;
+                alg_exp_node->alg_nat_repl_addr =
+                    master_conn->rev_key.dst.addr;
+            } else {
+                alg_exp_node->nat_action = NAT_ACTION_DST;
+                alg_exp_node->alg_nat_repl_addr =
+                    master_conn->rev_key.src.addr;
+            }
         }
-        alg_exp_node->nat_rpl_dst = true;
     } else {
         src_addr = master_conn->rev_key.src.addr;
         dst_addr = master_conn->rev_key.dst.addr;
-        if (skip_nat) {
-            alg_nat_repl_addr = src_addr;
-        } else {
-            alg_nat_repl_addr = master_conn->key.src.addr;
+        if (!skip_nat && master_conn->nat_info) {
+            if (master_conn->nat_info->nat_action & NAT_ACTION_SRC) {
+                alg_exp_node->nat_action = NAT_ACTION_DST;
+                alg_exp_node->alg_nat_repl_addr = master_conn->key.src.addr;
+            } else {
+                alg_exp_node->nat_action = NAT_ACTION_SRC;
+                alg_exp_node->alg_nat_repl_addr = master_conn->key.dst.addr;
+            }
         }
-        alg_exp_node->nat_rpl_dst = false;
     }
     if (src_ip_wc) {
         memset(&src_addr, 0, sizeof src_addr);
@@ -2748,7 +2754,6 @@ expectation_create(struct conntrack *ct, ovs_be16 dst_port,
         return;
     }
 
-    alg_exp_node->alg_nat_repl_addr = alg_nat_repl_addr;
     hmap_insert(&ct->alg_expectations, &alg_exp_node->node,
                 conn_key_hash(&alg_exp_node->key, ct->hash_basis));
     expectation_ref_create(&ct->alg_expectation_refs, alg_exp_node,

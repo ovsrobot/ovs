@@ -82,9 +82,8 @@ struct alg_exp_node {
      * connection label and mark. */
     ovs_u128 master_label;
     uint32_t master_mark;
-    /* True if for NAT application, the alg replaces the dest address;
-     * otherwise, the source address is replaced.  */
-    bool nat_rpl_dst;
+    /* The NAT action to apply if any */
+    uint16_t nat_action;
 };
 
 struct conn {
