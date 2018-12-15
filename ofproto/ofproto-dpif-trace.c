@@ -347,22 +347,22 @@ parse_flow_and_packet(int argc, const char *argv[],
      * bridge is specified. If function odp_flow_key_from_string()
      * returns 0, the flow is a odp_flow. If function
      * parse_ofp_exact_flow() returns NULL, the flow is a br_flow. */
+    char *error_s;
     if (!odp_flow_from_string(args[n_args - 1], &port_names,
-                              &odp_key, &odp_mask)) {
+                              &odp_key, &odp_mask, &error_s)) {
         if (!backer) {
             error = "Cannot find the datapath";
             goto exit;
         }
 
-        if (odp_flow_key_to_flow(odp_key.data, odp_key.size, flow) == ODP_FIT_ERROR) {
-            error = "Failed to parse datapath flow key";
+        if (odp_flow_key_to_flow(odp_key.data, odp_key.size, flow, &m_err)
+            == ODP_FIT_ERROR) {
             goto exit;
         }
 
         *ofprotop = xlate_lookup_ofproto(backer, flow,
-                                         &flow->in_port.ofp_port);
+                                         &flow->in_port.ofp_port, &m_err);
         if (*ofprotop == NULL) {
-            error = "Invalid datapath flow";
             goto exit;
         }
 
@@ -385,13 +385,15 @@ parse_flow_and_packet(int argc, const char *argv[],
                 goto exit;
             }
         }
+    } else if (n_args != 2) {
+        m_err = xasprintf("%s (or the bridge name was omitted)", error_s);
+        free(error_s);
+        goto exit;
     } else {
-        char *err;
+        free(m_err);
+        m_err = NULL;
 
-        if (n_args != 2) {
-            error = "Must specify bridge name";
-            goto exit;
-        }
+        char *err;
 
         *ofprotop = ofproto_dpif_lookup_by_name(args[0]);
         if (!*ofprotop) {
