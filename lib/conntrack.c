@@ -3204,7 +3204,7 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
             VLOG_WARN_RL(&rl, "Invalid FTP control packet format");
             pkt->md.ct_state |= CS_TRACKED | CS_INVALID;
             return;
-        } else if (rc == CT_FTP_CTL_INTEREST) {
+        } else if (rc == CT_FTP_CTL_INTEREST && nat) {
             uint16_t ip_len;
             int64_t new_skew;
 
@@ -3232,7 +3232,7 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
                                       new_skew + seq_skew, ctx->reply);
                 }
             }
-        } else {
+        } else if (rc == CT_FTP_CTL_OTHER) {
             OVS_NOT_REACHED();
         }
     } else if (ftp_ctl == CT_FTP_CTL_INVALID) {
