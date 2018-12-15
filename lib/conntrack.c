@@ -136,7 +136,8 @@ expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,
 static int
 repl_ftp_v4_addr(struct dp_packet *pkt, ovs_be32 v4_addr_rep,
                  char *ftp_data_v4_start,
-                 size_t addr_offset_from_ftp_data_start);
+                 size_t addr_offset_from_ftp_data_start,
+                 size_t addr_size);
 
 static enum ftp_ctl_pkt
 process_ftp_ctl_v4(struct conntrack *ct,
@@ -144,7 +145,8 @@ process_ftp_ctl_v4(struct conntrack *ct,
                    const struct conn *conn_for_expectation,
                    ovs_be32 *v4_addr_rep,
                    char **ftp_data_v4_start,
-                   size_t *addr_offset_from_ftp_data_start);
+                   size_t *addr_offset_from_ftp_data_start,
+                   size_t *addr_size);
 
 static enum ftp_ctl_pkt
 detect_ftp_ctl_type(const struct conn_lookup_ctx *ctx,
@@ -2782,7 +2784,8 @@ replace_substring(char *substr, uint8_t substr_size,
 static int
 repl_ftp_v4_addr(struct dp_packet *pkt, ovs_be32 v4_addr_rep,
                  char *ftp_data_start,
-                 size_t addr_offset_from_ftp_data_start)
+                 size_t addr_offset_from_ftp_data_start,
+                 size_t addr_size)
 {
     enum { MAX_FTP_V4_NAT_DELTA = 8 };
 
@@ -2796,30 +2799,25 @@ repl_ftp_v4_addr(struct dp_packet *pkt, ovs_be32 v4_addr_rep,
         return 0;
     }
 
+    char v4_addr_str[sizeof("xxx,xxx,xxx,xxx,")] = {0};
+    size_t replace_addr_size = 0;
+
+    for (uint8_t i = 0; i < 4; i++) {
+        uint8_t rep_byte = get_v4_byte_be(v4_addr_rep, i);
+        replace_addr_size +=
+            sprintf(&v4_addr_str[replace_addr_size], "%d,", rep_byte);
+    }
+    v4_addr_str[replace_addr_size - 1] = '\0';
+    replace_addr_size--;
+
     size_t remain_size = tcp_payload_length(pkt) -
                              addr_offset_from_ftp_data_start;
-    int overall_delta = 0;
-    char *byte_str = ftp_data_start + addr_offset_from_ftp_data_start;
 
-    /* Replace the existing IPv4 address by the new one. */
-    for (uint8_t i = 0; i < 4; i++) {
-        /* Find the end of the string for this octet. */
-        char *next_delim = memchr(byte_str, ',', 4);
-        ovs_assert(next_delim);
-        int substr_size = next_delim - byte_str;
-        remain_size -= substr_size;
+    char *pkt_addr_str = ftp_data_start + addr_offset_from_ftp_data_start;
+    replace_substring(pkt_addr_str, addr_size, remain_size, v4_addr_str,
+                      replace_addr_size);
 
-        /* Compose the new string for this octet, and replace it. */
-        char rep_str[4];
-        uint8_t rep_byte = get_v4_byte_be(v4_addr_rep, i);
-        int replace_size = sprintf(rep_str, "%d", rep_byte);
-        replace_substring(byte_str, substr_size, remain_size,
-                          rep_str, replace_size);
-        overall_delta += replace_size - substr_size;
-
-        /* Advance past the octet and the following comma. */
-        byte_str += replace_size + 1;
-    }
+    int overall_delta = (int) replace_addr_size - (int) addr_size;
 
     dp_packet_set_size(pkt, orig_used_size + overall_delta);
     return overall_delta;
@@ -2891,7 +2889,8 @@ process_ftp_ctl_v4(struct conntrack *ct,
                    const struct conn *conn_for_expectation,
                    ovs_be32 *v4_addr_rep,
                    char **ftp_data_v4_start,
-                   size_t *addr_offset_from_ftp_data_start)
+                   size_t *addr_offset_from_ftp_data_start,
+                   size_t *addr_size)
 {
     struct tcp_header *th = dp_packet_l4(pkt);
     size_t tcp_hdr_len = TCP_OFFSET(th->tcp_ctl) * 4;
@@ -2931,6 +2930,7 @@ process_ftp_ctl_v4(struct conntrack *ct,
             comma_count++;
             if (comma_count == 4) {
                 *ftp = 0;
+                *addr_size = ftp - ip_addr_start;
             } else {
                 *ftp = '.';
             }
@@ -3202,7 +3202,8 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
         } else {
             rc = process_ftp_ctl_v4(ct, pkt, conn_for_expectation,
                                     &v4_addr_rep, &ftp_data_start,
-                                    &addr_offset_from_ftp_data_start);
+                                    &addr_offset_from_ftp_data_start,
+                                    &addr_size);
         }
         if (rc == CT_FTP_CTL_INVALID) {
             static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
@@ -3226,7 +3227,8 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
                 }
             } else {
                 new_skew = repl_ftp_v4_addr(pkt, v4_addr_rep, ftp_data_start,
-                                            addr_offset_from_ftp_data_start);
+                                            addr_offset_from_ftp_data_start,
+                                            addr_size);
                 ip_len = ntohs(l3_hdr->ip_tot_len);
                 if (new_skew) {
                     ip_len += new_skew;
