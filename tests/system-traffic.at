@@ -4213,7 +4213,7 @@ AT_CHECK([tcpdump -v "icmp" -r p0.pcap 2>/dev/null | egrep 'wrong|bad'], [1], [i
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
-dnl CHECK_FTP_NAT(TITLE, IP_ADDR, FLOWS, CT_DUMP)
+dnl CHECK_FTP_NAT(TITLE, NS0_IP_ADDR, NS1_IP_ADDR, DST_IP_ADDR, FLOWS, CT_DUMP)
 dnl
 dnl Checks the implementation of conntrack with FTP ALGs in combination with
 dnl NAT, using the provided flow table.
@@ -4228,22 +4228,31 @@ m4_define([CHECK_FTP_NAT],
 
     ADD_NAMESPACES(at_ns0, at_ns1)
 
-    ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+    ADD_VETH(p0, at_ns0, br0, "$2/24")
     NS_CHECK_EXEC([at_ns0], [ip link set dev p0 address 80:88:88:88:88:88])
-    ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24")
+    ADD_VETH(p1, at_ns1, br0, "$3/24")
 
     dnl Allow any traffic from ns0->ns1. Only allow nd, return traffic from ns1->ns0.
-    AT_DATA([flows.txt], [$3])
+    AT_DATA([flows.txt], [$5])
 
     AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
     OVS_START_L7([at_ns1], [ftp])
 
     dnl FTP requests from p0->p1 should work fine.
-    NS_CHECK_EXEC([at_ns0], [wget ftp://10.1.1.2 -4 --no-passive-ftp -t 3 -T 1 --retry-connrefused -v --server-response --no-remove-listing -o wget0.log -d])
+    AT_DATA([ftp.cmd], [dnl
+set net:max-retries 1
+set net:timeout 1
+set ftp:passive-mode off
+cache off
+connect ftp://anonymous:@$4
+ls
+ls
+])
+    NS_CHECK_EXEC([at_ns0], [lftp -f ftp.cmd > lftp.log])
 
     dnl Discards CLOSE_WAIT and CLOSING
-    AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [$4])
+    AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT($4)], [0], [$6])
 
     OVS_TRAFFIC_VSWITCHD_STOP
     AT_CLEANUP])
@@ -4257,7 +4266,7 @@ dnl
 dnl IP_ADDR must specify the NAT address in standard "10.1.1.x" format,
 dnl and IP_ADDR_AS_HEX must specify the same address as hex, eg 0x0a0101xx.
 m4_define([CHECK_FTP_NAT_PRE_RECIRC], [dnl
-   CHECK_FTP_NAT([prerecirc $1], [$2], [dnl
+    CHECK_FTP_NAT([prerecirc $1], [10.1.1.10], [10.1.1.20], [10.1.1.20], [dnl
 dnl track all IP traffic, de-mangle non-NEW connections
 table=0 in_port=1, ip, action=ct(table=1,nat)
 table=0 in_port=2, ip, action=ct(table=2,nat)
@@ -4271,7 +4280,7 @@ dnl
 dnl Table 1: port 1 -> 2
 dnl
 dnl Allow new FTP connections. These need to be commited.
-table=1 ct_state=+new, tcp, tp_dst=21, nw_src=10.1.1.1, action=ct(alg=ftp,commit,nat(src=$2)),2
+table=1 ct_state=+new, tcp, tp_dst=21, nw_src=10.1.1.10, action=ct(alg=ftp,commit,nat(src=$2)),2
 dnl Allow established TCP connections, make sure they are NATted already.
 table=1 ct_state=+est, tcp, nw_src=$2,     action=2
 dnl
@@ -4283,11 +4292,11 @@ dnl
 dnl Table 2: port 2 -> 1
 dnl
 dnl Allow established TCP connections, make sure they are reverse NATted
-table=2 ct_state=+est, tcp, nw_dst=10.1.1.1, action=1
+table=2 ct_state=+est, tcp, nw_dst=10.1.1.10, action=1
 dnl Allow (new) related (data) connections.  These need to be commited.
 table=2 ct_state=+new+rel, tcp, nw_dst=$2, action=ct(commit,nat),1
 dnl Allow related ICMP packets, make sure they are reverse NATted
-table=2 ct_state=+rel, icmp, nw_dst=10.1.1.1, action=1
+table=2 ct_state=+rel, icmp, nw_dst=10.1.1.10, action=1
 dnl
 dnl Table 2: droppers
 dnl
@@ -4305,13 +4314,13 @@ table=10 priority=100 arp xreg0=0 action=normal
 table=10 priority=10,arp,arp_op=1,action=load:2->OXM_OF_ARP_OP[[]],move:OXM_OF_ARP_SHA[[]]->OXM_OF_ARP_THA[[]],move:OXM_OF_PKT_REG0[[0..47]]->OXM_OF_ARP_SHA[[]],move:OXM_OF_ARP_SPA[[]]->OXM_OF_ARP_TPA[[]],move:NXM_NX_REG2[[]]->OXM_OF_ARP_SPA[[]],move:NXM_OF_ETH_SRC[[]]->NXM_OF_ETH_DST[[]],move:OXM_OF_PKT_REG0[[0..47]]->NXM_OF_ETH_SRC[[]],move:NXM_OF_IN_PORT[[]]->NXM_NX_REG3[[0..15]],load:0->NXM_OF_IN_PORT[[]],output:NXM_NX_REG3[[0..15]]
 table=10 priority=0 action=drop
 ], [dnl
-tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=$2,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>),helper=ftp
-tcp,orig=(src=10.1.1.2,dst=$2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>)
+tcp,orig=(src=10.1.1.10,dst=10.1.1.20,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.20,dst=$2,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>),helper=ftp
+tcp,orig=(src=10.1.1.20,dst=$2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.10,dst=10.1.1.20,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>)
 ])
 ])
 
 dnl Check that ct(nat,table=foo) works without TCP sequence adjustment.
-CHECK_FTP_NAT_PRE_RECIRC([], [10.1.1.9], [0x0a010109])
+CHECK_FTP_NAT_PRE_RECIRC([], [10.1.1.19], [0x0a010113])
 
 dnl Check that ct(nat,table=foo) works with TCP sequence adjustment.
 dnl
@@ -4322,7 +4331,8 @@ dnl of 10.1.1.1 used in the test and 10.1.1.240 here), the FTP NAT ALG must
 dnl resize the packet and adjust TCP sequence numbers. This test is kept
 dnl separate from the above to easier identify issues in this code on different
 dnl kernels.
-CHECK_FTP_NAT_PRE_RECIRC([seqadj], [10.1.1.240], [0x0a0101f0])
+CHECK_FTP_NAT_PRE_RECIRC([seqadj neg], [10.1.1.9], [0x0a010109])
+CHECK_FTP_NAT_PRE_RECIRC([seqadj pos], [10.1.1.240], [0x0a0101f0])
 
 dnl CHECK_FTP_NAT_POST_RECIRC(TITLE, IP_ADDR, IP_ADDR_AS_HEX)
 dnl
@@ -4334,7 +4344,7 @@ dnl
 dnl IP_ADDR must specify the NAT address in standard "10.1.1.x" format,
 dnl and IP_ADDR_AS_HEX must specify the same address as hex, eg 0x0a0101xx.
 m4_define([CHECK_FTP_NAT_POST_RECIRC], [dnl
-    CHECK_FTP_NAT([postrecirc $1], [$2], [dnl
+    CHECK_FTP_NAT([postrecirc $1], [10.1.1.10], [10.1.1.20], [10.1.1.20], [dnl
 dnl track all IP traffic (this includes a helper call to non-NEW packets.)
 table=0 ip, action=ct(table=1)
 dnl
@@ -4371,13 +4381,13 @@ table=10 priority=100 arp xreg0=0 action=normal
 table=10 priority=10,arp,arp_op=1,action=load:2->OXM_OF_ARP_OP[[]],move:OXM_OF_ARP_SHA[[]]->OXM_OF_ARP_THA[[]],move:OXM_OF_PKT_REG0[[0..47]]->OXM_OF_ARP_SHA[[]],move:OXM_OF_ARP_SPA[[]]->OXM_OF_ARP_TPA[[]],move:NXM_NX_REG2[[]]->OXM_OF_ARP_SPA[[]],move:NXM_OF_ETH_SRC[[]]->NXM_OF_ETH_DST[[]],move:OXM_OF_PKT_REG0[[0..47]]->NXM_OF_ETH_SRC[[]],move:NXM_OF_IN_PORT[[]]->NXM_NX_REG3[[0..15]],load:0->NXM_OF_IN_PORT[[]],output:NXM_NX_REG3[[0..15]]
 table=10 priority=0 action=drop
 ], [dnl
-tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=$2,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>),helper=ftp
-tcp,orig=(src=10.1.1.2,dst=$2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>)
+tcp,orig=(src=10.1.1.10,dst=10.1.1.20,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.20,dst=$2,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>),helper=ftp
+tcp,orig=(src=10.1.1.20,dst=$2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.10,dst=10.1.1.20,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>)
 ])
 ])
 
 dnl Check that ct(nat,table=foo) works without TCP sequence adjustment.
-CHECK_FTP_NAT_POST_RECIRC([], [10.1.1.9], [0x0a010109])
+CHECK_FTP_NAT_POST_RECIRC([], [10.1.1.19], [0x0a010113])
 
 dnl Check that ct(nat,table=foo) works with TCP sequence adjustment.
 dnl
@@ -4388,7 +4398,8 @@ dnl of 10.1.1.1 used in the test and 10.1.1.240 here), the FTP NAT ALG must
 dnl resize the packet and adjust TCP sequence numbers. This test is kept
 dnl separate from the above to easier identify issues in this code on different
 dnl kernels.
-CHECK_FTP_NAT_POST_RECIRC([seqadj], [10.1.1.240], [0x0a0101f0])
+CHECK_FTP_NAT_POST_RECIRC([seqadj neg], [10.1.1.9], [0x0a010109])
+CHECK_FTP_NAT_POST_RECIRC([seqadj pos], [10.1.1.240], [0x0a0101f0])
 
 
 dnl CHECK_FTP_NAT_ORIG_TUPLE(TITLE, IP_ADDR, IP_ADDR_AS_HEX)
@@ -4402,7 +4413,7 @@ dnl
 dnl IP_ADDR must specify the NAT address in standard "10.1.1.x" format,
 dnl and IP_ADDR_AS_HEX must specify the same address as hex, eg 0x0a0101xx.
 m4_define([CHECK_FTP_NAT_ORIG_TUPLE], [dnl
-    CHECK_FTP_NAT([orig tuple $1], [$2], [dnl
+    CHECK_FTP_NAT([orig tuple $1], [10.1.1.10], [10.1.1.20], [10.1.1.20], [dnl
 dnl Store zone in reg4 and packet direction in reg3 (IN=1, OUT=2).
 dnl NAT is only applied to OUT-direction packets, so that ACL
 dnl processing can be done with non-NATted headers.
@@ -4442,9 +4453,9 @@ dnl
 dnl "ACL table"
 dnl
 dnl Stateful accept (1->reg2) all incoming (reg0=1) IP connections with
-dnl IP source address '10.1.1.1'.  Store rule ID (1234) in reg1, verdict
+dnl IP source address '10.1.1.10'.  Store rule ID (1234) in reg1, verdict
 dnl in reg2.
-table=3 priority=10, reg0=1, ip, nw_src=10.1.1.1 action=set_field:1234->reg1,set_field:1->reg2
+table=3 priority=10, reg0=1, ip, nw_src=10.1.1.10 action=set_field:1234->reg1,set_field:1->reg2
 dnl Stateless drop (0->reg2) everything else in both directions. (Rule ID: 1235)
 table=3 priority=0, action=set_field:1235->reg1,set_field:0->reg2
 dnl
@@ -4501,18 +4512,19 @@ table=10 priority=100 arp xreg0=0 action=normal
 table=10 priority=10,arp,arp_op=1,action=load:2->OXM_OF_ARP_OP[[]],move:OXM_OF_ARP_SHA[[]]->OXM_OF_ARP_THA[[]],move:OXM_OF_PKT_REG0[[0..47]]->OXM_OF_ARP_SHA[[]],move:OXM_OF_ARP_SPA[[]]->OXM_OF_ARP_TPA[[]],move:NXM_NX_REG2[[]]->OXM_OF_ARP_SPA[[]],move:NXM_OF_ETH_SRC[[]]->NXM_OF_ETH_DST[[]],move:OXM_OF_PKT_REG0[[0..47]]->NXM_OF_ETH_SRC[[]],move:NXM_OF_IN_PORT[[]]->NXM_NX_REG3[[0..15]],load:0->NXM_OF_IN_PORT[[]],output:NXM_NX_REG3[[0..15]]
 table=10 priority=0 action=drop
 ], [dnl
-tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=$2,sport=<cleared>,dport=<cleared>),zone=1,labels=0x4d2000000000000000000000001,protoinfo=(state=<cleared>),helper=ftp
-tcp,orig=(src=10.1.1.2,dst=$2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),zone=1,labels=0x4d2000000000000000000000001,protoinfo=(state=<cleared>)
+tcp,orig=(src=10.1.1.10,dst=10.1.1.20,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.20,dst=$2,sport=<cleared>,dport=<cleared>),zone=1,labels=0x4d2000000000000000000000001,protoinfo=(state=<cleared>),helper=ftp
+tcp,orig=(src=10.1.1.20,dst=$2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.10,dst=10.1.1.20,sport=<cleared>,dport=<cleared>),zone=1,labels=0x4d2000000000000000000000001,protoinfo=(state=<cleared>)
 ])
 ])
 
 dnl Check that ct(nat,table=foo) works without TCP sequence adjustment with
 dnl an ACL table based on matching on conntrack original direction tuple only.
-CHECK_FTP_NAT_ORIG_TUPLE([], [10.1.1.9], [0x0a010109])
+CHECK_FTP_NAT_ORIG_TUPLE([], [10.1.1.19], [0x0a010113])
 
 dnl Check that ct(nat,table=foo) works with TCP sequence adjustment with
 dnl an ACL table based on matching on conntrack original direction tuple only.
-CHECK_FTP_NAT_ORIG_TUPLE([seqadj], [10.1.1.240], [0x0a0101f0])
+CHECK_FTP_NAT_ORIG_TUPLE([seqadj neg], [10.1.1.9], [0x0a010109])
+CHECK_FTP_NAT_ORIG_TUPLE([seqadj pos], [10.1.1.240], [0x0a0101f0])
 
 AT_SETUP([conntrack - IPv4 FTP Passive with NAT])
 AT_SKIP_IF([test $HAVE_FTP = no])
