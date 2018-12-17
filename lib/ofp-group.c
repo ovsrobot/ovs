@@ -1043,7 +1043,8 @@ parse_ofp_group_mod_str__(struct ofputil_group_mod *gm, int command,
         }
         ovs_list_push_back(&gm->buckets, &bucket->list_node);
 
-        if (gm->type != OFPGT11_SELECT && bucket->weight) {
+        if (gm->command != OFPGC15_INSERT_BUCKET
+            && gm->type != OFPGT11_SELECT && bucket->weight) {
             error = xstrdup("Only select groups can have bucket weights.");
             goto out;
         }
@@ -1176,7 +1177,8 @@ ofputil_put_ofp11_bucket(const struct ofputil_bucket *bucket,
 static void
 ofputil_put_ofp15_bucket(const struct ofputil_bucket *bucket,
                          uint32_t bucket_id, enum ofp11_group_type group_type,
-                         struct ofpbuf *openflow, enum ofp_version ofp_version)
+                         struct ofpbuf *openflow, enum ofp_version ofp_version,
+                         int group_command)
 {
     struct ofp15_bucket *ob;
     size_t start, actions_start, actions_len;
@@ -1189,7 +1191,8 @@ ofputil_put_ofp15_bucket(const struct ofputil_bucket *bucket,
                                  openflow, ofp_version);
     actions_len = openflow->size - actions_start;
 
-    if (group_type == OFPGT11_SELECT) {
+    if (group_type == OFPGT11_SELECT
+        || group_command == OFPGC15_INSERT_BUCKET) {
         ofpprop_put_u16(openflow, OFPGBPT15_WEIGHT, bucket->weight);
     }
     if (bucket->watch_port != OFPP_ANY) {
@@ -1266,7 +1269,7 @@ ofputil_append_ofp15_group_desc_reply(const struct ofputil_group_desc *gds,
     start_buckets = reply->size;
     LIST_FOR_EACH (bucket, list_node, buckets) {
         ofputil_put_ofp15_bucket(bucket, bucket->bucket_id,
-                                 gds->type, reply, version);
+                                 gds->type, reply, version, -1);
     }
     ogds = ofpbuf_at_assert(reply, start_ogds, sizeof *ogds);
     ogds->type = gds->type;
@@ -2066,7 +2069,8 @@ ofputil_encode_ofp15_group_mod(enum ofp_version ofp_version,
             bucket_id = bucket->bucket_id;
         }
 
-        ofputil_put_ofp15_bucket(bucket, bucket_id, gm->type, b, ofp_version);
+        ofputil_put_ofp15_bucket(bucket, bucket_id, gm->type, b, ofp_version,
+                                 gm->command);
     }
     ogm = ofpbuf_at_assert(b, start_ogm, sizeof *ogm);
     ogm->command = htons(gm->command != OFPGC11_ADD_OR_MOD || group_existed < 0
@@ -2251,7 +2255,8 @@ ofputil_check_group_mod(const struct ofputil_group_mod *gm)
 
     struct ofputil_bucket *bucket;
     LIST_FOR_EACH (bucket, list_node, &gm->buckets) {
-        if (bucket->weight && gm->type != OFPGT11_SELECT) {
+        if (bucket->weight && gm->type != OFPGT11_SELECT
+            && gm->command != OFPGC15_INSERT_BUCKET) {
             return OFPERR_OFPGMFC_INVALID_GROUP;
         }
 
