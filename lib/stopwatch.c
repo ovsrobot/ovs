@@ -104,7 +104,13 @@ comp_samples(const void *left, const void *right)
     const double *left_d = left;
     const double *right_d = right;
 
-    return (int) *right_d - *left_d;
+    if (*right_d > *left_d) {
+        return -1;
+    }
+    if (*right_d < *left_d) {
+        return 1;
+    }
+    return 0;
 }
 
 /* Calculate the percentile using the P-square algorithm. For more
