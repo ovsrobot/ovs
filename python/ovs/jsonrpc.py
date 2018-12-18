@@ -457,16 +457,17 @@ class Session(object):
     def __connect(self):
         self.__disconnect()
 
-        name = self.reconnect.get_name()
         if not self.reconnect.is_passive():
+            self.pick_remote()
+            name = self.reconnect.get_name()
             error, self.stream = ovs.stream.Stream.open(name)
             if not error:
                 self.reconnect.connecting(ovs.timeval.msec())
             else:
                 self.reconnect.connect_failed(ovs.timeval.msec(), error)
                 self.stream = None
-                self.pick_remote()
         elif self.pstream is None:
+            name = self.reconnect.get_name()
             error, self.pstream = ovs.stream.PassiveStream.open(name)
             if not error:
                 self.reconnect.listening(ovs.timeval.msec())
@@ -508,7 +509,6 @@ class Session(object):
             if error != 0:
                 self.reconnect.disconnected(ovs.timeval.msec(), error)
                 self.__disconnect()
-                self.pick_remote()
         elif self.stream is not None:
             self.stream.run()
             error = self.stream.connect()
@@ -516,9 +516,9 @@ class Session(object):
                 self.reconnect.connected(ovs.timeval.msec())
                 self.rpc = Connection(self.stream)
                 self.stream = None
-            elif error != errno.EAGAIN:
+            elif (error != errno.EAGAIN or
+                  self.get_num_of_remotes() > 1):
                 self.reconnect.connect_failed(ovs.timeval.msec(), error)
-                self.pick_remote()
                 self.stream.close()
                 self.stream = None
 
