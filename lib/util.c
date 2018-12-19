@@ -968,7 +968,7 @@ free:
 
     errno = 0;
     integer = strtoull(s, tail, 0);
-    if (errno) {
+    if (errno || s == *tail) {
         return errno;
     }
 
