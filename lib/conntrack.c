@@ -3214,30 +3214,34 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
             pkt->md.ct_state |= CS_TRACKED | CS_INVALID;
             return;
         } else if (rc == CT_FTP_CTL_INTEREST) {
-            uint16_t ip_len;
+            seq_skew = conn_for_expectation->seq_skew;
+            if (nat) {
+                uint16_t ip_len;
+                int64_t new_skew;
 
-            if (ctx->key.dl_type == htons(ETH_TYPE_IPV6)) {
-                seq_skew = repl_ftp_v6_addr(pkt, v6_addr_rep, ftp_data_start,
-                                            addr_offset_from_ftp_data_start,
-                                            addr_size, mode);
-                if (seq_skew) {
-                    ip_len = ntohs(nh6->ip6_ctlun.ip6_un1.ip6_un1_plen);
-                    ip_len += seq_skew;
-                    nh6->ip6_ctlun.ip6_un1.ip6_un1_plen = htons(ip_len);
-                    conn_seq_skew_set(ct, &conn_for_expectation->key, now,
-                                      seq_skew, ctx->reply);
-                }
-            } else {
-                seq_skew = repl_ftp_v4_addr(pkt, v4_addr_rep, ftp_data_start,
-                                            addr_offset_from_ftp_data_start);
-                ip_len = ntohs(l3_hdr->ip_tot_len);
-                if (seq_skew) {
-                    ip_len += seq_skew;
-                    l3_hdr->ip_csum = recalc_csum16(l3_hdr->ip_csum,
-                                          l3_hdr->ip_tot_len, htons(ip_len));
-                    l3_hdr->ip_tot_len = htons(ip_len);
-                    conn_seq_skew_set(ct, &conn_for_expectation->key, now,
-                                      seq_skew, ctx->reply);
+                if (ctx->key.dl_type == htons(ETH_TYPE_IPV6)) {
+                    new_skew = repl_ftp_v6_addr(pkt, v6_addr_rep, ftp_data_start,
+                                                addr_offset_from_ftp_data_start,
+                                                addr_size, mode);
+                    if (new_skew) {
+                        ip_len = ntohs(nh6->ip6_ctlun.ip6_un1.ip6_un1_plen);
+                        ip_len += new_skew;
+                        nh6->ip6_ctlun.ip6_un1.ip6_un1_plen = htons(ip_len);
+                        conn_seq_skew_set(ct, &conn_for_expectation->key, now,
+                                          new_skew + seq_skew, ctx->reply);
+                    }
+                } else {
+                    new_skew = repl_ftp_v4_addr(pkt, v4_addr_rep, ftp_data_start,
+                                                addr_offset_from_ftp_data_start);
+                    ip_len = ntohs(l3_hdr->ip_tot_len);
+                    if (new_skew) {
+                        ip_len += new_skew;
+                        l3_hdr->ip_csum = recalc_csum16(l3_hdr->ip_csum,
+                                              l3_hdr->ip_tot_len, htons(ip_len));
+                        l3_hdr->ip_tot_len = htons(ip_len);
+                        conn_seq_skew_set(ct, &conn_for_expectation->key, now,
+                                          new_skew + seq_skew, ctx->reply);
+                    }
                 }
             }
         } else {
