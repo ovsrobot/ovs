@@ -241,27 +241,40 @@ error:
 }
 
 /* Blocks until a previously started stream connection attempt succeeds or
- * fails.  'error' should be the value returned by stream_open() and 'streamp'
- * should point to the stream pointer set by stream_open().  Returns 0 if
- * successful, otherwise a positive errno value other than EAGAIN or
- * EINPROGRESS.  If successful, leaves '*streamp' untouched; on error, closes
- * '*streamp' and sets '*streamp' to null.
+ * fails, but no more than 'timeout' milliseconds.  'error' should be the
+ * value returned by stream_open() and 'streamp' should point to the stream
+ * pointer set by stream_open().  Returns 0 if successful, otherwise a
+ * positive errno value other than EAGAIN or EINPROGRESS.  If successful,
+ * leaves '*streamp' untouched; on error, closes '*streamp' and sets
+ * '*streamp' to null. Negative value of 'timeout' means infinite waiting.
  *
  * Typical usage:
- *   error = stream_open_block(stream_open("tcp:1.2.3.4:5", &stream), &stream);
+ *   error = stream_open_block(stream_open("tcp:1.2.3.4:5", &stream),
+ *                             &stream, -1);
  */
 int
-stream_open_block(int error, struct stream **streamp)
+stream_open_block(int error, struct stream **streamp, long long int timeout)
 {
     struct stream *stream = *streamp;
+    long long int deadline = -1;
 
     fatal_signal_run();
 
     if (!error) {
+        if (timeout >= 0) {
+            deadline = time_msec() + timeout;
+        }
         while ((error = stream_connect(stream)) == EAGAIN) {
+            if (deadline >= 0 && time_msec() > deadline) {
+                error = ETIMEDOUT;
+                break;
+            }
             stream_run(stream);
             stream_run_wait(stream);
             stream_connect_wait(stream);
+            if (deadline >= 0) {
+                poll_timer_wait_until(deadline);
+            }
             poll_block();
         }
         ovs_assert(error != EINPROGRESS);
