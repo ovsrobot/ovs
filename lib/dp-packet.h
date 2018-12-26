@@ -469,7 +469,7 @@ dp_packet_set_allocated(struct dp_packet *b, uint16_t s)
 /* Returns the RSS hash of the packet 'p'.  Note that the returned value is
  * correct only if 'dp_packet_rss_valid(p)' returns true */
 static inline uint32_t
-dp_packet_get_rss_hash(struct dp_packet *p)
+dp_packet_get_rss_hash(const struct dp_packet *p)
 {
     return p->mbuf.hash.rss;
 }
@@ -482,7 +482,7 @@ dp_packet_set_rss_hash(struct dp_packet *p, uint32_t hash)
 }
 
 static inline bool
-dp_packet_rss_valid(struct dp_packet *p)
+dp_packet_rss_valid(const struct dp_packet *p)
 {
     return p->mbuf.ol_flags & PKT_RX_RSS_HASH;
 }
@@ -509,28 +509,28 @@ dp_packet_mbuf_init(struct dp_packet *p)
 }
 
 static inline bool
-dp_packet_ip_checksum_valid(struct dp_packet *p)
+dp_packet_ip_checksum_valid(const struct dp_packet *p)
 {
     return (p->mbuf.ol_flags & PKT_RX_IP_CKSUM_MASK) ==
             PKT_RX_IP_CKSUM_GOOD;
 }
 
 static inline bool
-dp_packet_ip_checksum_bad(struct dp_packet *p)
+dp_packet_ip_checksum_bad(const struct dp_packet *p)
 {
     return (p->mbuf.ol_flags & PKT_RX_IP_CKSUM_MASK) ==
             PKT_RX_IP_CKSUM_BAD;
 }
 
 static inline bool
-dp_packet_l4_checksum_valid(struct dp_packet *p)
+dp_packet_l4_checksum_valid(const struct dp_packet *p)
 {
     return (p->mbuf.ol_flags & PKT_RX_L4_CKSUM_MASK) ==
             PKT_RX_L4_CKSUM_GOOD;
 }
 
 static inline bool
-dp_packet_l4_checksum_bad(struct dp_packet *p)
+dp_packet_l4_checksum_bad(const struct dp_packet *p)
 {
     return (p->mbuf.ol_flags & PKT_RX_L4_CKSUM_MASK) ==
             PKT_RX_L4_CKSUM_BAD;
@@ -544,7 +544,7 @@ reset_dp_packet_checksum_ol_flags(struct dp_packet *p)
 }
 
 static inline bool
-dp_packet_has_flow_mark(struct dp_packet *p, uint32_t *mark)
+dp_packet_has_flow_mark(const struct dp_packet *p, uint32_t *mark)
 {
     if (p->mbuf.ol_flags & PKT_RX_FDIR_ID) {
         *mark = p->mbuf.hash.fdir.hi;
@@ -606,7 +606,7 @@ dp_packet_set_allocated(struct dp_packet *b, uint16_t s)
 /* Returns the RSS hash of the packet 'p'.  Note that the returned value is
  * correct only if 'dp_packet_rss_valid(p)' returns true */
 static inline uint32_t
-dp_packet_get_rss_hash(struct dp_packet *p)
+dp_packet_get_rss_hash(const struct dp_packet *p)
 {
     return p->rss_hash;
 }
@@ -619,7 +619,7 @@ dp_packet_set_rss_hash(struct dp_packet *p, uint32_t hash)
 }
 
 static inline bool
-dp_packet_rss_valid(struct dp_packet *p)
+dp_packet_rss_valid(const struct dp_packet *p)
 {
     return p->rss_hash_valid;
 }
@@ -641,25 +641,25 @@ dp_packet_mbuf_init(struct dp_packet *p OVS_UNUSED)
 }
 
 static inline bool
-dp_packet_ip_checksum_valid(struct dp_packet *p OVS_UNUSED)
+dp_packet_ip_checksum_valid(const struct dp_packet *p OVS_UNUSED)
 {
     return false;
 }
 
 static inline bool
-dp_packet_ip_checksum_bad(struct dp_packet *p OVS_UNUSED)
+dp_packet_ip_checksum_bad(const struct dp_packet *p OVS_UNUSED)
 {
     return false;
 }
 
 static inline bool
-dp_packet_l4_checksum_valid(struct dp_packet *p OVS_UNUSED)
+dp_packet_l4_checksum_valid(const struct dp_packet *p OVS_UNUSED)
 {
     return false;
 }
 
 static inline bool
-dp_packet_l4_checksum_bad(struct dp_packet *p OVS_UNUSED)
+dp_packet_l4_checksum_bad(const struct dp_packet *p OVS_UNUSED)
 {
     return false;
 }
@@ -670,7 +670,7 @@ reset_dp_packet_checksum_ol_flags(struct dp_packet *p OVS_UNUSED)
 }
 
 static inline bool
-dp_packet_has_flow_mark(struct dp_packet *p OVS_UNUSED,
+dp_packet_has_flow_mark(const struct dp_packet *p OVS_UNUSED,
                         uint32_t *mark OVS_UNUSED)
 {
     return false;
