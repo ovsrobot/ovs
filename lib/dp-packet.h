@@ -58,8 +58,9 @@ struct dp_packet {
     uint16_t allocated_;        /* Number of bytes allocated. */
     uint16_t data_ofs;          /* First byte actually in use. */
     uint32_t size_;             /* Number of bytes in use. */
+    uint32_t ol_flags;          /* Offloading flags. */
+#define DP_PACKET_OL_RSS_HASH_MASK   0x1 /* Is the 'rss_hash' valid? */
     uint32_t rss_hash;          /* Packet hash. */
-    bool rss_hash_valid;        /* Is the 'rss_hash' valid? */
 #endif
     enum dp_packet_source source;  /* Source of memory allocated as 'base'. */
 
@@ -408,6 +409,16 @@ dp_packet_get_nd_payload(const struct dp_packet *b)
 #ifdef DPDK_NETDEV
 BUILD_ASSERT_DECL(offsetof(struct dp_packet, mbuf) == 0);
 
+/* This initialization is needed for packets that do not come from DPDK
+ * interfaces, when vswitchd is built with --with-dpdk. */
+static inline void
+dp_packet_mbuf_init(struct dp_packet *p)
+{
+    p->mbuf.tx_offload = p->mbuf.packet_type = 0;
+    p->mbuf.nb_segs = 1;
+    p->mbuf.next = NULL;
+}
+
 static inline void *
 dp_packet_base(const struct dp_packet *b)
 {
@@ -488,24 +499,9 @@ dp_packet_rss_valid(const struct dp_packet *p)
 }
 
 static inline void
-dp_packet_rss_invalidate(struct dp_packet *p OVS_UNUSED)
+dp_packet_offload_invalidate(struct dp_packet *p OVS_UNUSED)
 {
-}
-
-static inline void
-dp_packet_mbuf_rss_flag_reset(struct dp_packet *p)
-{
-    p->mbuf.ol_flags &= ~PKT_RX_RSS_HASH;
-}
-
-/* This initialization is needed for packets that do not come from DPDK
- * interfaces, when vswitchd is built with --with-dpdk. */
-static inline void
-dp_packet_mbuf_init(struct dp_packet *p)
-{
-    p->mbuf.ol_flags = p->mbuf.tx_offload = p->mbuf.packet_type = 0;
-    p->mbuf.nb_segs = 1;
-    p->mbuf.next = NULL;
+    p->mbuf.ol_flags = 0;
 }
 
 static inline bool
@@ -534,13 +530,6 @@ dp_packet_l4_checksum_bad(const struct dp_packet *p)
 {
     return (p->mbuf.ol_flags & PKT_RX_L4_CKSUM_MASK) ==
             PKT_RX_L4_CKSUM_BAD;
-}
-
-static inline void
-reset_dp_packet_checksum_ol_flags(struct dp_packet *p)
-{
-    p->mbuf.ol_flags &= ~(PKT_RX_L4_CKSUM_GOOD | PKT_RX_L4_CKSUM_BAD |
-                          PKT_RX_IP_CKSUM_GOOD | PKT_RX_IP_CKSUM_BAD);
 }
 
 static inline bool
@@ -615,29 +604,19 @@ static inline void
 dp_packet_set_rss_hash(struct dp_packet *p, uint32_t hash)
 {
     p->rss_hash = hash;
-    p->rss_hash_valid = true;
+    p->ol_flags |= DP_PACKET_OL_RSS_HASH_MASK;
 }
 
 static inline bool
 dp_packet_rss_valid(const struct dp_packet *p)
 {
-    return p->rss_hash_valid;
+    return p->ol_flags & DP_PACKET_OL_RSS_HASH_MASK;
 }
 
 static inline void
-dp_packet_rss_invalidate(struct dp_packet *p)
+dp_packet_offload_invalidate(struct dp_packet *p)
 {
-    p->rss_hash_valid = false;
-}
-
-static inline void
-dp_packet_mbuf_rss_flag_reset(struct dp_packet *p OVS_UNUSED)
-{
-}
-
-static inline void
-dp_packet_mbuf_init(struct dp_packet *p OVS_UNUSED)
-{
+    p->ol_flags = 0;
 }
 
 static inline bool
@@ -662,11 +641,6 @@ static inline bool
 dp_packet_l4_checksum_bad(const struct dp_packet *p OVS_UNUSED)
 {
     return false;
-}
-
-static inline void
-reset_dp_packet_checksum_ol_flags(struct dp_packet *p OVS_UNUSED)
-{
 }
 
 static inline bool
