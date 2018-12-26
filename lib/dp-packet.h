@@ -60,7 +60,9 @@ struct dp_packet {
     uint32_t size_;             /* Number of bytes in use. */
     uint32_t ol_flags;          /* Offloading flags. */
 #define DP_PACKET_OL_RSS_HASH_MASK   0x1 /* Is the 'rss_hash' valid? */
+#define DP_PACKET_OL_FLOW_MARK_MASK  0x2 /* Is the 'flow_mark' valid? */
     uint32_t rss_hash;          /* Packet hash. */
+    uint32_t flow_mark;         /* Packet flow mark. */
 #endif
     enum dp_packet_source source;  /* Source of memory allocated as 'base'. */
 
@@ -543,6 +545,13 @@ dp_packet_has_flow_mark(const struct dp_packet *p, uint32_t *mark)
     return false;
 }
 
+static inline void
+dp_packet_set_flow_mark(struct dp_packet *p, uint32_t mark)
+{
+    p->mbuf.hash.fdir.hi = mark;
+    p->mbuf.ol_flags |= PKT_RX_FDIR_ID;
+}
+
 #else /* DPDK_NETDEV */
 static inline void *
 dp_packet_base(const struct dp_packet *b)
@@ -644,10 +653,20 @@ dp_packet_l4_checksum_bad(const struct dp_packet *p OVS_UNUSED)
 }
 
 static inline bool
-dp_packet_has_flow_mark(const struct dp_packet *p OVS_UNUSED,
-                        uint32_t *mark OVS_UNUSED)
+dp_packet_has_flow_mark(const struct dp_packet *p, uint32_t *mark)
 {
+    if (p->ol_flags & DP_PACKET_OL_FLOW_MARK_MASK) {
+        *mark = p->flow_mark;
+        return true;
+    }
     return false;
+}
+
+static inline void
+dp_packet_set_flow_mark(struct dp_packet *p, uint32_t mark)
+{
+    p->flow_mark = mark;
+    p->ol_flags |= DP_PACKET_OL_FLOW_MARK_MASK;
 }
 #endif /* DPDK_NETDEV */
 
