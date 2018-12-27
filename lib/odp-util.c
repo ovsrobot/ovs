@@ -2114,12 +2114,12 @@ parse_odp_push_nsh_action(const char *s, struct ofpbuf *actions)
             if (ovs_scan_len(s, &n, "md2=0x%511[0-9a-fA-F]", buf)
                 && n/2 <= sizeof metadata) {
                 ofpbuf_use_stub(&b, metadata, sizeof metadata);
-                ofpbuf_put_hex(&b, buf, &mdlen);
                 /* Pad metadata to 4 bytes. */
                 padding = PAD_SIZE(mdlen, 4);
                 if (padding > 0) {
-                    ofpbuf_push_zeros(&b, padding);
+                    ofpbuf_put_zeros(&b, padding);
                 }
+                ofpbuf_put_hex(&b, buf, &mdlen);
                 md_size = mdlen + padding;
                 ofpbuf_uninit(&b);
                 continue;
