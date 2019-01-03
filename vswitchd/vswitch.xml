@@ -574,6 +574,36 @@
             be set to 'skip_sw'.
         </p>
       </column>
+      <column name="other_config" key="pmd-auto-lb"
+              type='{"type": "boolean"}'>
+        <p>
+         Configures PMD Auto Load Balancing that allows automatic assignment of
+         RX queues to PMDs if any of PMDs is overloaded (i.e. processing cycles
+         > 95%).
+        </p>
+        <p>
+         It uses current scheme of cycle based assignment of RX queues that
+         are not statically pinned to PMDs.
+        </p>
+        <p>
+          Set this value to <code>true</code> to enable this option.
+        </p>
+        <p>
+          The default value is <code>false</code>.
+        </p>
+        <p>
+         This only comes in effect if cycle based assignment is enabled and
+         there are more than one non-isolated PMDs present and atleast one of
+         it polls more than one queue.
+        </p>
+      </column>
+      <column name="other_config" key="pmd-auto-lb-rebalance-intvl"
+              type='{"type": "integer", "minInteger": 1}'>
+        <p>
+         The minimum time (in minutes) 2 consecutive PMD Auto Load Balancing
+         iterations.
+        </p>
+      </column>
     </group>
     <group title="Status">
       <column name="next_cfg">
