@@ -192,7 +192,7 @@ class ForEachCMAP(object):
 
         raise StopIteration
 
-    def next(self):
+    def __next__(self):
         ipml = self.cmap['impl']['p']
         if ipml['n'] == 0:
             raise StopIteration
@@ -205,6 +205,9 @@ class ForEachCMAP(object):
         return container_of(self.node,
                             gdb.lookup_type(self.typeobj).pointer(),
                             self.member)
+
+    def next(self):
+        return self.__next__()
 
 
 #
@@ -229,7 +232,7 @@ class ForEachHMAP(object):
 
         raise StopIteration
 
-    def next(self):
+    def __next__(self):
         #
         # In the real implementation the n values is never checked,
         # however when debugging we do, as we might try to access
@@ -253,6 +256,9 @@ class ForEachHMAP(object):
                             gdb.lookup_type(self.typeobj).pointer(),
                             self.member)
 
+    def next(self):
+        return self.__next__()
+
 
 #
 # Class that will provide an iterator over an Netlink attributes
@@ -268,7 +274,7 @@ class ForEachNL():
     def round_up(self, val, round_to):
         return int(val) + (round_to - int(val)) % round_to
 
-    def next(self):
+    def __next__(self):
         if self.attr is None or \
            self.attr_len < 4 or self.attr['nla_len'] < 4 or  \
            self.attr['nla_len'] > self.attr_len:
@@ -286,6 +292,9 @@ class ForEachNL():
 
         return attr
 
+    def next(self):
+        return self.__next__()
+
 
 #
 # Class that will provide an iterator over an OVS shash.
@@ -298,13 +307,16 @@ class ForEachSHASH(ForEachHMAP):
         super(ForEachSHASH, self).__init__(shash['map'],
                                            "struct shash_node", "node")
 
-    def next(self):
-        node = super(ForEachSHASH, self).next()
+    def __next__(self):
+        node = super(ForEachSHASH, self).__next__()
 
         if self.data_typeobj is None:
             return node
 
         return node['data'].cast(gdb.lookup_type(self.data_typeobj).pointer())
+
+    def next(self):
+        return self.__next__()
 
 
 #
@@ -315,9 +327,12 @@ class ForEachSIMAP(ForEachHMAP):
         super(ForEachSIMAP, self).__init__(shash['map'],
                                            "struct simap_node", "node")
 
-    def next(self):
-        node = super(ForEachSIMAP, self).next()
+    def __next__(self):
+        node = super(ForEachSIMAP, self).__next__()
         return node['name'], node['data']
+
+    def next(self):
+        return self.__next__()
 
 
 #
@@ -328,9 +343,12 @@ class ForEachSMAP(ForEachHMAP):
         super(ForEachSMAP, self).__init__(shash['map'],
                                           "struct smap_node", "node")
 
-    def next(self):
-        node = super(ForEachSMAP, self).next()
+    def __next__(self):
+        node = super(ForEachSMAP, self).__next__()
         return node['key'], node['value']
+
+    def next(self):
+        return self.__next__()
 
 
 #
@@ -346,7 +364,7 @@ class ForEachLIST():
     def __iter__(self):
         return self
 
-    def next(self):
+    def __next__(self):
         if self.list.address == self.node['next']:
             raise StopIteration
 
@@ -358,6 +376,9 @@ class ForEachLIST():
         return container_of(self.node,
                             gdb.lookup_type(self.typeobj).pointer(),
                             self.member)
+
+    def next(self):
+        return self.__next__()
 
 
 #
