@@ -91,6 +91,9 @@ static inline void dp_packet_set_size(struct dp_packet *, uint32_t);
 static inline uint16_t dp_packet_get_allocated(const struct dp_packet *);
 static inline void dp_packet_set_allocated(struct dp_packet *, uint16_t);
 
+static inline void
+dp_packet_copy_mbuf_flags(struct dp_packet *dst, const struct dp_packet *src);
+
 void *dp_packet_resize_l2(struct dp_packet *, int increment);
 void *dp_packet_resize_l2_5(struct dp_packet *, int increment);
 static inline void *dp_packet_eth(const struct dp_packet *);
@@ -119,6 +122,9 @@ void dp_packet_init_dpdk(struct dp_packet *);
 void dp_packet_init(struct dp_packet *, size_t);
 void dp_packet_uninit(struct dp_packet *);
 
+void dp_packet_copy_mbuf_flags(struct dp_packet *dst,
+                               const struct dp_packet *src);
+
 struct dp_packet *dp_packet_new(size_t);
 struct dp_packet *dp_packet_new_with_headroom(size_t, size_t headroom);
 struct dp_packet *dp_packet_clone(const struct dp_packet *);
@@ -128,6 +134,10 @@ struct dp_packet *dp_packet_clone_data(const void *, size_t);
 struct dp_packet *dp_packet_clone_data_with_headroom(const void *, size_t,
                                                      size_t headroom);
 static inline void dp_packet_delete(struct dp_packet *);
+
+static inline void
+dp_packet_copy_common_members(struct dp_packet *new_b,
+                              const struct dp_packet *b);
 
 static inline void *dp_packet_at(const struct dp_packet *, size_t offset,
                                  size_t size);
@@ -185,6 +195,17 @@ dp_packet_delete(struct dp_packet *b)
         dp_packet_uninit(b);
         free(b);
     }
+}
+
+/* Copies the following fields into the 'new_b', which represent the common
+ * fields between DPDK and non-DPDK packets: l2_pad_size, l2_5_ofs, l3_ofs,
+ * l4_ofs, cutlen, packet_type and md. */
+static inline void
+dp_packet_copy_common_members(struct dp_packet *new_b,
+                              const struct dp_packet *b) {
+    memcpy(&new_b->l2_pad_size, &b->l2_pad_size,
+           sizeof(struct dp_packet) -
+           offsetof(struct dp_packet, l2_pad_size));
 }
 
 /* If 'b' contains at least 'offset + size' bytes of data, returns a pointer to
@@ -698,6 +719,18 @@ static inline void
 dp_packet_set_allocated(struct dp_packet *b, uint16_t s)
 {
     b->mbuf.buf_len = s;
+}
+
+static inline void
+dp_packet_copy_mbuf_flags(struct dp_packet *dst, const struct dp_packet *src)
+{
+    ovs_assert(dst != NULL && src != NULL);
+    struct rte_mbuf *buf_dst = &(dst->mbuf);
+    struct rte_mbuf buf_src = src->mbuf;
+
+    buf_dst->ol_flags = buf_src->ol_flags;
+    buf_dst->packet_type = buf_src->packet_type;
+    buf_dst->tx_offload = buf_src->tx_offload;
 }
 
 /* Returns the RSS hash of the packet 'p'.  Note that the returned value is
