@@ -80,6 +80,12 @@
 
 VLOG_DEFINE_THIS_MODULE(dpif_netdev);
 
+/* Auto Load Balancing Defaults */
+#define ALB_ACCEPTABLE_IMPROVEMENT       25
+#define ALB_PMD_LOAD_THRESHOLD           95
+#define ALB_PMD_REBALANCE_POLL_INTERVAL  1 /* 1 Min */
+#define MIN_TO_MSEC                  60000
+
 #define FLOW_DUMP_MAX_BATCH 50
 /* Use per thread recirc_depth to prevent recirculation loop. */
 #define MAX_RECIRC_DEPTH 6
@@ -288,6 +294,13 @@ struct dp_meter {
     struct dp_meter_band bands[];
 };
 
+struct pmd_auto_lb {
+    bool auto_lb_requested;     /* Auto load balancing requested by user. */
+    bool is_enabled;            /* Current status of Auto load balancing. */
+    uint64_t rebalance_intvl;
+    uint64_t rebalance_poll_timer;
+};
+
 /* Datapath based on the network device interface from netdev.h.
  *
  *
@@ -368,6 +381,7 @@ struct dp_netdev {
     uint64_t last_tnl_conf_seq;
 
     struct conntrack conntrack;
+    struct pmd_auto_lb pmd_alb;
 };
 
 static void meter_lock(const struct dp_netdev *dp, uint32_t meter_id)
@@ -702,6 +716,11 @@ struct dp_netdev_pmd_thread {
     /* Keep track of detailed PMD performance statistics. */
     struct pmd_perf_stats perf_stats;
 
+    /* Stats from previous iteration used by automatic pmd
+       load balance logic. */
+    uint64_t prev_stats[PMD_N_STATS];
+    atomic_count pmd_overloaded;
+
     /* Set to true if the pmd thread needs to be reloaded. */
     bool need_reload;
 };
@@ -792,7 +811,8 @@ dp_netdev_rxq_get_cycles(struct dp_netdev_rxq *rx,
                          enum rxq_cycles_counter_type type);
 static void
 dp_netdev_rxq_set_intrvl_cycles(struct dp_netdev_rxq *rx,
-                           unsigned long long cycles);
+                                unsigned long long cycles,
+                                unsigned idx);
 static uint64_t
 dp_netdev_rxq_get_intrvl_cycles(struct dp_netdev_rxq *rx, unsigned idx);
 static void
@@ -3734,6 +3754,53 @@ dpif_netdev_operate(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
     }
 }
 
+/* Enable or Disable PMD auto load balancing. */
+static void
+set_pmd_auto_lb(struct dp_netdev *dp)
+{
+    unsigned int cnt = 0;
+    struct dp_netdev_pmd_thread *pmd;
+    struct pmd_auto_lb * pmd_alb = &dp->pmd_alb;
+
+    bool enable_alb = false;
+    bool multi_rxq = false;
+    bool pmd_rxq_assign_cyc = dp->pmd_rxq_assign_cyc;
+
+    /* Ensure that there is at least 2 non-isolated PMDs and
+     * one of them is polling more than one rxq. */
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        if (pmd->core_id == NON_PMD_CORE_ID || pmd->isolated) {
+            continue;
+        }
+
+        if (hmap_count(&pmd->poll_list) > 1) {
+            multi_rxq = true;
+        }
+        if (cnt && multi_rxq) {
+                enable_alb = true;
+                break;
+        }
+        cnt++;
+    }
+
+    /* Enable auto LB if it is requested and cycle based assignment is true. */
+    enable_alb = enable_alb && pmd_rxq_assign_cyc &&
+                    pmd_alb->auto_lb_requested;
+
+    if (pmd_alb->is_enabled != enable_alb) {
+        pmd_alb->is_enabled = enable_alb;
+        if (pmd_alb->is_enabled) {
+            VLOG_INFO("pmd_auto_lb is now enabled "
+                      "(with rebalance interval:%"PRIu64" msec)",
+                       pmd_alb->rebalance_intvl);
+        } else {
+            pmd_alb->rebalance_poll_timer = 0;
+            VLOG_INFO("pmd_auto_lb is disabled now\n");
+        }
+    }
+
+}
+
 /* Applies datapath configuration from the database. Some of the changes are
  * actually applied in dpif_netdev_run(). */
 static int
@@ -3748,6 +3815,7 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
                         DEFAULT_EM_FLOW_INSERT_INV_PROB);
     uint32_t insert_min, cur_min;
     uint32_t tx_flush_interval, cur_tx_flush_interval;
+    uint64_t rebalance_intvl;
 
     tx_flush_interval = smap_get_int(other_config, "tx-flush-interval",
                                      DEFAULT_TX_FLUSH_INTERVAL);
@@ -3819,6 +3887,23 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
                   pmd_rxq_assign);
         dp_netdev_request_reconfigure(dp);
     }
+
+    struct pmd_auto_lb * pmd_alb = &dp->pmd_alb;
+    pmd_alb->auto_lb_requested = smap_get_bool(other_config, "pmd-auto-lb",
+                              false);
+
+    rebalance_intvl = smap_get_int(other_config, "pmd-auto-lb-rebalance-intvl",
+                              ALB_PMD_REBALANCE_POLL_INTERVAL);
+
+    /* Input is in min, convert it to msec. */
+    rebalance_intvl =
+        rebalance_intvl ? rebalance_intvl * MIN_TO_MSEC : MIN_TO_MSEC;
+
+    if (pmd_alb->rebalance_intvl != rebalance_intvl) {
+        pmd_alb->rebalance_intvl = rebalance_intvl;
+    }
+
+    set_pmd_auto_lb(dp);
     return 0;
 }
 
@@ -3974,9 +4059,8 @@ dp_netdev_rxq_get_cycles(struct dp_netdev_rxq *rx,
 
 static void
 dp_netdev_rxq_set_intrvl_cycles(struct dp_netdev_rxq *rx,
-                                unsigned long long cycles)
+                                unsigned long long cycles, unsigned idx)
 {
-    unsigned int idx = rx->intrvl_idx++ % PMD_RXQ_INTERVAL_MAX;
     atomic_store_relaxed(&rx->cycles_intrvl[idx], cycles);
 }
 
@@ -4762,6 +4846,9 @@ reconfigure_datapath(struct dp_netdev *dp)
 
     /* Reload affected pmd threads. */
     reload_affected_pmds(dp);
+
+    /* Check if PMD Auto LB is to be enabled */
+    set_pmd_auto_lb(dp);
 }
 
 /* Returns true if one of the netdevs in 'dp' requires a reconfiguration */
@@ -4780,6 +4867,223 @@ ports_require_restart(const struct dp_netdev *dp)
     return false;
 }
 
+/* Function for calculating variance. */
+static uint64_t
+variance(uint64_t a[], int n)
+{
+    /* Compute mean (average of elements) */
+    uint64_t sum = 0;
+    uint64_t mean = 0;
+    uint64_t sqDiff = 0;
+
+    if (!n) {
+        return 0;
+    }
+
+    for (int i = 0; i < n; i++) {
+        sum += a[i];
+    }
+
+    if (sum) {
+        mean = sum / n;
+
+        /* Compute sum squared differences with mean. */
+        for (int i = 0; i < n; i++) {
+            sqDiff += (a[i] - mean)*(a[i] - mean);
+        }
+    }
+    return (sqDiff ? (sqDiff / n) : 0);
+}
+
+
+/* Returns the variance in the PMDs usage as part of dry run of rxqs
+   assignment to PMDs. */
+static uint64_t
+get_dry_run_variance(struct dp_netdev *dp, uint32_t *core_list, uint32_t num)
+{
+    struct dp_netdev_port *port;
+    struct dp_netdev_pmd_thread *pmd;
+    struct dp_netdev_rxq ** rxqs = NULL;
+    struct rr_numa *numa = NULL;
+    struct rr_numa_list rr;
+    int n_rxqs = 0;
+    uint64_t ret = 0;
+    uint64_t *pmd_usage;
+
+    pmd_usage = xcalloc(num, sizeof(uint64_t));
+
+    HMAP_FOR_EACH (port, node, &dp->ports) {
+        if (!netdev_is_pmd(port->netdev)) {
+            continue;
+        }
+
+        for (int qid = 0; qid < port->n_rxq; qid++) {
+            struct dp_netdev_rxq *q = &port->rxqs[qid];
+            uint64_t cycle_hist = 0;
+
+            if (q->pmd->isolated) {
+                continue;
+            }
+
+            if (n_rxqs == 0) {
+                rxqs = xmalloc(sizeof *rxqs);
+            } else {
+                rxqs = xrealloc(rxqs, sizeof *rxqs * (n_rxqs + 1));
+            }
+
+            /* Sum the queue intervals and store the cycle history. */
+            for (unsigned i = 0; i < PMD_RXQ_INTERVAL_MAX; i++) {
+                cycle_hist += dp_netdev_rxq_get_intrvl_cycles(q, i);
+            }
+            dp_netdev_rxq_set_cycles(q, RXQ_CYCLES_PROC_HIST,
+                                         cycle_hist);
+            /* Store the queue. */
+            rxqs[n_rxqs++] = q;
+        }
+    }
+    if (n_rxqs > 1) {
+        /* Sort the queues in order of the processing cycles
+         * they consumed during their last pmd interval. */
+        qsort(rxqs, n_rxqs, sizeof *rxqs, compare_rxq_cycles);
+    }
+    rr_numa_list_populate(dp, &rr);
+
+    for (int i = 0; i < n_rxqs; i++) {
+        int numa_id = netdev_get_numa_id(rxqs[i]->port->netdev);
+        numa = rr_numa_list_lookup(&rr, numa_id);
+        if (!numa) {
+            /* Abort if cross NUMA polling. */
+            goto cleanup;
+        }
+
+        pmd = rr_numa_get_pmd(numa, true);
+        VLOG_DBG("pmd_auto_lb:Core %d on numa node %d assigned port \'%s\' "
+                  "rx queue %d (measured processing cycles %"PRIu64").",
+                  pmd->core_id, numa_id,
+                  netdev_rxq_get_name(rxqs[i]->rx),
+                  netdev_rxq_get_queue_id(rxqs[i]->rx),
+                  dp_netdev_rxq_get_cycles(rxqs[i], RXQ_CYCLES_PROC_HIST));
+
+        for (int id = 0; id < num; id++) {
+            if (pmd->core_id == core_list[id]) {
+                /* Add the processing cycles of rxq to pmd polling it. */
+                pmd_usage[id] += dp_netdev_rxq_get_cycles(rxqs[i],
+                                        RXQ_CYCLES_PROC_HIST);
+            }
+        }
+    }
+
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        uint64_t total_cycles = 0;
+
+        if ((pmd->core_id == NON_PMD_CORE_ID) || pmd->isolated) {
+            continue;
+        }
+
+        /* Get the total pmd cycles for an interval. */
+        atomic_read_relaxed(&pmd->intrvl_cycles, &total_cycles);
+        /* Estimate the cycles to cover all intervals. */
+        total_cycles *= PMD_RXQ_INTERVAL_MAX;
+        for (int id = 0; id < num; id++) {
+            if (pmd->core_id == core_list[id]) {
+                if (pmd_usage[id]) {
+                    pmd_usage[id] = (pmd_usage[id] * 100) / total_cycles;
+                }
+                VLOG_DBG("Core_id:%d, usage:%"PRIu64"\n",
+                          pmd->core_id, pmd_usage[id]);
+            }
+        }
+    }
+    ret = variance(pmd_usage, num);
+
+cleanup:
+    rr_numa_list_destroy(&rr);
+    free(rxqs);
+    free(pmd_usage);
+    return ret;
+}
+
+static bool
+pmd_rebalance_dry_run(struct dp_netdev *dp)
+{
+    struct dp_netdev_pmd_thread *pmd;
+    uint64_t *curr_pmd_usage;
+
+    uint64_t curr_variance;
+    uint64_t new_variance;
+    uint64_t improvement = 0;
+    uint32_t num_pmds;
+    uint32_t *pmd_corelist;
+    struct rxq_poll *poll, *poll_next;
+
+    num_pmds = cmap_count(&dp->poll_threads);
+
+    if (num_pmds > 1) {
+        curr_pmd_usage = xcalloc(num_pmds, sizeof(uint64_t));
+        pmd_corelist = xcalloc(num_pmds, sizeof(uint32_t));
+    } else {
+        return false;
+    }
+
+    num_pmds = 0;
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        uint64_t total_cycles = 0;
+        uint64_t total_proc = 0;
+
+        if ((pmd->core_id == NON_PMD_CORE_ID) || pmd->isolated) {
+            continue;
+        }
+
+        /* Get the total pmd cycles for an interval. */
+        atomic_read_relaxed(&pmd->intrvl_cycles, &total_cycles);
+        /* Estimate the cycles to cover all intervals. */
+        total_cycles *= PMD_RXQ_INTERVAL_MAX;
+
+        HMAP_FOR_EACH_SAFE (poll, poll_next, node, &pmd->poll_list) {
+            uint64_t proc_cycles = 0;
+            for (unsigned i = 0; i < PMD_RXQ_INTERVAL_MAX; i++) {
+                proc_cycles += dp_netdev_rxq_get_intrvl_cycles(poll->rxq, i);
+            }
+            total_proc += proc_cycles;
+        }
+        if (total_proc) {
+            curr_pmd_usage[num_pmds] = (total_proc * 100) / total_cycles;
+        }
+
+        VLOG_DBG("PMD_AUTO_LB_MON curr_pmd_usage(%d):%"PRIu64"",
+                  pmd->core_id, curr_pmd_usage[num_pmds]);
+
+        if (atomic_count_get(&pmd->pmd_overloaded)) {
+            atomic_count_set(&pmd->pmd_overloaded, 0);
+        }
+
+        pmd_corelist[num_pmds] = pmd->core_id;
+        num_pmds++;
+    }
+
+    curr_variance = variance(curr_pmd_usage, num_pmds);
+
+    new_variance = get_dry_run_variance(dp, pmd_corelist, num_pmds);
+    VLOG_DBG("pmd_auto_lb: new variance: %"PRIu64","
+              " curr_variance: %"PRIu64"",
+              new_variance, curr_variance);
+
+    if (new_variance && (new_variance < curr_variance)) {
+        improvement =
+            ((curr_variance - new_variance) * 100) / curr_variance;
+    }
+
+    free(curr_pmd_usage);
+    free(pmd_corelist);
+
+    if (improvement >= ALB_ACCEPTABLE_IMPROVEMENT) {
+        return true;
+    }
+
+    return false;
+}
+
+
 /* Return true if needs to revalidate datapath flows. */
 static bool
 dpif_netdev_run(struct dpif *dpif)
@@ -4789,6 +5093,9 @@ dpif_netdev_run(struct dpif *dpif)
     struct dp_netdev_pmd_thread *non_pmd;
     uint64_t new_tnl_seq;
     bool need_to_flush = true;
+    bool pmd_rebalance = false;
+    long long int now = time_msec();
+    struct dp_netdev_pmd_thread *pmd;
 
     ovs_mutex_lock(&dp->port_mutex);
     non_pmd = dp_netdev_get_pmd(dp, NON_PMD_CORE_ID);
@@ -4819,6 +5126,34 @@ dpif_netdev_run(struct dpif *dpif)
         ovs_mutex_unlock(&dp->non_pmd_mutex);
 
         dp_netdev_pmd_unref(non_pmd);
+    }
+
+    struct pmd_auto_lb * pmd_alb = &dp->pmd_alb;
+    if (pmd_alb->is_enabled) {
+        if (!pmd_alb->rebalance_poll_timer) {
+            pmd_alb->rebalance_poll_timer = now;
+        } else if ((pmd_alb->rebalance_poll_timer +
+                   pmd_alb->rebalance_intvl) < now) {
+            pmd_alb->rebalance_poll_timer = now;
+            CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+                if (atomic_count_get(&pmd->pmd_overloaded) >=
+                                    PMD_RXQ_INTERVAL_MAX) {
+                    pmd_rebalance = true;
+                    break;
+                }
+            }
+
+            if (pmd_rebalance &&
+                !dp_netdev_is_reconf_required(dp) &&
+                !ports_require_restart(dp) &&
+                pmd_rebalance_dry_run(dp)) {
+
+                ovs_mutex_lock(&dp_netdev_mutex);
+                VLOG_DBG("pmd_auto_lb: Invoking datapath reconfigure");
+                dp_netdev_request_reconfigure(dp);
+                ovs_mutex_unlock(&dp_netdev_mutex);
+            }
+        }
     }
 
     if (dp_netdev_is_reconf_required(dp) || ports_require_restart(dp)) {
@@ -4979,6 +5314,8 @@ pmd_thread_main(void *f_)
 reload:
     pmd_alloc_static_tx_qid(pmd);
 
+    atomic_count_init(&pmd->pmd_overloaded, 0);
+
     /* List port/core affinity */
     for (i = 0; i < poll_cnt; i++) {
        VLOG_DBG("Core %d processing port \'%s\' with queue-id %d\n",
@@ -4986,6 +5323,10 @@ reload:
                 netdev_rxq_get_queue_id(poll_list[i].rxq->rx));
        /* Reset the rxq current cycles counter. */
        dp_netdev_rxq_set_cycles(poll_list[i].rxq, RXQ_CYCLES_PROC_CURR, 0);
+
+       for (unsigned j = 0; j < PMD_RXQ_INTERVAL_MAX; j++) {
+            dp_netdev_rxq_set_intrvl_cycles(poll_list[i].rxq, 0, j);
+       }
     }
 
     if (!poll_cnt) {
@@ -7188,17 +7529,48 @@ dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
                            struct polled_queue *poll_list, int poll_cnt)
 {
     struct dpcls *cls;
+    uint64_t tot_idle = 0, tot_proc = 0;
+    unsigned int idx;
+    unsigned int pmd_load = 0;
 
     if (pmd->ctx.now > pmd->rxq_next_cycle_store) {
         uint64_t curr_tsc;
+        struct pmd_auto_lb * pmd_alb = &pmd->dp->pmd_alb;
+        if (pmd_alb->is_enabled && !pmd->isolated) {
+            tot_idle = pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE] -
+                       pmd->prev_stats[PMD_CYCLES_ITER_IDLE];
+            tot_proc = pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY] -
+                       pmd->prev_stats[PMD_CYCLES_ITER_BUSY];
+
+            if (tot_proc) {
+                pmd_load = ((tot_proc * 100) / (tot_idle + tot_proc));
+            }
+
+            if (pmd_load >= ALB_PMD_LOAD_THRESHOLD) {
+                atomic_count_inc(&pmd->pmd_overloaded);
+            } else {
+                atomic_count_set(&pmd->pmd_overloaded, 0);
+            }
+        }
+
+        pmd->prev_stats[PMD_CYCLES_ITER_IDLE] =
+                        pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE];
+        pmd->prev_stats[PMD_CYCLES_ITER_BUSY] =
+                        pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY];
+
         /* Get the cycles that were used to process each queue and store. */
         for (unsigned i = 0; i < poll_cnt; i++) {
-            uint64_t rxq_cyc_curr = dp_netdev_rxq_get_cycles(poll_list[i].rxq,
-                                                        RXQ_CYCLES_PROC_CURR);
-            dp_netdev_rxq_set_intrvl_cycles(poll_list[i].rxq, rxq_cyc_curr);
-            dp_netdev_rxq_set_cycles(poll_list[i].rxq, RXQ_CYCLES_PROC_CURR,
-                                     0);
+            uint64_t rxq_cyc_curr;
+            struct dp_netdev_rxq *rxq;
+
+            rxq = poll_list[i].rxq;
+            idx = rxq->intrvl_idx++ % PMD_RXQ_INTERVAL_MAX;
+
+            rxq_cyc_curr = dp_netdev_rxq_get_cycles(rxq, RXQ_CYCLES_PROC_CURR);
+            dp_netdev_rxq_set_intrvl_cycles(rxq, rxq_cyc_curr, idx);
+            dp_netdev_rxq_set_cycles(rxq, RXQ_CYCLES_PROC_CURR, 0);
         }
+
         curr_tsc = cycles_counter_update(&pmd->perf_stats);
         if (pmd->intrvl_tsc_prev) {
             /* There is a prev timestamp, store a new intrvl cycle count. */
