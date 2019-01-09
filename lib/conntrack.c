@@ -3255,10 +3255,9 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
             uint32_t tcp_ack = ntohl(get_16aligned_be32(&th->tcp_ack));
 
             if ((seq_skew > 0) && (tcp_ack < seq_skew)) {
-                /* Should not be possible; will be marked invalid. */
-                tcp_ack = 0;
+                tcp_ack = UINT32_MAX - (seq_skew - tcp_ack - 1);
             } else if ((seq_skew < 0) && (UINT32_MAX - tcp_ack < -seq_skew)) {
-                tcp_ack = (-seq_skew) - (UINT32_MAX - tcp_ack);
+                tcp_ack = (-seq_skew) - (UINT32_MAX - tcp_ack) - 1;
             } else {
                 tcp_ack -= seq_skew;
             }
@@ -3267,10 +3266,9 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
         } else {
             uint32_t tcp_seq = ntohl(get_16aligned_be32(&th->tcp_seq));
             if ((seq_skew > 0) && (UINT32_MAX - tcp_seq < seq_skew)) {
-                tcp_seq = seq_skew - (UINT32_MAX - tcp_seq);
+                tcp_seq = seq_skew - (UINT32_MAX - tcp_seq) - 1;
             } else if ((seq_skew < 0) && (tcp_seq < -seq_skew)) {
-                /* Should not be possible; will be marked invalid. */
-                tcp_seq = 0;
+                tcp_seq = UINT32_MAX - ((-seq_skew) - tcp_seq - 1);
             } else {
                 tcp_seq += seq_skew;
             }
