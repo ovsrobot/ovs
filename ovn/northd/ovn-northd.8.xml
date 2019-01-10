@@ -113,6 +113,26 @@
         logical ports on which port security is not enabled, these advance all
         packets that match the <code>inport</code>.
       </li>
+
+      <li>
+        <p>
+          For each logical port of type <code>external</code> with port
+          security enabled and the logical switch to which it belongs, has a
+          localnet port, a priority 90 flow is added which matches on the
+          <code>inport</code> of localnet port and the valid
+          <code>eth.src</code> address(es) of the <code>external</code>
+          logical port and sets the <code>REGBIT_EXT_PORT_NOT_RESIDENT</code>
+          flag if the logical port doesn't reside on a chassis and advances the
+          packet to the next flow table.
+        </p>
+
+        <p>
+          On the chassis where the <code>external</code> port resides doesn't
+          add the above flow. The priority 50 flow with the match on the
+          <code>inport</code> of the localnet port takes care of forwarding
+          the packet to the next flow table.
+        </p>
+      </li>
     </ul>
 
     <p>
@@ -626,7 +646,8 @@ nd_na_router {
     <p>
       This table adds the DHCPv4 options to a DHCPv4 packet from the
       logical ports configured with IPv4 address(es) and DHCPv4 options,
-      and similarly for DHCPv6 options.
+      and similarly for DHCPv6 options. This table also adds flows for the
+      logical ports of type <code>external</code>.
     </p>
 
     <ul>
@@ -827,7 +848,34 @@ output;
       </li>
     </ul>
 
-    <h3>Ingress Table 16 Destination Lookup</h3>
+    <h3>Ingress table 16 External ports</h3>
+
+    <p>
+      Traffic from the <code>external</code> logical ports enter the ingress
+      datapath pipeline via the <code>localnet</code> port. This table adds the
+      below logical flows to handle the traffic from these ports.
+    </p>
+
+    <ul>
+      <li>
+        <p>
+          For each router port IP address <code>A</code> which belongs to the
+          logical switch, A priority-100 flow is added which matches
+          <code>REGBIT_EXT_PORT_NOT_RESIDENT &amp;&amp; arp.tpa == <var>A</var>
+          &amp;&amp; arp.op == 1</code> (ARP request to the router
+          IP) with the action to <code>drop</code> the packet.
+        </p>
+
+        <p>
+          These flows guarantees that the ARP/NS request to the router IP
+          address from the external ports is responded by only the chassis
+          which has claimed these external ports. All the other chassis,
+          drops these packets.
+        </p>
+      </li>
+    </ul>
+
+    <h3>Ingress Table 17 Destination Lookup</h3>
 
     <p>
       This table implements switching behavior.  It contains these logical

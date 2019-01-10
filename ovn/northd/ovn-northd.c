@@ -119,7 +119,8 @@ enum ovn_stage {
     PIPELINE_STAGE(SWITCH, IN,  DHCP_RESPONSE, 13, "ls_in_dhcp_response") \
     PIPELINE_STAGE(SWITCH, IN,  DNS_LOOKUP,    14, "ls_in_dns_lookup")    \
     PIPELINE_STAGE(SWITCH, IN,  DNS_RESPONSE,  15, "ls_in_dns_response")  \
-    PIPELINE_STAGE(SWITCH, IN,  L2_LKUP,       16, "ls_in_l2_lkup")       \
+    PIPELINE_STAGE(SWITCH, IN,  EXTERNAL_PORT, 16, "ls_in_external_port") \
+    PIPELINE_STAGE(SWITCH, IN,  L2_LKUP,       17, "ls_in_l2_lkup")       \
                                                                           \
     /* Logical switch egress stages. */                                   \
     PIPELINE_STAGE(SWITCH, OUT, PRE_LB,       0, "ls_out_pre_lb")         \
@@ -166,12 +167,13 @@ enum ovn_stage {
 #define OVN_ACL_PRI_OFFSET 1000
 
 /* Register definitions specific to switches. */
-#define REGBIT_CONNTRACK_DEFRAG  "reg0[0]"
-#define REGBIT_CONNTRACK_COMMIT  "reg0[1]"
-#define REGBIT_CONNTRACK_NAT     "reg0[2]"
-#define REGBIT_DHCP_OPTS_RESULT  "reg0[3]"
-#define REGBIT_DNS_LOOKUP_RESULT "reg0[4]"
-#define REGBIT_ND_RA_OPTS_RESULT "reg0[5]"
+#define REGBIT_CONNTRACK_DEFRAG         "reg0[0]"
+#define REGBIT_CONNTRACK_COMMIT         "reg0[1]"
+#define REGBIT_CONNTRACK_NAT            "reg0[2]"
+#define REGBIT_DHCP_OPTS_RESULT         "reg0[3]"
+#define REGBIT_DNS_LOOKUP_RESULT        "reg0[4]"
+#define REGBIT_ND_RA_OPTS_RESULT        "reg0[5]"
+#define REGBIT_EXT_PORT_NOT_RESIDENT    "reg0[6]"
 
 /* Register definitions for switches and routers. */
 #define REGBIT_NAT_REDIRECT     "reg9[0]"
@@ -453,6 +455,8 @@ struct ovn_datapath {
 
     /* Port groups related to the datapath, used only when nbs is NOT NULL. */
     struct hmap nb_pgs;
+
+    bool has_external_ports;
 };
 
 struct macam_node {
@@ -1645,6 +1649,10 @@ join_logical_ports(struct northd_context *ctx,
 
                 if (!strcmp(nbsp->type, "localnet")) {
                    od->localnet_port = op;
+                }
+
+                if (!strcmp(nbsp->type, "external")) {
+                   od->has_external_ports = true;
                 }
 
                 op->lsp_addrs
@@ -2943,6 +2951,12 @@ lsp_is_up(const struct nbrec_logical_switch_port *lsp)
 }
 
 static bool
+lsp_is_external(const struct nbrec_logical_switch_port *nbsp)
+{
+    return !strcmp(nbsp->type, "external");
+}
+
+static bool
 build_dhcpv4_action(struct ovn_port *op, ovs_be32 offer_ip,
                     struct ds *options_action, struct ds *response_action,
                     struct ds *ipv4_addr_match)
@@ -4123,9 +4137,24 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
             continue;
         }
 
+        bool is_external = lsp_is_external(op->nbsp);
+        if (is_external && (!op->od->localnet_port || !op->n_ps_addrs)) {
+            /* If the lsp is external with no port securty addresses then,
+             * we don't need to add any port security rules.
+             * The packets from external ports is received on localnet port
+             * and we allow the traffic from localnet ports.
+             *
+             * We also need to ignore these ports if the logical switch
+             * doesn't have a localnet port.
+             */
+            continue;
+        }
+
         ds_clear(&match);
         ds_clear(&actions);
-        ds_put_format(&match, "inport == %s", op->json_key);
+        ds_put_format(
+            &match, "inport == %s",
+            is_external ? op->od->localnet_port->json_key : op->json_key);
         build_port_security_l2("eth.src", op->ps_addrs, op->n_ps_addrs,
                                &match);
 
@@ -4133,11 +4162,21 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         if (queue_id) {
             ds_put_format(&actions, "set_queue(%s); ", queue_id);
         }
+
+        if (is_external) {
+            /* Set REGBIT_EXT_PORT_NOT_RESIDENT bit if the external port
+             * doesn't reside on a chassis. */
+            ds_put_format(&match, " && !is_chassis_resident(%s)",
+                          op->json_key);
+            ds_put_cstr(&actions, REGBIT_EXT_PORT_NOT_RESIDENT" = 1; ");
+        }
+
         ds_put_cstr(&actions, "next;");
-        ovn_lflow_add(lflows, op->od, S_SWITCH_IN_PORT_SEC_L2, 50,
+        ovn_lflow_add(lflows, op->od, S_SWITCH_IN_PORT_SEC_L2,
+                      is_external ? 90 : 50,
                       ds_cstr(&match), ds_cstr(&actions));
 
-        if (op->nbsp->n_port_security) {
+        if (op->nbsp->n_port_security && !is_external) {
             build_port_security_ip(P_IN, op, lflows);
             build_port_security_nd(op, lflows);
         }
@@ -4185,7 +4224,7 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
          *  - port type is localport
          */
         if (!lsp_is_up(op->nbsp) && strcmp(op->nbsp->type, "router") &&
-            strcmp(op->nbsp->type, "localport")) {
+            strcmp(op->nbsp->type, "localport") && lsp_is_external(op->nbsp)) {
             continue;
         }
 
@@ -4297,6 +4336,13 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
             continue;
         }
 
+        bool is_external = lsp_is_external(op->nbsp);
+        if (is_external && !op->od->localnet_port) {
+            /* If it's an external port and there is no localnet port
+             * ignore it. */
+            continue;
+        }
+
         for (size_t i = 0; i < op->n_lsp_addrs; i++) {
             for (size_t j = 0; j < op->lsp_addrs[i].n_ipv4_addrs; j++) {
                 struct ds options_action = DS_EMPTY_INITIALIZER;
@@ -4309,8 +4355,8 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     ds_put_format(
                         &match, "inport == %s && eth.src == %s && "
                         "ip4.src == 0.0.0.0 && ip4.dst == 255.255.255.255 && "
-                        "udp.src == 68 && udp.dst == 67", op->json_key,
-                        op->lsp_addrs[i].ea_s);
+                        "udp.src == 68 && udp.dst == 67",
+                        op->json_key, op->lsp_addrs[i].ea_s);
 
                     ovn_lflow_add(lflows, op->od, S_SWITCH_IN_DHCP_OPTIONS,
                                   100, ds_cstr(&match),
@@ -4415,7 +4461,8 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
     /* Ingress table 12 and 13: DHCP options and response, by default goto
      * next. (priority 0).
      * Ingress table 14 and 15: DNS lookup and response, by default goto next.
-     * (priority 0).*/
+     * (priority 0).
+     * Ingress table 16 - External port handling */
 
     HMAP_FOR_EACH (od, key_node, datapaths) {
         if (!od->nbs) {
@@ -4426,9 +4473,47 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         ovn_lflow_add(lflows, od, S_SWITCH_IN_DHCP_RESPONSE, 0, "1", "next;");
         ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_LOOKUP, 0, "1", "next;");
         ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_RESPONSE, 0, "1", "next;");
+        ovn_lflow_add(lflows, od, S_SWITCH_IN_EXTERNAL_PORT, 0, "1", "next;");
+
+        if (od->has_external_ports) {
+            /* Table 16: External port. Drop ARP request for router ips from
+             * external ports if REGBIT_EXT_PORT_NOT_RESIDENT is set.
+             * This makes the router pipeline to be run only the chassis
+             * binding the external ports. */
+            for (size_t i = 0; i < od->n_router_ports; i++) {
+                struct ovn_port *rp = od->router_ports[i];
+                for (size_t j = 0; j < rp->n_lsp_addrs; j++) {
+                    for (size_t k = 0; k < rp->lsp_addrs[j].n_ipv4_addrs;
+                         k++) {
+                        ds_clear(&match);
+                        ds_put_format(
+                            &match, REGBIT_EXT_PORT_NOT_RESIDENT""
+                            " && arp.tpa == %s && arp.op == 1",
+                            rp->lsp_addrs[j].ipv4_addrs[k].addr_s);
+                        ds_clear(&actions);
+                        ovn_lflow_add(lflows, od, S_SWITCH_IN_EXTERNAL_PORT,
+                                      100, ds_cstr(&match), "drop;");
+                    }
+                    for (size_t k = 0; k < rp->lsp_addrs[j].n_ipv6_addrs;
+                         k++) {
+                        ds_clear(&match);
+                        ds_put_format(
+                            &match, REGBIT_EXT_PORT_NOT_RESIDENT""
+                            " && nd_ns && ip6.dst == {%s, %s} && "
+                            "nd.target == %s",
+                            rp->lsp_addrs[j].ipv6_addrs[k].addr_s,
+                            rp->lsp_addrs[j].ipv6_addrs[k].sn_addr_s,
+                            rp->lsp_addrs[j].ipv6_addrs[k].addr_s);
+                        ds_clear(&actions);
+                        ovn_lflow_add(lflows, od, S_SWITCH_IN_EXTERNAL_PORT,
+                                      100, ds_cstr(&match), "drop;");
+                    }
+                }
+            }
+        }
     }
 
-    /* Ingress table 16: Destination lookup, broadcast and multicast handling
+    /* Ingress table 17: Destination lookup, broadcast and multicast handling
      * (priority 100). */
     HMAP_FOR_EACH (op, key_node, ports) {
         if (!op->nbsp) {
@@ -4448,9 +4533,9 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                       "outport = \""MC_FLOOD"\"; output;");
     }
 
-    /* Ingress table 16: Destination lookup, unicast handling (priority 50), */
+    /* Ingress table 17: Destination lookup, unicast handling (priority 50), */
     HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbsp) {
+        if (!op->nbsp || lsp_is_external(op->nbsp)) {
             continue;
         }
 
@@ -4567,7 +4652,7 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         }
     }
 
-    /* Ingress table 16: Destination lookup for unknown MACs (priority 0). */
+    /* Ingress table 17: Destination lookup for unknown MACs (priority 0). */
     HMAP_FOR_EACH (od, key_node, datapaths) {
         if (!od->nbs) {
             continue;
@@ -4602,7 +4687,7 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
      * Priority 150 rules drop packets to disabled logical ports, so that they
      * don't even receive multicast or broadcast packets. */
     HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbsp) {
+        if (!op->nbsp || lsp_is_external(op->nbsp)) {
             continue;
         }
 
