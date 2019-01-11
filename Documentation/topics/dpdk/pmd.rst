@@ -183,3 +183,44 @@ or can be triggered by using::
    In addition, the output of ``pmd-rxq-show`` was modified to include
    Rx queue utilization of the PMD as a percentage. Prior to this, tracking of
    stats was not available.
+
+Automatic assignment of Port/Rx Queue to PMD Threads (experimental)
+-------------------------------------------------------------------
+
+Cycle or utilization based allocation of Rx queues to PMDs gives efficient
+load distribution but it is not adaptive to change in traffic pattern occuring
+over the time. This causes uneven load among the PMDs which results in overall
+lower throughput.
+
+To address this automatic load balancing of PMDs can be set by::
+
+    $ ovs-vsctl set open_vswitch . other_config:pmd-auto-lb="true"
+
+If pmd-auto-lb is set to true AND cycle based assignment is enabled then auto
+load balancing of PMDs is enabled provided there are 2 or more non-isolated
+PMDs and at least one of these PMDs is polling more than one RX queue.
+
+Once auto load balancing is set, each non-isolated PMD measures the processing
+load for each of its associated queues every 10 seconds. If the aggregated PMD
+load reaches 95% for 6 consecutive intervals then PMD considers itself to be
+overloaded.
+
+If any PMD is overloaded, a dry-run of the PMD assignment algorithm is
+performed by OVS main thread. The dry-run does NOT change the existing queue
+to PMD assignments.
+
+If the resultant mapping of dry-run indicates an improved distribution of the
+load then the actual reassignment will be performed.
+
+The minimum time between 2 consecutive PMD auto load balancing iterations can
+also be configured by::
+
+    $ ovs-vsctl set open_vswitch .\
+        other_config:pmd-auto-lb-rebal-interval="<interval>"
+
+where ``<interval>`` is a value in minutes. The default interval is 1 minute
+and setting it to 0 will also result in default value i.e. 1 min.
+
+A user can use this option to avoid frequent trigger of auto load balancing of
+PMDs. For e.g. set this (in min) such that it occurs once in few hours or a day
+or a week.
