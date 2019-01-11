@@ -422,72 +422,108 @@ enum ovs_frag_type {
 
 #define OVS_FRAG_TYPE_MAX (__OVS_FRAG_TYPE_MAX - 1)
 
+#define OVS_KEY_FIELD_ARR(type, name, elements) type name[elements];
+#define OVS_KEY_FIELD(type, name) type name;
+
+#define OVS_KEY_ETHERNET_FIELDS \
+    OVS_KEY_FIELD_ARR(__u8, eth_src, ETH_ALEN) \
+    OVS_KEY_FIELD_ARR(__u8, eth_dst, ETH_ALEN)
+
 struct ovs_key_ethernet {
-	__u8	 eth_src[ETH_ALEN];
-	__u8	 eth_dst[ETH_ALEN];
+    OVS_KEY_ETHERNET_FIELDS
 };
 
 struct ovs_key_mpls {
 	__be32 mpls_lse;
 };
 
+#define OVS_KEY_IPV4_FIELDS \
+    OVS_KEY_FIELD(__be32, ipv4_src) \
+    OVS_KEY_FIELD(__be32, ipv4_dst) \
+    OVS_KEY_FIELD(__u8, ipv4_proto) \
+    OVS_KEY_FIELD(__u8, ipv4_tos) \
+    OVS_KEY_FIELD(__u8, ipv4_ttl) \
+    OVS_KEY_FIELD(__u8, ipv4_frag /* One of OVS_FRAG_TYPE_*. */)
+
 struct ovs_key_ipv4 {
-	__be32 ipv4_src;
-	__be32 ipv4_dst;
-	__u8   ipv4_proto;
-	__u8   ipv4_tos;
-	__u8   ipv4_ttl;
-	__u8   ipv4_frag;	/* One of OVS_FRAG_TYPE_*. */
+    OVS_KEY_IPV4_FIELDS
 };
+
+#define OVS_KEY_IPV6_FIELDS \
+    OVS_KEY_FIELD_ARR(__be32, ipv6_src, 4) \
+    OVS_KEY_FIELD_ARR(__be32, ipv6_dst, 4) \
+    OVS_KEY_FIELD(__be32, ipv6_label /* 20-bits in least-significant bits. */) \
+    OVS_KEY_FIELD(__u8, ipv6_proto) \
+    OVS_KEY_FIELD(__u8, ipv6_tclass) \
+    OVS_KEY_FIELD(__u8, ipv6_hlimit) \
+    OVS_KEY_FIELD(__u8, ipv6_frag /* One of OVS_FRAG_TYPE_*. */)
 
 struct ovs_key_ipv6 {
-	__be32 ipv6_src[4];
-	__be32 ipv6_dst[4];
-	__be32 ipv6_label;	/* 20-bits in least-significant bits. */
-	__u8   ipv6_proto;
-	__u8   ipv6_tclass;
-	__u8   ipv6_hlimit;
-	__u8   ipv6_frag;	/* One of OVS_FRAG_TYPE_*. */
+    OVS_KEY_IPV6_FIELDS
 };
+
+#define OVS_KEY_TCP_FIELDS \
+    OVS_KEY_FIELD(__be16, tcp_src) \
+    OVS_KEY_FIELD(__be16, tcp_dst)
 
 struct ovs_key_tcp {
-	__be16 tcp_src;
-	__be16 tcp_dst;
+    OVS_KEY_TCP_FIELDS
 };
+
+#define OVS_KEY_UDP_FIELDS \
+    OVS_KEY_FIELD(__be16, udp_src) \
+    OVS_KEY_FIELD(__be16, udp_dst)
 
 struct ovs_key_udp {
-	__be16 udp_src;
-	__be16 udp_dst;
+    OVS_KEY_UDP_FIELDS
 };
+
+#define OVS_KEY_SCTP_FIELDS \
+    OVS_KEY_FIELD(__be16, sctp_src) \
+    OVS_KEY_FIELD(__be16, sctp_dst)
 
 struct ovs_key_sctp {
-	__be16 sctp_src;
-	__be16 sctp_dst;
+    OVS_KEY_SCTP_FIELDS
 };
+
+#define OVS_KEY_ICMP_FIELDS \
+    OVS_KEY_FIELD(__u8, icmp_type) \
+    OVS_KEY_FIELD(__u8, icmp_code)
 
 struct ovs_key_icmp {
-	__u8 icmp_type;
-	__u8 icmp_code;
+    OVS_KEY_ICMP_FIELDS
 };
+
+#define OVS_KEY_ICMPV6_FIELDS \
+    OVS_KEY_FIELD(__u8, icmpv6_type) \
+    OVS_KEY_FIELD(__u8, icmpv6_code)
 
 struct ovs_key_icmpv6 {
-	__u8 icmpv6_type;
-	__u8 icmpv6_code;
+    OVS_KEY_ICMPV6_FIELDS
 };
+
+#define OVS_KEY_ARP_FIELDS \
+    OVS_KEY_FIELD(__be32, arp_sip) \
+    OVS_KEY_FIELD(__be32, arp_tip) \
+    OVS_KEY_FIELD(__be16, arp_op) \
+    OVS_KEY_FIELD_ARR(__u8, arp_sha, ETH_ALEN) \
+    OVS_KEY_FIELD_ARR(__u8, arp_tha, ETH_ALEN)
 
 struct ovs_key_arp {
-	__be32 arp_sip;
-	__be32 arp_tip;
-	__be16 arp_op;
-	__u8   arp_sha[ETH_ALEN];
-	__u8   arp_tha[ETH_ALEN];
+    OVS_KEY_ARP_FIELDS
 };
 
+#define OVS_KEY_ND_FIELDS \
+    OVS_KEY_FIELD_ARR(__be32, nd_target, 4) \
+    OVS_KEY_FIELD_ARR(__u8, nd_sll, ETH_ALEN) \
+    OVS_KEY_FIELD_ARR(__u8, nd_tll, ETH_ALEN)
+
 struct ovs_key_nd {
-	__be32	nd_target[4];
-	__u8	nd_sll[ETH_ALEN];
-	__u8	nd_tll[ETH_ALEN];
+    OVS_KEY_ND_FIELDS
 };
+
+#undef OVS_KEY_FIELD_ARR
+#undef OVS_KEY_FIELD
 
 #define OVS_CT_LABELS_LEN_32	4
 #define OVS_CT_LABELS_LEN	(OVS_CT_LABELS_LEN_32 * sizeof(__u32))
