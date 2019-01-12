@@ -1932,6 +1932,10 @@ netdev_dpdk_rxq_dealloc(struct netdev_rxq *rxq)
 
 /* Tries to transmit 'pkts' to txq 'qid' of device 'dev'.  Takes ownership of
  * 'pkts', even in case of failure.
+ * In case multi-segment mbufs / TSO is being used, it also prepares. In such
+ * cases, only the prepared packets will be sent to Tx burst, meaning that if
+ * an invalid packet appears in 'pkts'[3] only the validated packets in indices
+ * 0, 1 and 2 will be sent.
  *
  * Returns the number of packets that weren't transmitted. */
 static inline int
@@ -1939,11 +1943,24 @@ netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
                          struct rte_mbuf **pkts, int cnt)
 {
     uint32_t nb_tx = 0;
+    uint16_t nb_prep = cnt;
 
-    while (nb_tx != cnt) {
+    /* If multi-segments is enabled, validate the burst of packets for Tx. */
+    if (OVS_UNLIKELY(dpdk_multi_segment_mbufs)) {
+        nb_prep = rte_eth_tx_prepare(dev->port_id, qid, pkts, cnt);
+        if (nb_prep != cnt) {
+            VLOG_WARN_RL(&rl, "%s: Preparing packet tx burst failed (%u/%u "
+                         "packets valid): %s", dev->up.name, nb_prep, cnt,
+                         rte_strerror(rte_errno));
+        }
+    }
+
+    /* Tx the validated burst of packets only. */
+    while (nb_tx != nb_prep) {
         uint32_t ret;
 
-        ret = rte_eth_tx_burst(dev->port_id, qid, pkts + nb_tx, cnt - nb_tx);
+        ret = rte_eth_tx_burst(dev->port_id, qid, pkts + nb_tx,
+                               nb_prep - nb_tx);
         if (!ret) {
             break;
         }
