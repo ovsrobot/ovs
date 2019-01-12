@@ -133,6 +133,10 @@ static inline void *dp_packet_at(const struct dp_packet *, size_t offset,
                                  size_t size);
 static inline void *dp_packet_at_assert(const struct dp_packet *,
                                         size_t offset, size_t size);
+#ifdef DPDK_NETDEV
+static inline const struct rte_mbuf *
+dp_packet_mbuf_from_offset(const struct dp_packet *b, size_t *offset);
+#endif
 static inline void *dp_packet_tail(const struct dp_packet *);
 static inline void *dp_packet_end(const struct dp_packet *);
 
@@ -181,13 +185,28 @@ dp_packet_delete(struct dp_packet *b)
 }
 
 /* If 'b' contains at least 'offset + size' bytes of data, returns a pointer to
- * byte 'offset'.  Otherwise, returns a null pointer. */
+ * byte 'offset'.  Otherwise, returns a null pointer. For DPDK packets, this
+ * means the 'offset' + 'size' must fall within the same mbuf (not necessarily
+ * the first mbuf), otherwise null is returned */
 static inline void *
 dp_packet_at(const struct dp_packet *b, size_t offset, size_t size)
 {
-    return offset + size <= dp_packet_size(b)
-           ? (char *) dp_packet_data(b) + offset
-           : NULL;
+    if (offset + size > dp_packet_size(b)) {
+        return NULL;
+    }
+
+#ifdef DPDK_NETDEV
+    if (b->source == DPBUF_DPDK) {
+        const struct rte_mbuf *mbuf = dp_packet_mbuf_from_offset(b, &offset);
+
+        if (!mbuf || offset + size > mbuf->data_len) {
+            return NULL;
+        }
+
+        return rte_pktmbuf_mtod_offset(mbuf, char *, offset);
+    }
+#endif
+    return (char *) dp_packet_data(b) + offset;
 }
 
 /* Returns a pointer to byte 'offset' in 'b', which must contain at least
@@ -196,13 +215,23 @@ static inline void *
 dp_packet_at_assert(const struct dp_packet *b, size_t offset, size_t size)
 {
     ovs_assert(offset + size <= dp_packet_size(b));
-    return ((char *) dp_packet_data(b)) + offset;
+    return dp_packet_at(b, offset, size);
 }
 
 /* Returns a pointer to byte following the last byte of data in use in 'b'. */
 static inline void *
 dp_packet_tail(const struct dp_packet *b)
 {
+#ifdef DPDK_NETDEV
+    if (b->source == DPBUF_DPDK) {
+        struct rte_mbuf *buf = CONST_CAST(struct rte_mbuf *, &b->mbuf);
+        /* Find last segment where data ends, meaning the tail of the chained
+         *  mbufs must be there */
+        buf = rte_pktmbuf_lastseg(buf);
+
+        return rte_pktmbuf_mtod_offset(buf, void *, buf->data_len);
+    }
+#endif
     return (char *) dp_packet_data(b) + dp_packet_size(b);
 }
 
@@ -211,6 +240,15 @@ dp_packet_tail(const struct dp_packet *b)
 static inline void *
 dp_packet_end(const struct dp_packet *b)
 {
+#ifdef DPDK_NETDEV
+    if (b->source == DPBUF_DPDK) {
+        struct rte_mbuf *buf = CONST_CAST(struct rte_mbuf *, &(b->mbuf));
+
+        buf = rte_pktmbuf_lastseg(buf);
+
+        return (char *) buf->buf_addr + buf->buf_len;
+    }
+#endif
     return (char *) dp_packet_base(b) + dp_packet_get_allocated(b);
 }
 
@@ -236,6 +274,15 @@ dp_packet_tailroom(const struct dp_packet *b)
 static inline void
 dp_packet_clear(struct dp_packet *b)
 {
+#ifdef DPDK_NETDEV
+    if (b->source == DPBUF_DPDK) {
+        /* sets pkt_len and data_len to zero and frees unused mbufs */
+        dp_packet_set_size(b, 0);
+        rte_pktmbuf_reset(&b->mbuf);
+
+        return;
+    }
+#endif
     dp_packet_set_data(b, dp_packet_base(b));
     dp_packet_set_size(b, 0);
 }
@@ -248,8 +295,32 @@ dp_packet_pull(struct dp_packet *b, size_t size)
     void *data = dp_packet_data(b);
     ovs_assert(dp_packet_size(b) - dp_packet_l2_pad_size(b) >= size);
     dp_packet_set_data(b, (char *) dp_packet_data(b) + size);
-    dp_packet_set_size(b, dp_packet_size(b) - size);
+#ifdef DPDK_NETDEV
+    b->mbuf.pkt_len -= size;
+#else
+    b->size_ -= size;
+#endif
+
     return data;
+}
+
+/* Similar to dp_packet_try_pull() but doesn't actually pull any data, only
+ * checks if it could and returns 'true' or 'false', accordingly. For DPDK
+ * packets, 'true' is only returned in case the 'offset' + 'size' falls within
+ * the first mbuf, otherwise 'false' is returned */
+static inline bool
+dp_packet_may_pull(const struct dp_packet *b, uint16_t offset, size_t size)
+{
+    if (offset == UINT16_MAX) {
+        return false;
+    }
+#ifdef DPDK_NETDEV
+    /* Offset needs to be within the first mbuf */
+    if (offset + size > b->mbuf.data_len) {
+        return false;
+    }
+#endif
+    return (offset + size > dp_packet_size(b)) ? false : true;
 }
 
 /* If 'b' has at least 'size' bytes of data, removes that many bytes from the
@@ -258,15 +329,14 @@ dp_packet_pull(struct dp_packet *b, size_t size)
 static inline void *
 dp_packet_try_pull(struct dp_packet *b, size_t size)
 {
+#ifdef DPDK_NETDEV
+    if (!dp_packet_may_pull(b, 0, size)) {
+        return NULL;
+    }
+#endif
+
     return dp_packet_size(b) - dp_packet_l2_pad_size(b) >= size
         ? dp_packet_pull(b, size) : NULL;
-}
-
-static inline bool
-dp_packet_equal(const struct dp_packet *a, const struct dp_packet *b)
-{
-    return dp_packet_size(a) == dp_packet_size(b) &&
-           !memcmp(dp_packet_data(a), dp_packet_data(b), dp_packet_size(a));
 }
 
 static inline bool
@@ -355,10 +425,13 @@ dp_packet_set_l4(struct dp_packet *b, void *l4)
 static inline size_t
 dp_packet_l4_size(const struct dp_packet *b)
 {
-    return b->l4_ofs != UINT16_MAX
-        ? (const char *)dp_packet_tail(b) - (const char *)dp_packet_l4(b)
-        - dp_packet_l2_pad_size(b)
-        : 0;
+    if (!dp_packet_may_pull(b, b->l4_ofs, 0)) {
+        return 0;
+    }
+
+    size_t l4_size = dp_packet_size(b) - b->l4_ofs;
+
+    return l4_size - dp_packet_l2_pad_size(b);
 }
 
 static inline const void *
@@ -371,7 +444,8 @@ dp_packet_get_tcp_payload(const struct dp_packet *b)
         int tcp_len = TCP_OFFSET(tcp->tcp_ctl) * 4;
 
         if (OVS_LIKELY(tcp_len >= TCP_HEADER_LEN && tcp_len <= l4_size)) {
-            return (const char *)tcp + tcp_len;
+            tcp = dp_packet_at(b, b->l4_ofs, tcp_len);
+            return (tcp == NULL) ? NULL : tcp + tcp_len;
         }
     }
     return NULL;
@@ -407,6 +481,54 @@ dp_packet_get_nd_payload(const struct dp_packet *b)
 
 #ifdef DPDK_NETDEV
 BUILD_ASSERT_DECL(offsetof(struct dp_packet, mbuf) == 0);
+
+static inline const struct rte_mbuf *
+dp_packet_mbuf_from_offset(const struct dp_packet *b, size_t *offset) {
+    const struct rte_mbuf *mbuf = &b->mbuf;
+    while (mbuf && *offset >= mbuf->data_len) {
+        *offset -= mbuf->data_len;
+
+        mbuf = mbuf->next;
+    }
+
+    return mbuf;
+}
+
+static inline bool
+dp_packet_equal(const struct dp_packet *a, const struct dp_packet *b)
+{
+    if (dp_packet_size(a) != dp_packet_size(b)) {
+        return false;
+    }
+
+    const struct rte_mbuf *m_a = NULL;
+    const struct rte_mbuf *m_b = NULL;
+    size_t abs_off_a = 0;
+    size_t abs_off_b = 0;
+    size_t len = 0;
+    while (m_a != NULL && m_b != NULL) {
+        size_t rel_off_a = abs_off_a;
+        size_t rel_off_b = abs_off_b;
+        m_a = dp_packet_mbuf_from_offset(a, &rel_off_a);
+        m_b = dp_packet_mbuf_from_offset(b, &rel_off_b);
+        if (!m_a || !m_b) {
+            break;
+        }
+
+        len = MIN(m_a->data_len - rel_off_a, m_b->data_len - rel_off_b);
+
+        if (memcmp(rte_pktmbuf_mtod_offset(m_a, char *, rel_off_a),
+                   rte_pktmbuf_mtod_offset(m_b, char *, rel_off_b),
+                   len)) {
+            return false;
+        }
+
+        abs_off_a += len;
+        abs_off_b += len;
+    }
+
+    return (!m_a && !m_b) ? true : false;
+}
 
 static inline void *
 dp_packet_base(const struct dp_packet *b)
@@ -534,7 +656,7 @@ __packet_set_data(struct dp_packet *b, uint16_t v)
 static inline uint16_t
 dp_packet_get_allocated(const struct dp_packet *b)
 {
-    return b->mbuf.buf_len;
+    return b->mbuf.nb_segs * b->mbuf.buf_len;
 }
 
 static inline void
@@ -632,6 +754,13 @@ dp_packet_has_flow_mark(struct dp_packet *p, uint32_t *mark)
 }
 
 #else /* DPDK_NETDEV */
+static inline bool
+dp_packet_equal(const struct dp_packet *a, const struct dp_packet *b)
+{
+    return dp_packet_size(a) == dp_packet_size(b) &&
+           !memcmp(dp_packet_data(a), dp_packet_data(b), dp_packet_size(a));
+}
+
 static inline void *
 dp_packet_base(const struct dp_packet *b)
 {
@@ -806,10 +935,9 @@ dp_packet_set_data(struct dp_packet *b, void *data)
 }
 
 static inline void
-dp_packet_reset_packet(struct dp_packet *b, int off)
+dp_packet_reset_packet(struct dp_packet *b, size_t off)
 {
-    dp_packet_set_size(b, dp_packet_size(b) - off);
-    dp_packet_set_data(b, ((unsigned char *) dp_packet_data(b) + off));
+    dp_packet_try_pull(b, off);
     dp_packet_reset_offsets(b);
 }
 
