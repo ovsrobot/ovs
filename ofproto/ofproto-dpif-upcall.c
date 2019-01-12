@@ -833,7 +833,10 @@ recv_upcalls(struct handler *handler)
         upcall->actions = dupcall->actions;
 
         pkt_metadata_from_flow(&dupcall->packet.md, flow);
-        flow_extract(&dupcall->packet, flow);
+        error = flow_extract(&dupcall->packet, flow);
+        if (error) {
+            goto cleanup;
+        }
 
         error = process_upcall(udpif, upcall,
                                &upcall->odp_actions, &upcall->wc);
@@ -1417,12 +1420,16 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
     case SFLOW_UPCALL:
         if (upcall->sflow) {
             struct dpif_sflow_actions sflow_actions;
+            struct dp_packet *p = CONST_CAST(struct dp_packet *, packet);
 
             memset(&sflow_actions, 0, sizeof sflow_actions);
 
             actions_len = dpif_read_actions(udpif, upcall, flow,
                                             upcall->type, &sflow_actions);
-            dpif_sflow_received(upcall->sflow, packet, flow,
+            /* Gather the whole data */
+            dp_packet_linearize(p);
+
+            dpif_sflow_received(upcall->sflow, p, flow,
                                 flow->in_port.odp_port, &upcall->cookie,
                                 actions_len > 0 ? &sflow_actions : NULL);
         }
@@ -1483,6 +1490,10 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
 
             const struct frozen_state *state = &recirc_node->state;
 
+            /* Gather the whole data */
+            struct dp_packet *p = CONST_CAST(struct dp_packet *, packet);
+            dp_packet_linearize(p);
+
             struct ofproto_async_msg *am = xmalloc(sizeof *am);
             *am = (struct ofproto_async_msg) {
                 .controller_id = cookie->controller.controller_id,
@@ -1490,9 +1501,9 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
                 .pin = {
                     .up = {
                         .base = {
-                            .packet = xmemdup(dp_packet_data(packet),
-                                              dp_packet_size(packet)),
-                            .packet_len = dp_packet_size(packet),
+                            .packet = xmemdup(dp_packet_data(p),
+                                              dp_packet_size(p)),
+                            .packet_len = dp_packet_size(p),
                             .reason = cookie->controller.reason,
                             .table_id = state->table_id,
                             .cookie = get_32aligned_be64(

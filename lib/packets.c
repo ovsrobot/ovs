@@ -1007,12 +1007,18 @@ packet_rh_present(struct dp_packet *packet, uint8_t *nexthdr)
     const struct ovs_16aligned_ip6_hdr *nh;
     size_t len;
     size_t remaining;
-    uint8_t *data = dp_packet_l3(packet);
+    uint8_t *data;
 
-    remaining = packet->l4_ofs - packet->l3_ofs;
+    remaining = dp_packet_l3h_size(packet);
     if (remaining < sizeof *nh) {
         return false;
     }
+
+    /* We will need the whole data for processing the headers below */
+    dp_packet_linearize(packet);
+
+    data = dp_packet_l3(packet);
+
     nh = ALIGNED_CAST(struct ovs_16aligned_ip6_hdr *, data);
     data += sizeof *nh;
     remaining -= sizeof *nh;
@@ -1254,12 +1260,12 @@ packet_set_sctp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 
     old_csum = get_16aligned_be32(&sh->sctp_csum);
     put_16aligned_be32(&sh->sctp_csum, 0);
-    old_correct_csum = crc32c((void *)sh, tp_len);
+    old_correct_csum = packet_crc32c(packet, packet->l4_ofs, tp_len);
 
     sh->sctp_src = src;
     sh->sctp_dst = dst;
 
-    new_csum = crc32c((void *)sh, tp_len);
+    new_csum = packet_crc32c(packet, packet->l4_ofs, tp_len);
     put_16aligned_be32(&sh->sctp_csum, old_csum ^ old_correct_csum ^ new_csum);
 }
 
@@ -1292,6 +1298,9 @@ packet_set_nd(struct dp_packet *packet, const struct in6_addr *target,
     if (OVS_UNLIKELY(bytes_remain < sizeof(*ns))) {
         return;
     }
+
+    /* To process neighbor discovery options, we need the whole packet */
+    dp_packet_linearize(packet);
 
     ns = dp_packet_l4(packet);
     opt = &ns->options[0];
@@ -1515,8 +1524,8 @@ compose_nd_ns(struct dp_packet *b, const struct eth_addr eth_src,
 
     ns->icmph.icmp6_cksum = 0;
     icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
-    ns->icmph.icmp6_cksum = csum_finish(
-        csum_continue(icmp_csum, ns, ND_MSG_LEN + ND_LLA_OPT_LEN));
+    ns->icmph.icmp6_cksum = csum_finish(packet_csum_continue(
+        b, icmp_csum, b->l4_ofs, ND_MSG_LEN + ND_LLA_OPT_LEN));
 }
 
 /* Compose an IPv6 Neighbor Discovery Neighbor Advertisement message. */
@@ -1546,8 +1555,8 @@ compose_nd_na(struct dp_packet *b,
 
     na->icmph.icmp6_cksum = 0;
     icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
-    na->icmph.icmp6_cksum = csum_finish(csum_continue(
-        icmp_csum, na, ND_MSG_LEN + ND_LLA_OPT_LEN));
+    na->icmph.icmp6_cksum = csum_finish(packet_csum_continue(
+        b, icmp_csum, b->l4_ofs, ND_MSG_LEN + ND_LLA_OPT_LEN));
 }
 
 /* Compose an IPv6 Neighbor Discovery Router Advertisement message with
@@ -1597,8 +1606,8 @@ compose_nd_ra(struct dp_packet *b,
 
     ra->icmph.icmp6_cksum = 0;
     uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
-    ra->icmph.icmp6_cksum = csum_finish(csum_continue(
-        icmp_csum, ra, RA_MSG_LEN + ND_LLA_OPT_LEN + mtu_opt_len));
+    ra->icmph.icmp6_cksum = csum_finish(packet_csum_continue(
+        b, icmp_csum, b->l4_ofs, RA_MSG_LEN + ND_LLA_OPT_LEN + mtu_opt_len));
 }
 
 /* Append an IPv6 Neighbor Discovery Prefix Information option to a
@@ -1627,8 +1636,8 @@ packet_put_ra_prefix_opt(struct dp_packet *b,
     struct ovs_ra_msg *ra = dp_packet_l4(b);
     ra->icmph.icmp6_cksum = 0;
     uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
-    ra->icmph.icmp6_cksum = csum_finish(csum_continue(
-        icmp_csum, ra, prev_l4_size + ND_PREFIX_OPT_LEN));
+    ra->icmph.icmp6_cksum = csum_finish(packet_csum_continue(
+        b, icmp_csum, b->l4_ofs, prev_l4_size + ND_PREFIX_OPT_LEN));
 }
 
 uint32_t
@@ -1679,6 +1688,69 @@ packet_csum_upperlayer6(const struct ovs_16aligned_ip6_hdr *ip6,
     return csum_finish(partial);
 }
 #endif
+
+/* Wrapper around csum_continue() that takes segmented packets into account,
+ * traversing the segments to read data appropriately if so.
+ *
+ * It adds the 'n' bytes in packet 'b', from 'offset', to the partial IP
+ * checksum 'partial' and returns the updated checksum. */
+uint32_t
+packet_csum_continue(const struct dp_packet *b, uint32_t partial,
+                     uint16_t offset, size_t n)
+{
+    char *ptr = NULL;
+    size_t rem = 0;
+    size_t size = 0;
+
+    while (n > 1) {
+        rem = dp_packet_read_data(b, offset, n, (void *)&ptr, NULL);
+
+        size = n - rem;
+        partial = csum_continue(partial, ptr, size);
+
+        offset += size;
+        n = rem;
+    }
+
+    return partial;
+}
+
+/* Wrapper around csum() that takes segmented packets into account, traversing
+ * the segments to read data appropriately if so.
+ *
+ * Returns the IP checksum of the 'n' bytes in packet 'b',
+ * starting in 'offset'. */
+ovs_be16
+packet_csum(const struct dp_packet *b, uint16_t offset, size_t n)
+{
+    return csum_finish(packet_csum_continue(b, 0, offset, n));
+}
+
+/* Wrapper around crc32c() that takes segmented packets into account,
+ * traversing the segments to read data appropriately if so.
+ *
+ * It returns the CRC32c checksum as per RFC4960, of the 'n' bytes in packet
+ * 'b', from 'offset'. */
+ovs_be32
+packet_crc32c(const struct dp_packet *b, uint16_t offset, size_t n)
+{
+    char *ptr = NULL;
+    size_t rem = 0;
+    size_t size = 0;
+    uint32_t partial = 0xffffffffL;
+
+    while (n > 1) {
+        rem = dp_packet_read_data(b, offset, n, (void *)&ptr, NULL);
+
+        size = n - rem;
+        partial = crc32c_continue(partial, (uint8_t *) ptr, size);
+
+        offset += size;
+        n = rem;
+    }
+
+    return crc32c_finish(partial);
+}
 
 void
 IP_ECN_set_ce(struct dp_packet *pkt, bool is_ipv6)

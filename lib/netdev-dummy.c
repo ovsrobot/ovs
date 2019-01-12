@@ -233,6 +233,9 @@ dummy_packet_stream_run(struct netdev_dummy *dev, struct dummy_packet_stream *s)
 
         ASSIGN_CONTAINER(txbuf_node, ovs_list_front(&s->txq), list_node);
         txbuf = txbuf_node->pkt;
+
+        dp_packet_linearize(txbuf);
+
         retval = stream_send(s->stream, dp_packet_data(txbuf), dp_packet_size(txbuf));
 
         if (retval > 0) {
@@ -1087,6 +1090,9 @@ netdev_dummy_send(struct netdev *netdev, int qid OVS_UNUSED,
 
     struct dp_packet *packet;
     DP_PACKET_BATCH_FOR_EACH(i, packet, batch) {
+        /* We need the whole data to send the packet on the device */
+        dp_packet_linearize(packet);
+
         const void *buffer = dp_packet_data(packet);
         size_t size = dp_packet_size(packet);
 

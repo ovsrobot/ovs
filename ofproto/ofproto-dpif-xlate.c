@@ -2975,6 +2975,13 @@ xlate_normal(struct xlate_ctx *ctx)
         && is_ip_any(flow)) {
         struct mcast_snooping *ms = ctx->xbridge->ms;
         struct mcast_group *grp = NULL;
+        struct dp_packet *p = CONST_CAST(struct dp_packet *,
+                                         ctx->xin->packet);
+
+        /* We will need the whole data for processing the packet below */
+        if (p) {
+            dp_packet_linearize(p);
+        }
 
         if (is_igmp(flow, wc)) {
             /*
@@ -3279,8 +3286,14 @@ process_special(struct xlate_ctx *ctx, const struct xport *xport)
     const struct flow *flow = &ctx->xin->flow;
     struct flow_wildcards *wc = ctx->wc;
     const struct xbridge *xbridge = ctx->xbridge;
-    const struct dp_packet *packet = ctx->xin->packet;
+    struct dp_packet *packet = CONST_CAST(struct dp_packet *,
+                                          ctx->xin->packet);
     enum slow_path_reason slow;
+
+    if (packet) {
+        /* Gather the whole data for further processing */
+        dp_packet_linearize(packet);
+    }
 
     if (!xport) {
         slow = 0;
@@ -3374,9 +3387,13 @@ compose_table_xlate(struct xlate_ctx *ctx, const struct xport *out_dev,
     struct xbridge *xbridge = out_dev->xbridge;
     struct ofpact_output output;
     struct flow flow;
+    int error;
 
     ofpact_init(&output.ofpact, OFPACT_OUTPUT, sizeof output);
-    flow_extract(packet, &flow);
+    error = flow_extract(packet, &flow);
+    if (error) {
+        return error;
+    }
     flow.in_port.ofp_port = out_dev->ofp_port;
     output.port = OFPP_TABLE;
     output.max_len = 0;
@@ -7604,10 +7621,14 @@ xlate_send_packet(const struct ofport_dpif *ofport, bool oam,
     uint64_t ofpacts_stub[1024 / 8];
     struct ofpbuf ofpacts;
     struct flow flow;
+    int error;
 
     ofpbuf_use_stack(&ofpacts, ofpacts_stub, sizeof ofpacts_stub);
+    error = flow_extract(packet, &flow);
+    if (error) {
+        return error;
+    }
     /* Use OFPP_NONE as the in_port to avoid special packet processing. */
-    flow_extract(packet, &flow);
     flow.in_port.ofp_port = OFPP_NONE;
 
     xport = xport_lookup(xcfg, ofport);

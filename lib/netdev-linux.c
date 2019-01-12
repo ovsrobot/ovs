@@ -1379,6 +1379,9 @@ netdev_linux_sock_batch_send(int sock, int ifindex,
 
     struct dp_packet *packet;
     DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        /* We need the whole data to send the packet on the device */
+        dp_packet_linearize(packet);
+
         iov[i].iov_base = dp_packet_data(packet);
         iov[i].iov_len = dp_packet_size(packet);
         mmsg[i].msg_hdr = (struct msghdr) { .msg_name = &sll,
@@ -1431,6 +1434,9 @@ netdev_linux_tap_batch_send(struct netdev *netdev_,
         size_t size = dp_packet_size(packet);
         ssize_t retval;
         int error;
+
+        /* We need the whole data to send the packet on the device */
+        dp_packet_linearize(packet);
 
         do {
             retval = write(netdev->tap_fd, dp_packet_data(packet), size);

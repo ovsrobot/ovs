@@ -68,7 +68,7 @@ extern int flow_vlan_limit;
     DIV_ROUND_UP(FLOW_U64_OFFREM(FIELD) + MEMBER_SIZEOF(struct flow, FIELD), \
                  sizeof(uint64_t))
 
-void flow_extract(struct dp_packet *, struct flow *);
+int flow_extract(struct dp_packet *, struct flow *);
 
 void flow_zero_wildcards(struct flow *, const struct flow_wildcards *);
 void flow_unwildcard_tp_ports(const struct flow *, struct flow_wildcards *);
@@ -539,7 +539,7 @@ struct pkt_metadata;
 /* The 'dst' must follow with buffer space for FLOW_U64S 64-bit units.
  * 'dst->map' is ignored on input and set on output to indicate which fields
  * were extracted. */
-void miniflow_extract(struct dp_packet *packet, struct miniflow *dst);
+int miniflow_extract(struct dp_packet *packet, struct miniflow *dst);
 void miniflow_map_init(struct miniflow *, const struct flow *);
 void flow_wc_map(const struct flow *, struct flowmap *);
 size_t miniflow_alloc(struct miniflow *dsts[], size_t n,

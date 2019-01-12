@@ -1318,6 +1318,11 @@ conntrack_execute(struct conntrack *ct, struct dp_packet_batch *pkt_batch,
     struct conn_lookup_ctx ctx;
 
     DP_PACKET_BATCH_FOR_EACH (i, packet, pkt_batch) {
+        /* Linearize the packet to ensure conntrack has the whole data */
+        if (!dp_packet_is_linear(packet)) {
+            dp_packet_linearize(packet);
+        }
+
         if (!conn_key_extract(ct, packet, dl_type, &ctx, zone)) {
             packet->md.ct_state = CS_INVALID;
             write_ct_md(packet, zone, NULL, NULL, NULL);
