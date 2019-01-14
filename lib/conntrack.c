@@ -3168,6 +3168,13 @@ repl_ftp_v6_addr(struct dp_packet *pkt, struct ct_addr v6_addr_rep,
     return overall_delta;
 }
 
+/* Increment/decrement a TCP sequence number. */
+static void
+adj_seqnum(ovs_16aligned_be32 *val, int32_t inc)
+{
+    put_16aligned_be32(val, htonl(ntohl(get_16aligned_be32(val)) + inc));
+}
+
 static void
 handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
                struct dp_packet *pkt,
@@ -3250,33 +3257,9 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
     struct tcp_header *th = dp_packet_l4(pkt);
 
     if (do_seq_skew_adj && seq_skew != 0) {
-        if (ctx->reply != conn_for_expectation->seq_skew_dir) {
-
-            uint32_t tcp_ack = ntohl(get_16aligned_be32(&th->tcp_ack));
-
-            if ((seq_skew > 0) && (tcp_ack < seq_skew)) {
-                /* Should not be possible; will be marked invalid. */
-                tcp_ack = 0;
-            } else if ((seq_skew < 0) && (UINT32_MAX - tcp_ack < -seq_skew)) {
-                tcp_ack = (-seq_skew) - (UINT32_MAX - tcp_ack);
-            } else {
-                tcp_ack -= seq_skew;
-            }
-            ovs_be32 new_tcp_ack = htonl(tcp_ack);
-            put_16aligned_be32(&th->tcp_ack, new_tcp_ack);
-        } else {
-            uint32_t tcp_seq = ntohl(get_16aligned_be32(&th->tcp_seq));
-            if ((seq_skew > 0) && (UINT32_MAX - tcp_seq < seq_skew)) {
-                tcp_seq = seq_skew - (UINT32_MAX - tcp_seq);
-            } else if ((seq_skew < 0) && (tcp_seq < -seq_skew)) {
-                /* Should not be possible; will be marked invalid. */
-                tcp_seq = 0;
-            } else {
-                tcp_seq += seq_skew;
-            }
-            ovs_be32 new_tcp_seq = htonl(tcp_seq);
-            put_16aligned_be32(&th->tcp_seq, new_tcp_seq);
-        }
+        ctx->reply != conn_for_expectation->seq_skew_dir ?
+            adj_seqnum(&th->tcp_ack, -conn_for_expectation->seq_skew) :
+            adj_seqnum(&th->tcp_seq, conn_for_expectation->seq_skew);
     }
 
     th->tcp_csum = 0;
