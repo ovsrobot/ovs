@@ -101,6 +101,10 @@ observed with pmd stats::
 For certain traffic profiles with many parallel flows, it's recommended to set
 ``N`` to '0' to achieve higher forwarding performance.
 
+It is also possible to enable/disable EMC on per-port basis using::
+
+    $ ovs-vsctl set interface <iface> other_config:emc-enable={true,false}
+
 For more information on the EMC refer to :doc:`/intro/install/dpdk` .
 
 
