@@ -2108,20 +2108,21 @@ parse_odp_push_nsh_action(const char *s, struct ofpbuf *actions)
             }
         }
         else if (nsh.mdtype == NSH_M_TYPE2) {
-            struct ofpbuf b;
+            struct ofpbuf *b;
             char buf[512];
             size_t mdlen, padding;
             if (ovs_scan_len(s, &n, "md2=0x%511[0-9a-fA-F]", buf)
                 && n/2 <= sizeof metadata) {
-                ofpbuf_use_stub(&b, metadata, sizeof metadata);
-                ofpbuf_put_hex(&b, buf, &mdlen);
+                b = ofpbuf_new_with_headroom(n / 2, 3);
+                ofpbuf_put_hex(b, buf, &mdlen);
                 /* Pad metadata to 4 bytes. */
                 padding = PAD_SIZE(mdlen, 4);
                 if (padding > 0) {
-                    ofpbuf_push_zeros(&b, padding);
+                    ofpbuf_push_zeros(b, padding);
                 }
                 md_size = mdlen + padding;
-                ofpbuf_uninit(&b);
+                memcpy(metadata, ofpbuf_at(b, 0, md_size), md_size);
+                ofpbuf_uninit(b);
                 continue;
             }
         }
