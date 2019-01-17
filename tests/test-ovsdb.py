@@ -430,6 +430,20 @@ def idl_set(idl, commands, step):
             sys.stdout.flush()
             txn.abort()
             return
+        elif name == "remote":
+            print("%03d: %s" % (step, idl.session_name()))
+            sys.stdout.flush()
+            txn.abort()
+            return
+        elif name == "leaderkill":
+            remotes = ','.join(idl.remotes())
+            command = 'ovsdb_cluster_kill_leader %s %s' \
+                % (remotes, idl.db_name())
+            os.system(command)
+            print("%03d: kill %s" % (step, idl.session_name()))
+            sys.stdout.flush()
+            txn.abort()
+            return
         elif name == "linktest":
             l1_0 = txn.insert(idl.tables["link1"])
             l1_0.i = 1
@@ -651,7 +665,6 @@ def do_idl(schema_file, remote, *commands):
             # Wait for update.
             while idl.change_seqno == seqno and not idl.run():
                 rpc.run()
-
                 poller = ovs.poller.Poller()
                 idl.wait(poller)
                 rpc.wait(poller)
