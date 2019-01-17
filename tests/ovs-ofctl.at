@@ -2999,7 +2999,7 @@ AT_CHECK([tail -1 stdout], [0],
 dnl Inbound web traffic with SYN bit without ACK or RST bits
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=50:54:00:00:00:07,dst=50:54:00:00:00:05),eth_type(0x0800),ipv4(src=192.168.0.2,dst=192.168.0.1,proto=6,tos=0,ttl=64,frag=no),tcp(src=80,dst=8),tcp_flags(0xfeb)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
-  [Datapath actions: drop
+  [Datapath actions: drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP

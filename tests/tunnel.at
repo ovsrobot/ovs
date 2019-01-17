@@ -102,10 +102,12 @@ Datapath actions: set(ipv4(tos=0x3/0x3)),2
 
 dnl Tunnel CE and encapsulated packet Non-ECT
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'tunnel(src=1.1.1.1,dst=2.2.2.2,tos=0x3,ttl=64,flags()),in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=6,tos=0,ttl=64,frag=no),tcp(src=8,dst=9)'], [0], [stdout])
-AT_CHECK([tail -2 stdout], [0],
+AT_CHECK([tail -3 stdout], [0],
   [Megaflow: recirc_id=0,eth,ip,tun_id=0,tun_src=1.1.1.1,tun_dst=2.2.2.2,tun_tos=3,tun_flags=-df-csum-key,in_port=1,nw_ecn=0,nw_frag=no
-Datapath actions: drop
+Datapath actions: drop:ecn mismatch at tunnel decapsulation
+Translation failed (CONGESTION DROP), packet is dropped.
 ])
+
 OVS_VSWITCHD_STOP(["/dropping tunnel packet marked ECN CE but is not ECN capable/d"])
 AT_CLEANUP
 
@@ -192,6 +194,15 @@ AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=6,tos=4,ttl=128,frag=no),tcp(src=8,dst=9)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
   [Datapath actions: set(tunnel(tun_id=0x5,src=2.2.2.2,dst=1.1.1.1,ttl=64,flags(df|key))),set(skb_mark(0x2)),1
+])
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p2 'aa55aa550001f8bc124434b6080045000054ba20000040018486010103580101037001004227e75400030af3195500000000f265010000000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f3031323334353637'])
+sleep 2
+
+AT_CHECK([
+ovs-appctl coverage/show | grep "dp_invalid_port_drop" | cut -d':' -f2|sed 's/ //'
+], [0], [dnl
+1
 ])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
@@ -364,7 +375,7 @@ Datapath actions: 4,3,5
 
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'tunnel(tun_id=0x0,src=1.1.1.1,dst=2.2.2.2,ttl=64,flags(key)),in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=6,tos=0,ttl=64,frag=no),tcp(src=8,dst=9)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0], [dnl
-Datapath actions: drop
+Datapath actions: drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP
@@ -571,7 +582,7 @@ dnl receive packet from ERSPAN port with wrong v1 metadata
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'recirc_id(0),tunnel(tun_id=0x1,src=1.1.1.1,dst=2.2.2.2,ttl=64,erspan(ver=1,idx=0xabcd),flags(df|key)),in_port(3),skb_mark(0),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(frag=no)'], [0], [stdout])
 AT_CHECK([tail -2 stdout], [0],
   [Megaflow: recirc_id=0,eth,ip,tun_id=0x1,tun_src=1.1.1.1,tun_dst=2.2.2.2,tun_tos=0,tun_erspan_ver=1,tun_erspan_idx=0xabcd,tun_flags=+df-csum+key,in_port=3,nw_frag=no
-Datapath actions: drop
+Datapath actions: drop:pipeline-drop
 ])
 
 dnl receive packet from ERSPAN port with v2 metadata
@@ -585,7 +596,7 @@ dnl receive packet from ERSPAN port with wrong v2 metadata
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'recirc_id(0),tunnel(tun_id=0x2,src=1.1.1.2,dst=2.2.2.2,ttl=64,erspan(ver=2,dir=0,hwid=0x17),flags(df|key)),in_port(3),skb_mark(0),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(frag=no)'], [0], [stdout])
 AT_CHECK([tail -2 stdout], [0],
   [Megaflow: recirc_id=0,eth,ip,tun_id=0x2,tun_src=1.1.1.2,tun_dst=2.2.2.2,tun_tos=0,tun_erspan_ver=2,tun_erspan_dir=0,tun_erspan_hwid=0x1,tun_flags=+df-csum+key,in_port=4,nw_frag=no
-Datapath actions: drop
+Datapath actions: drop:pipeline-drop
 ])
 
 dnl test wildcard mask: recevie all v2 regardless of its metadata

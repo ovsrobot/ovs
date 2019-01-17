@@ -819,6 +819,56 @@ struct ovs_action_push_eth {
 };
 
 /**
+ * enum ovs_drop_reason - Reasons for installing %OVS_ACTION_ATTR_DROP.
+ * @OVS_DROP_REASON_OF_PIPELINE: Explicit drop action in the pipeline.
+ * @OVS_DROP_REASON_BRIDGE_NOT_FOUND: Xlation error generated due to
+ * unable to determine bridge.
+ * @OVS_DROP_REASON_RECURSION_TOO_DEEP: Xlation error generated due to
+ * recursion reached maximum depth.
+ * @OVS_DROP_REASON_TOO_MANY_RESUBMITS: Xlation error generated due to
+ * too many resubmits.
+ * @OVS_DROP_REASON_STACK_TOO_DEEP: Xlation error generated due to stack
+ * too deep.
+ * @OVS_DROP_REASON_NO_RECIRCULATION_CONTEXT: Xlation error generated
+ * due to no recirculation context.
+ * @OVS_DROP_REASON_RECIRCULATION_CONFLICT: Xlation error generated due to
+ * conflict in recirculation context.
+ * @OVS_DROP_REASON_TOO_MANY_MPLS_LABELS: Xlation error generated due to
+ * too many mpls labels.
+ * @OVS_DROP_REASON_INVALID_TUNNEL_METADATA: Xlation error generated due to
+ * invalid tunnel metadata.
+ * @OVS_DROP_REASON_UNSUPPORTED_PACKET_TYPE: Xlation error generated due to
+ * unsupported packet type.
+ * @OVS_DROP_REASON_CONGESTION: Xlation error generated due to ecn mismatch
+ * during tunnel decapsulation.
+ * @OVS_DROP_REASON_FORWARDING_DISABLED: Xlation error generated due to
+ * forwarding is disabled.
+ */
+enum ovs_drop_reason {
+	OVS_DROP_REASON_OF_PIPELINE = 0,
+	OVS_DROP_REASON_BRIDGE_NOT_FOUND,
+	OVS_DROP_REASON_RECURSION_TOO_DEEP,
+	OVS_DROP_REASON_TOO_MANY_RESUBMITS,
+	OVS_DROP_REASON_STACK_TOO_DEEP,
+	OVS_DROP_REASON_NO_RECIRCULATION_CONTEXT,
+	OVS_DROP_REASON_RECIRCULATION_CONFLICT,
+	OVS_DROP_REASON_TOO_MANY_MPLS_LABELS,
+	OVS_DROP_REASON_INVALID_TUNNEL_METADATA,
+	OVS_DROP_REASON_UNSUPPORTED_PACKET_TYPE,
+	OVS_DROP_REASON_CONGESTION,
+	OVS_DROP_REASON_FORWARDING_DISABLED,
+	OVS_DROP_REASON_MAX,
+};
+
+/*
+ * struct ovs_action_drop - %OVS_ACTION_ATTR_DROP action argument.
+ * @drop_reason: Reason for installing drop action.
+ */
+struct ovs_action_drop {
+	enum ovs_drop_reason drop_reason;
+};
+
+/**
  * enum ovs_nat_attr - Attributes for %OVS_CT_ATTR_NAT.
  *
  * @OVS_NAT_ATTR_SRC: Flag for Source NAT (mangle source address/port).
@@ -938,6 +988,7 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_POP_NSH,      /* No argument. */
 	OVS_ACTION_ATTR_METER,        /* u32 meter number. */
 	OVS_ACTION_ATTR_CLONE,        /* Nested OVS_CLONE_ATTR_*.  */
+        OVS_ACTION_ATTR_DROP,         /* explicit drop action. */
 
 #ifndef __KERNEL__
 	OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/

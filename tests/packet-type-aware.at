@@ -505,7 +505,7 @@ AT_CHECK([
     ovs-appctl dpctl/dump-flows --names dummy@ovs-dummy | strip_used | grep -v ipv6 | sort
 ], [0], [flow-dump from non-dpdk interfaces:
 recirc_id(0),in_port(n3),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(dst=192.168.10.20,tos=0/0x3,frag=no), packets:1, bytes:98, used:0.0s, actions:pop_eth,clone(tnl_push(tnl_port(gre_sys),header(size=38,type=3,eth(dst=aa:55:00:00:00:02,src=aa:55:00:00:00:03,dl_type=0x0800),ipv4(src=30.0.0.3,dst=30.0.0.2,proto=47,tos=0,ttl=64,frag=0x4000),gre((flags=0x0,proto=0x800))),out_port(br-p3)),set(ipv4(src=20.0.0.3,dst=20.0.0.2)),tnl_pop(gre_sys))
-tunnel(src=20.0.0.3,dst=20.0.0.2,flags(-df-csum)),recirc_id(0),in_port(gre_sys),packet_type(ns=1,id=0x800),ipv4(dst=192.168.10.20,frag=no), packets:1, bytes:84, used:0.0s, actions:drop
+tunnel(src=20.0.0.3,dst=20.0.0.2,flags(-df-csum)),recirc_id(0),in_port(gre_sys),packet_type(ns=1,id=0x800),ipv4(dst=192.168.10.20,frag=no), packets:1, bytes:84, used:0.0s, actions:drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP(["/The Open vSwitch kernel module is probably not loaded/d"])
@@ -565,7 +565,14 @@ ovs-appctl time/warp 1000
 AT_CHECK([
     ovs-appctl dpctl/dump-flows | strip_used | grep -v ipv6 | sort
 ], [0], [flow-dump from non-dpdk interfaces:
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop:unsupported packet type
+])
+
+
+AT_CHECK([
+ovs-appctl coverage/show | grep "drop_action_unsupported_packet_type" | cut -d':' -f2|sed 's/ //'
+], [0], [dnl
+2
 ])
 
 # Encap(ethernet) on Ethernet frame -> should be droped
@@ -587,7 +594,7 @@ ovs-appctl time/warp 1000
 AT_CHECK([
     ovs-appctl dpctl/dump-flows | strip_used | grep -v ipv6 | sort
 ], [0], [flow-dump from non-dpdk interfaces:
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop:pipeline-drop
 ])
 
 # Encap(ethernet) on VLAN tagged Ethernet frame -> should be droped
@@ -609,7 +616,7 @@ ovs-appctl time/warp 1000
 AT_CHECK([
     ovs-appctl dpctl/dump-flows | strip_used | grep -v ipv6 | sort
 ], [0], [flow-dump from non-dpdk interfaces:
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop:unsupported packet type
 ])
 
 OVS_VSWITCHD_STOP
@@ -770,7 +777,7 @@ ovs-appctl time/warp 1000
 AT_CHECK([
     ovs-appctl dpctl/dump-flows --names dummy@ovs-dummy | strip_used | grep -v ipv6 | sort
 ], [0], [flow-dump from non-dpdk interfaces:
-recirc_id(0),in_port(n0),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop
+recirc_id(0),in_port(n0),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop:pipeline-drop
 ])
 
 AT_CHECK([

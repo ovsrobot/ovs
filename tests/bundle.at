@@ -241,7 +241,7 @@ AT_CHECK([tail -1 stdout], [0],
 AT_CHECK([ovs-ofctl mod-port br0 p2 down])
 AT_CHECK([ovs-appctl ofproto/trace br0 'in_port=LOCAL,dl_src=50:54:00:00:00:05,dl_dst=50:54:00:00:00:06'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
-  [Datapath actions: drop
+  [Datapath actions: drop:pipeline-drop
 ])
 AT_CHECK([ovs-ofctl mod-port br0 p1 up])
 AT_CHECK([ovs-appctl ofproto/trace br0 'in_port=LOCAL,dl_src=50:54:00:00:00:05,dl_dst=50:54:00:00:00:06'], [0], [stdout])

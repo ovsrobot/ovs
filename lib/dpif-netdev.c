@@ -100,6 +100,30 @@ enum { MAX_METERS = 65536 };    /* Maximum number of meters. */
 enum { MAX_BANDS = 8 };         /* Maximum number of bands / meter. */
 enum { N_METER_LOCKS = 64 };    /* Maximum number of meters. */
 
+
+COVERAGE_DEFINE(drop_action_of_pipeline);
+COVERAGE_DEFINE(drop_action_bridge_not_found);
+COVERAGE_DEFINE(drop_action_recursion_too_deep);
+COVERAGE_DEFINE(drop_action_too_many_resubmit);
+COVERAGE_DEFINE(drop_action_stack_too_deep);
+COVERAGE_DEFINE(drop_action_no_recirculation_context);
+COVERAGE_DEFINE(drop_action_recirculation_conflict);
+COVERAGE_DEFINE(drop_action_too_many_mpls_labels);
+COVERAGE_DEFINE(drop_action_invalid_tunnel_metadata);
+COVERAGE_DEFINE(drop_action_unsupported_packet_type);
+COVERAGE_DEFINE(drop_action_congestion);
+COVERAGE_DEFINE(drop_action_forwarding_disabled);
+COVERAGE_DEFINE(dp_meter_drop);
+COVERAGE_DEFINE(dp_upcall_error_drop);
+COVERAGE_DEFINE(dp_lock_error_drop);
+COVERAGE_DEFINE(dp_userspace_action_error_drop);
+COVERAGE_DEFINE(dp_tunnel_push_error_drop);
+COVERAGE_DEFINE(dp_tunnel_pop_error_drop);
+COVERAGE_DEFINE(dp_recirc_error_drop);
+COVERAGE_DEFINE(dp_invalid_port_drop);
+COVERAGE_DEFINE(dp_invalid_tnl_port_drop);
+COVERAGE_DEFINE(rx_invalid_packet_drop);
+
 /* Protects against changes to 'dp_netdevs'. */
 static struct ovs_mutex dp_netdev_mutex = OVS_MUTEX_INITIALIZER;
 
@@ -829,7 +853,6 @@ static inline bool
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd);
 static void queue_netdev_flow_del(struct dp_netdev_pmd_thread *pmd,
                                   struct dp_netdev_flow *flow);
-
 static void
 emc_cache_init(struct emc_cache *flow_cache)
 {
@@ -1387,6 +1410,7 @@ dpif_netdev_init(void)
                              NULL);
     return 0;
 }
+
 
 static int
 dpif_netdev_enumerate(struct sset *all_dps,
@@ -5563,7 +5587,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
             band = &meter->bands[exceeded_band[j]];
             band->packet_count += 1;
             band->byte_count += dp_packet_size(packet);
-
+            COVERAGE_INC(dp_meter_drop);
             dp_packet_delete(packet);
         } else {
             /* Meter accepts packet. */
@@ -6320,6 +6344,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
 
         if (OVS_UNLIKELY(dp_packet_size(packet) < ETH_HEADER_LEN)) {
             dp_packet_delete(packet);
+            COVERAGE_INC(rx_invalid_packet_drop);
             continue;
         }
 
@@ -6446,6 +6471,7 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
                              put_actions);
     if (OVS_UNLIKELY(error && error != ENOSPC)) {
         dp_packet_delete(packet);
+        COVERAGE_INC(dp_upcall_error_drop);
         return error;
     }
 
@@ -6577,6 +6603,7 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
         DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
             if (OVS_UNLIKELY(!rules[i])) {
                 dp_packet_delete(packet);
+                COVERAGE_INC(dp_lock_error_drop);
                 upcall_fail_cnt++;
             }
         }
@@ -6846,7 +6873,56 @@ dp_execute_userspace_action(struct dp_netdev_pmd_thread *pmd,
                                   actions->data, actions->size);
     } else if (should_steal) {
         dp_packet_delete(packet);
+        COVERAGE_INC(dp_userspace_action_error_drop);
     }
+}
+
+static void
+dp_update_drop_action_counter_cb(enum ovs_drop_reason drop_reason,
+                          int delta)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
+{
+   switch (drop_reason) {
+   case OVS_DROP_REASON_OF_PIPELINE:
+        COVERAGE_ADD(drop_action_of_pipeline, delta);
+        break;
+   case OVS_DROP_REASON_BRIDGE_NOT_FOUND:
+        COVERAGE_ADD(drop_action_bridge_not_found, delta);
+        break;
+   case OVS_DROP_REASON_RECURSION_TOO_DEEP:
+        COVERAGE_ADD(drop_action_recursion_too_deep, delta);
+        break;
+   case OVS_DROP_REASON_TOO_MANY_RESUBMITS:
+        COVERAGE_ADD(drop_action_too_many_resubmit, delta);
+        break;
+   case OVS_DROP_REASON_STACK_TOO_DEEP:
+        COVERAGE_ADD(drop_action_stack_too_deep, delta);
+        break;
+   case OVS_DROP_REASON_NO_RECIRCULATION_CONTEXT:
+        COVERAGE_ADD(drop_action_no_recirculation_context, delta);
+        break;
+   case OVS_DROP_REASON_RECIRCULATION_CONFLICT:
+        COVERAGE_ADD(drop_action_recirculation_conflict, delta);
+        break;
+   case OVS_DROP_REASON_TOO_MANY_MPLS_LABELS:
+        COVERAGE_ADD(drop_action_too_many_mpls_labels, delta);
+        break;
+   case OVS_DROP_REASON_INVALID_TUNNEL_METADATA:
+        COVERAGE_ADD(drop_action_invalid_tunnel_metadata, delta);
+        break;
+   case OVS_DROP_REASON_UNSUPPORTED_PACKET_TYPE:
+        COVERAGE_ADD(drop_action_unsupported_packet_type, delta);
+        break;
+   case OVS_DROP_REASON_CONGESTION:
+        COVERAGE_ADD(drop_action_congestion, delta);
+        break;
+   case OVS_DROP_REASON_FORWARDING_DISABLED:
+        COVERAGE_ADD(drop_action_forwarding_disabled, delta);
+        break;
+   case OVS_DROP_REASON_MAX:
+   default:
+        VLOG_ERR("Invalid Drop reason type:%d",drop_reason);
+   }
 }
 
 static void
@@ -6860,6 +6936,7 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     struct dp_netdev *dp = pmd->dp;
     int type = nl_attr_type(a);
     struct tx_port *p;
+    uint32_t packet_count, packet_dropped;
 
     switch ((enum ovs_action_attr)type) {
     case OVS_ACTION_ATTR_OUTPUT:
@@ -6901,6 +6978,8 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                 dp_packet_batch_add(&p->output_pkts, packet);
             }
             return;
+        } else {
+            COVERAGE_ADD(dp_invalid_port_drop, packets_->count);
         }
         break;
 
@@ -6910,10 +6989,13 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
              * the ownership of these packets. Thus, we can avoid performing
              * the action, because the caller will not use the result anyway.
              * Just break to free the batch. */
+            COVERAGE_ADD(dp_tunnel_push_error_drop, packets_->count);
             break;
         }
         dp_packet_batch_apply_cutlen(packets_);
-        push_tnl_action(pmd, a, packets_);
+        if (push_tnl_action(pmd, a, packets_)) {
+            COVERAGE_ADD(dp_tunnel_push_error_drop, packets_->count);
+        }
         return;
 
     case OVS_ACTION_ATTR_TUNNEL_POP:
@@ -6933,7 +7015,12 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
 
                 dp_packet_batch_apply_cutlen(packets_);
 
+                packet_count = packets_->count;
                 netdev_pop_header(p->port->netdev, packets_);
+                packet_dropped = packet_count - packets_->count;
+                if (packet_dropped) {
+                    COVERAGE_ADD(dp_tunnel_pop_error_drop, packet_dropped);
+                }
                 if (dp_packet_batch_is_empty(packets_)) {
                     return;
                 }
@@ -6947,7 +7034,11 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                 dp_netdev_recirculate(pmd, packets_);
                 (*depth)--;
                 return;
+            } else {
+                COVERAGE_ADD(dp_invalid_tnl_port_drop, packets_->count);
             }
+        } else {
+            COVERAGE_ADD(dp_recirc_error_drop, packets_->count);
         }
         break;
 
@@ -6991,6 +7082,8 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
             fat_rwlock_unlock(&dp->upcall_rwlock);
 
             return;
+        } else {
+            COVERAGE_ADD(dp_lock_error_drop, packets_->count);
         }
         break;
 
@@ -7013,6 +7106,8 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
             (*depth)--;
 
             return;
+        } else {
+            COVERAGE_ADD(dp_recirc_error_drop, packets_->count);
         }
 
         VLOG_WARN("Packet dropped. Max recirculation depth exceeded.");
@@ -7167,6 +7262,7 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     case OVS_ACTION_ATTR_PUSH_NSH:
     case OVS_ACTION_ATTR_POP_NSH:
     case OVS_ACTION_ATTR_CT_CLEAR:
+    case OVS_ACTION_ATTR_DROP:
     case __OVS_ACTION_ATTR_MAX:
         OVS_NOT_REACHED();
     }
@@ -7183,7 +7279,8 @@ dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
     struct dp_netdev_execute_aux aux = { pmd, flow };
 
     odp_execute_actions(&aux, packets, should_steal, actions,
-                        actions_len, dp_execute_cb);
+                        actions_len, dp_execute_cb,
+                        dp_update_drop_action_counter_cb);
 }
 
 struct dp_netdev_ct_dump {

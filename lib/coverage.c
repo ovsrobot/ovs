@@ -32,9 +32,7 @@ VLOG_DEFINE_THIS_MODULE(coverage);
 static struct coverage_counter **coverage_counters = NULL;
 static size_t n_coverage_counters = 0;
 static size_t allocated_coverage_counters = 0;
-
-static struct ovs_mutex coverage_mutex = OVS_MUTEX_INITIALIZER;
-
+struct ovs_mutex coverage_mutex = OVS_MUTEX_INITIALIZER;
 DEFINE_STATIC_PER_THREAD_DATA(long long int, coverage_clear_time, LLONG_MIN);
 static long long int coverage_run_time = LLONG_MIN;
 
@@ -52,7 +50,7 @@ coverage_counter_register(struct coverage_counter* counter)
     if (n_coverage_counters >= allocated_coverage_counters) {
         coverage_counters = x2nrealloc(coverage_counters,
                                        &allocated_coverage_counters,
-                                       sizeof(struct coverage_counter*));
+                                       sizeof(struct coverage_counter *));
     }
     coverage_counters[n_coverage_counters++] = counter;
 }

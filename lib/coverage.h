@@ -54,7 +54,8 @@ struct coverage_counter {
     unsigned int hr[HR_AVG_LEN];
 };
 
-void coverage_counter_register(struct coverage_counter*);
+extern struct ovs_mutex coverage_mutex;
+void coverage_counter_register(struct coverage_counter *);
 
 /* Defines COUNTER.  There must be exactly one such definition at file scope
  * within a program. */

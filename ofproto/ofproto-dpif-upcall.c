@@ -1154,7 +1154,7 @@ upcall_receive(struct upcall *upcall, const struct dpif_backer *backer,
     return 0;
 }
 
-static void
+static enum xlate_error
 upcall_xlate(struct udpif *udpif, struct upcall *upcall,
              struct ofpbuf *odp_actions, struct flow_wildcards *wc)
 {
@@ -1244,6 +1244,7 @@ upcall_xlate(struct udpif *udpif, struct upcall *upcall,
     if (upcall->type == MISS_UPCALL) {
         upcall->ukey = ukey_create_from_upcall(upcall, wc);
     }
+    return xerr;
 }
 
 static void

@@ -216,11 +216,15 @@ enum xlate_error {
     XLATE_TOO_MANY_MPLS_LABELS,
     XLATE_INVALID_TUNNEL_METADATA,
     XLATE_UNSUPPORTED_PACKET_TYPE,
+    XLATE_CONGESTION_DROP,
+    XLATE_FORWARDING_DISABLED,
 };
 
 const char *xlate_strerror(enum xlate_error error);
 
 enum xlate_error xlate_actions(struct xlate_in *, struct xlate_out *);
+
+enum ovs_drop_reason xlate_error_to_drop_reason(enum xlate_error error);
 
 void xlate_in_init(struct xlate_in *, struct ofproto_dpif *, ovs_version_t,
                    const struct flow *, ofp_port_t in_port, struct rule_dpif *,

@@ -444,8 +444,44 @@ const char *xlate_strerror(enum xlate_error error)
         return "Invalid tunnel metadata";
     case XLATE_UNSUPPORTED_PACKET_TYPE:
         return "Unsupported packet type";
+    case XLATE_CONGESTION_DROP:
+        return "CONGESTION DROP";
+    case XLATE_FORWARDING_DISABLED:
+        return "Forwarding is disabled";
+
     }
     return "Unknown error";
+}
+
+enum ovs_drop_reason  xlate_error_to_drop_reason(enum xlate_error error)
+{
+     switch (error) {
+        case XLATE_OK:
+            return OVS_DROP_REASON_OF_PIPELINE;
+        case XLATE_BRIDGE_NOT_FOUND:
+            return OVS_DROP_REASON_BRIDGE_NOT_FOUND;
+        case XLATE_RECURSION_TOO_DEEP:
+            return OVS_DROP_REASON_RECURSION_TOO_DEEP;
+        case XLATE_TOO_MANY_RESUBMITS:
+            return OVS_DROP_REASON_TOO_MANY_RESUBMITS;
+        case XLATE_STACK_TOO_DEEP:
+            return OVS_DROP_REASON_STACK_TOO_DEEP;
+        case XLATE_NO_RECIRCULATION_CONTEXT:
+            return OVS_DROP_REASON_NO_RECIRCULATION_CONTEXT;
+        case XLATE_RECIRCULATION_CONFLICT:
+            return OVS_DROP_REASON_RECIRCULATION_CONFLICT;
+        case XLATE_TOO_MANY_MPLS_LABELS:
+            return OVS_DROP_REASON_TOO_MANY_MPLS_LABELS;
+        case XLATE_INVALID_TUNNEL_METADATA:
+            return OVS_DROP_REASON_INVALID_TUNNEL_METADATA;
+        case XLATE_UNSUPPORTED_PACKET_TYPE:
+            return OVS_DROP_REASON_UNSUPPORTED_PACKET_TYPE;
+        case XLATE_CONGESTION_DROP:
+            return OVS_DROP_REASON_CONGESTION;
+        case XLATE_FORWARDING_DISABLED:
+            return OVS_DROP_REASON_MAX;
+     }
+     return OVS_DROP_REASON_OF_PIPELINE;
 }
 
 static void xlate_action_set(struct xlate_ctx *ctx);
@@ -5921,6 +5957,17 @@ put_ct_label(const struct flow *flow, struct ofpbuf *odp_actions,
 }
 
 static void
+put_drop_action(struct ofpbuf *odp_actions, enum xlate_error error)
+{
+    struct ovs_action_drop drop_action;
+
+    drop_action.drop_reason = xlate_error_to_drop_reason(error);
+    nl_msg_put_unspec(odp_actions, OVS_ACTION_ATTR_DROP,
+                          &drop_action, sizeof drop_action);
+
+}
+
+static void
 put_ct_helper(struct xlate_ctx *ctx,
               struct ofpbuf *odp_actions, struct ofpact_conntrack *ofc)
 {
@@ -7383,6 +7430,10 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         }
         size_t sample_actions_len = ctx.odp_actions->size;
 
+        if (!tnl_process_ecn(flow)) {
+            ctx.error = XLATE_CONGESTION_DROP;
+        }
+
         if (tnl_process_ecn(flow)
             && (!in_port || may_receive(in_port, &ctx))) {
             const struct ofpact *ofpacts;
@@ -7415,6 +7466,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
                 ctx.odp_actions->size = sample_actions_len;
                 ctx_cancel_freeze(&ctx);
                 ofpbuf_clear(&ctx.action_set);
+                ctx.error = XLATE_FORWARDING_DISABLED;
             }
 
             if (!ctx.freezing) {
@@ -7522,6 +7574,18 @@ exit:
             ofpbuf_clear(xin->odp_actions);
         }
     }
+
+    /*
+     * If we are going to install "drop" action, check whether
+     * datapath supports explicit "drop"action. If datapath
+     * supports explicit "drop"action then install the "drop"
+     * action containing the drop reason.
+     */
+    if (xin->odp_actions && !xin->odp_actions->size &&
+         ovs_explicit_drop_action_supported(ctx.xbridge->ofproto)) {
+        put_drop_action(xin->odp_actions, ctx.error);
+    }
+
     return ctx.error;
 }
 

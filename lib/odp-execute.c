@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "coverage.h"
 #include "dp-packet.h"
 #include "dpif.h"
 #include "netlink.h"
@@ -36,6 +37,10 @@
 #include "util.h"
 #include "csum.h"
 #include "conntrack.h"
+
+COVERAGE_DEFINE(dp_sample_error_drop);
+COVERAGE_DEFINE(dp_nsh_decap_error_drop);
+
 
 /* Masked copy of an ethernet address. 'src' is already properly masked. */
 static void
@@ -575,7 +580,9 @@ odp_execute_masked_set_action(struct dp_packet *packet,
 static void
 odp_execute_sample(void *dp, struct dp_packet *packet, bool steal,
                    const struct nlattr *action,
-                   odp_execute_cb dp_execute_action)
+                   odp_execute_cb dp_execute_action,
+                   odp_update_drop_action_counter_cb
+                     dp_update_drop_action_counter)
 {
     const struct nlattr *subactions = NULL;
     const struct nlattr *a;
@@ -589,6 +596,7 @@ odp_execute_sample(void *dp, struct dp_packet *packet, bool steal,
         case OVS_SAMPLE_ATTR_PROBABILITY:
             if (random_uint32() >= nl_attr_get_u32(a)) {
                 if (steal) {
+                    COVERAGE_ADD(dp_sample_error_drop, 1);
                     dp_packet_delete(packet);
                 }
                 return;
@@ -616,13 +624,16 @@ odp_execute_sample(void *dp, struct dp_packet *packet, bool steal,
     }
     dp_packet_batch_init_packet(&pb, packet);
     odp_execute_actions(dp, &pb, true, nl_attr_get(subactions),
-                        nl_attr_get_size(subactions), dp_execute_action);
+                        nl_attr_get_size(subactions), dp_execute_action,
+                        dp_update_drop_action_counter);
 }
 
 static void
 odp_execute_clone(void *dp, struct dp_packet_batch *batch, bool steal,
                    const struct nlattr *actions,
-                   odp_execute_cb dp_execute_action)
+                   odp_execute_cb dp_execute_action,
+                   odp_update_drop_action_counter_cb
+                      dp_update_drop_action_counter)
 {
     if (!steal) {
         /* The 'actions' may modify the packet, but the modification
@@ -634,11 +645,12 @@ odp_execute_clone(void *dp, struct dp_packet_batch *batch, bool steal,
         dp_packet_batch_clone(&clone_pkt_batch, batch);
         dp_packet_batch_reset_cutlen(batch);
         odp_execute_actions(dp, &clone_pkt_batch, true, nl_attr_get(actions),
-                        nl_attr_get_size(actions), dp_execute_action);
-    }
-    else {
+                        nl_attr_get_size(actions), dp_execute_action,
+                        dp_update_drop_action_counter);
+    } else {
         odp_execute_actions(dp, batch, true, nl_attr_get(actions),
-                            nl_attr_get_size(actions), dp_execute_action);
+                            nl_attr_get_size(actions), dp_execute_action,
+                            dp_update_drop_action_counter);
     }
 }
 
@@ -673,6 +685,7 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_PUSH_NSH:
     case OVS_ACTION_ATTR_POP_NSH:
     case OVS_ACTION_ATTR_CT_CLEAR:
+    case OVS_ACTION_ATTR_DROP:
         return false;
 
     case OVS_ACTION_ATTR_UNSPEC:
@@ -699,11 +712,14 @@ requires_datapath_assistance(const struct nlattr *a)
 void
 odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
                     const struct nlattr *actions, size_t actions_len,
-                    odp_execute_cb dp_execute_action)
+                    odp_execute_cb dp_execute_action,
+                    odp_update_drop_action_counter_cb
+                       dp_update_drop_action_counter)
 {
     struct dp_packet *packet;
     const struct nlattr *a;
     unsigned int left;
+
 
     NL_ATTR_FOR_EACH_UNSAFE (a, left, actions, actions_len) {
         int type = nl_attr_type(a);
@@ -822,7 +838,8 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_SAMPLE:
             DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
                 odp_execute_sample(dp, packet, steal && last_action, a,
-                                   dp_execute_action);
+                                   dp_execute_action,
+                                   dp_update_drop_action_counter);
             }
 
             if (last_action) {
@@ -845,7 +862,8 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
 
         case OVS_ACTION_ATTR_CLONE:
             odp_execute_clone(dp, batch, steal && last_action, a,
-                                                dp_execute_action);
+                                         dp_execute_action,
+                                         dp_update_drop_action_counter);
             if (last_action) {
                 /* We do not need to free the packets. odp_execute_clone() has
                  * stolen them.  */
@@ -889,6 +907,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
                 if (pop_nsh(packet)) {
                     dp_packet_batch_refill(batch, packet, i);
                 } else {
+                    COVERAGE_INC(dp_nsh_decap_error_drop);
                     dp_packet_delete(packet);
                 }
             }
@@ -899,6 +918,17 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
                 conntrack_clear(packet);
             }
             break;
+
+        case OVS_ACTION_ATTR_DROP: {
+            const struct ovs_action_drop *drop_action = nl_attr_get(a);
+            enum ovs_drop_reason drop_reason = drop_action->drop_reason;
+            if ((drop_reason < OVS_DROP_REASON_MAX) &&
+                 dp_update_drop_action_counter) {
+                 dp_update_drop_action_counter(drop_reason, batch->count);
+            }
+            dp_packet_delete_batch(batch, steal);
+            return;
+        }
 
         case OVS_ACTION_ATTR_OUTPUT:
         case OVS_ACTION_ATTR_TUNNEL_PUSH:

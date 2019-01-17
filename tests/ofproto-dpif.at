@@ -3496,51 +3496,51 @@ dnl Each of these specifies an in_port by number, a VLAN VID (or "none"),
 dnl a VLAN PCP (used if the VID isn't "none") and the expected set of datapath
 dnl actions.
 for tuple in \
-        "100 none 0 drop" \
-        "100 0    0 drop" \
-        "100 0    1 drop" \
+        "100 none 0 drop:pipeline-drop" \
+        "100 0    0 drop:pipeline-drop" \
+        "100 0    1 drop:pipeline-drop" \
         "100 10   0 1,5,6,7,8,pop_vlan,2,9" \
         "100 10   1 1,5,6,7,8,pop_vlan,2,9" \
         "100 11   0 5,7" \
         "100 11   1 5,7" \
         "100 12   0 1,5,6,pop_vlan,3,4,7,8,11,12" \
         "100 12   1 1,5,6,pop_vlan,4,7,11,push_vlan(vid=0,pcp=1),3,8,12" \
-        "1  none 0 drop" \
-        "1  0    0 drop" \
-        "1  0    1 drop" \
+        "1  none 0 drop:pipeline-drop" \
+        "1  0    0 drop:pipeline-drop" \
+        "1  0    1 drop:pipeline-drop" \
         "1  10   0 5,6,7,8,100,pop_vlan,2,9" \
         "1  10   1 5,6,7,8,100,pop_vlan,2,9" \
-        "1  11   0 drop" \
-        "1  11   1 drop" \
+        "1  11   0 drop:pipeline-drop" \
+        "1  11   1 drop:pipeline-drop" \
         "1  12   0 5,6,100,pop_vlan,3,4,7,8,11,12" \
         "1  12   1 5,6,100,pop_vlan,4,7,11,push_vlan(vid=0,pcp=1),3,8,12" \
         "2  none 0 9,push_vlan(vid=10,pcp=0),1,5,6,7,8,100" \
         "2  0    0 pop_vlan,9,push_vlan(vid=10,pcp=0),1,5,6,7,8,100" \
         "2  0    1 pop_vlan,9,push_vlan(vid=10,pcp=1),1,5,6,7,8,100" \
-        "2  10   0 drop" \
-        "2  10   1 drop" \
-        "2  11   0 drop" \
-        "2  11   1 drop" \
-        "2  12   0 drop" \
-        "2  12   1 drop" \
+        "2  10   0 drop:pipeline-drop" \
+        "2  10   1 drop:pipeline-drop" \
+        "2  11   0 drop:pipeline-drop" \
+        "2  11   1 drop:pipeline-drop" \
+        "2  12   0 drop:pipeline-drop" \
+        "2  12   1 drop:pipeline-drop" \
         "3  none 0 4,7,8,11,12,push_vlan(vid=12,pcp=0),1,5,6,100" \
         "3  0    0 pop_vlan,4,7,8,11,12,push_vlan(vid=12,pcp=0),1,5,6,100" \
         "3  0    1 8,12,pop_vlan,4,7,11,push_vlan(vid=12,pcp=1),1,5,6,100" \
-        "3  10   0 drop" \
-        "3  10   1 drop" \
-        "3  11   0 drop" \
-        "3  11   1 drop" \
-        "3  12   0 drop" \
-        "3  12   1 drop" \
+        "3  10   0 drop:pipeline-drop" \
+        "3  10   1 drop:pipeline-drop" \
+        "3  11   0 drop:pipeline-drop" \
+        "3  11   1 drop:pipeline-drop" \
+        "3  12   0 drop:pipeline-drop" \
+        "3  12   1 drop:pipeline-drop" \
         "4  none 0 3,7,8,11,12,push_vlan(vid=12,pcp=0),1,5,6,100" \
         "4  0    0 pop_vlan,3,7,8,11,12,push_vlan(vid=12,pcp=0),1,5,6,100" \
         "4  0    1 3,8,12,pop_vlan,7,11,push_vlan(vid=12,pcp=1),1,5,6,100" \
-        "4  10   0 drop" \
-        "4  10   1 drop" \
-        "4  11   0 drop" \
-        "4  11   1 drop" \
-        "4  12   0 drop" \
-        "4  12   1 drop" \
+        "4  10   0 drop:pipeline-drop" \
+        "4  10   1 drop:pipeline-drop" \
+        "4  11   0 drop:pipeline-drop" \
+        "4  11   1 drop:pipeline-drop" \
+        "4  12   0 drop:pipeline-drop" \
+        "4  12   1 drop:pipeline-drop" \
         "5  none 0 2,9,push_vlan(vid=10,pcp=0),1,6,7,8,100" \
         "5  0    0 pop_vlan,2,9,push_vlan(vid=10,pcp=0),1,6,7,8,100" \
         "5  0    1 pop_vlan,2,9,push_vlan(vid=10,pcp=1),1,6,7,8,100" \
@@ -3555,8 +3555,8 @@ for tuple in \
         "6  0    1 pop_vlan,2,9,push_vlan(vid=10,pcp=1),1,5,7,8,100" \
         "6  10   0 1,5,7,8,100,pop_vlan,2,9" \
         "6  10   1 1,5,7,8,100,pop_vlan,2,9" \
-        "6  11   0 drop" \
-        "6  11   1 drop" \
+        "6  11   0 drop:pipeline-drop" \
+        "6  11   1 drop:pipeline-drop" \
         "6  12   0 1,5,100,pop_vlan,3,4,7,8,11,12" \
         "6  12   1 1,5,100,pop_vlan,4,7,11,push_vlan(vid=0,pcp=1),3,8,12" \
         "7  none 0 3,4,8,11,12,push_vlan(vid=12,pcp=0),1,5,6,100" \
@@ -3573,16 +3573,16 @@ for tuple in \
         "8  0    1 3,12,pop_vlan,4,7,11,push_vlan(vid=12,pcp=1),1,5,6,100" \
         "8  10   0 1,5,6,7,100,pop_vlan,2,9" \
         "8  10   1 1,5,6,7,100,pop_vlan,2,9" \
-        "8  11   0 drop" \
-        "8  11   1 drop" \
+        "8  11   0 drop:pipeline-drop" \
+        "8  11   1 drop:pipeline-drop" \
         "8  12   0 1,5,6,100,pop_vlan,3,4,7,11,12" \
         "8  12   1 1,5,6,100,pop_vlan,4,7,11,push_vlan(vid=0,pcp=1),3,12" \
         "9  none 0 2,push_vlan(vid=10,pcp=0),1,5,6,7,8,100" \
         "9  10   0 10,push_vlan(vid=10,pcp=0),1,5,6,7,8,100" \
         "9  11   0 push_vlan(vid=10,pcp=0),1,5,6,7,8,100" \
-        "10 none 0 drop" \
-        "10 0    0 drop" \
-        "10 11   0 drop" \
+        "10 none 0 drop:pipeline-drop" \
+        "10 0    0 drop:pipeline-drop" \
+        "10 11   0 drop:pipeline-drop" \
         "10 12   0 9,push_vlan(vid=10,pcp=0),1,5,6,7,8,100" \
         "11 10   0 7,8,12,push_vlan(vid=12,pcp=0),1,5,6,100" \
         "11 10   1 7,8,12,push_vlan(vid=12,pcp=0),1,5,6,100"
@@ -4322,11 +4322,11 @@ no_flow="$base_flow,frag=no),tcp(src=12345,dst=80)"
 first_flow="$base_flow,frag=first),tcp(src=12345,dst=80)"
 later_flow="$base_flow,frag=later)"
 
-    # mode    no  first  later
+    # mode    no     first                later
 for tuple in \
-    'normal    1     5      6' \
-    'drop      1  drop   drop' \
-    'nx-match  1     2      6'
+    'normal    1     5                    6' \
+    'drop      1     drop:pipeline-drop   drop:pipeline-drop' \
+    'nx-match  1     2                    6'
 do
   set $tuple
   mode=$1
@@ -4404,8 +4404,8 @@ done
 AT_CHECK([ovs-appctl dpctl/dump-flows], [0], [dnl
 flow-dump from non-dpdk interfaces:
 recirc_id(0),in_port(90),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=6,frag=no),tcp(dst=80), packets:0, bytes:0, used:never, actions:set(tcp(dst=81)),1
-recirc_id(0),in_port(90),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=first), packets:0, bytes:0, used:never, actions:drop
-recirc_id(0),in_port(90),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=later), packets:0, bytes:0, used:never, actions:drop
+recirc_id(0),in_port(90),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=first), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
+recirc_id(0),in_port(90),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=later), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
 ])
 
 mode=nx-match
@@ -5751,7 +5751,7 @@ bridge("br0")
 
 Final flow: <cleared>
 Megaflow: <cleared>
-Datapath actions: drop
+Datapath actions: drop:pipeline-drop
 ])
 
 dnl Now, try again without megaflows:
@@ -5772,7 +5772,7 @@ bridge("br0")
 
 Final flow: <cleared>
 Megaflow: <cleared>
-Datapath actions: drop
+Datapath actions: drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP
@@ -7066,7 +7066,7 @@ for i in `seq 1 3`; do
 done
 AT_CHECK([ovs-appctl dpctl/dump-flows | sed 's/.*\(packets:\)/\1/' | sed 's/used:[[0-9]].[[0-9]]*s/used:0.001s/'], [0], [dnl
 flow-dump from non-dpdk interfaces:
-packets:2, bytes:68, used:0.001s, actions:drop
+packets:2, bytes:68, used:0.001s, actions:drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP(["/sending to collector failed/d"])
@@ -7158,7 +7158,7 @@ for i in `seq 1 3`; do
 done
 AT_CHECK([ovs-appctl dpctl/dump-flows | sed 's/.*\(packets:\)/\1/' | sed 's/used:[[0-9]].[[0-9]]*s/used:0.001s/'], [0], [dnl
 flow-dump from non-dpdk interfaces:
-packets:2, bytes:68, used:0.001s, actions:drop
+packets:2, bytes:68, used:0.001s, actions:drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP(["/sending to collector failed/d
@@ -7832,21 +7832,21 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p2 'in_port(2),eth(src=50:54:00:00:00:
 AT_CHECK([ovs-appctl netdev-dummy/receive p3 'in_port(3),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
 ovs-appctl revalidator/wait
 AT_CHECK([ovs-appctl dpif/dump-flows br0 | strip_ufid | strip_used | sort], [0], [dnl
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
-recirc_id(0),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
+recirc_id(0),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
 ])
 
 AT_CHECK([ovs-appctl dpif/dump-flows br1 | strip_ufid | strip_used | sort], [0], [dnl
-recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
+recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
 ])
 
 AT_CHECK([ovs-appctl dpif/dump-flows -m br0 | strip_ufid | strip_used | sort], [0], [dnl
-skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:05/00:00:00:00:00:00,dst=50:54:00:00:00:07/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=8/0,code=0/0), packets:0, bytes:0, used:never, actions:drop
-skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p2),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:07/00:00:00:00:00:00,dst=50:54:00:00:00:05/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=0/0,code=0/0), packets:0, bytes:0, used:never, actions:drop
+skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:05/00:00:00:00:00:00,dst=50:54:00:00:00:07/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=8/0,code=0/0), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
+skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p2),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:07/00:00:00:00:00:00,dst=50:54:00:00:00:05/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=0/0,code=0/0), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
 ])
 
 AT_CHECK([ovs-appctl dpif/dump-flows -m br1 | strip_ufid | strip_used | sort], [0], [dnl
-skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p3),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09/00:00:00:00:00:00,dst=50:54:00:00:00:0a/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=10.0.0.2/0.0.0.0,dst=10.0.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=8/0,code=0/0), packets:0, bytes:0, used:never, actions:drop
+skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p3),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09/00:00:00:00:00:00,dst=50:54:00:00:00:0a/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=10.0.0.2/0.0.0.0,dst=10.0.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=8/0,code=0/0), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
 ])
 
 OVS_VSWITCHD_STOP
@@ -7869,7 +7869,7 @@ m4_define([OFPROTO_DPIF_GET_FLOW],
 
    UFID=`sed -n 's/\(ufid:[[-0-9a-fA-F]]*\).*/\1/p' stdout`
    AT_CHECK([ovs-appctl dpctl/get-flow $UFID], [0], [dnl
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop:pipeline-drop
 ])
 
    OVS_VSWITCHD_STOP
@@ -8617,11 +8617,11 @@ table=0 in_port=1,ip,nw_dst=10.0.0.3 actions=drop
    sleep 1
    AT_CHECK([strip_ufid < ovs-vswitchd.log | filter_flow_install | strip_used], [0], [dnl
 skb_priority(0),skb_mark(0),ct_state(-new-est-rel-rpl-inv-trk-snat-dnat),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0), actions:2
-skb_priority(0),skb_mark(0),ct_state(-new-est-rel-rpl-inv-trk-snat-dnat),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(src=10.0.0.4,dst=10.0.0.3,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0), actions:drop
+skb_priority(0),skb_mark(0),ct_state(-new-est-rel-rpl-inv-trk-snat-dnat),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(src=10.0.0.4,dst=10.0.0.3,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0), actions:drop:pipeline-drop
 ])
    AT_CHECK([strip_ufid < ovs-vswitchd.log | filter_flow_dump | grep 'packets:3'], [0], [dnl
 skb_priority(0),skb_mark(0),ct_state(0/0xff),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0), packets:3, bytes:318, used:0.0s, actions:2
-skb_priority(0),skb_mark(0),ct_state(0/0xff),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(src=10.0.0.4,dst=10.0.0.3,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0), packets:3, bytes:318, used:0.0s, actions:drop
+skb_priority(0),skb_mark(0),ct_state(0/0xff),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(src=10.0.0.4,dst=10.0.0.3,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0), packets:3, bytes:318, used:0.0s, actions:drop:pipeline-drop
 ])
    OVS_VSWITCHD_STOP
    AT_CLEANUP])
@@ -9348,7 +9348,7 @@ for i in 1 2 3; do
 done
 
 AT_CHECK([ovs-appctl dpif/dump-flows br0 | strip_ufid | strip_used | sort], [0], [dnl
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x1234), packets:5, bytes:70, used:0.0s, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x1234), packets:5, bytes:70, used:0.0s, actions:drop:pipeline-drop
 ])
 
 # Add a flow that matches the non-presence of a vlan tag, and check
@@ -9377,16 +9377,16 @@ done
 
 AT_CHECK([ovs-appctl dpif/dump-flows br0 | strip_ufid | strip_used | sort], [0], [dnl
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x1234), packets:8, bytes:112, used:0.0s, actions:100
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=7/0x0),encap(eth_type(0x1234)), packets:2, bytes:36, used:0.0s, actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=7/0x0),encap(eth_type(0x1234)), packets:2, bytes:36, used:0.0s, actions:drop:pipeline-drop
 ])
 
 # Check that the new flow matches the CFI bit, while both vid and pcp
 # are wildcarded.
 AT_CHECK([grep '\(modify\)\|\(flow_add\)' ovs-vswitchd.log | strip_ufid ], [0], [dnl
 dpif_netdev|DBG|flow_add: recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x1234), actions:100
-dpif|DBG|dummy@ovs-dummy: put[[modify]] skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09/00:00:00:00:00:00,dst=50:54:00:00:00:0a/00:00:00:00:00:00),eth_type(0x1234)
+dpif|DBG|dummy@ovs-dummy: put[[modify]] skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09/00:00:00:00:00:00,dst=50:54:00:00:00:0a/00:00:00:00:00:00),eth_type(0x1234), actions:drop:pipeline-drop
 dpif|DBG|dummy@ovs-dummy: put[[modify]] skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09/00:00:00:00:00:00,dst=50:54:00:00:00:0a/00:00:00:00:00:00),eth_type(0x1234), actions:100
-dpif_netdev|DBG|flow_add: recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=7/0x0),encap(eth_type(0x1234)), actions:drop
+dpif_netdev|DBG|flow_add: recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=7/0x0),encap(eth_type(0x1234)), actions:drop:pipeline-drop
 ])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
@@ -9711,7 +9711,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p2 'in_port(2),eth(src=50:54:00:00:00:
 
 
 AT_CHECK([cat ovs-vswitchd.log | strip_ufid | filter_flow_install], [0], [dnl
-ct_state(+new-est+trk),recirc_id(0x1),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), actions:drop
+ct_state(+new-est+trk),recirc_id(0x1),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), actions:drop:pipeline-drop
 ct_state(-new+est+trk),recirc_id(0x1),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=17,frag=no), actions:1
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=17,frag=no), actions:ct(commit),2
 recirc_id(0),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=17,frag=no), actions:ct,recirc(0x1)
@@ -10398,7 +10398,7 @@ AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl ofproto/trace br0 'in_port=2,udp'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
-  [Datapath actions: drop
+  [Datapath actions: drop:pipeline-drop
 ])
 
 AT_CHECK([ovs-appctl ofproto/trace br0 'in_port=1,udp'], [0], [stdout])
@@ -10490,7 +10490,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p1 'recirc_id(0),in_port(1),eth_type(0
 ovs-appctl time/warp 5000
 
 AT_CHECK([strip_ufid < ovs-vswitchd.log | filter_flow_install | strip_used], [0], [dnl
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=17,frag=later), actions:drop
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=17,frag=later), actions:drop:pipeline-drop
 ])
 
 dnl Change the flow table.  This will trigger revalidation of all the flows.
