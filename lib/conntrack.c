@@ -743,12 +743,13 @@ un_nat_packet(struct dp_packet *pkt, const struct conn *conn,
  * and a hash would have already been needed. Hence, this function
  * is just intended for code clarity. */
 static struct conn *
-conn_lookup(struct conntrack *ct, const struct conn_key *key, long long now)
+conn_lookup(struct conntrack *ct, const struct conn_key *key, long long now,
+            uint32_t hash)
 {
     struct conn_lookup_ctx ctx;
     ctx.conn = NULL;
     ctx.key = *key;
-    ctx.hash = conn_key_hash(key, ct->hash_basis);
+    ctx.hash = hash;
     unsigned bucket = hash_to_bucket(ctx.hash);
     conn_key_lookup(&ct->buckets[bucket], &ctx, now);
     return ctx.conn;
@@ -758,9 +759,10 @@ static void
 conn_seq_skew_set(struct conntrack *ct, const struct conn_key *key,
                   long long now, int seq_skew, bool seq_skew_dir)
 {
-    unsigned bucket = hash_to_bucket(conn_key_hash(key, ct->hash_basis));
+    uint32_t hash = conn_key_hash(key, ct->hash_basis);
+    unsigned bucket = hash_to_bucket(hash);
     ct_lock_lock(&ct->buckets[bucket].lock);
-    struct conn *conn = conn_lookup(ct, key, now);
+    struct conn *conn = conn_lookup(ct, key, now, hash);
     if (conn && seq_skew) {
         conn->seq_skew = seq_skew;
         conn->seq_skew_dir = seq_skew_dir;
@@ -777,12 +779,13 @@ nat_clean(struct conntrack *ct, struct conn *conn,
     nat_conn_keys_remove(&ct->nat_conn_keys, &conn->rev_key, ct->hash_basis);
     ct_rwlock_unlock(&ct->resources_lock);
     ct_lock_unlock(&ctb->lock);
-    unsigned bucket_rev_conn =
-        hash_to_bucket(conn_key_hash(&conn->rev_key, ct->hash_basis));
+
+    uint32_t hash = conn_key_hash(&conn->rev_key, ct->hash_basis);
+    unsigned bucket_rev_conn = hash_to_bucket(hash);
     ct_lock_lock(&ct->buckets[bucket_rev_conn].lock);
     ct_rwlock_wrlock(&ct->resources_lock);
     long long now = time_msec();
-    struct conn *rev_conn = conn_lookup(ct, &conn->rev_key, now);
+    struct conn *rev_conn = conn_lookup(ct, &conn->rev_key, now, hash);
     struct nat_conn_key_node *nat_conn_key_node =
         nat_conn_keys_lookup(&ct->nat_conn_keys, &conn->rev_key,
                              ct->hash_basis);
@@ -1016,7 +1019,7 @@ create_un_nat_conn(struct conntrack *ct, struct conn *conn_for_un_nat_copy,
     uint32_t un_nat_hash = conn_key_hash(&nc->key, ct->hash_basis);
     unsigned un_nat_conn_bucket = hash_to_bucket(un_nat_hash);
     ct_lock_lock(&ct->buckets[un_nat_conn_bucket].lock);
-    struct conn *rev_conn = conn_lookup(ct, &nc->key, now);
+    struct conn *rev_conn = conn_lookup(ct, &nc->key, now, un_nat_hash);
 
     if (alg_un_nat) {
         if (!rev_conn) {
