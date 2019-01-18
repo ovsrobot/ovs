@@ -5600,6 +5600,10 @@ parse_odp_key_mask_attr(struct parse_odp_context *context, const char *s,
                 return retval;
             }
             s += retval;
+
+            if (nl_attr_oversized(key->size - encap)) {
+                return -E2BIG;
+            }
         }
         s++;
 
