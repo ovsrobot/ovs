@@ -2806,8 +2806,6 @@ repl_ftp_v4_addr(struct dp_packet *pkt, ovs_be32 v4_addr_rep,
         return 0;
     }
 
-    size_t remain_size = tcp_payload_length(pkt) -
-                             addr_offset_from_ftp_data_start;
     int overall_delta = 0;
     char *byte_str = ftp_data_start + addr_offset_from_ftp_data_start;
 
@@ -2817,13 +2815,13 @@ repl_ftp_v4_addr(struct dp_packet *pkt, ovs_be32 v4_addr_rep,
         char *next_delim = memchr(byte_str, ',', 4);
         ovs_assert(next_delim);
         int substr_size = next_delim - byte_str;
-        remain_size -= substr_size;
 
         /* Compose the new string for this octet, and replace it. */
-        char rep_str[4];
         uint8_t rep_byte = get_v4_byte_be(v4_addr_rep, i);
+        char rep_str[4];
         int replace_size = sprintf(rep_str, "%d", rep_byte);
-        replace_substring(byte_str, substr_size, remain_size,
+        replace_substring(byte_str, substr_size,
+                          (const char *) dp_packet_tail(pkt) - byte_str,
                           rep_str, replace_size);
         overall_delta += replace_size - substr_size;
 
