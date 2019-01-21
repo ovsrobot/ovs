@@ -7669,24 +7669,6 @@ dpcls_remove(struct dpcls *cls, struct dpcls_rule *rule)
     }
 }
 
-/* Returns true if 'target' satisfies 'key' in 'mask', that is, if each 1-bit
- * in 'mask' the values in 'key' and 'target' are the same. */
-bool
-dpcls_rule_matches_key(const struct dpcls_rule *rule,
-                       const struct netdev_flow_key *target)
-{
-    const uint64_t *keyp = miniflow_get_values(&rule->flow.mf);
-    const uint64_t *maskp = miniflow_get_values(&rule->mask->mf);
-    uint64_t value;
-
-    NETDEV_FLOW_KEY_FOR_EACH_IN_FLOWMAP(value, target, rule->flow.mf.map) {
-        if (OVS_UNLIKELY((value & *maskp++) != *keyp++)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 /* For each miniflow in 'keys' performs a classifier lookup writing the result
  * into the corresponding slot in 'rules'.  If a particular entry in 'keys' is
  * NULL it is skipped.

@@ -100,9 +100,73 @@ struct dpcls_subtable {
 #define NETDEV_FLOW_KEY_FOR_EACH_IN_FLOWMAP(VALUE, KEY, FLOWMAP)   \
     MINIFLOW_FOR_EACH_IN_FLOWMAP(VALUE, &(KEY)->mf, FLOWMAP)
 
-bool dpcls_rule_matches_key(const struct dpcls_rule *rule,
-                            const struct netdev_flow_key *target);
+/* Iterate all bits set in the *rle_unit*, lookup the block of metadata based
+ * on the packet miniflow, and compare it for "matching" the rule, using the
+ * subtable mask in the process. Note that the pointers passed in to this
+ * function are already adjusted for the unit offset. */
+static inline int32_t
+dpcls_verify_unit(const uint64_t rle_unit, const uint64_t pkt_unit,
+                  const uint64_t *rle, const uint64_t *msk,
+                  const uint64_t *pkt)
+{
+    int match_fail = 0;
+    int linear_idx = 0;
 
+    uint64_t iter = rle_unit;
+    while (iter) {
+        uint64_t low_bit = iter & (-iter);
+        iter &= ~(low_bit);
+
+        uint64_t low_mask = low_bit - 1;
+        uint64_t bits = (low_mask & pkt_unit);
+        uint64_t blk_idx = __builtin_popcountll(bits);
+
+        /* Take packet, mask bits away, compare against rule.
+         * Results in 1 for matching, so ! to invert to fail */
+        match_fail |= !((pkt[blk_idx] & msk[linear_idx]) == rle[linear_idx]);
+        linear_idx++;
+    }
+
+    return match_fail;
+}
+
+/* match rule and target (aka packet), to understand if the rule applies to
+ * this packet. The actual miniflow-unit iteration is performed in
+ * the *dpcls_verify_unit* function, this just wraps the two unit calls */
+static inline int
+dpcls_rule_matches_key(const struct dpcls_rule *rule,
+                       const struct netdev_flow_key *target)
+{
+    /* retrieve the "block" pointers for the packet, rule and subtable mask */
+    const uint64_t *rle_blocks = miniflow_get_values(&rule->flow.mf);
+    const uint64_t *msk_blocks = miniflow_get_values(&rule->mask->mf);
+    const uint64_t *pkt_blocks = miniflow_get_values(&target->mf);
+
+    /* fetch the rule bits to iterate */
+    const uint64_t rle_u0 = rule->flow.mf.map.bits[0];
+    const uint64_t rle_u1 = rule->flow.mf.map.bits[1];
+
+    /* fetch the packet bits to navigate the packet's miniflow block indexes */
+    const uint64_t pkt_u0 = target->mf.map.bits[0];
+    const uint64_t pkt_u1 = target->mf.map.bits[1];
+
+    /* calculate where u1 starts by finding total size of u0 */
+    int rle_u0_pop = __builtin_popcountll(rle_u0);
+    int pkt_u0_pop = __builtin_popcountll(pkt_u0);
+
+    int fail = 0;
+    /* call verify_unit for both units. This has multiple advantages:
+     * 1) Each while() loop gets its own branch predictor entry - improves hits
+     * 2) Compiler can re-shuffle instructions as it likes, also between iters
+     * 3) Simpler popcount() approach means less branches in general
+     */
+    fail |= dpcls_verify_unit(rle_u0, pkt_u0, &rle_blocks[0], &msk_blocks[0], &pkt_blocks[0]);
+    fail |= dpcls_verify_unit(rle_u1, pkt_u1, &rle_blocks[rle_u0_pop], &msk_blocks[rle_u0_pop],
+                              &pkt_blocks[pkt_u0_pop]);
+
+    /* return 1 if matches, 0 on fail */
+    return fail == 0;
+}
 
 #ifdef  __cplusplus
 }
