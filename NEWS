@@ -36,6 +36,8 @@ v2.11.0 - xx xxx xxxx
      * Add support for Auto load balancing of PMDs (experimental)
      * Added new per-port configurable option to manage EMC:
        'other_config:emc-enable'.
+     * ICMPv6 ND enhancements: support for match and set ND options type
+       and reserved fields.
    - Add 'symmetric_l3' hash function.
    - OVS now honors 'updelay' and 'downdelay' for bonds with LACP configured.
    - ovs-vswitchd:
