@@ -1973,8 +1973,8 @@ conn_key_extract(struct conntrack *ct, struct dp_packet *pkt, ovs_be16 dl_type,
         if (!hwol_bad_l4_csum) {
             bool  hwol_good_l4_csum = dp_packet_l4_checksum_valid(pkt);
             /* Validate the checksum only when hwol is not supported. */
-            if (extract_l4(&ctx->key, l4, tail - l4, &ctx->icmp_related, l3,
-                           !hwol_good_l4_csum)) {
+            if (extract_l4(&ctx->key, l4, (tail - l4) - dp_packet_l2_pad_size(pkt),
+                           &ctx->icmp_related, l3, !hwol_good_l4_csum)) {
                 ctx->hash = conn_key_hash(&ctx->key, ct->hash_basis);
                 return true;
             }
