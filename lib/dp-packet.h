@@ -353,9 +353,18 @@ dp_packet_set_l4(struct dp_packet *b, void *l4)
 }
 
 static inline size_t
+dp_packet_l3_size(const struct dp_packet *b)
+{
+    return OVS_LIKELY(b->l3_ofs != UINT16_MAX)
+        ? (const char *)dp_packet_tail(b) - (const char *)dp_packet_l3(b)
+        - dp_packet_l2_pad_size(b)
+        : 0;
+}
+
+static inline size_t
 dp_packet_l4_size(const struct dp_packet *b)
 {
-    return b->l4_ofs != UINT16_MAX
+    return OVS_LIKELY(b->l4_ofs != UINT16_MAX)
         ? (const char *)dp_packet_tail(b) - (const char *)dp_packet_l4(b)
         - dp_packet_l2_pad_size(b)
         : 0;
