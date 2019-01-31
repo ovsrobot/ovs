@@ -2333,15 +2333,15 @@ __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
         goto out;
     }
 
-    rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
-
     cnt = netdev_dpdk_filter_packet_len(dev, cur_pkts, cnt);
     /* Check has QoS has been configured for the netdev */
     cnt = netdev_dpdk_qos_run(dev, cur_pkts, cnt, true);
     dropped = total_pkts - cnt;
 
+    rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
+
+    int vhost_qid = qid * VIRTIO_QNUM + VIRTIO_RXQ;
     do {
-        int vhost_qid = qid * VIRTIO_QNUM + VIRTIO_RXQ;
         unsigned int tx_pkts;
 
         tx_pkts = rte_vhost_enqueue_burst(vid, vhost_qid, cur_pkts, cnt);
@@ -2462,15 +2462,20 @@ netdev_dpdk_send__(struct netdev_dpdk *dev, int qid,
         return;
     }
 
-    if (OVS_UNLIKELY(concurrent_txq)) {
-        qid = qid % dev->up.n_txq;
-        rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
-    }
-
     if (OVS_UNLIKELY(batch->packets[0]->source != DPBUF_DPDK)) {
         struct netdev *netdev = &dev->up;
 
+        if (OVS_UNLIKELY(concurrent_txq)) {
+            qid = qid % dev->up.n_txq;
+            rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
+        }
+
         dpdk_do_tx_copy(netdev, qid, batch);
+
+        if (OVS_UNLIKELY(concurrent_txq)) {
+            rte_spinlock_unlock(&dev->tx_q[qid].tx_lock);
+        }
+
         dp_packet_delete_batch(batch, true);
     } else {
         int tx_cnt, dropped;
@@ -2481,7 +2486,16 @@ netdev_dpdk_send__(struct netdev_dpdk *dev, int qid,
         tx_cnt = netdev_dpdk_qos_run(dev, pkts, tx_cnt, true);
         dropped = batch_cnt - tx_cnt;
 
+        if (OVS_UNLIKELY(concurrent_txq)) {
+            qid = qid % dev->up.n_txq;
+            rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
+        }
+
         dropped += netdev_dpdk_eth_tx_burst(dev, qid, pkts, tx_cnt);
+
+        if (OVS_UNLIKELY(concurrent_txq)) {
+            rte_spinlock_unlock(&dev->tx_q[qid].tx_lock);
+        }
 
         if (OVS_UNLIKELY(dropped)) {
             rte_spinlock_lock(&dev->stats_lock);
@@ -2490,9 +2504,6 @@ netdev_dpdk_send__(struct netdev_dpdk *dev, int qid,
         }
     }
 
-    if (OVS_UNLIKELY(concurrent_txq)) {
-        rte_spinlock_unlock(&dev->tx_q[qid].tx_lock);
-    }
 }
 
 static int
