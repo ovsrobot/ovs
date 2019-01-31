@@ -23,6 +23,9 @@
 #include "openvswitch/ofp-protocol.h"
 #include "openvswitch/ofpbuf.h"
 
+struct vl_mff_map;
+struct tun_table;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -56,19 +59,27 @@ void ofputil_flow_removed_format(struct ds *,
                                  const struct ofputil_port_map *,
                                  const struct ofputil_table_map *);
 
-/* Abstract nx_flow_monitor_request. */
+/* Abstract nx_flow_monitor_request/ofp14_flow_monitor_request.
+ * Using ofp14_flow_monitor_flags for both nx_ and ofp14_ because
+ * ofp14_flow_monitor_flags is a superset of nx_flow_monitor_flags with only
+ * OFPUTIL_FMF_ONLY_OWN equivalent not present in nx_flow_monitor_flags. */
 struct ofputil_flow_monitor_request {
     uint32_t id;
-    enum nx_flow_monitor_flags flags;
+    enum ofp14_flow_monitor_flags flags;
     ofp_port_t out_port;
+    uint32_t out_group; /* Only in OpenFlow 1.4+ */
     uint8_t table_id;
+    uint8_t command;    /* Only in OpenFlow 1.4+ */
     struct match match;
 };
 
 int ofputil_decode_flow_monitor_request(struct ofputil_flow_monitor_request *,
-                                        struct ofpbuf *msg);
+                                        struct ofpbuf *msg,
+                                        const struct tun_table *tun_table,
+                                        const struct vl_mff_map *vl_mff_map);
 void ofputil_append_flow_monitor_request(
-    const struct ofputil_flow_monitor_request *, struct ofpbuf *msg);
+    const struct ofputil_flow_monitor_request *, struct ofpbuf *msg,
+                                                  enum ofp_version);
 void ofputil_flow_monitor_request_format(
     struct ds *, const struct ofputil_flow_monitor_request *,
     const struct ofputil_port_map *, const struct ofputil_table_map *);
@@ -80,11 +91,27 @@ char *parse_flow_monitor_request(struct ofputil_flow_monitor_request *,
                                  enum ofputil_protocol *usable_protocols)
     OVS_WARN_UNUSED_RESULT;
 
-/* Abstract nx_flow_update. */
-struct ofputil_flow_update {
-    enum nx_flow_update_event event;
+enum ofputil_flow_update_event {
+   OFPUTIL_FME_INITIAL = 0,   /* Flow present when flow monitor created.
+                               * Only in OpenFlow 1.4+ */
+   OFPUTIL_FME_ADDED = 1,     /* Flow was added. For NXST_FLOW_MONITOR reply,
+                               * this is used for both created and added. */
+   OFPUTIL_FME_REMOVED = 2,   /* Flow was removed. */
+   OFPUTIL_FME_MODIFIED = 3,  /* Flow instructions were changed. */
+   OFPUTIL_FME_ABBREV = 4,    /* Abbreviated reply. */
 
-    /* Used only for NXFME_ADDED, NXFME_DELETED, NXFME_MODIFIED. */
+   OFPUTIL_FME_PAUSED = 5,    /* Monitoring paused (out of buffer space).
+                               * Only in OpenFlow 1.4+ */
+   OFPUTIL_FME_RESUMED = 6,   /* Monitoring resumed.
+                               * Only in OpenFlow 1.4+ */
+};
+
+/* Abstract flow_update. */
+struct ofputil_flow_update {
+    enum ofputil_flow_update_event event;
+
+    /* Used only for OFPUTIL_FME_INITIAL, OFPUTIL_FME_ADDED,
+     * OFPUTIL_FME_REMOVED, OFPUTIL_FME_MODIFIED. */
     enum ofp_flow_removed_reason reason;
     uint16_t idle_timeout;
     uint16_t hard_timeout;
@@ -95,16 +122,18 @@ struct ofputil_flow_update {
     const struct ofpact *ofpacts;
     size_t ofpacts_len;
 
-    /* Used only for NXFME_ABBREV. */
+    /* Used only for OFPUTIL_FME_ABBREV. */
     ovs_be32 xid;
 };
 
 int ofputil_decode_flow_update(struct ofputil_flow_update *,
                                struct ofpbuf *msg, struct ofpbuf *ofpacts);
-void ofputil_start_flow_update(struct ovs_list *replies);
+void ofputil_start_flow_update(struct ovs_list *replies,
+                               enum ofputil_protocol ofconn_protocol);
 void ofputil_append_flow_update(const struct ofputil_flow_update *,
                                 struct ovs_list *replies,
-                                const struct tun_table *);
+                                const struct tun_table *,
+                                enum ofputil_protocol ofconn_protocol);
 void ofputil_flow_update_format(struct ds *,
                                 const struct ofputil_flow_update *,
                                 const struct ofputil_port_map *,

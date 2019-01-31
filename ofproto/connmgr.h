@@ -188,11 +188,10 @@ struct ofmonitor {
     struct ofconn *ofconn;      /* Owning 'ofconn'. */
     struct hmap_node ofconn_node; /* In ofconn's 'monitors' hmap. */
     uint32_t id;
-
-    enum nx_flow_monitor_flags flags;
-
+    enum ofp14_flow_monitor_flags flags;
     /* Matching. */
     ofp_port_t out_port;
+    uint32_t out_group;
     uint8_t table_id;
     struct minimatch match;
 };
@@ -208,7 +207,8 @@ void ofmonitor_destroy(struct ofmonitor *)
     OVS_REQUIRES(ofproto_mutex);
 
 void ofmonitor_report(struct connmgr *, struct rule *,
-                      enum nx_flow_update_event, enum ofp_flow_removed_reason,
+                      enum ofputil_flow_update_event,
+                      enum ofp_flow_removed_reason,
                       const struct ofconn *abbrev_ofconn, ovs_be32 abbrev_xid,
                       const struct rule_actions *old_actions)
     OVS_REQUIRES(ofproto_mutex);
@@ -220,7 +220,8 @@ void ofmonitor_collect_resume_rules(struct ofmonitor *, uint64_t seqno,
                                     struct rule_collection *)
     OVS_REQUIRES(ofproto_mutex);
 void ofmonitor_compose_refresh_updates(struct rule_collection *rules,
-                                       struct ovs_list *msgs)
+                                       struct ovs_list *msgs,
+                                       enum ofputil_protocol ofconn_protocol)
     OVS_REQUIRES(ofproto_mutex);
 
 void connmgr_send_table_status(struct connmgr *,

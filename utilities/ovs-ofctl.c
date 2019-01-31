@@ -2285,9 +2285,26 @@ ofctl_monitor(struct ovs_cmdl_context *ctx)
             if (error) {
                 ovs_fatal(0, "%s", error);
             }
+            /* out_group is limited to OpenFlow1.4+ */
+            if (fmr.out_group != OFPG_ANY) {
+                uint32_t usable_versions = ((1u << OFP14_VERSION) |
+                                            (1u << OFP15_VERSION) |
+                                            (1u << OFP16_VERSION));
+                uint32_t allowed_versions = get_allowed_ofp_versions();
+                if (!(allowed_versions & usable_versions)) {
+                    struct ds versions = DS_EMPTY_INITIALIZER;
+                    ofputil_format_version_bitmap_names(&versions,
+                                                        usable_versions);
+                    ovs_fatal(0, "watch:out_group requires one of the OpenFlow"
+                              " versions %s but none is enabled (use -O)",
+                              ds_cstr(&versions));
+                }
+                mask_allowed_ofp_versions(usable_versions);
+            }
 
             msg = ofpbuf_new(0);
-            ofputil_append_flow_monitor_request(&fmr, msg);
+            ofputil_append_flow_monitor_request(&fmr, msg,
+                                                vconn_get_version(vconn));
             dump_transaction(vconn, msg);
             fflush(stdout);
         } else if (!strcmp(arg, "resume")) {

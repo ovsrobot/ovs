@@ -3085,7 +3085,7 @@ ofproto_rule_has_out_port(const struct rule *rule, ofp_port_t port)
 }
 
 /* Returns true if 'rule' has group and equals group_id. */
-static bool
+bool
 ofproto_rule_has_out_group(const struct rule *rule, uint32_t group_id)
     OVS_REQUIRES(ofproto_mutex)
 {
@@ -5118,7 +5118,7 @@ add_flow_finish(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
     if (old_rule) {
         ovsrcu_postpone(remove_rule_rcu, old_rule);
     } else {
-        ofmonitor_report(ofproto->connmgr, new_rule, NXFME_ADDED, 0,
+        ofmonitor_report(ofproto->connmgr, new_rule, OFPUTIL_FME_ADDED, 0,
                          req ? req->ofconn : NULL,
                          req ? req->request->xid : 0, NULL);
 
@@ -5519,8 +5519,8 @@ replace_rule_finish(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
         learned_cookies_dec(ofproto, old_actions, dead_cookies);
 
         if (replaced_rule) {
-            enum nx_flow_update_event event = ofm->command == OFPFC_ADD
-                ? NXFME_ADDED : NXFME_MODIFIED;
+            enum ofputil_flow_update_event event = ofm->command == OFPFC_ADD
+                ? OFPUTIL_FME_ADDED : OFPUTIL_FME_MODIFIED;
 
             bool changed_cookie = (new_rule->flow_cookie
                                    != old_rule->flow_cookie);
@@ -5530,7 +5530,7 @@ replace_rule_finish(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
                                                   old_actions->ofpacts,
                                                   old_actions->ofpacts_len);
 
-            if (event != NXFME_MODIFIED || changed_actions
+            if (event != OFPUTIL_FME_MODIFIED || changed_actions
                 || changed_cookie) {
                 ofmonitor_report(ofproto->connmgr, new_rule, event, 0,
                                  req ? req->ofconn : NULL,
@@ -5539,7 +5539,7 @@ replace_rule_finish(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
             }
         } else {
             /* XXX: This is slight duplication with delete_flows_finish__() */
-            ofmonitor_report(ofproto->connmgr, old_rule, NXFME_DELETED,
+            ofmonitor_report(ofproto->connmgr, old_rule, OFPUTIL_FME_REMOVED,
                              OFPRR_EVICTION,
                              req ? req->ofconn : NULL,
                              req ? req->request->xid : 0, NULL);
@@ -5816,7 +5816,8 @@ delete_flows_finish__(struct ofproto *ofproto,
              * before the rule is actually destroyed. */
             rule->removed_reason = reason;
 
-            ofmonitor_report(ofproto->connmgr, rule, NXFME_DELETED, reason,
+            ofmonitor_report(ofproto->connmgr, rule,
+                             OFPUTIL_FME_REMOVED, reason,
                              req ? req->ofconn : NULL,
                              req ? req->request->xid : 0, NULL);
 
@@ -6220,17 +6221,25 @@ handle_barrier_request(struct ofconn *ofconn, const struct ofp_header *oh)
 
 static void
 ofproto_compose_flow_refresh_update(const struct rule *rule,
-                                    enum nx_flow_monitor_flags flags,
+                                    enum ofp14_flow_monitor_flags flags,
                                     struct ovs_list *msgs,
-                                    const struct tun_table *tun_table)
+                                    const struct tun_table *tun_table,
+                                    enum ofputil_protocol ofconn_protocol)
     OVS_REQUIRES(ofproto_mutex)
 {
     const struct rule_actions *actions;
     struct ofputil_flow_update fu;
 
-    fu.event = (flags & (NXFMF_INITIAL | NXFMF_ADD)
-                ? NXFME_ADDED : NXFME_MODIFIED);
-    fu.reason = 0;
+    if (ofconn_protocol & OFPUTIL_P_OF10_ANY) {
+        fu.event = (flags & (OFPFMF14_INITIAL | OFPFMF14_ADD)
+                    ? OFPUTIL_FME_ADDED : OFPUTIL_FME_MODIFIED);
+    } else {
+        fu.event = flags & OFPFMF14_INITIAL ? OFPUTIL_FME_INITIAL :
+                   flags & OFPFMF14_ADD ?
+                             OFPUTIL_FME_ADDED : OFPUTIL_FME_MODIFIED;
+    }
+
+    fu.reason = 0;  /* because this function is not called for flow delete */
     ovs_mutex_lock(&rule->mutex);
     fu.idle_timeout = rule->idle_timeout;
     fu.hard_timeout = rule->hard_timeout;
@@ -6240,29 +6249,30 @@ ofproto_compose_flow_refresh_update(const struct rule *rule,
     minimatch_expand(&rule->cr.match, &fu.match);
     fu.priority = rule->cr.priority;
 
-    actions = flags & NXFMF_ACTIONS ? rule_get_actions(rule) : NULL;
+    actions = flags & OFPFMF14_INSTRUCTIONS ? rule_get_actions(rule) : NULL;
     fu.ofpacts = actions ? actions->ofpacts : NULL;
     fu.ofpacts_len = actions ? actions->ofpacts_len : 0;
 
     if (ovs_list_is_empty(msgs)) {
-        ofputil_start_flow_update(msgs);
+        ofputil_start_flow_update(msgs, ofconn_protocol);
     }
-    ofputil_append_flow_update(&fu, msgs, tun_table);
+    ofputil_append_flow_update(&fu, msgs, tun_table, ofconn_protocol);
 }
 
 void
 ofmonitor_compose_refresh_updates(struct rule_collection *rules,
-                                  struct ovs_list *msgs)
+                                  struct ovs_list *msgs,
+                                  enum ofputil_protocol ofconn_protocol)
     OVS_REQUIRES(ofproto_mutex)
 {
     struct rule *rule;
 
     RULE_COLLECTION_FOR_EACH (rule, rules) {
-        enum nx_flow_monitor_flags flags = rule->monitor_flags;
+        enum ofp14_flow_monitor_flags flags = rule->monitor_flags;
         rule->monitor_flags = 0;
 
         ofproto_compose_flow_refresh_update(rule, flags, msgs,
-                ofproto_get_tun_tab(rule->ofproto));
+                ofproto_get_tun_tab(rule->ofproto), ofconn_protocol);
     }
 }
 
@@ -6272,7 +6282,7 @@ ofproto_collect_ofmonitor_refresh_rule(const struct ofmonitor *m,
                                        struct rule_collection *rules)
     OVS_REQUIRES(ofproto_mutex)
 {
-    enum nx_flow_monitor_flags update;
+    enum ofp14_flow_monitor_flags update;
 
     if (rule_is_hidden(rule)) {
         return;
@@ -6282,11 +6292,15 @@ ofproto_collect_ofmonitor_refresh_rule(const struct ofmonitor *m,
         return;
     }
 
+    if (!ofproto_rule_has_out_group(rule, m->out_group)) {
+        return;
+    }
+
     if (seqno) {
         if (rule->add_seqno > seqno) {
-            update = NXFMF_ADD | NXFMF_MODIFY;
+            update = OFPFMF14_ADD | OFPFMF14_MODIFY;
         } else if (rule->modify_seqno > seqno) {
-            update = NXFMF_MODIFY;
+            update = OFPFMF14_MODIFY;
         } else {
             return;
         }
@@ -6295,13 +6309,13 @@ ofproto_collect_ofmonitor_refresh_rule(const struct ofmonitor *m,
             return;
         }
     } else {
-        update = NXFMF_INITIAL;
+        update = OFPFMF14_INITIAL;
     }
 
     if (!rule->monitor_flags) {
         rule_collection_add(rules, rule);
     }
-    rule->monitor_flags |= update | (m->flags & NXFMF_ACTIONS);
+    rule->monitor_flags |= update | (m->flags & OFPFMF14_INSTRUCTIONS);
 }
 
 static void
@@ -6330,7 +6344,7 @@ ofproto_collect_ofmonitor_initial_rules(struct ofmonitor *m,
                                         struct rule_collection *rules)
     OVS_REQUIRES(ofproto_mutex)
 {
-    if (m->flags & NXFMF_INITIAL) {
+    if (m->flags & OFPFMF14_INITIAL) {
         ofproto_collect_ofmonitor_refresh_rules(m, 0, rules);
     }
 }
@@ -6370,15 +6384,18 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
     struct ofmonitor **monitors = NULL;
     size_t allocated_monitors = 0;
     size_t n_monitors = 0;
+    enum ofperr error = 0;
 
     ovs_mutex_lock(&ofproto_mutex);
     struct ofpbuf *b;
     LIST_FOR_EACH (b, list_node, msgs) {
         for (;;) {
-            enum ofperr error;
-
+            struct ofmonitor *m;
             struct ofputil_flow_monitor_request request;
-            int retval = ofputil_decode_flow_monitor_request(&request, b);
+            int retval =
+                 ofputil_decode_flow_monitor_request(&request, b,
+                                                  ofproto_get_tun_tab(ofproto),
+                                                  &ofproto->vl_mff_map);
             if (retval == EOF) {
                 break;
             } else if (retval) {
@@ -6392,29 +6409,31 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
                 goto error;
             }
 
-            struct ofmonitor *m;
-            error = ofmonitor_create(&request, ofconn, &m);
+            if (request.command == OFPFMC14_ADD) {
+                error = ofmonitor_create(&request, ofconn, &m);
+            }
+            else if (request.command == OFPFMC14_DELETE) {
+                error = flow_monitor_delete(ofconn, request.id);
+            }
+            else if (request.command == OFPFMC14_MODIFY) {
+                error = flow_monitor_delete(ofconn, request.id);
+
+                if (!error) {
+                    error = ofmonitor_create(&request, ofconn, &m);
+                }
+            }
+
             if (error) {
                 goto error;
             }
 
-            if (n_monitors >= allocated_monitors) {
-                monitors = x2nrealloc(monitors, &allocated_monitors,
-                                      sizeof *monitors);
+            if (request.command != OFPFMC14_DELETE) {
+                if (n_monitors >= allocated_monitors) {
+                    monitors = x2nrealloc(monitors, &allocated_monitors,
+                                          sizeof *monitors);
+                }
+                monitors[n_monitors++] = m;
             }
-            monitors[n_monitors++] = m;
-            continue;
-
-        error:
-            ofconn_send_error(ofconn, b->data, error);
-
-            for (size_t i = 0; i < n_monitors; i++) {
-                ofmonitor_destroy(monitors[i]);
-            }
-            free(monitors);
-            ovs_mutex_unlock(&ofproto_mutex);
-
-            return error;
         }
     }
 
@@ -6425,8 +6444,11 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
     }
 
     struct ovs_list replies;
-    ofpmp_init(&replies, ofpbuf_from_list(ovs_list_back(msgs))->header);
-    ofmonitor_compose_refresh_updates(&rules, &replies);
+    struct ofp_header *oh = ofpbuf_from_list(ovs_list_back(msgs))->header;
+    ofpmp_init(&replies, oh);
+
+    ofmonitor_compose_refresh_updates(&rules, &replies,
+                               ofputil_protocol_from_ofp_version(oh->version));
     ovs_mutex_unlock(&ofproto_mutex);
 
     rule_collection_destroy(&rules);
@@ -6435,6 +6457,16 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
     free(monitors);
 
     return 0;
+
+error:
+    ofconn_send_error(ofconn, b->header, error);
+    for (size_t i = 0; i < n_monitors; i++) {
+        ofmonitor_destroy(monitors[i]);
+    }
+    free(monitors);
+    ovs_mutex_unlock(&ofproto_mutex);
+
+    return error;
 }
 
 static enum ofperr
