@@ -747,6 +747,7 @@ conn_lookup(struct conntrack *ct, const struct conn_key *key, long long now)
 {
     struct conn_lookup_ctx ctx;
     ctx.conn = NULL;
+    memset(&ctx.key, 0, sizeof ctx.key);
     ctx.key = *key;
     ctx.hash = conn_key_hash(key, ct->hash_basis);
     unsigned bucket = hash_to_bucket(ctx.hash);
@@ -895,6 +896,7 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
 
         if (nat_action_info) {
             nc->nat_info = xmemdup(nat_action_info, sizeof *nc->nat_info);
+            memset(conn_for_un_nat_copy, 0, sizeof *conn_for_un_nat_copy);
 
             if (alg_exp) {
                 if (alg_exp->nat_rpl_dst) {
@@ -933,8 +935,6 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
                 ct_rwlock_unlock(&ct->resources_lock);
             }
             conn_for_un_nat_copy->conn_type = CT_CONN_TYPE_UN_NAT;
-            conn_for_un_nat_copy->nat_info = NULL;
-            conn_for_un_nat_copy->alg = NULL;
             nat_packet(pkt, nc, ctx->icmp_related);
         }
         hmap_insert(&ct->buckets[bucket].connections, &nc->node, ctx->hash);
@@ -1261,6 +1261,7 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
                                      ct->hash_basis,
                                      alg_src_ip_wc(ct_alg_ctl));
         if (alg_exp) {
+            memset(&alg_exp_entry, 0, sizeof alg_exp_entry);
             alg_exp_entry = *alg_exp;
             alg_exp = &alg_exp_entry;
         }
@@ -2611,7 +2612,9 @@ static struct alg_exp_node *
 expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,
                    uint32_t basis, bool src_ip_wc)
 {
-    struct conn_key check_key = *key;
+    struct conn_key check_key;
+    memset(&check_key, 0, sizeof check_key);
+    check_key = *key;
     check_key.src.port = ALG_WC_SRC_PORT;
 
     if (src_ip_wc) {
