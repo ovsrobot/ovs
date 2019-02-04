@@ -8055,7 +8055,35 @@ ovn-nbctl --timeout=3 --wait=hv \
 
 test_ip_packet gw2 gw1
 
-OVN_CLEANUP([hv1],[gw1],[gw2],[ext1])
+# Both gw1 and gw2 at this point should have claimed the cr-alice
+# once each.
+gw1_claim_ct=`grep "cr-alice: Claiming" gw1/ovn-controller.log | wc -l`
+gw2_claim_ct=`grep "cr-alice: Claiming" gw2/ovn-controller.log | wc -l`
+
+# Kill ovs-vswitchd in gw2. gw1 should claim the gateway port.
+# So gw1 should claim twice and gw1 only once.
+
+kill `cat gw2/ovs-vswitchd.pid`
+
+# gw1 should claim the cr-alice
+gw1_claim_ct=$((gw1_claim_ct+1))
+
+OVS_WAIT_UNTIL([test $gw1_claim_ct = `cat gw1/ovn-controller.log \
+| grep -c "cr-alice: Claiming"`])
+
+AT_CHECK([test $gw2_claim_ct = `cat gw2/ovn-controller.log | \
+grep -c "cr-alice: Claiming"`])
+
+ovn-sbctl show
+test_ip_packet gw1 gw2
+
+as gw2
+ovs-appctl -t ovn-controller exit
+ovs-appctl -t ovs-vswitchd exit
+ps -aef | grep ovn-c
+
+OVN_CLEANUP([hv1],[gw1],[ext1])
+
 AT_CLEANUP
 
 AT_SETUP([ovn -- 4 HV, 3 LS, 2 LR, packet test with HA distributed router gateway port])
