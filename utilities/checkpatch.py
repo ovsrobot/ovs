@@ -24,6 +24,7 @@ import sys
 RETURN_CHECK_INITIAL_STATE = 0
 RETURN_CHECK_STATE_WITH_RETURN = 1
 RETURN_CHECK_AWAITING_BRACE = 2
+EXIT_CODE = 255
 __errors = 0
 __warnings = 0
 empty_return_check_state = 0
@@ -837,7 +838,7 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
 
     run_file_checks(text)
     if __errors or __warnings:
-        return -1
+        return EXIT_CODE
     return 0
 
 
@@ -920,7 +921,7 @@ if __name__ == '__main__':
                                        "quiet"])
     except:
         print("Unknown option encountered. Please rerun with -h for help.")
-        sys.exit(-1)
+        sys.exit(EXIT_CODE)
 
     for o, a in optlist:
         if o in ("-h", "--help"):
@@ -946,7 +947,7 @@ if __name__ == '__main__':
             quiet = True
         else:
             print("Unknown option '%s'" % o)
-            sys.exit(-1)
+            sys.exit(EXIT_CODE)
 
     if sys.stdout.isatty():
         colors = True
@@ -974,13 +975,13 @@ Subject: %s
             result = ovs_checkpatch_parse(patch, revision)
             ovs_checkpatch_print_result(result)
             if result:
-                status = -1
+                status = EXIT_CODE
         sys.exit(status)
 
     if not args:
         if sys.stdin.isatty():
             usage()
-            sys.exit(-1)
+            sys.exit(EXIT_CODE)
         result = ovs_checkpatch_parse(sys.stdin.read(), '-')
         ovs_checkpatch_print_result(result)
         sys.exit(result)
@@ -991,5 +992,5 @@ Subject: %s
             print('== Checking "%s" ==' % filename)
         result = ovs_checkpatch_file(filename)
         if result:
-            status = -1
+            status = EXIT_CODE
     sys.exit(status)
