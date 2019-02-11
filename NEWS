@@ -35,6 +35,16 @@ v2.11.0 - xx xxx xxxx
        - add the capability to specify a static ip address and get the L2 one
          allocated dynamically using the following syntax:
            ovn-nbctl lsp-set-addresses <port> "dynamic <IP>"
+   - Userspace datapath:
+     * Add v4/v6 fragmentation support for conntrack.
+     * New ovs-appctl "dpctl/ipf-set-enabled" and "dpctl/ipf-set-disabled"
+       commands for userspace datapath conntrack fragmentation support.
+     * New "ovs-appctl dpctl/ipf-set-min-frag" command for userspace
+       datapath conntrack fragmentation support.
+     * New "ovs-appctl dpctl/ipf-set-max-nfrags" command for userspace datapath
+       conntrack fragmentation support.
+     * New "ovs-appctl dpctl/ipf-get-status" command for userspace datapath
+       conntrack fragmentation support.
    - DPDK:
      * Add support for DPDK 18.11
      * Add support for port representors.
