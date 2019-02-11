@@ -122,6 +122,7 @@ int conntrack_flush_tuple(struct conntrack *, const struct ct_dpif_tuple *,
 int conntrack_set_maxconns(struct conntrack *ct, uint32_t maxconns);
 int conntrack_get_maxconns(struct conntrack *ct, uint32_t *maxconns);
 int conntrack_get_nconns(struct conntrack *ct, uint32_t *nconns);
+void *conntrack_ipf_ctx(struct conntrack *ct);
 
 /* 'struct ct_lock' is a wrapper for an adaptive mutex.  It's useful to try
  * different types of locks (e.g. spinlocks) */
@@ -292,6 +293,9 @@ struct conntrack {
      * last.
      */
     struct ct_rwlock resources_lock;
+
+    /* Fragmentation handling context. */
+    void *ipf;
 
 };
 
