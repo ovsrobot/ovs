@@ -498,6 +498,7 @@ void
 nl_msg_end_nested(struct ofpbuf *msg, size_t offset)
 {
     struct nlattr *attr = ofpbuf_at_assert(msg, offset, sizeof *attr);
+    ovs_assert(msg->size - offset <= USHRT_MAX);
     attr->nla_len = msg->size - offset;
 }
 
