@@ -3308,6 +3308,7 @@ process_special(struct xlate_ctx *ctx, const struct xport *xport)
     } else if (xport->xbundle && xport->xbundle->lacp
                && flow->dl_type == htons(ETH_TYPE_LACP)) {
         if (packet) {
+            mirror_ingress_packet(ctx);
             lacp_process_packet(xport->xbundle->lacp, xport->ofport, packet);
         }
         slow = SLOW_LACP;
