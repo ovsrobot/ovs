@@ -1771,9 +1771,12 @@ xport_rstp_should_manage_bpdu(const struct xport *xport)
     return rstp_should_manage_bpdu(xport_get_rstp_port_state(xport));
 }
 
+#define LEN_WITHOUT_VLAN (ETH_HEADER_LEN + LLC_HEADER_LEN)
+#define LEN_WITH_VLAN (VLAN_HEADER_LEN + LEN_WITHOUT_VLAN)
 static void
 rstp_process_packet(const struct xport *xport, const struct dp_packet *packet)
 {
+    int len;
     struct dp_packet payload = *packet;
     struct eth_header *eth = dp_packet_data(&payload);
 
@@ -1787,7 +1790,9 @@ rstp_process_packet(const struct xport *xport, const struct dp_packet *packet)
         dp_packet_set_size(&payload, ntohs(eth->eth_type) + ETH_HEADER_LEN);
     }
 
-    if (dp_packet_try_pull(&payload, ETH_HEADER_LEN + LLC_HEADER_LEN)) {
+    /* Pull a bit less payload when the BPDU is enveloped in a VLAN header */
+    len = (ntohs(eth->eth_type) == 0x8100) ? LEN_WITH_VLAN : LEN_WITHOUT_VLAN;
+    if (dp_packet_try_pull(&payload, len)) {
         rstp_port_received_bpdu(xport->rstp_port, dp_packet_data(&payload),
                                 dp_packet_size(&payload));
     }
