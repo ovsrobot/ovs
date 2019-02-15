@@ -2070,13 +2070,13 @@ netdev_dpdk_policer_run(struct rte_meter_srtcm *meter,
 
 static int
 ingress_policer_run(struct ingress_policer *policer, struct rte_mbuf **pkts,
-                    int pkt_cnt, bool should_steal)
+                    int pkt_cnt)
 {
     int cnt = 0;
 
     rte_spinlock_lock(&policer->policer_lock);
     cnt = netdev_dpdk_policer_run(&policer->in_policer, &policer->in_prof,
-                                  pkts, pkt_cnt, should_steal);
+                                  pkts, pkt_cnt, true);
     rte_spinlock_unlock(&policer->policer_lock);
 
     return cnt;
@@ -2189,7 +2189,7 @@ netdev_dpdk_vhost_rxq_recv(struct netdev_rxq *rxq,
         dropped = nb_rx;
         nb_rx = ingress_policer_run(policer,
                                     (struct rte_mbuf **) batch->packets,
-                                    nb_rx, true);
+                                    nb_rx);
         dropped -= nb_rx;
     }
 
@@ -2229,7 +2229,7 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
         dropped = nb_rx;
         nb_rx = ingress_policer_run(policer,
                                     (struct rte_mbuf **) batch->packets,
-                                    nb_rx, true);
+                                    nb_rx);
         dropped -= nb_rx;
     }
 
