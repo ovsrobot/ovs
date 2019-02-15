@@ -530,8 +530,6 @@ ipf_list_state_transition(struct ipf *ipf, struct ipf_list *ipf_list,
     case IPF_LIST_STATE_LAST_SEEN:
         if (ff) {
             next_state = IPF_LIST_STATE_FIRST_LAST_SEEN;
-        } else if (lf) {
-            next_state = IPF_LIST_STATE_LAST_SEEN;
         } else {
             next_state = IPF_LIST_STATE_LAST_SEEN;
         }
@@ -765,7 +763,7 @@ ipf_list_key_eq(const struct ipf_list_key *key1,
 static struct ipf_list *
 ipf_list_key_lookup(struct ipf *ipf, const struct ipf_list_key *key,
                     uint32_t hash)
-    /* OVS_REQUIRES(ipf->ipf_lock) */
+    OVS_REQUIRES(ipf->ipf_lock)
 {
     struct ipf_list *ipf_list;
     HMAP_FOR_EACH_WITH_HASH (ipf_list, node, hash, &ipf->frag_lists) {
