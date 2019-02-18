@@ -156,7 +156,7 @@ struct netdev_rxq_dummy {
 static unixctl_cb_func netdev_dummy_set_admin_state;
 static int netdev_dummy_construct(struct netdev *);
 static void netdev_dummy_queue_packet(struct netdev_dummy *,
-                                      struct dp_packet *, int);
+                                      struct dp_packet *, struct flow *, int);
 
 static void dummy_packet_stream_close(struct dummy_packet_stream *);
 
@@ -283,7 +283,7 @@ dummy_packet_stream_run(struct netdev_dummy *dev, struct dummy_packet_stream *s)
             if (retval == n && dp_packet_size(&s->rxbuf) > 2) {
                 dp_packet_pull(&s->rxbuf, 2);
                 netdev_dummy_queue_packet(dev,
-                                          dp_packet_clone(&s->rxbuf), 0);
+                                          dp_packet_clone(&s->rxbuf), NULL, 0);
                 dp_packet_clear(&s->rxbuf);
             }
         } else if (retval != -EAGAIN) {
@@ -1151,7 +1151,7 @@ netdev_dummy_send(struct netdev *netdev, int qid OVS_UNUSED,
                 struct dp_packet *reply = dp_packet_new(0);
                 compose_arp(reply, ARP_OP_REPLY, dev->hwaddr, flow.dl_src,
                             false, flow.nw_dst, flow.nw_src);
-                netdev_dummy_queue_packet(dev, reply, 0);
+                netdev_dummy_queue_packet(dev, reply, NULL, 0);
             }
         }
 
@@ -1562,12 +1562,11 @@ eth_from_packet(const char *s)
 }
 
 static struct dp_packet *
-eth_from_flow(const char *s, size_t packet_size)
+eth_from_flow_str(const char *s, size_t packet_size, struct flow *flow)
 {
     enum odp_key_fitness fitness;
     struct dp_packet *packet;
     struct ofpbuf odp_key;
-    struct flow flow;
     int error;
 
     /* Convert string to datapath key.
@@ -1584,7 +1583,7 @@ eth_from_flow(const char *s, size_t packet_size)
     }
 
     /* Convert odp_key to flow. */
-    fitness = odp_flow_key_to_flow(odp_key.data, odp_key.size, &flow);
+    fitness = odp_flow_key_to_flow(odp_key.data, odp_key.size, flow);
     if (fitness == ODP_FIT_ERROR) {
         ofpbuf_uninit(&odp_key);
         return NULL;
@@ -1592,15 +1591,15 @@ eth_from_flow(const char *s, size_t packet_size)
 
     packet = dp_packet_new(0);
     if (packet_size) {
-        flow_compose(packet, &flow, NULL, 0);
+        flow_compose(packet, flow, NULL, 0);
         if (dp_packet_size(packet) < packet_size) {
-            packet_expand(packet, &flow, packet_size);
+            packet_expand(packet, flow, packet_size);
         } else if (dp_packet_size(packet) > packet_size){
             dp_packet_delete(packet);
             packet = NULL;
         }
     } else {
-        flow_compose(packet, &flow, NULL, 64);
+        flow_compose(packet, flow, NULL, 64);
     }
 
     ofpbuf_uninit(&odp_key);
@@ -1620,14 +1619,28 @@ netdev_dummy_queue_packet__(struct netdev_rxq_dummy *rx, struct dp_packet *packe
 
 static void
 netdev_dummy_queue_packet(struct netdev_dummy *dummy, struct dp_packet *packet,
-                          int queue_id)
+                          struct flow *flow, int queue_id)
     OVS_REQUIRES(dummy->mutex)
 {
     struct netdev_rxq_dummy *rx, *prev;
+    struct offloaded_flow *data;
+    struct flow packet_flow;
 
     if (dummy->rxq_pcap) {
         ovs_pcap_write(dummy->rxq_pcap, packet);
     }
+
+    if (!flow) {
+        flow = &packet_flow;
+        flow_extract(packet, flow);
+    }
+    HMAP_FOR_EACH (data, node, &dummy->offloaded_flows) {
+        if (flow_equal_except(flow, &data->match.flow, &data->match.wc)) {
+            dp_packet_set_flow_mark(packet, data->mark);
+            break;
+        }
+    }
+
     prev = NULL;
     LIST_FOR_EACH (rx, node, &dummy->rxes) {
         if (rx->up.queue_id == queue_id &&
@@ -1673,6 +1686,7 @@ netdev_dummy_receive(struct unixctl_conn *conn,
 
     for (i = k; i < argc; i++) {
         struct dp_packet *packet;
+        struct flow flow;
 
         /* Try to parse 'argv[i]' as packet in hex. */
         packet = eth_from_packet(argv[i]);
@@ -1692,15 +1706,17 @@ netdev_dummy_receive(struct unixctl_conn *conn,
                 i += 2;
             }
             /* Try parse 'argv[i]' as odp flow. */
-            packet = eth_from_flow(flow_str, packet_size);
+            packet = eth_from_flow_str(flow_str, packet_size, &flow);
 
             if (!packet) {
                 unixctl_command_reply_error(conn, "bad packet or flow syntax");
                 goto exit;
             }
+        } else {
+            flow_extract(packet, &flow);
         }
 
-        netdev_dummy_queue_packet(dummy_dev, packet, rx_qid);
+        netdev_dummy_queue_packet(dummy_dev, packet, &flow, rx_qid);
     }
 
     unixctl_command_reply(conn, NULL);
