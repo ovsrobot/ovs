@@ -827,6 +827,12 @@ ovs_native_tunneling_is_on(struct ofproto_dpif *ofproto)
         && atomic_count_get(&ofproto->backer->tnl_count);
 }
 
+bool
+ovs_explicit_drop_action_supported(struct ofproto_dpif *ofproto)
+{
+    return ofproto->backer->rt_support.explicit_drop_action;
+}
+
 /* Tests whether 'backer''s datapath supports recirculation.  Only newer
  * datapaths support OVS_KEY_ATTR_RECIRC_ID in keys.  We need to disable some
  * features on older datapaths that don't support this feature.
@@ -1397,6 +1403,8 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.ct_eventmask = check_ct_eventmask(backer);
     backer->rt_support.ct_clear = check_ct_clear(backer);
     backer->rt_support.max_hash_alg = check_max_dp_hash_alg(backer);
+    backer->rt_support.explicit_drop_action =
+        dpif_supports_explicit_drop_action(backer->dpif);
 
     /* Flow fields. */
     backer->rt_support.odp.ct_state = check_ct_state(backer);

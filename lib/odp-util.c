@@ -43,6 +43,7 @@
 #include "uuid.h"
 #include "openvswitch/vlog.h"
 #include "openvswitch/match.h"
+#include "ofproto/ofproto-dpif-xlate.h"
 
 VLOG_DEFINE_THIS_MODULE(odp_util);
 
@@ -131,6 +132,7 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_CLONE: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_PUSH_NSH: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_POP_NSH: return 0;
+    case OVS_ACTION_ATTR_DROP: return sizeof(enum xlate_error);
 
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
@@ -1181,6 +1183,9 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
     }
     case OVS_ACTION_ATTR_POP_NSH:
         ds_put_cstr(ds, "pop_nsh()");
+        break;
+    case OVS_ACTION_ATTR_DROP:
+        ds_put_cstr(ds, "drop");
         break;
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
@@ -2428,8 +2433,12 @@ odp_actions_from_string(const char *s, const struct simap *port_names,
                         struct ofpbuf *actions)
 {
     size_t old_size;
+    enum xlate_error drop_action;
 
     if (!strcasecmp(s, "drop")) {
+        drop_action = XLATE_OK;
+        nl_msg_put_unspec(actions, OVS_ACTION_ATTR_DROP,
+                          &drop_action, sizeof drop_action);
         return 0;
     }
 

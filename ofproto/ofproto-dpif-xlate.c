@@ -444,6 +444,10 @@ const char *xlate_strerror(enum xlate_error error)
         return "Invalid tunnel metadata";
     case XLATE_UNSUPPORTED_PACKET_TYPE:
         return "Unsupported packet type";
+    case XLATE_CONGESTION_DROP:
+        return "Congestion Drop";
+    case XLATE_FORWARDING_DISABLED:
+        return "Forwarding is disabled";
     }
     return "Unknown error";
 }
@@ -5921,6 +5925,14 @@ put_ct_label(const struct flow *flow, struct ofpbuf *odp_actions,
 }
 
 static void
+put_drop_action(struct ofpbuf *odp_actions, enum xlate_error error)
+{
+    nl_msg_put_unspec(odp_actions, OVS_ACTION_ATTR_DROP,
+                      &error, sizeof error);
+
+}
+
+static void
 put_ct_helper(struct xlate_ctx *ctx,
               struct ofpbuf *odp_actions, struct ofpact_conntrack *ofc)
 {
@@ -7383,48 +7395,51 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         }
         size_t sample_actions_len = ctx.odp_actions->size;
 
-        if (tnl_process_ecn(flow)
-            && (!in_port || may_receive(in_port, &ctx))) {
-            const struct ofpact *ofpacts;
-            size_t ofpacts_len;
+        if (!tnl_process_ecn(flow)) {
+            ctx.error = XLATE_CONGESTION_DROP;
+        } else {
+            if (!in_port || may_receive(in_port, &ctx)) {
+                const struct ofpact *ofpacts;
+                size_t ofpacts_len;
 
-            if (xin->ofpacts) {
-                ofpacts = xin->ofpacts;
-                ofpacts_len = xin->ofpacts_len;
-            } else if (ctx.rule) {
-                const struct rule_actions *actions
-                    = rule_get_actions(&ctx.rule->up);
-                ofpacts = actions->ofpacts;
-                ofpacts_len = actions->ofpacts_len;
-                ctx.rule_cookie = ctx.rule->up.flow_cookie;
-            } else {
-                OVS_NOT_REACHED();
-            }
+                if (xin->ofpacts) {
+                    ofpacts = xin->ofpacts;
+                    ofpacts_len = xin->ofpacts_len;
+                } else if (ctx.rule) {
+                    const struct rule_actions *actions
+                         = rule_get_actions(&ctx.rule->up);
+                    ofpacts = actions->ofpacts;
+                    ofpacts_len = actions->ofpacts_len;
+                    ctx.rule_cookie = ctx.rule->up.flow_cookie;
+                } else {
+                    OVS_NOT_REACHED();
+                }
 
-            mirror_ingress_packet(&ctx);
-            do_xlate_actions(ofpacts, ofpacts_len, &ctx, true, false);
-            if (ctx.error) {
-                goto exit;
-            }
+                mirror_ingress_packet(&ctx);
+                do_xlate_actions(ofpacts, ofpacts_len, &ctx, true, false);
+                if (ctx.error) {
+                    goto exit;
+                }
 
-            /* We've let OFPP_NORMAL and the learning action look at the
-             * packet, so cancel all actions and freezing if forwarding is
-             * disabled. */
-            if (in_port && (!xport_stp_forward_state(in_port) ||
-                            !xport_rstp_forward_state(in_port))) {
-                ctx.odp_actions->size = sample_actions_len;
-                ctx_cancel_freeze(&ctx);
-                ofpbuf_clear(&ctx.action_set);
-            }
+                /* We've let OFPP_NORMAL and the learning action look at the
+                * packet, so cancel all actions and freezing if forwarding is
+                * disabled. */
+                if (in_port && (!xport_stp_forward_state(in_port) ||
+                                !xport_rstp_forward_state(in_port))) {
+                    ctx.odp_actions->size = sample_actions_len;
+                    ctx_cancel_freeze(&ctx);
+                    ofpbuf_clear(&ctx.action_set);
+                    ctx.error = XLATE_FORWARDING_DISABLED;
+                }
 
-            if (!ctx.freezing) {
-                xlate_action_set(&ctx);
-            }
-            if (ctx.freezing) {
-                finish_freezing(&ctx);
+                if (!ctx.freezing) {
+                    xlate_action_set(&ctx);
+                }
+                if (ctx.freezing) {
+                    finish_freezing(&ctx);
+                }
             }
         }
-
         /* Output only fully processed packets. */
         if (!ctx.freezing
             && xbridge->has_in_band
@@ -7522,6 +7537,18 @@ exit:
             ofpbuf_clear(xin->odp_actions);
         }
     }
+
+    /*
+     * If we are going to install "drop" action, check whether
+     * datapath supports explicit "drop"action. If datapath
+     * supports explicit "drop"action then install the "drop"
+     * action containing the drop reason.
+     */
+    if (xin->odp_actions && !xin->odp_actions->size &&
+         ovs_explicit_drop_action_supported(ctx.xbridge->ofproto)) {
+        put_drop_action(xin->odp_actions, ctx.error);
+    }
+
     return ctx.error;
 }
 

@@ -946,6 +946,7 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_POP_NSH,      /* No argument. */
 	OVS_ACTION_ATTR_METER,        /* u32 meter number. */
 	OVS_ACTION_ATTR_CLONE,        /* Nested OVS_CLONE_ATTR_*.  */
+	OVS_ACTION_ATTR_DROP,         /* Drop action. */
 
 #ifndef __KERNEL__
 	OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/
