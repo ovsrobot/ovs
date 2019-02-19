@@ -189,17 +189,28 @@ netdev_vport_alloc(void)
 int
 netdev_vport_construct(struct netdev *netdev_)
 {
+    const struct netdev_class *class = netdev_get_class(netdev_);
+    const char *dpif_port = netdev_vport_class_get_dpif_port(class);
     struct netdev_vport *dev = netdev_vport_cast(netdev_);
     const char *type = netdev_get_type(netdev_);
 
     ovs_mutex_init(&dev->mutex);
     eth_addr_random(&dev->etheraddr);
 
-    /* Add a default destination port for tunnel ports if none specified. */
+    /* Add a default destination port for tunnel ports if none specified.
+     * For vxlan, the dst_port is in the netdev name when creating it, so
+     * use it instead of the default one */
     if (!strcmp(type, "geneve")) {
         dev->tnl_cfg.dst_port = htons(GENEVE_DST_PORT);
     } else if (!strcmp(type, "vxlan")) {
-        dev->tnl_cfg.dst_port = htons(VXLAN_DST_PORT);
+        const char *p, *name = netdev_->name;
+        uint16_t port = VXLAN_DST_PORT;
+
+        if (!strncmp(name, dpif_port, strlen(dpif_port))) {
+            p = name + strlen(dpif_port) + 1;
+            port = atoi(p);
+        }
+        dev->tnl_cfg.dst_port = htons(port);
         update_vxlan_global_cfg(netdev_, NULL, &dev->tnl_cfg);
     } else if (!strcmp(type, "lisp")) {
         dev->tnl_cfg.dst_port = htons(LISP_DST_PORT);
