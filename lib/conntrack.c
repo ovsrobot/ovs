@@ -2115,6 +2115,12 @@ nat_range_hash(const struct conn *conn, uint32_t basis)
     return hash_finish(hash, 0);
 }
 
+/* This function selects a unique new connection key based on the ip and port
+ * settings in the nat tuple. For the case where the port range is not
+ * specified, the ephemeral port from 1024 to 65535 can be selected when the
+ * address is exhausted.
+ * However, the ephemeral ports are not enabled by ICMP/ICMPv6 and DNAT.
+ */
 static bool
 nat_select_range_tuple(struct conntrack *ct, const struct conn *conn,
                        struct conn *nat_conn)
@@ -2126,12 +2132,14 @@ nat_select_range_tuple(struct conntrack *ct, const struct conn *conn,
     uint16_t max_port;
     uint16_t first_port;
     uint32_t hash = nat_range_hash(conn, ct->hash_basis);
+    bool ephemeral_ports_tried = true;
 
     if ((conn->nat_info->nat_action & NAT_ACTION_SRC) &&
         (!(conn->nat_info->nat_action & NAT_ACTION_SRC_PORT))) {
         min_port = ntohs(conn->key.src.port);
         max_port = ntohs(conn->key.src.port);
         first_port = min_port;
+        ephemeral_ports_tried = false;
     } else if ((conn->nat_info->nat_action & NAT_ACTION_DST) &&
                (!(conn->nat_info->nat_action & NAT_ACTION_DST_PORT))) {
         min_port = ntohs(conn->key.dst.port);
@@ -2175,9 +2183,6 @@ nat_select_range_tuple(struct conntrack *ct, const struct conn *conn,
 
     uint16_t port = first_port;
     bool all_ports_tried = false;
-    /* For DNAT, we don't use ephemeral ports. */
-    bool ephemeral_ports_tried = conn->nat_info->nat_action & NAT_ACTION_DST
-                                 ? true : false;
     union ct_addr first_addr = ct_addr;
 
     while (true) {
@@ -2190,6 +2195,7 @@ nat_select_range_tuple(struct conntrack *ct, const struct conn *conn,
         if ((conn->key.nw_proto == IPPROTO_ICMP) ||
             (conn->key.nw_proto == IPPROTO_ICMPV6)) {
             all_ports_tried = true;
+            ephemeral_ports_tried = true;
         } else if (conn->nat_info->nat_action & NAT_ACTION_SRC) {
             nat_conn->rev_key.dst.port = htons(port);
         } else {
