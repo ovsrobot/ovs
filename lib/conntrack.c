@@ -2185,6 +2185,7 @@ nat_select_range_tuple(struct conntrack *ct, const struct conn *conn,
                        conn->key.nw_proto != IPPROTO_ICMPV6;
 
     while (true) {
+
         if (conn->nat_info->nat_action & NAT_ACTION_SRC) {
             nat_conn->rev_key.dst.addr = ct_addr;
             nat_conn->rev_key.dst.port = htons(port);
