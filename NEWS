@@ -17,6 +17,8 @@ Post-v2.11.0
        conntrack fragmentation support.
      * New "ovs-appctl dpctl/ipf-get-status" command for userspace datapath
        conntrack fragmentation support.
+   - OVN:
+     * Select IPAM mac_prefix in a random manner if not provided by the user
 
 v2.11.0 - 19 Feb 2019
 ---------------------
