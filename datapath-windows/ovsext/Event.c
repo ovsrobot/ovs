@@ -245,8 +245,6 @@ OvsSubscribeEventIoctl(PFILE_OBJECT fileObject,
         return STATUS_INVALID_PARAMETER;
     }
 
-    OvsAcquireEventQueueLock(eventId);
-
     instance = OvsGetOpenInstance(fileObject, request->dpNo);
 
     if (instance == NULL) {
@@ -258,6 +256,7 @@ OvsSubscribeEventIoctl(PFILE_OBJECT fileObject,
     /*
      * XXX for now, we don't allow change mask.
      */
+    OvsAcquireEventQueueLock(eventId);
     queue = (POVS_EVENT_QUEUE)instance->eventQueue;
     if (request->subscribe && queue) {
         if (request->protocol == NETLINK_GENERIC
