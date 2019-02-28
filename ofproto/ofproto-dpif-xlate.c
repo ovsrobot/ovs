@@ -3329,6 +3329,7 @@ process_special(struct xlate_ctx *ctx, const struct xport *xport)
                && flow->dl_type == htons(ETH_TYPE_LACP)) {
         if (packet) {
             lacp_may_enable = lacp_process_packet(xport->xbundle->lacp,
+                                                  xport->xbundle->bond,
                                                   xport->ofport, packet);
             /* Update LACP status in bond-slave to avoid packet-drops until
              * LACP state machine is run by the main thread. */

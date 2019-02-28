@@ -46,8 +46,8 @@ struct lacp *lacp_ref(const struct lacp *);
 void lacp_configure(struct lacp *, const struct lacp_settings *);
 bool lacp_is_active(const struct lacp *);
 
-bool lacp_process_packet(struct lacp *, const void *slave,
-                         const struct dp_packet *packet);
+bool lacp_process_packet(struct lacp *, const void *bond,
+                         const void *slave, const struct dp_packet *packet);
 enum lacp_status lacp_status(const struct lacp *);
 
 struct lacp_slave_settings {
@@ -67,8 +67,8 @@ bool lacp_slave_is_current(const struct lacp *, const void *slave_);
 /* Callback function for lacp_run() for sending a LACP PDU. */
 typedef void lacp_send_pdu(void *slave, const void *pdu, size_t pdu_size);
 
-void lacp_run(struct lacp *, lacp_send_pdu *);
-void lacp_wait(struct lacp *);
+void lacp_run(struct lacp *, const void *, lacp_send_pdu *);
+void lacp_wait(struct lacp *, const void *);
 
 struct lacp_slave_stats {
     /* id */
