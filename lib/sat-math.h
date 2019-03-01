@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2012 Nicira, Inc.
+ * Copyright (c) 2008, 2012, 2019 Nicira, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,24 +20,43 @@
 #include <limits.h>
 #include "openvswitch/util.h"
 
-/* Saturating addition: overflow yields UINT_MAX. */
+/* Returns x + y, clamping out-of-range results into the range of the return
+ * type. */
 static inline unsigned int
 sat_add(unsigned int x, unsigned int y)
 {
     return x + y >= x ? x + y : UINT_MAX;
 }
+static inline long long int
+llsat_add(long long int x, long long int y)
+{
+    return (x >= 0 && y >= 0 && x > LLONG_MAX - y ? LLONG_MAX
+            : x < 0 && y < 0 && x < LLONG_MIN - y ? LLONG_MIN
+            : x + y);
+}
 
-/* Saturating subtraction: underflow yields 0. */
+/* Returns x - y, clamping out-of-range results into the range of the return
+ * type. */
 static inline unsigned int
 sat_sub(unsigned int x, unsigned int y)
 {
     return x >= y ? x - y : 0;
 }
+static inline long long int
+llsat_sub(long long int x, long long int y)
+{
+    return (x >= 0 && y < 0 && x > LLONG_MAX + y ? LLONG_MAX
+            : x < 0 && y >= 0 && x < LLONG_MIN + y ? LLONG_MIN
+            : x - y);
+}
 
+/* Returns x * y, clamping out-of-range results into the range of the return
+ * type. */
 static inline unsigned int
 sat_mul(unsigned int x, unsigned int y)
 {
     return OVS_SAT_MUL(x, y);
 }
+long long int llsat_mul(long long int x, long long int y);
 
 #endif /* sat-math.h */

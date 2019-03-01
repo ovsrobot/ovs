@@ -1,4 +1,4 @@
-# Copyright (C) 2009-2018 Nicira, Inc.
+# Copyright (C) 2009-2019 Nicira, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
@@ -248,6 +248,7 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/rstp-common.h \
 	lib/rstp-state-machines.c \
 	lib/rstp-state-machines.h \
+	lib/sat-math.c \
 	lib/sat-math.h \
 	lib/seq.c \
 	lib/seq.h \
