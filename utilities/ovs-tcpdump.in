@@ -416,6 +416,10 @@ def main():
         print("Error: must at least specify an interface with '-i' option")
         sys.exit(1)
 
+    if os.system("command -v %s" % (dump_cmd)):
+        print("Error: %s is not installed !!"%dump_cmd)
+        sys.exit(1)
+
     if '-l' not in tcpdargs:
         tcpdargs.insert(0, '-l')
 
