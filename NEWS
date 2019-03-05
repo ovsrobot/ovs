@@ -24,6 +24,7 @@ Post-v2.11.0
        protocol extension.
     - OVN:
      * Added the HA chassis group support and deprecated Gateway chassis.
+     * Added 'external' logical port support.
 
 v2.11.0 - 19 Feb 2019
 ---------------------
