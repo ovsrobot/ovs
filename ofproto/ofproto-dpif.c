@@ -137,6 +137,7 @@ struct ofport_dpif {
     struct cfm *cfm;            /* Connectivity Fault Management, if any. */
     struct bfd *bfd;            /* BFD, if any. */
     struct lldp *lldp;          /* lldp, if any. */
+    bool carrier_up;            /* Carrier state from NIC */
     bool is_tunnel;             /* This port is a tunnel. */
     long long int carrier_seq;  /* Carrier status changes. */
     struct ofport_dpif *peer;   /* Peer if patch port. */
@@ -3324,12 +3325,13 @@ static void
 bundle_run(struct ofbundle *bundle)
 {
     if (bundle->lacp) {
-        lacp_run(bundle->lacp, send_pdu_cb);
+        lacp_run(bundle->lacp, bundle->bond, send_pdu_cb);
     }
     if (bundle->bond) {
         struct ofport_dpif *port;
 
         LIST_FOR_EACH (port, bundle_node, &bundle->ports) {
+            bond_slave_set_carrier(bundle->bond, port, port->carrier_up);
             bond_slave_set_may_enable(bundle->bond, port, port->up.may_enable);
         }
 
@@ -3347,7 +3349,7 @@ static void
 bundle_wait(struct ofbundle *bundle)
 {
     if (bundle->lacp) {
-        lacp_wait(bundle->lacp);
+        lacp_wait(bundle->lacp, bundle->bond);
     }
     if (bundle->bond) {
         bond_wait(bundle->bond);
@@ -3563,8 +3565,10 @@ ofport_update_peer(struct ofport_dpif *ofport)
 static bool
 may_enable_port(struct ofport_dpif *ofport)
 {
+    ofport->carrier_up = netdev_get_carrier(ofport->up.netdev);
+
     /* Carrier must be up. */
-    if (!netdev_get_carrier(ofport->up.netdev)) {
+    if (!ofport->carrier_up) {
         return false;
     }
 

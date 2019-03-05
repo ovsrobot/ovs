@@ -33,6 +33,7 @@
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
 #include "util.h"
+#include "ofproto/bond.h"
 
 VLOG_DEFINE_THIS_MODULE(lacp);
 
@@ -148,7 +149,7 @@ static void slave_get_actor(struct slave *, struct lacp_info *actor)
     OVS_REQUIRES(mutex);
 static void slave_get_priority(struct slave *, struct lacp_info *priority)
     OVS_REQUIRES(mutex);
-static bool slave_may_tx(const struct slave *)
+static bool slave_may_tx(const void *bond, const struct slave *)
     OVS_REQUIRES(mutex);
 static struct slave *slave_lookup(const struct lacp *, const void *slave)
     OVS_REQUIRES(mutex);
@@ -326,14 +327,15 @@ lacp_is_active(const struct lacp *lacp) OVS_EXCLUDED(mutex)
  * called on all packets received on 'slave_' with Ethernet Type ETH_TYPE_LACP.
  */
 bool
-lacp_process_packet(struct lacp *lacp, const void *slave_,
-                    const struct dp_packet *packet)
+lacp_process_packet(struct lacp *lacp, const void *bond,
+                    const void *slave_, const struct dp_packet *packet)
     OVS_EXCLUDED(mutex)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
     const struct lacp_pdu *pdu;
     long long int tx_rate;
     struct slave *slave;
+    bool carrier_up = false;
     bool lacp_may_enable = false;
 
     lacp_lock();
@@ -347,6 +349,17 @@ lacp_process_packet(struct lacp *lacp, const void *slave_,
     if (!pdu) {
         slave->count_rx_pdus_bad++;
         VLOG_WARN_RL(&rl, "%s: received an unparsable LACP PDU.", lacp->name);
+        goto out;
+    }
+
+    /* On some NICs L1 state reporting is slow. In case LACP packets are
+     * received while carrier (L1) state is still down, drop the LACP PDU and
+     * trigger re-checking of L1 state. */
+    carrier_up = bond_slave_get_carrier(bond, slave->aux);
+    if (!carrier_up) {
+        VLOG_INFO_RL(&rl, "%s: carrier state is DOWN,"
+                     " dropping received LACP PDU.", slave->name);
+        seq_change(connectivity_seq_get());
         goto out;
     }
 
@@ -529,7 +542,8 @@ lacp_slave_is_current(const struct lacp *lacp, const void *slave_)
 
 /* This function should be called periodically to update 'lacp'. */
 void
-lacp_run(struct lacp *lacp, lacp_send_pdu *send_pdu) OVS_EXCLUDED(mutex)
+lacp_run(struct lacp *lacp, const void *bond,
+         lacp_send_pdu *send_pdu) OVS_EXCLUDED(mutex)
 {
     struct slave *slave;
 
@@ -559,7 +573,7 @@ lacp_run(struct lacp *lacp, lacp_send_pdu *send_pdu) OVS_EXCLUDED(mutex)
     HMAP_FOR_EACH (slave, node, &lacp->slaves) {
         struct lacp_info actor;
 
-        if (!slave_may_tx(slave)) {
+        if (!slave_may_tx(bond, slave)) {
             continue;
         }
 
@@ -588,13 +602,13 @@ lacp_run(struct lacp *lacp, lacp_send_pdu *send_pdu) OVS_EXCLUDED(mutex)
 
 /* Causes poll_block() to wake up when lacp_run() needs to be called again. */
 void
-lacp_wait(struct lacp *lacp) OVS_EXCLUDED(mutex)
+lacp_wait(struct lacp *lacp, const void *bond) OVS_EXCLUDED(mutex)
 {
     struct slave *slave;
 
     lacp_lock();
     HMAP_FOR_EACH (slave, node, &lacp->slaves) {
-        if (slave_may_tx(slave)) {
+        if (slave_may_tx(bond, slave)) {
             timer_wait(&slave->tx);
         }
 
@@ -818,9 +832,17 @@ slave_get_priority(struct slave *slave, struct lacp_info *priority)
 }
 
 static bool
-slave_may_tx(const struct slave *slave) OVS_REQUIRES(mutex)
+slave_may_tx(const void *bond, const struct slave *slave)
+    OVS_REQUIRES(mutex)
 {
-    return slave->lacp->active || slave->status != LACP_DEFAULTED;
+    bool carrier_up = true;
+
+    if (bond) {
+        carrier_up = bond_slave_get_carrier(bond, slave->aux);
+    }
+
+    return carrier_up &&
+        (slave->lacp->active || slave->status != LACP_DEFAULTED);
 }
 
 static struct slave *

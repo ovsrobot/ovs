@@ -93,6 +93,7 @@ struct bond_slave {
     /* Link status. */
     bool enabled;               /* May be chosen for flows? */
     bool may_enable;            /* Client considers this slave bondable. */
+    bool carrier_up;            /* Carrier state from NIC port */
     long long delay_expires;    /* Time after which 'enabled' may change. */
 
     /* Rebalancing info.  Used only by bond_rebalance(). */
@@ -632,6 +633,35 @@ bond_slave_set_may_enable(struct bond *bond, void *slave_, bool may_enable)
     ovs_rwlock_wrlock(&rwlock);
     bond_slave_lookup(bond, slave_)->may_enable = may_enable;
     ovs_rwlock_unlock(&rwlock);
+}
+
+void
+bond_slave_set_carrier(struct bond *bond, void *slave_, bool carrier_up)
+{
+    struct bond_slave *slave = NULL;
+
+    ovs_rwlock_wrlock(&rwlock);
+    slave = bond_slave_lookup(bond, slave_);
+    if (slave) {
+        slave->carrier_up = carrier_up;
+    }
+    ovs_rwlock_unlock(&rwlock);
+}
+
+bool
+bond_slave_get_carrier(const struct bond *bond, void *slave_)
+{
+    bool carrier_up = false;
+    struct bond_slave *slave;
+
+    ovs_rwlock_rdlock(&rwlock);
+    slave = bond_slave_lookup(CONST_CAST(struct bond *, bond), slave_);
+    if (slave) {
+        carrier_up = slave->carrier_up;
+    }
+    ovs_rwlock_unlock(&rwlock);
+
+    return carrier_up;
 }
 
 /* Performs periodic maintenance on 'bond'.

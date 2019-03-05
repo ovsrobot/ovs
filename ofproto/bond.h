@@ -79,6 +79,9 @@ void bond_wait(struct bond *);
 
 void bond_slave_set_may_enable(struct bond *, void *slave_, bool may_enable);
 
+void bond_slave_set_carrier(struct bond *bond, void *slave_, bool carrier_up);
+bool bond_slave_get_carrier(const struct bond *bond, void *slave_);
+
 /* Special MAC learning support for SLB bonding. */
 bool bond_should_send_learning_packets(struct bond *);
 struct dp_packet *bond_compose_learning_packet(struct bond *,
