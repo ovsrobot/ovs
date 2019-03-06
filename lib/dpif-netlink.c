@@ -2036,6 +2036,9 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
                 csum_on = tnl_cfg->csum;
             }
             netdev_close(outdev);
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_USERSPACE) {
+            err = EOPNOTSUPP;
+            goto out;
         }
     }
 
