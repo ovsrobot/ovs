@@ -3208,6 +3208,7 @@ ovsdb_idl_delete_row(struct ovsdb_idl_row *row)
         ovsdb_idl_row_destroy(row);
     } else {
         ovsdb_idl_row_reparse_backrefs(row);
+        ovsdb_idl_row_destroy(row);
     }
 }
 
