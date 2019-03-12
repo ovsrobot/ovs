@@ -455,6 +455,11 @@ learn_parse__(char *orig, char *arg, const struct ofputil_port_map *port_map,
             learn = ofpacts->header;
         }
     }
+
+    if ((char *)ofpbuf_tail(ofpacts) - (char *)ofpacts->header > UINT16_MAX) {
+        return xasprintf("input too big");
+    }
+
     ofpact_finish_LEARN(ofpacts, &learn);
 
     return NULL;
