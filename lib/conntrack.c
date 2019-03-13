@@ -753,6 +753,24 @@ conn_lookup(struct conntrack *ct, const struct conn_key *key, long long now)
     return ctx.conn;
 }
 
+/* This function is called with the bucket lock held. */
+static struct conn *
+conn_lookup_any(const struct conn_key *key,
+                const struct conntrack_bucket *ctb, uint32_t hash)
+{
+    struct conn *conn = NULL;
+
+    HMAP_FOR_EACH_WITH_HASH (conn, node, hash, &ctb->connections) {
+        if (!conn_key_cmp(&conn->key, key)) {
+            break;
+        }
+        if (!conn_key_cmp(&conn->rev_key, key)) {
+            break;
+        }
+    }
+    return conn;
+}
+
 static void
 conn_seq_skew_set(struct conntrack *ct, const struct conn_key *key,
                   long long now, int seq_skew, bool seq_skew_dir)
@@ -821,6 +839,20 @@ conn_clean(struct conntrack *ct, struct conn *conn,
     } else {
         delete_conn(conn);
     }
+}
+
+static void
+conn_clean_safe(struct conntrack *ct, struct conn *conn,
+                struct conntrack_bucket *ctb, uint32_t hash)
+{
+    ovs_mutex_lock(&ctb->cleanup_mutex);
+    ct_lock_lock(&ctb->lock);
+    conn = conn_lookup_any(&conn->key, ctb, hash);
+    if (conn) {
+        conn_clean(ct, conn, ctb);
+    }
+    ct_lock_unlock(&ctb->lock);
+    ovs_mutex_unlock(&ctb->cleanup_mutex);
 }
 
 static bool
@@ -969,6 +1001,7 @@ conn_update_state(struct conntrack *ct, struct dp_packet *pkt,
     OVS_REQUIRES(ct->buckets[bucket].lock)
 {
     bool create_new_conn = false;
+    struct conn lconn;
 
     if (ctx->icmp_related) {
         pkt->md.ct_state |= CS_RELATED;
@@ -995,7 +1028,10 @@ conn_update_state(struct conntrack *ct, struct dp_packet *pkt,
             pkt->md.ct_state = CS_INVALID;
             break;
         case CT_UPDATE_NEW:
-            conn_clean(ct, *conn, &ct->buckets[bucket]);
+            memcpy(&lconn, *conn, sizeof lconn);
+            ct_lock_unlock(&ct->buckets[bucket].lock);
+            conn_clean_safe(ct, &lconn, &ct->buckets[bucket], ctx->hash);
+            ct_lock_lock(&ct->buckets[bucket].lock);
             create_new_conn = true;
             break;
         default:
@@ -1184,8 +1220,12 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
     conn = ctx->conn;
 
     /* Delete found entry if in wrong direction. 'force' implies commit. */
-    if (conn && force && ctx->reply) {
-        conn_clean(ct, conn, &ct->buckets[bucket]);
+    if (OVS_LIKELY(force && ctx->reply && conn)) {
+        struct conn lconn;
+        memcpy(&lconn, conn, sizeof lconn);
+        ct_lock_unlock(&ct->buckets[bucket].lock);
+        conn_clean_safe(ct, &lconn, &ct->buckets[bucket], ctx->hash);
+        ct_lock_lock(&ct->buckets[bucket].lock);
         conn = NULL;
     }
 
@@ -1391,19 +1431,17 @@ sweep_bucket(struct conntrack *ct, struct conntrack_bucket *ctb,
 
     for (unsigned i = 0; i < N_CT_TM; i++) {
         LIST_FOR_EACH_SAFE (conn, next, exp_node, &ctb->exp_lists[i]) {
-            if (conn->conn_type == CT_CONN_TYPE_DEFAULT) {
-                if (!conn_expired(conn, now) || count >= limit) {
-                    min_expiration = MIN(min_expiration, conn->expiration);
-                    if (count >= limit) {
-                        /* Do not check other lists. */
-                        COVERAGE_INC(conntrack_long_cleanup);
-                        return min_expiration;
-                    }
-                    break;
+            if (!conn_expired(conn, now) || count >= limit) {
+                min_expiration = MIN(min_expiration, conn->expiration);
+                if (count >= limit) {
+                    /* Do not check other lists. */
+                    COVERAGE_INC(conntrack_long_cleanup);
+                    return min_expiration;
                 }
-                conn_clean(ct, conn, ctb);
-                count++;
+                break;
             }
+            conn_clean(ct, conn, ctb);
+            count++;
         }
     }
     return min_expiration;
@@ -2547,16 +2585,19 @@ int
 conntrack_flush(struct conntrack *ct, const uint16_t *zone)
 {
     for (unsigned i = 0; i < CONNTRACK_BUCKETS; i++) {
-        struct conn *conn, *next;
-
-        ct_lock_lock(&ct->buckets[i].lock);
-        HMAP_FOR_EACH_SAFE (conn, next, node, &ct->buckets[i].connections) {
-            if ((!zone || *zone == conn->key.zone) &&
-                (conn->conn_type == CT_CONN_TYPE_DEFAULT)) {
-                conn_clean(ct, conn, &ct->buckets[i]);
+        struct conntrack_bucket *ctb = &ct->buckets[i];
+        ovs_mutex_lock(&ctb->cleanup_mutex);
+        ct_lock_lock(&ctb->lock);
+        for (unsigned j = 0; j < N_CT_TM; j++) {
+            struct conn *conn, *next;
+            LIST_FOR_EACH_SAFE (conn, next, exp_node, &ctb->exp_lists[j]) {
+                if (!zone || *zone == conn->key.zone) {
+                    conn_clean(ct, conn, ctb);
+                }
             }
         }
-        ct_lock_unlock(&ct->buckets[i].lock);
+        ct_lock_unlock(&ctb->lock);
+        ovs_mutex_unlock(&ctb->cleanup_mutex);
     }
 
     return 0;
@@ -2573,16 +2614,19 @@ conntrack_flush_tuple(struct conntrack *ct, const struct ct_dpif_tuple *tuple,
     tuple_to_conn_key(tuple, zone, &ctx.key);
     ctx.hash = conn_key_hash(&ctx.key, ct->hash_basis);
     unsigned bucket = hash_to_bucket(ctx.hash);
+    struct conntrack_bucket *ctb = &ct->buckets[bucket];
 
-    ct_lock_lock(&ct->buckets[bucket].lock);
-    conn_key_lookup(&ct->buckets[bucket], &ctx, time_msec());
+    ovs_mutex_lock(&ctb->cleanup_mutex);
+    ct_lock_lock(&ctb->lock);
+    conn_key_lookup(ctb, &ctx, time_msec());
     if (ctx.conn && ctx.conn->conn_type == CT_CONN_TYPE_DEFAULT) {
-        conn_clean(ct, ctx.conn, &ct->buckets[bucket]);
+        conn_clean(ct, ctx.conn, ctb);
     } else {
         VLOG_WARN("Must flush tuple using the original pre-NATed tuple");
         error = ENOENT;
     }
-    ct_lock_unlock(&ct->buckets[bucket].lock);
+    ct_lock_unlock(&ctb->lock);
+    ovs_mutex_unlock(&ctb->cleanup_mutex);
     return error;
 }
 
