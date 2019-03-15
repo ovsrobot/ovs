@@ -142,11 +142,12 @@ ovsdb|WARN|schema: changed 2 columns in 'OVN_Southbound' database from ephemeral
                  echo "$i-$j exited with status $status" > $i-$j:$status
              fi
              rm $i-$j.running
+             sleep 0.5
          done
          : > $i.done)&
+         sleep 0.3
     done
     echo "...done"
-    sleep 2
 
     echo "waiting for ovn-sbctl processes to exit..."
     # Use file instead of var because code inside "while" runs in a subshell.
