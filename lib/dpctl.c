@@ -2584,8 +2584,8 @@ dpctl_unixctl_handler(struct unixctl_conn *conn, int argc, const char *argv[],
     if (!set_names) {
         dpctl_p.names = dpctl_p.verbosity > 0;
     }
-    VLOG_INFO("set_names=%d verbosity=%d names=%d", set_names,
-              dpctl_p.verbosity, dpctl_p.names);
+    VLOG_DBG("set_names=%d verbosity=%d names=%d", set_names,
+             dpctl_p.verbosity, dpctl_p.names);
 
     if (!error) {
         dpctl_command_handler *handler = (dpctl_command_handler *) aux;
