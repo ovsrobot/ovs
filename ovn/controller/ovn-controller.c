@@ -511,6 +511,14 @@ get_nb_cfg(const struct sbrec_sb_global_table *sb_global_table)
     return sb ? sb->nb_cfg : 0;
 }
 
+static const char *
+get_transport_zones(const struct ovsrec_open_vswitch_table *ovs_table)
+{
+    const struct ovsrec_open_vswitch *cfg
+        = ovsrec_open_vswitch_table_first(ovs_table);
+    return smap_get_def(&cfg->external_ids, "ovn-transport-zones", "");
+}
+
 static void
 ctrl_register_ovs_idl(struct ovsdb_idl *ovs_idl)
 {
@@ -686,6 +694,9 @@ main(int argc, char *argv[])
             const char *chassis_id
                 = get_chassis_id(ovsrec_open_vswitch_table_get(
                                      ovs_idl_loop.idl));
+            const char *transport_zones
+                = get_transport_zones(ovsrec_open_vswitch_table_get(
+                                      ovs_idl_loop.idl));
 
             const struct sbrec_chassis *chassis = NULL;
             if (chassis_id) {
@@ -697,7 +708,8 @@ main(int argc, char *argv[])
                     ovs_idl_txn,
                     ovsrec_bridge_table_get(ovs_idl_loop.idl), br_int,
                     sbrec_chassis_table_get(ovnsb_idl_loop.idl), chassis_id,
-                    sbrec_sb_global_first(ovnsb_idl_loop.idl));
+                    sbrec_sb_global_first(ovnsb_idl_loop.idl),
+                    transport_zones);
 
                 if (ofctrl_is_connected()) {
                     /* Calculate the active tunnels only if have an an active

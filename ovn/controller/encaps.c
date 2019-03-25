@@ -195,13 +195,56 @@ chassis_tunnel_add(const struct sbrec_chassis *chassis_rec, const struct sbrec_s
     return tuncnt;
 }
 
+/*
+* Returns true if our_chassis_tzones and chassis_tzones have at least
+* one common transport zone.
+*/
+static bool
+chassis_tzones_overlap(const char *our_chassis_tzones,
+                       const char *chassis_tzones)
+{
+    if (!strcmp(our_chassis_tzones, "") && !strcmp(chassis_tzones, "")) {
+        return true;
+    }
+
+    bool found = false;
+    char *our_tzones_orig;
+    char *our_tzones = xstrdup(our_chassis_tzones);
+    char *i = our_tzones_orig = our_tzones;
+
+    while ((i = strsep(&our_tzones, ","))) {
+
+        char *tzones_orig;
+        char *tzones = xstrdup(chassis_tzones);
+        char *j = tzones_orig = tzones;
+
+        while ((j = strsep(&tzones, ","))) {
+
+            if (!strcmp(i, j)) {
+                found = true;
+                break;
+            }
+        }
+
+        free(tzones_orig);
+        if (found) {
+            break;
+        }
+
+    }
+
+    free(our_tzones_orig);
+    return found;
+}
+
 void
 encaps_run(struct ovsdb_idl_txn *ovs_idl_txn,
            const struct ovsrec_bridge_table *bridge_table,
            const struct ovsrec_bridge *br_int,
            const struct sbrec_chassis_table *chassis_table,
            const char *chassis_id,
-           const struct sbrec_sb_global *sbg)
+           const struct sbrec_sb_global *sbg,
+           const char *transport_zones)
 {
     if (!ovs_idl_txn || !br_int) {
         return;
@@ -251,7 +294,18 @@ encaps_run(struct ovsdb_idl_txn *ovs_idl_txn,
 
     SBREC_CHASSIS_TABLE_FOR_EACH (chassis_rec, chassis_table) {
         if (strcmp(chassis_rec->name, chassis_id)) {
-            /* Create tunnels to the other chassis. */
+            /* Create tunnels to the other Chassis belonging to the
+             * same transport zone */
+            const char *chassis_tzones = smap_get_def(
+                &chassis_rec->external_ids, "ovn-transport-zones", "");
+
+            if (!chassis_tzones_overlap(transport_zones, chassis_tzones)) {
+                VLOG_DBG("Skipping encap creation for Chassis '%s' because "
+                         "it belongs to different transport zones",
+                         chassis_rec->name);
+                continue;
+            }
+
             if (chassis_tunnel_add(chassis_rec, sbg, &tc) == 0) {
                 VLOG_INFO("Creating encap for '%s' failed", chassis_rec->name);
                 continue;
