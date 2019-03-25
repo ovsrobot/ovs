@@ -696,7 +696,7 @@ main(int argc, char *argv[])
                 encaps_run(
                     ovs_idl_txn,
                     ovsrec_bridge_table_get(ovs_idl_loop.idl), br_int,
-                    sbrec_chassis_table_get(ovnsb_idl_loop.idl), chassis_id,
+                    sbrec_chassis_table_get(ovnsb_idl_loop.idl), chassis,
                     sbrec_sb_global_first(ovnsb_idl_loop.idl));
 
                 if (ofctrl_is_connected()) {

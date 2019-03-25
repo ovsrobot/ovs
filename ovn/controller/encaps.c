@@ -195,20 +195,52 @@ chassis_tunnel_add(const struct sbrec_chassis *chassis_rec, const struct sbrec_s
     return tuncnt;
 }
 
+/*
+ * Check if both chassis are in the same transport zone.
+ */
+static bool
+check_chassis_tzones(const char *our_chassis_tzones,
+                     const char *chassis_tzones)
+{
+    if (!strcmp(our_chassis_tzones, "") && !strcmp(chassis_tzones, "")) {
+        return true;
+    }
+
+    char *our_tzones = xstrdup(our_chassis_tzones);
+    char *i, *j;
+
+    for (i = strsep(&our_tzones, ","); i != NULL;
+         i = strsep(&our_tzones, ",")) {
+
+        char *tzones = xstrdup(chassis_tzones);
+        for (j = strsep(&tzones, ","); j != NULL;
+             j = strsep(&tzones, ",")) {
+
+            if (!strcmp(i, j)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 void
 encaps_run(struct ovsdb_idl_txn *ovs_idl_txn,
            const struct ovsrec_bridge_table *bridge_table,
            const struct ovsrec_bridge *br_int,
            const struct sbrec_chassis_table *chassis_table,
-           const char *chassis_id,
+           const struct sbrec_chassis *our_chassis,
            const struct sbrec_sb_global *sbg)
 {
-    if (!ovs_idl_txn || !br_int) {
+    if (!ovs_idl_txn || !br_int || !our_chassis) {
         return;
     }
 
     const struct sbrec_chassis *chassis_rec;
     const struct ovsrec_bridge *br;
+    const char *our_chassis_tzones = smap_get_def(
+        &our_chassis->external_ids, "ovn-transport-zones", "");
 
     struct tunnel_ctx tc = {
         .chassis = SHASH_INITIALIZER(&tc.chassis),
@@ -219,7 +251,7 @@ encaps_run(struct ovsdb_idl_txn *ovs_idl_txn,
     tc.ovs_txn = ovs_idl_txn;
     ovsdb_idl_txn_add_comment(tc.ovs_txn,
                               "ovn-controller: modifying OVS tunnels '%s'",
-                              chassis_id);
+                              our_chassis->name);
 
     /* Collect all port names into tc.port_names.
      *
@@ -250,8 +282,20 @@ encaps_run(struct ovsdb_idl_txn *ovs_idl_txn,
     }
 
     SBREC_CHASSIS_TABLE_FOR_EACH (chassis_rec, chassis_table) {
-        if (strcmp(chassis_rec->name, chassis_id)) {
-            /* Create tunnels to the other chassis. */
+
+        if (strcmp(chassis_rec->name, our_chassis->name)) {
+            /* Create tunnels to the other Chassis belonging to the
+             * same transport zone */
+            const char *chassis_tzones = smap_get_def(
+                &chassis_rec->external_ids, "ovn-transport-zones", "");
+
+            if (!check_chassis_tzones(our_chassis_tzones, chassis_tzones)) {
+                VLOG_DBG("Skipping encap creation for Chassis '%s' because "
+                         "it belongs to different transport zones",
+                         chassis_rec->name);
+                continue;
+            }
+
             if (chassis_tunnel_add(chassis_rec, sbg, &tc) == 0) {
                 VLOG_INFO("Creating encap for '%s' failed", chassis_rec->name);
                 continue;
