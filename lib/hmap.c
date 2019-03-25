@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2009, 2010, 2012, 2013, 2015 Nicira, Inc.
+ * Copyright (c) 2008, 2009, 2010, 2012, 2013, 2015, 2019 Nicira, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,6 +103,7 @@ resize(struct hmap *hmap, size_t new_mask, const char *where)
             tmp.buckets[i] = NULL;
         }
     }
+    int max_count = 0;
     for (i = 0; i <= hmap->mask; i++) {
         struct hmap_node *node, *next;
         int count = 0;
@@ -111,15 +112,20 @@ resize(struct hmap *hmap, size_t new_mask, const char *where)
             hmap_insert_fast(&tmp, node, node->hash);
             count++;
         }
-        if (count > 5) {
-            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(10, 10);
-            COVERAGE_INC(hmap_pathological);
-            VLOG_DBG_RL(&rl, "%s: %d nodes in bucket (%"PRIuSIZE" nodes, %"PRIuSIZE" buckets)",
-                        where, count, hmap->n, hmap->mask + 1);
+        if (count > max_count) {
+            max_count = count;
         }
     }
     hmap_swap(hmap, &tmp);
     hmap_destroy(&tmp);
+
+    if (max_count > 5) {
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(10, 10);
+        COVERAGE_INC(hmap_pathological);
+        VLOG_DBG_RL(&rl, "%s: %d nodes in bucket "
+                    "(%"PRIuSIZE" nodes, %"PRIuSIZE" buckets)",
+                    where, max_count, hmap->n, hmap->mask + 1);
+    }
 }
 
 static size_t
