@@ -24,6 +24,9 @@ Post-v2.11.0
        protocol extension.
    - OVN:
      * Select IPAM mac_prefix in a random manner if not provided by the user
+     * Support for Transport Zones, a way to separate chassis into
+       logical groups which results in tunnels only been formed between
+       members of the same transport zone(s).
    - New QoS type "linux-netem" on Linux.
 
 v2.11.0 - 19 Feb 2019

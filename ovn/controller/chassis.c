@@ -139,6 +139,8 @@ chassis_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
     const char *datapath_type =
         br_int && br_int->datapath_type ? br_int->datapath_type : "";
     const char *cms_options = get_cms_options(&cfg->external_ids);
+    const char *transport_zones = smap_get_def(&cfg->external_ids,
+                                               "ovn-transport-zones", "");
 
     struct ds iface_types = DS_EMPTY_INITIALIZER;
     ds_put_cstr(&iface_types, "");
@@ -167,18 +169,22 @@ chassis_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
             = smap_get_def(&chassis_rec->external_ids, "iface-types", "");
         const char *chassis_cms_options
             = get_cms_options(&chassis_rec->external_ids);
+        const char *chassis_transport_zones = smap_get_def(
+            &chassis_rec->external_ids, "ovn-transport-zones", "");
 
         /* If any of the external-ids should change, update them. */
         if (strcmp(bridge_mappings, chassis_bridge_mappings) ||
             strcmp(datapath_type, chassis_datapath_type) ||
             strcmp(iface_types_str, chassis_iface_types) ||
-            strcmp(cms_options, chassis_cms_options)) {
+            strcmp(cms_options, chassis_cms_options) ||
+            strcmp(transport_zones, chassis_transport_zones)) {
             struct smap new_ids;
             smap_clone(&new_ids, &chassis_rec->external_ids);
             smap_replace(&new_ids, "ovn-bridge-mappings", bridge_mappings);
             smap_replace(&new_ids, "datapath-type", datapath_type);
             smap_replace(&new_ids, "iface-types", iface_types_str);
             smap_replace(&new_ids, "ovn-cms-options", cms_options);
+            smap_replace(&new_ids, "ovn-transport-zones", transport_zones);
             sbrec_chassis_verify_external_ids(chassis_rec);
             sbrec_chassis_set_external_ids(chassis_rec, &new_ids);
             smap_destroy(&new_ids);
