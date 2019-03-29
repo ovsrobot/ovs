@@ -1509,7 +1509,8 @@ conntrack_clean(struct conntrack *ct, long long now)
          * the bucket is busier than the others, we limit to 10% of its
          * current size. */
         min_exp = sweep_bucket(ct, ctb, now,
-                MAX(prev_count/10, n_conn_limit/(CONNTRACK_BUCKETS*10)));
+                MAX(10, MAX(prev_count / 10,
+                n_conn_limit / (CONNTRACK_BUCKETS * 10))));
         clean_count += prev_count - hmap_count(&ctb->connections);
 
         if (min_exp > now) {
