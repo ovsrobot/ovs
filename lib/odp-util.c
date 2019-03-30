@@ -2480,6 +2480,7 @@ static const struct attr_len_tbl ovs_tun_key_attr_lens[OVS_TUNNEL_KEY_ATTR_MAX +
     [OVS_TUNNEL_KEY_ATTR_IPV6_SRC]      = { .len = 16 },
     [OVS_TUNNEL_KEY_ATTR_IPV6_DST]      = { .len = 16 },
     [OVS_TUNNEL_KEY_ATTR_ERSPAN_OPTS]   = { .len = ATTR_LEN_VARIABLE },
+    [OVS_TUNNEL_KEY_ATTR_IPV4_INFO_BRIDGE]   = { .len = 0 },
 };
 
 const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = {
@@ -2871,6 +2872,8 @@ odp_tun_key_from_attr__(const struct nlattr *attr, bool is_mask,
             }
             break;
         }
+        case OVS_TUNNEL_KEY_ATTR_IPV4_INFO_BRIDGE:
+            tun->ipv4_info_bridge = 1;
 
         default:
             /* Allow this to show up as unexpected, if there are unknown
@@ -2917,6 +2920,11 @@ tun_key_to_attr(struct ofpbuf *a, const struct flow_tnl *tun_key,
     /* tun_id != 0 without FLOW_TNL_F_KEY is valid if tun_key is a mask. */
     if (tun_key->tun_id || tun_key->flags & FLOW_TNL_F_KEY) {
         nl_msg_put_be64(a, OVS_TUNNEL_KEY_ATTR_ID, tun_key->tun_id);
+    }
+    if (tnl_type && !strcmp(tnl_type, "vxlan") &&
+        tun_key->ipv4_info_bridge) {
+        nl_msg_put_flag(a, OVS_TUNNEL_KEY_ATTR_IPV4_INFO_BRIDGE);
+        goto out;
     }
     if (tun_key->ip_src) {
         nl_msg_put_be32(a, OVS_TUNNEL_KEY_ATTR_IPV4_SRC, tun_key->ip_src);
@@ -2985,6 +2993,7 @@ tun_key_to_attr(struct ofpbuf *a, const struct flow_tnl *tun_key,
                           &opts, sizeof(opts));
     }
 
+out:
     nl_msg_end_nested(a, tun_key_ofs);
 }
 
@@ -3732,6 +3741,9 @@ format_odp_tun_attr(const struct nlattr *attr, const struct nlattr *mask_attr,
             ds_put_cstr(ds, "erspan(");
             format_odp_tun_erspan_opt(a, ma, ds, verbose);
             ds_put_cstr(ds, "),");
+            break;
+        case OVS_TUNNEL_KEY_ATTR_IPV4_INFO_BRIDGE:
+            ds_put_cstr(ds, "ipv4_info_bridge,");
             break;
         case __OVS_TUNNEL_KEY_ATTR_MAX:
         default:
@@ -7351,9 +7363,10 @@ void
 commit_odp_tunnel_action(const struct flow *flow, struct flow *base,
                          struct ofpbuf *odp_actions, const char *tnl_type)
 {
-    /* A valid IPV4_TUNNEL must have non-zero ip_dst; a valid IPv6 tunnel
-     * must have non-zero ipv6_dst. */
-    if (flow_tnl_dst_is_set(&flow->tunnel)) {
+    /* A valid IPV4_TUNNEL must have non-zero ip_dst or ipv4 info bridge mode;
+     * a valid IPv6 tunnel must have non-zero ipv6_dst. */
+    if (flow_tnl_dst_is_set(&flow->tunnel) ||
+        flow_tnl_ipv4_info_bridge(&flow->tunnel)) {
         if (!memcmp(&base->tunnel, &flow->tunnel, sizeof base->tunnel)) {
             return;
         }

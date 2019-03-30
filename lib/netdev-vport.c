@@ -553,6 +553,7 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
     bool needs_dst_port, has_csum, has_seq;
     uint16_t dst_proto = 0, src_proto = 0;
     struct netdev_tunnel_config tnl_cfg;
+    bool allow_info_bridge = false;
     struct smap_node *node;
     int err;
 
@@ -725,9 +726,22 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
                     goto out;
                 }
             }
+        } else if (!strcmp(node->key, "allow_info_bridge")) {
+            if (!strcmp(node->value, "true")) {
+                allow_info_bridge = true;
+            }
         } else {
             ds_put_format(&errors, "%s: unknown %s argument '%s'\n", name,
                           type, node->key);
+        }
+    }
+
+    if (allow_info_bridge) {
+        if (!strcmp(type, "vxlan") && tnl_cfg.ip_dst_flow) {
+            tnl_cfg.allow_info_bridge = true;
+        } else {
+            ds_put_format(&errors, "%s: only work for vxlan in remote_ip=flow"
+                              " mode\n", node->key);
         }
     }
 
@@ -962,9 +976,13 @@ get_tunnel_config(const struct netdev *dev, struct smap *args)
         }
     }
 
+    if (!strcmp("vxlan", type) && tnl_cfg.allow_info_bridge) {
+        smap_add(args, "allow_info_bridge", "true");
+    }
+
     return 0;
 }
-
+
 /* Code specific to patch ports. */
 
 /* If 'netdev' is a patch port, returns the name of its peer as a malloc()'d
