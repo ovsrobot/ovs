@@ -964,30 +964,6 @@ get_tunnel_config(const struct netdev *dev, struct smap *args)
 
     return 0;
 }
-
-/* Code specific to patch ports. */
-
-/* If 'netdev' is a patch port, returns the name of its peer as a malloc()'d
- * string that the caller must free.
- *
- * If 'netdev' is not a patch port, returns NULL. */
-char *
-netdev_vport_patch_peer(const struct netdev *netdev_)
-{
-    char *peer = NULL;
-
-    if (netdev_vport_is_patch(netdev_)) {
-        struct netdev_vport *netdev = netdev_vport_cast(netdev_);
-
-        ovs_mutex_lock(&netdev->mutex);
-        if (netdev->peer) {
-            peer = xstrdup(netdev->peer);
-        }
-        ovs_mutex_unlock(&netdev->mutex);
-    }
-
-    return peer;
-}
 
 void
 netdev_vport_inc_rx(const struct netdev *netdev,
@@ -1065,6 +1041,21 @@ set_patch_config(struct netdev *dev_, const struct smap *args, char **errp)
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
+}
+
+static char *
+get_patch_peer_name(const struct netdev *netdev_)
+{
+    struct netdev_vport *netdev = netdev_vport_cast(netdev_);
+    char *peer = NULL;
+
+    ovs_mutex_lock(&netdev->mutex);
+    if (netdev->peer) {
+        peer = xstrdup(netdev->peer);
+    }
+    ovs_mutex_unlock(&netdev->mutex);
+
+    return peer;
 }
 
 static int
@@ -1241,6 +1232,7 @@ netdev_vport_patch_register(void)
           .type = "patch",
           .get_config = get_patch_config,
           .set_config = set_patch_config,
+          .get_peer_name = get_patch_peer_name,
         },
         {{NULL, NULL, 0, 0}}
     };

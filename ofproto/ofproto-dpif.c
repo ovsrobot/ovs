@@ -3526,7 +3526,7 @@ ofport_update_peer(struct ofport_dpif *ofport)
         ofport->peer = NULL;
     }
 
-    peer_name = netdev_vport_patch_peer(ofport->up.netdev);
+    peer_name = netdev_get_peer_name(ofport->up.netdev);
     if (!peer_name) {
         return;
     }
@@ -3547,7 +3547,7 @@ ofport_update_peer(struct ofport_dpif *ofport)
         }
 
         peer = ofport_dpif_cast(peer_ofport);
-        peer_peer = netdev_vport_patch_peer(peer->up.netdev);
+        peer_peer = netdev_get_peer_name(peer->up.netdev);
         if (peer_peer && !strcmp(netdev_get_name(ofport->up.netdev),
                                  peer_peer)) {
             ofport->peer = peer;
@@ -3777,7 +3777,7 @@ vport_get_status(const struct ofport *ofport_, char **errp)
         return 0;
     }
 
-    peer_name = netdev_vport_patch_peer(ofport->up.netdev);
+    peer_name = netdev_get_peer_name(ofport->up.netdev);
     if (!peer_name) {
         return 0;
     }
