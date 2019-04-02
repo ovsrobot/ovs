@@ -3548,6 +3548,8 @@ ofport_update_peer(struct ofport_dpif *ofport)
                                  peer_peer)) {
             ofport->peer = peer;
             ofport->peer->peer = ofport;
+            netdev_set_peer_netdev(ofport->up.netdev, peer->up.netdev);
+            netdev_set_peer_netdev(peer->up.netdev, ofport->up.netdev);
         }
         free(peer_peer);
 

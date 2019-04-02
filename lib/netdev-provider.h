@@ -94,6 +94,7 @@ struct netdev {
     struct shash_node *node;            /* Pointer to element in global map. */
     struct ovs_list saved_flags_list; /* Contains "struct netdev_saved_flags". */
     struct netdev_hw_info hw_info;	/* offload-capable netdev info */
+    struct netdev *peer; /* peer netdev if exists */
 };
 
 static inline void
