@@ -170,6 +170,7 @@ int netdev_get_numa_id(const struct netdev *);
 
 /* Basic properties. */
 const char *netdev_get_name(const struct netdev *);
+char *netdev_get_peer_name(const struct netdev *);
 const char *netdev_get_type(const struct netdev *);
 const char *netdev_get_type_from_name(const char *);
 int netdev_get_mtu(const struct netdev *, int *mtup);

@@ -913,6 +913,19 @@ netdev_get_name(const struct netdev *netdev)
     return netdev->name;
 }
 
+char *
+netdev_get_peer_name(const struct netdev *netdev)
+{
+    const struct netdev_class *class = netdev->netdev_class;
+    char *peer = NULL;
+
+    if (class->get_peer_name) {
+        peer = class->get_peer_name(netdev);
+    }
+
+    return peer;
+}
+
 /* Retrieves the MTU of 'netdev'.  The MTU is the maximum size of transmitted
  * (and received) packets, in bytes, not including the hardware header; thus,
  * this is typically 1500 bytes for Ethernet devices.

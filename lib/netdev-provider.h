@@ -775,6 +775,12 @@ struct netdev_class {
      * used to send and receive packets until a successful configuration is
      * applied. */
     int (*reconfigure)(struct netdev *netdev);
+
+    /* If the netdev class of 'netdev' supports peer option, returns the name
+     * of its peer as a malloc()'d string that the caller must free.
+     *
+     * If peer is not supported, returns NULL. */
+    char *(*get_peer_name)(const struct netdev *netdev);
 /* ## -------------------- ## */
 /* ## netdev_rxq Functions ## */
 /* ## -------------------- ## */
