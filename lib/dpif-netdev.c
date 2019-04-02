@@ -759,7 +759,8 @@ static void dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
                                       const struct nlattr *actions,
                                       size_t actions_len);
 static void dp_netdev_input(struct dp_netdev_pmd_thread *,
-                            struct dp_packet_batch *, odp_port_t port_no);
+                            struct dp_packet_batch *, odp_port_t port_no,
+                            struct netdev_rxq *);
 static void dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
                                   struct dp_packet_batch *);
 
@@ -4271,7 +4272,7 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
             }
         }
         /* Process packet batch. */
-        dp_netdev_input(pmd, &batch, port_no);
+        dp_netdev_input(pmd, &batch, port_no, rxq->rx);
 
         /* Assign processing cycles to rx queue. */
         cycles = cycle_timer_stop(&pmd->perf_stats, &timer);
@@ -6766,9 +6767,17 @@ dp_netdev_input__(struct dp_netdev_pmd_thread *pmd,
 static void
 dp_netdev_input(struct dp_netdev_pmd_thread *pmd,
                 struct dp_packet_batch *packets,
-                odp_port_t port_no)
+                odp_port_t port_no,
+                struct netdev_rxq *rxq)
 {
-    dp_netdev_input__(pmd, packets, false, port_no);
+    if (!rxq->netdev->peer) {
+        dp_netdev_input__(pmd, packets, false, port_no);
+    } else {
+        /* Bypassing standard DP processing and forward the packets directly
+         * to its peer port */
+        netdev_send(rxq->netdev->peer, rxq->queue_id, packets, true);
+        packets->count = 0;
+    }
 }
 
 static void
