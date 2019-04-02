@@ -47,8 +47,8 @@
 #include "unaligned.h"
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
+#if defined(__linux__) && !defined(DPDK_NETDEV)
 #include "netdev-tc-offloads.h"
-#ifdef __linux__
 #include "netdev-linux.h"
 #endif
 
@@ -1093,7 +1093,7 @@ netdev_vport_get_pt_mode(const struct netdev *netdev)
 
 
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(DPDK_NETDEV)
 static int
 netdev_vport_get_ifindex(const struct netdev *netdev_)
 {
@@ -1105,10 +1105,10 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
 
 #define NETDEV_VPORT_GET_IFINDEX netdev_vport_get_ifindex
 #define NETDEV_FLOW_OFFLOAD_API , LINUX_FLOW_OFFLOAD_API
-#else /* !__linux__ */
+#else
 #define NETDEV_VPORT_GET_IFINDEX NULL
 #define NETDEV_FLOW_OFFLOAD_API
-#endif /* __linux__ */
+#endif
 
 #define VPORT_FUNCTIONS_COMMON                      \
     .run = netdev_vport_run,                        \
