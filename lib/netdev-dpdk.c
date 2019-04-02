@@ -430,7 +430,9 @@ struct netdev_dpdk {
         struct netdev_stats stats;
         /* Protects stats */
         rte_spinlock_t stats_lock;
-        /* 44 pad bytes here. */
+        /* 4 pad bytes here. */
+        char *peer;
+        /* 32 pad bytes here. */
     );
 
     PADDED_MEMBERS(CACHE_LINE_SIZE,
@@ -1622,6 +1624,9 @@ netdev_dpdk_get_config(const struct netdev *netdev, struct smap *args)
         smap_add(args, "lsc_interrupt_mode",
                  dev->lsc_interrupt_mode ? "true" : "false");
     }
+    if (dev->peer) {
+        smap_add(args, "peer", dev->peer);
+    }
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
@@ -1760,6 +1765,27 @@ dpdk_process_queue_size(struct netdev *netdev, const struct smap *args,
 }
 
 static int
+netdev_dpdk_set_peer_config(struct netdev *netdev, const struct smap *args)
+{
+    struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    const char *name = netdev_get_name(netdev);
+    const char *peer;
+    int err = 0;
+
+    peer = smap_get(args, "peer");
+    if (!strcmp(name, peer)) {
+        VLOG_ERR("%s: dpdk peer must not be self", name);
+        err = EINVAL;
+    }
+    if (!dev->peer || strcmp(dev->peer, peer)) {
+        free(dev->peer);
+        dev->peer = xstrdup(peer);
+    }
+
+    return err;
+}
+
+static int
 netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
                        char **errp)
 {
@@ -1841,6 +1867,11 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
         goto out;
     }
 
+    err = netdev_dpdk_set_peer_config(netdev, args);
+    if (err) {
+        goto out;
+    }
+
     lsc_interrupt_mode = smap_get_bool(args, "dpdk-lsc-interrupt", false);
     if (dev->requested_lsc_interrupt_mode != lsc_interrupt_mode) {
         dev->requested_lsc_interrupt_mode = lsc_interrupt_mode;
@@ -1891,6 +1922,7 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     const char *path;
+    int err;
 
     ovs_mutex_lock(&dev->mutex);
     if (!(dev->vhost_driver_flags & RTE_VHOST_USER_CLIENT)) {
@@ -1906,9 +1938,10 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
             netdev_request_reconfigure(netdev);
         }
     }
+    err = netdev_dpdk_set_peer_config(netdev, args);
     ovs_mutex_unlock(&dev->mutex);
 
-    return 0;
+    return err;
 }
 
 static int
@@ -4229,6 +4262,21 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
     return flow;
 }
 
+static char *
+get_dpdk_peer_name(const struct netdev *netdev)
+{
+    struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    char *peer = NULL;
+
+    ovs_mutex_lock(&dev->mutex);
+    if (dev->peer) {
+        peer = xstrdup(dev->peer);
+    }
+    ovs_mutex_unlock(&dev->mutex);
+
+    return peer;
+}
+
 #define NETDEV_DPDK_CLASS_COMMON                            \
     .is_pmd = true,                                         \
     .alloc = netdev_dpdk_alloc,                             \
@@ -4250,7 +4298,8 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
     .rxq_alloc = netdev_dpdk_rxq_alloc,                     \
     .rxq_construct = netdev_dpdk_rxq_construct,             \
     .rxq_destruct = netdev_dpdk_rxq_destruct,               \
-    .rxq_dealloc = netdev_dpdk_rxq_dealloc
+    .rxq_dealloc = netdev_dpdk_rxq_dealloc,                 \
+    .get_peer_name = get_dpdk_peer_name
 
 #define NETDEV_DPDK_CLASS_BASE                          \
     NETDEV_DPDK_CLASS_COMMON,                           \
