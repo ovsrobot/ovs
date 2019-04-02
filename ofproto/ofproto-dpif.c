@@ -1856,6 +1856,7 @@ port_construct(struct ofport *port_)
     port->qdscp = NULL;
     port->n_qdscp = 0;
     port->carrier_seq = netdev_get_carrier_resets(netdev);
+    ofport_update_peer(port);
 
     if (netdev_vport_is_patch(netdev)) {
         /* By bailing out here, we don't submit the port to the sFlow module
@@ -1864,7 +1865,6 @@ port_construct(struct ofport *port_)
          * to be "internal" to the switch as a whole, and therefore not a
          * candidate for counter polling. */
         port->odp_port = ODPP_NONE;
-        ofport_update_peer(port);
         return 0;
     }
 
@@ -3513,10 +3513,6 @@ ofport_update_peer(struct ofport_dpif *ofport)
     const struct ofproto_dpif *ofproto;
     struct dpif_backer *backer;
     char *peer_name;
-
-    if (!netdev_vport_is_patch(ofport->up.netdev)) {
-        return;
-    }
 
     backer = ofproto_dpif_cast(ofport->up.ofproto)->backer;
     backer->need_revalidate = REV_RECONFIGURE;
