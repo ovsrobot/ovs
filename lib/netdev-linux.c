@@ -2447,7 +2447,7 @@ netdev_linux_set_policing(struct netdev *netdev_,
     struct netdev_linux *netdev = netdev_linux_cast(netdev_);
     const char *netdev_name = netdev_get_name(netdev_);
     int ifindex;
-    int error;
+    int error = 0;
 
     kbits_burst = (!kbits_rate ? 0       /* Force to 0 if no rate specified. */
                    : !kbits_burst ? 8000 /* Default to 8000 kbits if 0. */
@@ -2469,10 +2469,7 @@ netdev_linux_set_policing(struct netdev *netdev_,
         netdev->cache_valid &= ~VALID_POLICING;
     }
 
-    error = get_ifindex(netdev_, &ifindex);
-    if (error) {
-        goto out;
-    }
+    COVERAGE_INC(netdev_set_policing);
 
     /* Use matchall for policing when offloadling ovs with tc-flower. */
     if (netdev_is_flow_api_enabled()) {
@@ -2484,16 +2481,20 @@ netdev_linux_set_policing(struct netdev *netdev_,
         return error;
     }
 
-    COVERAGE_INC(netdev_set_policing);
-    /* Remove any existing ingress qdisc. */
-    error = tc_add_del_ingress_qdisc(ifindex, false, 0);
-    if (error) {
-        VLOG_WARN_RL(&rl, "%s: removing policing failed: %s",
-                     netdev_name, ovs_strerror(error));
-        goto out;
-    }
-
     if (kbits_rate) {
+        error = get_ifindex(netdev_, &ifindex);
+        if (error) {
+            goto out;
+        }
+
+        /* Remove any existing ingress qdisc. */
+        error = tc_add_del_ingress_qdisc(ifindex, false, 0);
+        if (error) {
+            VLOG_WARN_RL(&rl, "%s: removing policing failed: %s",
+                         netdev_name, ovs_strerror(error));
+            goto out;
+        }
+
         error = tc_add_del_ingress_qdisc(ifindex, true, 0);
         if (error) {
             VLOG_WARN_RL(&rl, "%s: adding policing qdisc failed: %s",
@@ -2504,7 +2505,7 @@ netdev_linux_set_policing(struct netdev *netdev_,
         error = tc_add_policer(netdev_, kbits_rate, kbits_burst);
         if (error){
             VLOG_WARN_RL(&rl, "%s: adding policing action failed: %s",
-                    netdev_name, ovs_strerror(error));
+                         netdev_name, ovs_strerror(error));
             goto out;
         }
     }
