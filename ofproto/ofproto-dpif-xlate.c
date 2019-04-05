@@ -2453,6 +2453,16 @@ output_normal(struct xlate_ctx *ctx, const struct xbundle *out_xbundle,
     compose_output_action(ctx, xport->ofp_port, use_recirc ? &xr : NULL,
                           false, false);
     memcpy(&ctx->xin->flow.vlans, &old_vlans, sizeof(old_vlans));
+    /* Store mirrors for bond that use recirc to avoid duplicate output */
+    if (use_recirc) {
+        struct recirc_id_node *node = CONST_CAST(
+            struct recirc_id_node *, recirc_id_node_find(xr.recirc_id));
+        if (node) {
+            struct frozen_state *state =
+                CONST_CAST(struct frozen_state *, &node->state);
+            state->mirrors = ctx->mirrors;
+        }
+    }
 }
 
 /* A VM broadcasts a gratuitous ARP to indicate that it has resumed after
