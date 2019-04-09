@@ -5525,8 +5525,8 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     struct dp_meter *meter;
     struct dp_meter_band *band;
     struct dp_packet *packet;
-    long long int long_delta_t; /* msec */
-    uint32_t delta_t; /* msec */
+    double double_delta_t; /* msec */
+    double delta_t; /* msec */
     const size_t cnt = dp_packet_batch_size(packets_);
     uint32_t bytes, volume;
     int exceeded_band[NETDEV_MAX_BURST];
@@ -5549,12 +5549,12 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     memset(exceeded_rate, 0, cnt * sizeof *exceeded_rate);
 
     /* All packets will hit the meter at the same time. */
-    long_delta_t = (now - meter->used) / 1000; /* msec */
+    double_delta_t = (double)(now - meter->used) / 1000.0; /* msec */
 
     /* Make sure delta_t will not be too large, so that bucket will not
      * wrap around below. */
-    delta_t = (long_delta_t > (long long int)meter->max_delta_t)
-        ? meter->max_delta_t : (uint32_t)long_delta_t;
+    delta_t = (double_delta_t > (long long int)meter->max_delta_t)
+        ? (double)meter->max_delta_t : double_delta_t;
 
     /* Update meter stats. */
     meter->used = now;
