@@ -789,6 +789,11 @@ struct netdev_class {
     void (*rxq_destruct)(struct netdev_rxq *);
     void (*rxq_dealloc)(struct netdev_rxq *);
 
+    /* A netdev can report if a queue won't get traffic and should be excluded
+     * from polling (no callback implicitely means that the queue is enabled).
+     */
+    int (*rxq_enabled)(struct netdev_rxq *);
+
     /* Attempts to receive a batch of packets from 'rx'.  In 'batch', the
      * caller supplies 'packets' as the pointer to the beginning of an array
      * of NETDEV_MAX_BURST pointers to dp_packet.  If successful, the

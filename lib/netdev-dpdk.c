@@ -317,6 +317,10 @@ struct dpdk_mp {
      struct ovs_list list_node OVS_GUARDED_BY(dpdk_mp_mutex);
  };
 
+struct dpdk_rx_queue {
+    bool enabled;
+};
+
 /* There should be one 'struct dpdk_tx_queue' created for
  * each cpu core. */
 struct dpdk_tx_queue {
@@ -424,6 +428,8 @@ struct netdev_dpdk {
         OVSRCU_TYPE(struct ingress_policer *) ingress_policer;
         uint32_t policer_rate;
         uint32_t policer_burst;
+
+        struct dpdk_rx_queue *rx_q;
     );
 
     PADDED_MEMBERS(CACHE_LINE_SIZE,
@@ -1109,6 +1115,12 @@ netdev_dpdk_alloc(void)
     return NULL;
 }
 
+static struct dpdk_rx_queue *
+netdev_dpdk_alloc_rxq(unsigned int n_rxqs)
+{
+    return dpdk_rte_mzalloc(n_rxqs * sizeof(struct dpdk_rx_queue));
+}
+
 static struct dpdk_tx_queue *
 netdev_dpdk_alloc_txq(unsigned int n_txqs)
 {
@@ -1235,6 +1247,10 @@ vhost_common_construct(struct netdev *netdev)
     int socket_id = rte_lcore_to_socket_id(rte_get_master_lcore());
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
 
+    dev->rx_q = netdev_dpdk_alloc_rxq(OVS_VHOST_MAX_QUEUE_NUM);
+    if (!dev->rx_q) {
+        return ENOMEM;
+    }
     dev->tx_q = netdev_dpdk_alloc_txq(OVS_VHOST_MAX_QUEUE_NUM);
     if (!dev->tx_q) {
         return ENOMEM;
@@ -1354,6 +1370,7 @@ common_destruct(struct netdev_dpdk *dev)
     OVS_REQUIRES(dpdk_mutex)
     OVS_EXCLUDED(dev->mutex)
 {
+    rte_free(dev->rx_q);
     rte_free(dev->tx_q);
     dpdk_mp_put(dev->dpdk_mp);
 
@@ -2198,6 +2215,14 @@ netdev_dpdk_vhost_rxq_recv(struct netdev_rxq *rxq,
     dp_packet_batch_init_packet_fields(batch);
 
     return 0;
+}
+
+static int
+netdev_dpdk_vhost_rxq_enabled(struct netdev_rxq *rxq)
+{
+    struct netdev_dpdk *dev = netdev_dpdk_cast(rxq->netdev);
+
+    return dev->rx_q[rxq->queue_id].enabled;
 }
 
 static int
@@ -3531,6 +3556,17 @@ new_device(int vid)
 
 /* Clears mapping for all available queues of vhost interface. */
 static void
+netdev_dpdk_rxq_map_clear(struct netdev_dpdk *dev)
+    OVS_REQUIRES(dev->mutex)
+{
+    int i;
+
+    for (i = 0; i < dev->up.n_rxq; i++) {
+        dev->rx_q[i].enabled = false;
+    }
+}
+
+static void
 netdev_dpdk_txq_map_clear(struct netdev_dpdk *dev)
     OVS_REQUIRES(dev->mutex)
 {
@@ -3563,6 +3599,7 @@ destroy_device(int vid)
             ovs_mutex_lock(&dev->mutex);
             dev->vhost_reconfigured = false;
             ovsrcu_index_set(&dev->vid, -1);
+            netdev_dpdk_rxq_map_clear(dev);
             netdev_dpdk_txq_map_clear(dev);
 
             netdev_change_seq_changed(&dev->up);
@@ -3597,24 +3634,30 @@ vring_state_changed(int vid, uint16_t queue_id, int enable)
     struct netdev_dpdk *dev;
     bool exists = false;
     int qid = queue_id / VIRTIO_QNUM;
+    bool is_rx = (queue_id % VIRTIO_QNUM) == VIRTIO_TXQ;
     char ifname[IF_NAME_SZ];
 
     rte_vhost_get_ifname(vid, ifname, sizeof ifname);
-
-    if (queue_id % VIRTIO_QNUM == VIRTIO_TXQ) {
-        return 0;
-    }
 
     ovs_mutex_lock(&dpdk_mutex);
     LIST_FOR_EACH (dev, list_node, &dpdk_list) {
         ovs_mutex_lock(&dev->mutex);
         if (nullable_string_is_equal(ifname, dev->vhost_id)) {
-            if (enable) {
-                dev->tx_q[qid].map = qid;
+            if (is_rx) {
+                bool enabled = dev->rx_q[qid].enabled;
+
+                dev->rx_q[qid].enabled = enable != 0;
+                if (enabled ^ dev->rx_q[qid].enabled) {
+                    netdev_change_seq_changed(&dev->up);
+                }
             } else {
-                dev->tx_q[qid].map = OVS_VHOST_QUEUE_DISABLED;
+                if (enable) {
+                    dev->tx_q[qid].map = qid;
+                } else {
+                    dev->tx_q[qid].map = OVS_VHOST_QUEUE_DISABLED;
+                }
+                netdev_dpdk_remap_txqs(dev);
             }
-            netdev_dpdk_remap_txqs(dev);
             exists = true;
             ovs_mutex_unlock(&dev->mutex);
             break;
@@ -3624,9 +3667,9 @@ vring_state_changed(int vid, uint16_t queue_id, int enable)
     ovs_mutex_unlock(&dpdk_mutex);
 
     if (exists) {
-        VLOG_INFO("State of queue %d ( tx_qid %d ) of vhost device '%s' "
-                  "changed to \'%s\'", queue_id, qid, ifname,
-                  (enable == 1) ? "enabled" : "disabled");
+        VLOG_INFO("State of queue %d ( %s_qid %d ) of vhost device '%s' "
+                  "changed to \'%s\'", queue_id, is_rx == true ? "rx" : "tx",
+                  qid, ifname, (enable == 1) ? "enabled" : "disabled");
     } else {
         VLOG_INFO("vHost Device '%s' not found", ifname);
         return -1;
@@ -4297,7 +4340,8 @@ static const struct netdev_class dpdk_vhost_class = {
     .get_stats = netdev_dpdk_vhost_get_stats,
     .get_status = netdev_dpdk_vhost_user_get_status,
     .reconfigure = netdev_dpdk_vhost_reconfigure,
-    .rxq_recv = netdev_dpdk_vhost_rxq_recv
+    .rxq_recv = netdev_dpdk_vhost_rxq_recv,
+    .rxq_enabled = netdev_dpdk_vhost_rxq_enabled,
 };
 
 static const struct netdev_class dpdk_vhost_client_class = {
@@ -4311,7 +4355,8 @@ static const struct netdev_class dpdk_vhost_client_class = {
     .get_stats = netdev_dpdk_vhost_get_stats,
     .get_status = netdev_dpdk_vhost_user_get_status,
     .reconfigure = netdev_dpdk_vhost_client_reconfigure,
-    .rxq_recv = netdev_dpdk_vhost_rxq_recv
+    .rxq_recv = netdev_dpdk_vhost_rxq_recv,
+    .rxq_enabled = netdev_dpdk_vhost_rxq_enabled,
 };
 
 void
