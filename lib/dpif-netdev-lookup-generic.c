@@ -28,67 +28,254 @@
 #include "packets.h"
 #include "pvector.h"
 
-/* Returns a hash value for the bits of 'key' where there are 1-bits in
- * 'mask'. */
-static inline uint32_t
-netdev_flow_key_hash_in_mask(const struct netdev_flow_key *key,
-                             const struct netdev_flow_key *mask)
+VLOG_DEFINE_THIS_MODULE(dpif_lookup_generic);
+
+/* netdev_flow_key_flatten_unit:
+ * Given a packet, table and mf_masks, this function iterates over each bit
+ * set in the subtable, and calculates the appropriate metadata to store in the
+ * block_cache[].
+ *
+ * The results of the block_cache[] can be used for hashing, and later for
+ * verification of if a rule matches the given packet.
+ */
+static inline void
+netdev_flow_key_flatten_unit(const uint64_t * restrict pkt_blocks,
+                             const uint64_t * restrict tbl_blocks,
+                             const uint64_t * restrict mf_masks,
+                             uint64_t * restrict block_cache,
+                             const uint64_t pkt_mf_bits,
+                             const uint32_t count)
 {
-    const uint64_t *p = miniflow_get_values(&mask->mf);
-    uint32_t hash = 0;
-    uint64_t value;
+    uint32_t i;
+    for (i = 0; i < count; i++) {
+        uint64_t mf_mask = mf_masks[i];
+        /* Calculate the block index for the packet metadata */
+        uint64_t idx_bits = mf_mask & pkt_mf_bits;
+        const uint32_t pkt_idx = __builtin_popcountll(idx_bits);
 
-    NETDEV_FLOW_KEY_FOR_EACH_IN_FLOWMAP (value, key, mask->mf.map) {
-        hash = hash_add64(hash, value & *p);
-        p++;
+        /* check if the packet has the subtable miniflow bit set. If yes, the
+         * block at the above pkt_idx will be stored, otherwise it is masked
+         * out to be zero.
+         */
+        uint64_t pkt_has_mf_bit = (mf_mask + 1) & pkt_mf_bits;
+        uint64_t no_bit = ((!pkt_has_mf_bit) > 0) - 1;
+
+        /* mask packet block by table block, and mask to zero if packet
+         * doesn't actually contain this block of metadata
+         */
+        block_cache[i] = pkt_blocks[pkt_idx] & tbl_blocks[i] & no_bit;
     }
-
-    return hash_finish(hash, (p - miniflow_get_values(&mask->mf)) * 8);
 }
 
+/* netdev_flow_key_flatten:
+ * This function takes a packet, and subtable and writes an array of uint64_t
+ * blocks. The blocks contain the metadata that the subtable matches on, in
+ * the same order as the subtable, allowing linear iteration over the blocks.
+ *
+ * To calculate the blocks contents, the netdev_flow_key_flatten_unit function
+ * is called twice, once for each "unit" of the miniflow. This call can be
+ * inlined by the compiler for performance.
+ *
+ * Note that the u0_count and u1_count variables can be compile-time constants,
+ * allowing the loop in the inlined flatten_unit() function to be compile-time
+ * unrolled, or possibly removed totally by unrolling by the loop iterations.
+ * The compile time optimizations enabled by this design improves performance.
+ */
+static inline void
+netdev_flow_key_flatten(const struct netdev_flow_key * restrict key,
+                        const struct netdev_flow_key * restrict mask,
+                        const uint64_t * restrict mf_masks,
+                        uint64_t * restrict block_cache,
+                        const uint32_t u0_count,
+                        const uint32_t u1_count)
+{
+    /* load mask from subtable, mask with packet mf, popcount to get idx */
+    const uint64_t *pkt_blocks = miniflow_get_values(&key->mf);
+    const uint64_t *tbl_blocks = miniflow_get_values(&mask->mf);
+
+    /* packet miniflow bits to be masked by pre-calculated mf_masks */
+    const uint64_t pkt_bits_u0 = key->mf.map.bits[0];
+    const uint32_t pkt_bits_u0_pop = __builtin_popcountll(pkt_bits_u0);
+    const uint64_t pkt_bits_u1 = key->mf.map.bits[1];
+
+    /* Unit 0 flattening */
+    netdev_flow_key_flatten_unit(&pkt_blocks[0],
+                            &tbl_blocks[0],
+                            &mf_masks[0],
+                            &block_cache[0],
+                            pkt_bits_u0,
+                            u0_count);
+
+    /* Unit 1 flattening:
+     * Move the pointers forward in the arrays based on u0 offsets, NOTE:
+     * 1) pkt blocks indexed by actual popcount of u0, which is NOT always
+     *    the same as the amount of bits set in the subtable.
+     * 2) mf_masks, tbl_block and block_cache are all "flat" arrays, so
+     *    the index is always u0_count.
+     */
+    netdev_flow_key_flatten_unit(&pkt_blocks[pkt_bits_u0_pop],
+                                 &tbl_blocks[u0_count],
+                                 &mf_masks[u0_count],
+                                 &block_cache[u0_count],
+                                 pkt_bits_u1,
+                                 u1_count);
+}
+
+/* inner loop for mask generation of a unit, see netdev_flow_key_gen_masks */
+static inline void
+netdev_flow_key_gen_mask_unit(uint64_t iter,
+                              const uint64_t count,
+                              uint64_t *mf_masks)
+{
+    int i;
+    for (i = 0; i < count; i++) {
+        uint64_t lowest_bit = (iter & -iter);
+        iter &= ~lowest_bit;
+        mf_masks[i] = (lowest_bit - 1);
+    }
+    /* checks that count has covered all bits in the iter bitmap */
+    ovs_assert(iter == 0);
+}
+
+/* generate a mask for each block in the miniflow, based on the bits set. This
+ * allows easily masking packets with the generated array here, without
+ * calculations. This removes runtime-calculated masks, and hence data-deps.
+ * @param key The table to generate the mf_masks for
+ * @param mf_masks Pointer to a u64 array of at least *mf_bits* in size
+ * @param mf_bits_total Number of bits set in the whole miniflow (both units)
+ * @param mf_bits_unit0 Number of bits set in unit0 of the miniflow
+ */
+static inline void
+netdev_flow_key_gen_masks(const struct netdev_flow_key * restrict tbl,
+                          uint64_t * restrict mf_masks,
+                          const uint32_t mf_bits_u0,
+                          const uint32_t mf_bits_u1)
+{
+    uint64_t iter_u0 = tbl->mf.map.bits[0];
+    uint64_t iter_u1 = tbl->mf.map.bits[1];
+
+    netdev_flow_key_gen_mask_unit(iter_u0, mf_bits_u0, &mf_masks[0]);
+    netdev_flow_key_gen_mask_unit(iter_u1, mf_bits_u1, &mf_masks[mf_bits_u0]);
+}
+
+
+static inline uint64_t
+netdev_rule_matches_key(const struct dpcls_rule * restrict rule,
+                        const struct netdev_flow_key *target,
+                        const uint32_t mf_bits_total,
+                        const uint64_t * restrict block_cache)
+{
+    const uint64_t *keyp = miniflow_get_values(&rule->flow.mf);
+    const uint64_t *maskp = miniflow_get_values(&rule->mask->mf);
+
+    /* all meta-data is available in block_cache, no pkt miniflow required */
+    (void)target;
+
+    uint64_t not_match = 0;
+    for (int i = 0; i < mf_bits_total; i++) {
+        not_match |= (block_cache[i] & maskp[i]) != keyp[i];
+    }
+
+    /* invert result to show match as 1 */
+    return !not_match;
+}
+
+/* const prop version of the function: note that mf bits total and u0 are
+ * explicitly passed in here, while they're also available at runtime from the
+ * subtable pointer. By making them compile time, we enable the compiler to
+ * unroll loops and flatten out code-sequences based on the knowledge of the
+ * mf_bits_* compile time values. This results in improved performance.
+ */
+static inline uint32_t __attribute__((always_inline))
+lookup_generic_impl(struct dpcls_subtable *subtable, uint32_t keys_map,
+                    const struct netdev_flow_key *keys[],
+                    struct dpcls_rule **rules,
+                    const uint32_t bit_count_u0,
+                    const uint32_t bit_count_u1)
+{
+    const uint32_t bit_count_total = bit_count_u0 + bit_count_u1;
+    int i;
+    uint32_t hashes[NETDEV_MAX_BURST];
+    const uint32_t n_pkts = __builtin_popcountll(keys_map);
+    ovs_assert(NETDEV_MAX_BURST >= n_pkts);
+
+    /* Allocate stack space for storing miniflow blocks per packet */
+    uint64_t block_cache[NETDEV_MAX_BURST * bit_count_total];
+
+    /* Calculate the subtable miniflow mask for each bit set. The masks are
+     * calculated once, and then re-used for all packets in keys_map. The
+     * mf_masks[] contains masks containing all bits set under the subtable
+     * bit. This enables performant linear iteration over the masks later.
+     */
+    uint64_t mf_masks[bit_count_total];
+    netdev_flow_key_gen_masks(&subtable->mask, mf_masks, bit_count_u0,
+                              bit_count_u1);
+
+    /* Flatten the packet metadata into the block_cache[] using subtable */
+    ULLONG_FOR_EACH_1(i, keys_map) {
+            netdev_flow_key_flatten(keys[i],
+                                    &subtable->mask,
+                                    mf_masks,
+                                    &block_cache[i * bit_count_total],
+                                    bit_count_u0,
+                                    bit_count_u1);
+    }
+
+    /* Hash the now linearized blocks of packet metadata */
+    ULLONG_FOR_EACH_1(i, keys_map) {
+         uint32_t hash = 0;
+         uint32_t i_off = i * bit_count_total;
+         for (int h = 0; h < bit_count_total; h++) {
+             hash = hash_add64(hash, block_cache[i_off + h]);
+         }
+         hashes[i] = hash_finish(hash, bit_count_total * 8);
+    }
+
+    /* Lookup: this returns a bitmask of packets where the hash table had
+     * an entry for the given hash key. Presence of a hash key does not
+     * guarantee matching the key, as there can be hash collisions.
+     */
+    uint32_t found_map;
+    const struct cmap_node *nodes[NETDEV_MAX_BURST];
+    found_map = cmap_find_batch(&subtable->rules, keys_map, hashes, nodes);
+
+    /* Verify that packet actually matched rule. If not found, a hash
+     * collision has taken place, so continue searching with the next node.
+     */
+    ULLONG_FOR_EACH_1(i, found_map) {
+        struct dpcls_rule *rule;
+
+        CMAP_NODE_FOR_EACH (rule, cmap_node, nodes[i]) {
+            const uint32_t cidx = i * bit_count_total;
+            uint32_t match = netdev_rule_matches_key(rule, keys[i],
+                                                     bit_count_total,
+                                                     &block_cache[cidx]);
+
+            if (OVS_LIKELY(match)) {
+                rules[i] = rule;
+                subtable->hit_cnt++;
+                goto next;
+            }
+        }
+
+        /* None of the found rules was a match.  Clear the i-th bit to
+         * search for this key in the next subtable. */
+        ULLONG_SET0(found_map, i);
+    next:
+        ;                     /* Keep Sparse happy. */
+    }
+
+    return found_map;
+}
+
+/* Generic - use runtime provided mf bits */
 uint32_t
 dpcls_subtable_lookup_generic(struct dpcls_subtable *subtable,
                               uint32_t keys_map,
                               const struct netdev_flow_key *keys[],
                               struct dpcls_rule **rules)
 {
-        int i;
-        /* Compute hashes for the remaining keys.  Each search-key is
-         * masked with the subtable's mask to avoid hashing the wildcarded
-         * bits. */
-        uint32_t hashes[NETDEV_MAX_BURST];
-        ULLONG_FOR_EACH_1(i, keys_map) {
-            hashes[i] = netdev_flow_key_hash_in_mask(keys[i],
-                                                     &subtable->mask);
-        }
-
-        /* Lookup. */
-        const struct cmap_node *nodes[NETDEV_MAX_BURST];
-        uint32_t found_map =
-                cmap_find_batch(&subtable->rules, keys_map, hashes, nodes);
-        /* Check results.  When the i-th bit of found_map is set, it means
-         * that a set of nodes with a matching hash value was found for the
-         * i-th search-key.  Due to possible hash collisions we need to check
-         * which of the found rules, if any, really matches our masked
-         * search-key. */
-        ULLONG_FOR_EACH_1(i, found_map) {
-            struct dpcls_rule *rule;
-
-            CMAP_NODE_FOR_EACH (rule, cmap_node, nodes[i]) {
-                if (OVS_LIKELY(dpcls_rule_matches_key(rule, keys[i]))) {
-                    rules[i] = rule;
-                    /* Even at 20 Mpps the 32-bit hit_cnt cannot wrap
-                     * within one second optimization interval. */
-                    subtable->hit_cnt++;
-                    goto next;
-                }
-            }
-            /* None of the found rules was a match.  Reset the i-th bit to
-             * keep searching this key in the next subtable. */
-            ULLONG_SET0(found_map, i);  /* Did not match. */
-        next:
-            ;                     /* Keep Sparse happy. */
-        }
-
-        return found_map;
+        return lookup_generic_impl(subtable, keys_map, keys, rules,
+                                   subtable->mf_bits_set_unit0,
+                                   subtable->mf_bits_set_unit1);
 }

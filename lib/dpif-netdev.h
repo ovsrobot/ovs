@@ -92,6 +92,13 @@ struct dpcls_subtable {
      * subtable matches on. The miniflow "bits" are used to select the actual
      * dpcls lookup implementation at subtable creation time.
      */
+    uint8_t mf_bits_set_unit0;
+    uint8_t mf_bits_set_unit1;
+
+    /* the lookup function to use for this subtable. If there is a known
+     * property of the subtable (eg: only 3 bits of miniflow metadata is
+     * used for the lookup) then this can point at an optimized version of
+     * the lookup function for this particular subtable. */
     dpcls_subtable_lookup_func lookup_func;
 
     struct netdev_flow_key mask; /* Wildcards for fields (const). */

@@ -7589,7 +7589,13 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
     subtable->hit_cnt = 0;
     netdev_flow_key_clone(&subtable->mask, mask);
 
-    /* decide which hash/lookup/verify function to use */
+    /* set the number of bits used max, used to allocate enough space for
+     * each packet to store all the blocks of metadata */
+    uint32_t unit0 = __builtin_popcountll(mask->mf.map.bits[0]);
+    uint32_t unit1 = __builtin_popcountll(mask->mf.map.bits[1]);
+    subtable->mf_bits_set_unit0 = unit0;
+    subtable->mf_bits_set_unit1 = unit1;
+
     subtable->lookup_func = dpcls_subtable_lookup_generic;
 
     cmap_insert(&cls->subtables_map, &subtable->cmap_node, mask->hash);
