@@ -7596,7 +7596,10 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
     subtable->mf_bits_set_unit0 = unit0;
     subtable->mf_bits_set_unit1 = unit1;
 
-    subtable->lookup_func = dpcls_subtable_lookup_generic;
+    subtable->lookup_func = dpcls_subtable_generic_probe(unit0, unit1);
+    if (!subtable->lookup_func) {
+        subtable->lookup_func = dpcls_subtable_lookup_generic;
+    }
 
     cmap_insert(&cls->subtables_map, &subtable->cmap_node, mask->hash);
     /* Add the new subtable at the end of the pvector (with no hits yet) */
