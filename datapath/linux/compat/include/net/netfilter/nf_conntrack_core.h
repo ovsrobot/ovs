@@ -104,4 +104,10 @@ static inline bool rpl_nf_ct_delete(struct nf_conn *ct, u32 portid, int report)
 #define nf_ct_delete rpl_nf_ct_delete
 #endif /* HAVE_NF_CONN_TIMER */
 
+#ifndef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
+int rpl_get_l4proto(const struct sk_buff *skb,
+		    unsigned int nhoff, u8 pf, u8 *l4num);
+#define get_l4proto rpl_get_l4proto
+#endif
+
 #endif /* _NF_CONNTRACK_CORE_WRAPPER_H */

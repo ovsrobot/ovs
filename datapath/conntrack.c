@@ -38,6 +38,10 @@
 #include <net/netfilter/nf_nat_l3proto.h>
 #endif
 
+#if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6) && defined(HAVE_IPV6_FRAG_H)
+#include <net/ipv6_frag.h>
+#endif
+
 #include "datapath.h"
 #include "conntrack.h"
 #include "flow.h"
@@ -645,13 +649,15 @@ static struct nf_conn *
 ovs_ct_find_existing(struct net *net, const struct nf_conntrack_zone *zone,
 		     u8 l3num, struct sk_buff *skb, bool natted)
 {
-	const struct nf_conntrack_l3proto *l3proto;
 	const struct nf_conntrack_l4proto *l4proto;
 	struct nf_conntrack_tuple tuple;
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conn *ct;
-	unsigned int dataoff;
 	u8 protonum;
+
+#ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
+	const struct nf_conntrack_l3proto *l3proto;
+	unsigned int dataoff;
 
 	l3proto = __nf_ct_l3proto_find(l3num);
 	if (l3proto->get_l4proto(skb, skb_network_offset(skb), &dataoff,
@@ -659,18 +665,46 @@ ovs_ct_find_existing(struct net *net, const struct nf_conntrack_zone *zone,
 		pr_debug("ovs_ct_find_existing: Can't get protonum\n");
 		return NULL;
 	}
+#else
+	int protooff;
+
+	protooff = get_l4proto(skb, skb_network_offset(skb),
+			       l3num, &protonum);
+	if (protooff <= 0) {
+		pr_warn("ovs_ct_find_existing: Can't get protonum\n");
+		return NULL;
+	}
+#endif
+
+#ifdef HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO
 	l4proto = __nf_ct_l4proto_find(l3num, protonum);
-	if (!nf_ct_get_tuple(skb, skb_network_offset(skb), dataoff, l3num,
-			     protonum, net, &tuple, l3proto, l4proto)) {
+#else
+	l4proto = __nf_ct_l4proto_find(protonum);
+#endif
+
+#ifdef HAVE_NF_CT_GET_TUPLE
+	if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
+				       l3num, net, &tuple)) {
 		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
 		return NULL;
 	}
+#else
+	if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
+				       l3num, net, &tuple)) {
+		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
+		return NULL;
+	}
+#endif
 
 	/* Must invert the tuple if skb has been transformed by NAT. */
 	if (natted) {
 		struct nf_conntrack_tuple inverse;
 
+#ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
 		if (!nf_ct_invert_tuple(&inverse, &tuple, l3proto, l4proto)) {
+#else
+		if (!nf_ct_invert_tuple(&inverse, &tuple, l4proto)) {
+#endif
 			pr_debug("ovs_ct_find_existing: Inversion failed!\n");
 			return NULL;
 		}
@@ -989,6 +1023,9 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 	if (!cached) {
 		struct nf_conn *tmpl = info->ct;
 		int err;
+#ifndef HAVE_NF_CONNTRACK_IN_TAKES_NET
+		struct nf_hook_state state = {};
+#endif
 
 		/* Associate skb with specified zone. */
 		if (tmpl) {
@@ -998,8 +1035,15 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 			nf_ct_set(skb, tmpl, IP_CT_NEW);
 		}
 
+#ifdef HAVE_NF_CONNTRACK_IN_TAKES_NET
 		err = nf_conntrack_in(net, info->family,
 				      NF_INET_PRE_ROUTING, skb);
+#else
+		state.hook = NF_INET_PRE_ROUTING,
+		state.pf = info->family,
+		state.net = net,
+		err = nf_conntrack_in(skb, &state);
+#endif
 		if (err != NF_ACCEPT)
 			return -ENOENT;
 
@@ -1307,9 +1351,17 @@ int ovs_ct_execute(struct net *net, struct sk_buff *skb,
 {
 	int nh_ofs;
 	int err;
+	/* From kernel 4.19.0+, Function handle_fragments may shrink skb's
+	 * headroom, which will result in loss of ethernet header data.
+	 * This buf is used to backup the header data before calling
+	 * handle_fragments. */
+	char buf[32];
 
 	/* The conntrack module expects to be working at L3. */
 	nh_ofs = skb_network_offset(skb);
+	if (nh_ofs > sizeof(buf))
+		return -EINVAL;
+	memcpy(buf, skb->data, nh_ofs);
 	skb_pull_rcsum(skb, nh_ofs);
 
 	err = ovs_skb_network_trim(skb);
@@ -1326,8 +1378,16 @@ int ovs_ct_execute(struct net *net, struct sk_buff *skb,
 		err = ovs_ct_commit(net, key, info, skb);
 	else
 		err = ovs_ct_lookup(net, key, info, skb);
+	if (err)
+		return err;
 
+	if (skb_headroom(skb) < nh_ofs) {
+		err = pskb_expand_head(skb, nh_ofs, 0, GFP_ATOMIC);
+		if (err)
+			return err;
+	}
 	skb_push(skb, nh_ofs);
+	memcpy(skb->data, buf, nh_ofs);
 	skb_postpush_rcsum(skb, skb->data, nh_ofs);
 	if (err)
 		kfree_skb(skb);
@@ -1362,7 +1422,11 @@ static int ovs_ct_add_helper(struct ovs_conntrack_info *info, const char *name,
 		return -EINVAL;
 	}
 
+#ifdef HAVE_NF_CT_HELPER_EXT_ADD_TAKES_HELPER
 	help = nf_ct_helper_ext_add(info->ct, helper, GFP_KERNEL);
+#else
+	help = nf_ct_helper_ext_add(info->ct, GFP_KERNEL);
+#endif
 	if (!help) {
 		nf_conntrack_helper_put(helper);
 		return -ENOMEM;
@@ -1386,6 +1450,20 @@ static int parse_nat(const struct nlattr *attr,
 	bool have_ip_max = false;
 	bool have_proto_max = false;
 	bool ip_vers = (info->family == NFPROTO_IPV6);
+
+#ifndef CONFIG_NF_NAT_IPV4
+	if (info->family == NFPROTO_IPV4) {
+		OVS_NLERR(log, "Flow action ct(nat) not supported without nf_nat_ipv4");
+		return -ENOTSUPP;
+	}
+#endif
+
+#ifndef CONFIG_NF_NAT_IPV6
+	if (info->family == NFPROTO_IPV6) {
+		OVS_NLERR(log, "Flow action ct(nat) not supported without nf_nat_ipv6");
+		return -ENOTSUPP;
+        }
+#endif
 
 	nla_for_each_nested(a, attr, rem) {
 		static const int ovs_nat_attr_lens[OVS_NAT_ATTR_MAX + 1][2] = {

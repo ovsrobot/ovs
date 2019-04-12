@@ -151,10 +151,10 @@ AC_DEFUN([OVS_CHECK_LINUX], [
     AC_MSG_RESULT([$kversion])
 
     if test "$version" -ge 4; then
-       if test "$version" = 4 && test "$patchlevel" -le 18; then
+       if test "$version" = 4 && test "$patchlevel" -le 20; then
           : # Linux 4.x
        else
-          AC_ERROR([Linux kernel in $KBUILD is version $kversion, but version newer than 4.18.x is not supported (please refer to the FAQ for advice)])
+          AC_ERROR([Linux kernel in $KBUILD is version $kversion, but version newer than 4.20.x is not supported (please refer to the FAQ for advice)])
        fi
     elif test "$version" = 3 && test "$patchlevel" -ge 10; then
        : # Linux 3.x
@@ -540,6 +540,22 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
                   [OVS_DEFINE([HAVE_VOID_INET_FRAGS_INIT])])
   OVS_GREP_IFELSE([$KSRC/include/net/inetpeer.h], [vif],
                   [OVS_DEFINE([HAVE_INETPEER_VIF_SUPPORT])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_helper.h],
+                        [nf_ct_helper_ext_add], [nf_conntrack_helper],
+                        [OVS_DEFINE([HAVE_NF_CT_HELPER_EXT_ADD_TAKES_HELPER])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_core.h],
+                        [nf_ct_invert_tuple], [l3proto],
+                        [OVS_DEFINE([HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO])])
+  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_core.h], [nf_ct_get_tuple],
+                  [OVS_DEFINE([HAVE_NF_CT_GET_TUPLE])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_core.h],
+                        [nf_conntrack_in], [net],
+                        [OVS_DEFINE([HAVE_NF_CONNTRACK_IN_TAKES_NET])])
+  OVS_GREP_IFELSE([$KSRC/include/net/ipv6_frag.h], [IP6_DEFRAG_CONNTRACK_IN],
+                  [OVS_DEFINE([HAVE_IPV6_FRAG_H])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_l4proto.h],
+                        [__nf_ct_l4proto_find], [l3proto],
+                        [OVS_DEFINE([HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO])])
 
   dnl Check for dst_cache and ipv6 lable to use backported tunnel infrastructure.
   dnl OVS does not really need ipv6 label field, but its presence signifies that
