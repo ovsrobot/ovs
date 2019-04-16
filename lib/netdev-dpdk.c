@@ -186,12 +186,15 @@ static const struct rte_eth_conf port_conf = {
 static int new_device(int vid);
 static void destroy_device(int vid);
 static int vring_state_changed(int vid, uint16_t queue_id, int enable);
+static void destroy_connection(int vid);
 static const struct vhost_device_ops virtio_net_device_ops =
 {
     .new_device =  new_device,
     .destroy_device = destroy_device,
     .vring_state_changed = vring_state_changed,
-    .features_changed = NULL
+    .features_changed = NULL,
+    .new_connection = NULL,
+    .destroy_connection = destroy_connection,
 };
 
 enum { DPDK_RING_SIZE = 256 };
@@ -3659,6 +3662,36 @@ vring_state_changed(int vid, uint16_t queue_id, int enable)
     }
 
     return 0;
+}
+
+static void
+destroy_connection(int vid)
+{
+    struct netdev_dpdk *dev;
+    char ifname[IF_NAME_SZ];
+
+    rte_vhost_get_ifname(vid, ifname, sizeof ifname);
+
+    ovs_mutex_lock(&dpdk_mutex);
+    /* Add device to the vhost port with the same name as that passed down. */
+    LIST_FOR_EACH (dev, list_node, &dpdk_list) {
+        ovs_mutex_lock(&dev->mutex);
+        if (nullable_string_is_equal(ifname, dev->vhost_id)) {
+            uint32_t qp_num = NR_QUEUE;
+
+            /* Restore the number of queue pairs to default. */
+            if (dev->requested_n_txq != qp_num
+                || dev->requested_n_rxq != qp_num) {
+                dev->requested_n_rxq = qp_num;
+                dev->requested_n_txq = qp_num;
+                netdev_request_reconfigure(&dev->up);
+            }
+            ovs_mutex_unlock(&dev->mutex);
+            break;
+        }
+        ovs_mutex_unlock(&dev->mutex);
+    }
+    ovs_mutex_unlock(&dpdk_mutex);
 }
 
 /*
