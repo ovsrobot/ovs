@@ -19,6 +19,7 @@
 #include "lib/packets.h"
 
 struct nbrec_logical_router_port;
+struct sbrec_port_binding;
 struct sbrec_logical_flow;
 struct uuid;
 
@@ -80,5 +81,10 @@ uint32_t ovn_logical_flow_hash(const struct uuid *logical_datapath,
                                uint8_t table_id, const char *pipeline,
                                uint16_t priority,
                                const char *match, const char *actions);
+
+bool
+ovn_sbrec_get_port_binding_ip_mac(const struct sbrec_port_binding *binding,
+                                  struct eth_addr *mac, ovs_be32 *ip,
+                                  ovs_be32 *mask);
 
 #endif
