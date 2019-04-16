@@ -627,8 +627,28 @@ parse_ct_commit_arg(struct action_context *ctx,
         } else if (ctx->lexer->token.type == LEX_T_MASKED_INTEGER) {
             cc->ct_mark = ntohll(ctx->lexer->token.value.integer);
             cc->ct_mark_mask = ntohll(ctx->lexer->token.mask.integer);
+        } else if (ctx->lexer->token.type == LEX_T_ID) {
+
+           cc->ct_mark_mask = UINT32_MAX;
+
+           const struct mf_field *mf = mf_from_name(ctx->lexer->token.s);
+           if (mf) {
+
+              if (mf->id >= MFF_REG0 && mf->id <= MFF_REG15) {
+                 cc->is_ct_mark_reg = true;
+                 cc->ct_mark_reg = mf->id;
+              } else {
+                 lexer_syntax_error(ctx->lexer, "input: %s,  not a 32 bit "
+                                    "register", mf->name);
+                 return;
+              }
+           } else {
+              lexer_syntax_error(ctx->lexer, "invalid field name: %s",
+                                 ctx->lexer->token.s);
+              return;
+           }
         } else {
-            lexer_syntax_error(ctx->lexer, "expecting integer");
+            lexer_syntax_error(ctx->lexer, "invalid token type");
             return;
         }
         lexer_get(ctx->lexer);
@@ -642,9 +662,28 @@ parse_ct_commit_arg(struct action_context *ctx,
         } else if (ctx->lexer->token.type == LEX_T_MASKED_INTEGER) {
             cc->ct_label = ctx->lexer->token.value.be128_int;
             cc->ct_label_mask = ctx->lexer->token.mask.be128_int;
+        } else if (ctx->lexer->token.type == LEX_T_ID) {
+
+           cc->ct_label_mask = OVS_BE128_MAX;
+           const struct mf_field *mf = mf_from_name(ctx->lexer->token.s);
+           if (mf) {
+              if (mf->id >= MFF_XXREG0 && mf->id <= MFF_XXREG3) {
+                 cc->is_ct_label_reg = true;
+                 cc->ct_label_reg = mf->id;
+              } else {
+                 lexer_syntax_error(ctx->lexer, "input: %s,  not a 128 bit "
+                                    "register", mf->name);
+                 return;
+              }
+           } else {
+              lexer_syntax_error(ctx->lexer, "invalid field name: %s",
+                                 ctx->lexer->token.s);
+              return;
+           }
+
         } else {
-            lexer_syntax_error(ctx->lexer, "expecting integer");
-            return;
+           lexer_syntax_error(ctx->lexer, "invalid token type");
+           return;
         }
         lexer_get(ctx->lexer);
     } else {
@@ -713,14 +752,36 @@ encode_CT_COMMIT(const struct ovnact_ct_commit *cc,
     ofpbuf_pull(ofpacts, set_field_offset);
 
     if (cc->ct_mark_mask) {
-        const ovs_be32 value = htonl(cc->ct_mark);
-        const ovs_be32 mask = htonl(cc->ct_mark_mask);
-        ofpact_put_set_field(ofpacts, mf_from_id(MFF_CT_MARK), &value, &mask);
+       if (cc->is_ct_mark_reg) {
+          struct ofpact_reg_move *move = ofpact_put_REG_MOVE(ofpacts);
+
+          move->src.field = mf_from_id(cc->ct_mark_reg);
+          move->src.ofs = 0;
+          move->src.n_bits = 32;
+          move->dst.field = mf_from_id(MFF_CT_MARK);
+          move->dst.ofs = 0;
+          move->dst.n_bits = 32;
+       } else {
+          const ovs_be32 value = htonl(cc->ct_mark);
+          const ovs_be32 mask = htonl(cc->ct_mark_mask);
+          ofpact_put_set_field(ofpacts, mf_from_id(MFF_CT_MARK), &value, &mask);
+       }
     }
 
     if (!ovs_be128_is_zero(cc->ct_label_mask)) {
-        ofpact_put_set_field(ofpacts, mf_from_id(MFF_CT_LABEL), &cc->ct_label,
-                             &cc->ct_label_mask);
+       if (cc->is_ct_label_reg) {
+          struct ofpact_reg_move *move = ofpact_put_REG_MOVE(ofpacts);
+
+          move->src.field = mf_from_id(cc->ct_label_reg);
+          move->src.ofs = 0;
+          move->src.n_bits = 128;
+          move->dst.field = mf_from_id(MFF_CT_LABEL);
+          move->dst.ofs = 0;
+          move->dst.n_bits = 128;
+       } else {
+          ofpact_put_set_field(ofpacts, mf_from_id(MFF_CT_LABEL), &cc->ct_label,
+                               &cc->ct_label_mask);
+       }
     }
 
     ofpacts->header = ofpbuf_push_uninit(ofpacts, set_field_offset);
