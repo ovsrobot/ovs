@@ -56,31 +56,39 @@ m4_define([OVN_NBCTL_TEST],
 OVN_NBCTL_TEST([ovn_nbctl_basic_switch], [basic switch commands], [
 AT_CHECK([ovn-nbctl ls-add ls0])
 AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
-<0> (ls0)
+<0> (ls0) (type: overlay)
 ])
 
 AT_CHECK([ovn-nbctl ls-add ls1])
 AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
-<0> (ls0)
-<1> (ls1)
+<0> (ls0) (type: overlay)
+<1> (ls1) (type: overlay)
 ])
 
+AT_CHECK([ovn-nbctl ls-add ls2 vlan])
+AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
+<0> (ls0) (type: overlay)
+<1> (ls1) (type: overlay)
+<2> (ls2) (type: vlan)
+])
+
+AT_CHECK([ovn-nbctl ls-del ls2])
 AT_CHECK([ovn-nbctl ls-del ls0])
 AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
-<0> (ls1)
+<0> (ls1) (type: overlay)
 ])
 
 AT_CHECK([ovn-nbctl show ls0])
 AT_CHECK([ovn-nbctl ls-add ls0])
 AT_CHECK([ovn-nbctl show ls0 | uuidfilt], [0],
-  [switch <0> (ls0)
+  [switch <0> (ls0) (type: overlay)
 ])
 AT_CHECK([ovn-nbctl ls-add ls0], [1], [],
   [ovn-nbctl: ls0: a switch with this name already exists
 ])
 AT_CHECK([ovn-nbctl --may-exist ls-add ls0])
 AT_CHECK([ovn-nbctl show ls0 | uuidfilt], [0],
-  [switch <0> (ls0)
+  [switch <0> (ls0) (type: overlay)
 ])
 AT_CHECK([ovn-nbctl --add-duplicate ls-add ls0])
 AT_CHECK([ovn-nbctl --may-exist --add-duplicate ls-add ls0], [1], [],
@@ -102,7 +110,23 @@ AT_CHECK([ovn-nbctl --add-duplicate ls-add], [1], [],
 ])
 AT_CHECK([ovn-nbctl --may-exist ls-add], [1], [],
   [ovn-nbctl: --may-exist requires specifying a name
-])])
+])
+
+AT_CHECK([ovn-nbctl ls-set-network-type ls1 vlan])
+AT_CHECK([ovn-nbctl show ls1 | uuidfilt], [0],
+  [switch <0> (ls1) (type: vlan)
+])
+
+AT_CHECK([ovn-nbctl ls-set-network-type ls1 overlay])
+AT_CHECK([ovn-nbctl show ls1 | uuidfilt], [0],
+  [switch <0> (ls1) (type: overlay)
+])
+
+AT_CHECK([ovn-nbctl ls-set-network-type ls1 temp], [1], [],
+  [ovn-nbctl: Invalid type: "temp", supported types are "vlan" and "overlay"
+])
+
+])
 
 dnl ---------------------------------------------------------------------
 
@@ -1490,7 +1514,7 @@ dnl ---------------------------------------------------------------------
 OVN_NBCTL_TEST([ovn_nbctl_dry_run_mode], [dry run mode], [
 dnl Check that dry run has no permanent effect.
 AT_CHECK([ovn-nbctl --dry-run ls-add ls0 -- ls-list | uuidfilt], [0], [dnl
-<0> (ls0)
+<0> (ls0) (type: overlay)
 ])
 AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
 ])
@@ -1498,7 +1522,7 @@ AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
 dnl Check that dry-run mode is not sticky.
 AT_CHECK([ovn-nbctl ls-add ls0])
 AT_CHECK([ovn-nbctl ls-list | uuidfilt], [0], [dnl
-<0> (ls0)
+<0> (ls0) (type: overlay)
 ])])
 
 dnl ---------------------------------------------------------------------
@@ -1508,13 +1532,13 @@ AT_CHECK([ovn-nbctl ls-add ls0 -- ls-add ls1])
 
 dnl Expect one line for one command.
 AT_CHECK([ovn-nbctl --oneline ls-list | uuidfilt], [0], [dnl
-<0> (ls0)\n<1> (ls1)
+<0> (ls0) (type: overlay)\n<1> (ls1) (type: overlay)
 ])
 
 dnl Expect lines for two commands.
 AT_CHECK([ovn-nbctl --oneline ls-list -- ls-list | uuidfilt], [0], [dnl
-<0> (ls0)\n<1> (ls1)
-<0> (ls0)\n<1> (ls1)
+<0> (ls0) (type: overlay)\n<1> (ls1) (type: overlay)
+<0> (ls0) (type: overlay)\n<1> (ls1) (type: overlay)
 ])])
 
 dnl ---------------------------------------------------------------------

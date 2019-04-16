@@ -158,6 +158,15 @@
       </p>
     </column>
 
+    <column name="network_type">
+      <p>
+        Whether logical switch is VLAN backed or Overlay.
+      </p>
+
+      <p>
+        Default is overlay.
+      </p>
+    </column>
     <column name="load_balancer">
       Load balance a virtual ip address to a set of logical port endpoint
       ip addresses.
