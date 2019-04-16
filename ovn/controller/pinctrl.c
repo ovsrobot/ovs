@@ -154,11 +154,6 @@ static void pinctrl_handle_put_mac_binding(const struct flow *md,
                                            const struct flow *headers,
                                            bool is_arp)
     OVS_REQUIRES(pinctrl_mutex);
-static bool
-pinctrl_is_chassis_resident(struct ovsdb_idl_index *sbrec_port_binding_by_name,
-                            const struct sbrec_chassis *chassis,
-                            const struct sset *active_tunnels,
-                            const char *port_name);
 
 static void init_put_mac_bindings(void);
 static void destroy_put_mac_bindings(void);
@@ -237,6 +232,25 @@ pinctrl_init(void)
     latch_init(&pinctrl.pinctrl_thread_exit);
     pinctrl.pinctrl_thread = ovs_thread_create("ovn_pinctrl", pinctrl_handler,
                                                 &pinctrl);
+}
+
+bool
+pinctrl_is_chassis_resident(struct ovsdb_idl_index *sbrec_port_binding_by_name,
+                            const struct sbrec_chassis *chassis,
+                            const struct sset *active_tunnels,
+                            const char *port_name)
+{
+    const struct sbrec_port_binding *pb
+        = lport_lookup_by_name(sbrec_port_binding_by_name, port_name);
+    if (!pb || !pb->chassis) {
+        return false;
+    }
+    if (strcmp(pb->type, "chassisredirect")) {
+        return pb->chassis == chassis;
+    } else {
+        return ha_chassis_group_is_active(pb->ha_chassis_group,
+                                          active_tunnels, chassis);
+    }
 }
 
 static ovs_be32
@@ -2781,25 +2795,6 @@ get_localnet_vifs_l3gwports(
         }
     }
     sbrec_port_binding_index_destroy_row(target);
-}
-
-static bool
-pinctrl_is_chassis_resident(struct ovsdb_idl_index *sbrec_port_binding_by_name,
-                            const struct sbrec_chassis *chassis,
-                            const struct sset *active_tunnels,
-                            const char *port_name)
-{
-    const struct sbrec_port_binding *pb
-        = lport_lookup_by_name(sbrec_port_binding_by_name, port_name);
-    if (!pb || !pb->chassis) {
-        return false;
-    }
-    if (strcmp(pb->type, "chassisredirect")) {
-        return pb->chassis == chassis;
-    } else {
-        return ha_chassis_group_is_active(pb->ha_chassis_group,
-                                          active_tunnels, chassis);
-    }
 }
 
 /* Extracts the mac, IPv4 and IPv6 addresses, and logical port from

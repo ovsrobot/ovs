@@ -13653,7 +13653,7 @@ ovn-nbctl list logical_router_port
 
 AT_CLEANUP
 
-AT_SETUP([ovn -- 2 HVs, 2 lports/HV, localnet ports, DVR chassis mac])
+AT_SETUP([ovn -- 2 HVs, 2 lports/HV, localnet ports, DVR E-W chassis mac])
 ovn_start
 
 
@@ -13662,6 +13662,8 @@ ovn_start
 # 1 VIF. Each HV has 1 VIF port. The first digit
 # of VIF port name indicates the hypervisor it is bound to, e.g.
 # lp23 means VIF 3 on hv2.
+#
+# Both the switches are connected to a logical router "router".
 #
 # Each switch's VLAN tag and their logical switch ports are:
 #   - ls1:
@@ -13845,6 +13847,105 @@ as hv2 ovs-ofctl -O OpenFlow13 dump-flows br-int
 as hv2 ovs-appctl fdb/show br-phys
 
 OVN_CHECK_PACKETS([hv2/vif22-tx.pcap], [vif22.expected])
+
+
+# Associate a chassis as gateway chassis and validate garp.
+
+OVN_CLEANUP([hv1],[hv2])
+
+AT_CLEANUP
+
+
+AT_SETUP([ovn -- 2 HVs, 2 lports/HV, localnet ports, DVR N-S GARP])
+ovn_start
+
+
+# In this test cases we create 2 switches, all connected to same
+# physical network (through br-phys on each HV). Each switch has
+# 1 VIF. Each HV has 1 VIF port. The first digit
+# of VIF port name indicates the hypervisor it is bound to, e.g.
+# lp23 means VIF 3 on hv2.
+#
+# Both the switches are connected to a logical router "router".
+#
+# Additionally, we create a logical switch (ls-underlay) for N-S traffic.
+#
+# Each switch's VLAN tag and their logical switch ports are:
+#   - ls1:
+#       - tagged with VLAN 101
+#       - ports: lp11
+#   - ls2:
+#       - tagged with VLAN 201
+#       - ports: lp22
+#   - ls-underlay:
+#       - tagged with VLAN 1000
+#
+# Note: a localnet port is created for each switch to connect to
+# physical network.
+# lsp_to_ls LSP
+#
+# Prints the name of the logical switch that contains LSP.
+
+net_add n1
+for i in 1 2; do
+    sim_add hv$i
+    as hv$i
+    ovs-vsctl add-br br-phys
+    ovs-vsctl set open . external-ids:ovn-bridge-mappings=phys:br-phys
+    ovs-vsctl set open . external-ids:ovn-chassis-mac-mappings="phys:aa:bb:cc:dd:ee:$i$i"
+    ovs-vsctl set open . external-ids:system-id="HV$i"
+    ovn_attach n1 br-phys 192.168.0.$i
+    ovs-vsctl set-controller br-int ptcp:
+done
+
+ovn-nbctl ls-add ls-underlay vlan
+ovn-nbctl lsp-add ls-underlay ln3 "" 1000
+ovn-nbctl lsp-set-addresses ln3 unknown
+ovn-nbctl lsp-set-type ln3 localnet
+ovn-nbctl lsp-set-options ln3 network_name=phys
+
+ovn-nbctl lr-add router
+ovn-nbctl lrp-add router router-to-underlay 00:00:01:01:02:07 172.31.0.1/24
+
+ovn-nbctl lsp-add ls-underlay underlay-to-router -- set Logical_Switch_Port \
+                              underlay-to-router type=router \
+                              options:router-port=router-to-underlay \
+                              -- lsp-set-addresses underlay-to-router router
+
+ovn-nbctl --wait=sb sync
+
+# Associate hv2 as gateway chassis
+ovn-nbctl lrp-set-gateway-chassis router-to-underlay hv2
+
+ovn-nbctl show
+ovn-sbctl show
+
+# Dump a bunch of info helpful for debugging if there's a failure.
+
+echo "------ OVN dump ------"
+ovn-nbctl show
+ovn-sbctl show
+
+echo "------ hv1 dump ------"
+as hv1 ovs-vsctl show
+as hv1 ovs-vsctl list Open_Vswitch
+
+echo "------ hv2 dump ------"
+as hv2 ovs-vsctl show
+as hv2 ovs-vsctl list Open_Vswitch
+
+sleep 1
+
+echo "----------- Post Traffic hv1 dump -----------"
+as hv1 ovs-ofctl -O OpenFlow13 dump-flows br-int
+as hv1 ovs-appctl fdb/show br-phys
+
+echo "----------- Post Traffic hv2 dump -----------"
+as hv2 ovs-ofctl -O OpenFlow13 dump-flows br-int
+as hv2 ovs-appctl fdb/show br-phys
+
+AT_CHECK([as hv2 ovs-appctl fdb/show br-phys | grep 00:00:01:01:02:07 | grep 1000 | wc -l], [0], [[1
+]])
 
 OVN_CLEANUP([hv1],[hv2])
 
