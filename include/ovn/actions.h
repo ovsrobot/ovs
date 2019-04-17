@@ -24,6 +24,7 @@
 #include "openvswitch/dynamic-string.h"
 #include "openvswitch/hmap.h"
 #include "openvswitch/uuid.h"
+#include "openvswitch/meta-flow.h"
 #include "util.h"
 
 struct expr;
@@ -196,8 +197,10 @@ struct ovnact_ct_next {
 /* OVNACT_CT_COMMIT. */
 struct ovnact_ct_commit {
     struct ovnact ovnact;
+    bool is_ct_mark_reg, is_ct_label_reg; /* If the value is from a register */
     uint32_t ct_mark, ct_mark_mask;
     ovs_be128 ct_label, ct_label_mask;
+    enum mf_field_id ct_mark_reg, ct_label_reg;
 };
 
 /* OVNACT_CT_DNAT, OVNACT_CT_SNAT. */
