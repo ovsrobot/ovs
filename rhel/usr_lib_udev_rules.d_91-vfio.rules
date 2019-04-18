@@ -1,1 +1,2 @@
 ACTION=="add", SUBSYSTEM=="vfio*", GROUP="hugetlbfs", MODE="0660"
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="vfio", MODE="0666"
