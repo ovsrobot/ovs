@@ -5549,7 +5549,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     memset(exceeded_rate, 0, cnt * sizeof *exceeded_rate);
 
     /* All packets will hit the meter at the same time. */
-    long_delta_t = (now - meter->used) / 1000; /* msec */
+    long_delta_t = now / 1000 - meter->used / 1000; /* msec */
 
     /* Make sure delta_t will not be too large, so that bucket will not
      * wrap around below. */
@@ -5557,7 +5557,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
         ? meter->max_delta_t : (uint32_t)long_delta_t;
 
     /* Update meter stats. */
-    meter->used = now;
+    meter->used = delta_t > 0 ? now : meter->used;
     meter->packet_count += cnt;
     bytes = 0;
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
