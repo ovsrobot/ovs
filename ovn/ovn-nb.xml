@@ -158,6 +158,22 @@
       </p>
     </column>
 
+    <column name="network_type">
+      <p>
+        Whether logical switch will fully virtualize the network (i.e overlay)
+        or it simply connects to the physical network (i.e vlan).
+        This field will take either of the following values: "overlay" or
+        "vlan".
+      </p>
+
+      <p>
+        An "overlay" type logical switch means that 24 bith vxlan id defines
+        its broadcast domain and hence packets leaving the chassis will be
+        encapsulated. A "vlan" logical switch means that it uses 12 bit vlan
+        id as broadcast domain and packets leaving the chassis would not
+        be encapsulated, but would have a vlan header.
+      </p>
+    </column>
     <column name="load_balancer">
       Load balance a virtual ip address to a set of logical port endpoint
       ip addresses.

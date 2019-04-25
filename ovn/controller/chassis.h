@@ -17,6 +17,7 @@
 #define OVN_CHASSIS_H 1
 
 #include <stdbool.h>
+#include "openvswitch/types.h"
 
 struct ovsdb_idl;
 struct ovsdb_idl_index;
@@ -36,5 +37,8 @@ const struct sbrec_chassis *chassis_run(
     const struct sset *transport_zones);
 bool chassis_cleanup(struct ovsdb_idl_txn *ovnsb_idl_txn,
                      const struct sbrec_chassis *);
+bool chassis_get_mac(const struct sbrec_chassis *chassis,
+                     const char *bridge_mapping,
+                     struct eth_addr *chassis_mac);
 
 #endif /* ovn/chassis.h */

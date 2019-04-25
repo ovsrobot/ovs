@@ -1407,6 +1407,18 @@
       egress pipeline of the destination localnet logical switch datapath
       and goes out of the integration bridge to the provider bridge (
       belonging to the destination logical switch) via the localnet port.
+
+      For a distributed router port, we cannot use the router port mac,
+      while sending the packet to provider port. This is because, since
+      router port is distributed, hence same router port mac would appear
+      from different ports in the provider network.
+
+      To mitigate this, we replace router port mac with a chassis unique
+      mac whenever a routed packet is being sent to provider bridge.
+
+      For example, CMS should program chassis mac through following
+      ovs mapping:
+      ovn-bridge-mappings="physnet1:br-eth1"
     </li>
 
     <li>
