@@ -6208,6 +6208,20 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                  * from different chassis. */
                 ds_put_format(&match, " && is_chassis_resident(%s)",
                               op->od->l3redirect_port->json_key);
+            } else if (op->peer &&
+                       op->peer->od->network_type == DP_NETWORK_VLAN) {
+
+                /* For a vlan backed router port, we will always have the
+                 * is_chassis_resident check. This is because there could be
+                 * vm/server on vlan network, but not on OVN chassis and could
+                 * end up arping for router port ip.
+                 *
+                 * This check works on the assumption that for OVN chassis VMs,
+                 * logical switch ARP responder will respond to ARP requests
+                 * for router port IP.
+                 */
+                ds_put_format(&match, " && is_chassis_resident(\"cr-%s\")",
+                              op->key);
             }
 
             ds_clear(&actions);
@@ -7309,18 +7323,23 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
             ovn_lflow_add(lflows, od, S_ROUTER_IN_GW_REDIRECT, 300,
                           REGBIT_DISTRIBUTED_NAT" == 1", "next;");
 
-            /* For traffic with outport == l3dgw_port, if the
-             * packet did not match any higher priority redirect
-             * rule, then the traffic is redirected to the central
-             * instance of the l3dgw_port. */
-            ds_clear(&match);
-            ds_put_format(&match, "outport == %s",
-                          od->l3dgw_port->json_key);
-            ds_clear(&actions);
-            ds_put_format(&actions, "outport = %s; next;",
-                          od->l3redirect_port->json_key);
-            ovn_lflow_add(lflows, od, S_ROUTER_IN_GW_REDIRECT, 50,
-                          ds_cstr(&match), ds_cstr(&actions));
+            /* For VLAN backed networks, default match will not redirect to
+             * chassis redirect port. */
+            if (od->l3dgw_port->peer &&
+                od->l3dgw_port->peer->od->network_type == DP_NETWORK_OVERLAY) {
+                /* For traffic with outport == l3dgw_port, if the
+                 * packet did not match any higher priority redirect
+                 * rule, then the traffic is redirected to the central
+                 * instance of the l3dgw_port. */
+                ds_clear(&match);
+                ds_put_format(&match, "outport == %s",
+                              od->l3dgw_port->json_key);
+                ds_clear(&actions);
+                ds_put_format(&actions, "outport = %s; next;",
+                              od->l3redirect_port->json_key);
+                ovn_lflow_add(lflows, od, S_ROUTER_IN_GW_REDIRECT, 50,
+                              ds_cstr(&match), ds_cstr(&actions));
+            }
 
             /* If the Ethernet destination has not been resolved,
              * redirect to the central instance of the l3dgw_port.
