@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 OR MIT */
-#ifdef HAVE_OVERFLOW_H
+#if defined(HAVE_OVERFLOW_H) && defined(HAVE_STRUCT_SIZE)
 #include_next <linux/overflow.h>
 #else
 #ifndef __LINUX_OVERFLOW_H
