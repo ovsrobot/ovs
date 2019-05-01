@@ -2525,6 +2525,27 @@ ovn_port_update_sbrec(struct northd_context *ctx,
                                                          &nat_addresses, 1);
                     destroy_lport_addresses(&laddrs);
                 }
+            } else if (op->peer && op->peer->nbrp && op->peer->od->l3dgw_port
+                       && op->peer->od->l3redirect_port
+                       && smap_get_bool(&op->peer->nbrp->options,
+                                        "reside-on-redirect-chassis", false)) {
+                /* reside-on-gateway-chassis is set and the
+                 * the logical router datapath has distributed router port. Add
+                 * the router mac and IPv4 addresses so that GARP is sent for
+                 * these IPs by the ovn-controller which handles the
+                 * centralized routing. */
+                struct ds nat_addr = DS_EMPTY_INITIALIZER;
+                ds_put_format(&nat_addr, "%s", op->peer->lrp_networks.ea_s);
+                for (size_t i = 0; i < op->peer->lrp_networks.n_ipv4_addrs;
+                     i++) {
+                    ds_put_format(&nat_addr, " %s",
+                                  op->peer->lrp_networks.ipv4_addrs[i].addr_s);
+                }
+                ds_put_format(&nat_addr, " is_chassis_resident(%s)",
+                              op->peer->od->l3redirect_port->json_key);
+                const char *s = ds_cstr(&nat_addr);
+                sbrec_port_binding_set_nat_addresses(op->sb, &s, 1);
+                ds_destroy(&nat_addr);
             } else {
                 sbrec_port_binding_set_nat_addresses(op->sb, NULL, 0);
             }
