@@ -19,6 +19,7 @@
 
 #include <stdbool.h>
 
+#include "cmap.h"
 #include "latch.h"
 #include "odp-netlink.h"
 #include "openvswitch/hmap.h"
@@ -93,7 +94,7 @@ void conntrack_clear(struct dp_packet *packet);
 struct conntrack_dump {
     struct conntrack *ct;
     unsigned bucket;
-    struct hmap_position bucket_pos;
+    struct cmap_position cm_pos;
     bool filter_zone;
     uint16_t zone;
 };
@@ -114,5 +115,4 @@ int conntrack_get_maxconns(struct conntrack *ct, uint32_t *maxconns);
 int conntrack_get_nconns(struct conntrack *ct, uint32_t *nconns);
 struct ipf *conntrack_ipf_ctx(struct conntrack *ct);
 
-
 #endif /* conntrack.h */
