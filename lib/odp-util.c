@@ -90,7 +90,7 @@ static void format_u128(struct ds *d, const ovs_32aligned_u128 *key,
                         const ovs_32aligned_u128 *mask, bool verbose);
 static int scan_u128(const char *s, ovs_u128 *value, ovs_u128 *mask);
 
-static int parse_odp_action(const char *s, const struct simap *port_names,
+static int parse_odp_action(struct parse_odp_context *context, const char *s,
                             struct ofpbuf *actions);
 
 /* Returns one the following for the action with the given OVS_ACTION_ATTR_*
@@ -2183,7 +2183,7 @@ out:
 }
 
 static int
-parse_action_list(const char *s, const struct simap *port_names,
+parse_action_list(struct parse_odp_context *context, const char *s,
                   struct ofpbuf *actions)
 {
     int n = 0;
@@ -2195,7 +2195,7 @@ parse_action_list(const char *s, const struct simap *port_names,
         if (s[n] == ')') {
             break;
         }
-        retval = parse_odp_action(s + n, port_names, actions);
+        retval = parse_odp_action(context, s + n, actions);
         if (retval < 0) {
             return retval;
         }
@@ -2210,15 +2210,21 @@ parse_action_list(const char *s, const struct simap *port_names,
 }
 
 static int
-parse_odp_action(const char *s, const struct simap *port_names,
+parse_odp_action(struct parse_odp_context *context, const char *s,
                  struct ofpbuf *actions)
 {
+    if (context->depth + 1 == MAX_ODP_NESTED) {
+        return -EINVAL;
+    }
+    context->depth++;
+
     {
         uint32_t port;
         int n;
 
         if (ovs_scan(s, "%"SCNi32"%n", &port, &n)) {
             nl_msg_put_u32(actions, OVS_ACTION_ATTR_OUTPUT, port);
+            context->depth--;
             return n;
         }
     }
@@ -2233,17 +2239,19 @@ parse_odp_action(const char *s, const struct simap *port_names,
             trunc = nl_msg_put_unspec_uninit(actions,
                      OVS_ACTION_ATTR_TRUNC, sizeof *trunc);
             trunc->max_len = max_len;
+            context->depth--;
             return n;
         }
     }
 
-    if (port_names) {
+    if (context->port_names) {
         int len = strcspn(s, delimiters);
         struct simap_node *node;
 
-        node = simap_find_len(port_names, s, len);
+        node = simap_find_len(context->port_names, s, len);
         if (node) {
             nl_msg_put_u32(actions, OVS_ACTION_ATTR_OUTPUT, node->data);
+            context->depth--;
             return len;
         }
     }
@@ -2254,11 +2262,13 @@ parse_odp_action(const char *s, const struct simap *port_names,
 
         if (ovs_scan(s, "recirc(%"PRIu32")%n", &recirc_id, &n)) {
             nl_msg_put_u32(actions, OVS_ACTION_ATTR_RECIRC, recirc_id);
+            context->depth--;
             return n;
         }
     }
 
     if (!strncmp(s, "userspace(", 10)) {
+        context->depth--;
         return parse_odp_userspace_action(s, actions);
     }
 
@@ -2269,18 +2279,17 @@ parse_odp_action(const char *s, const struct simap *port_names,
         struct ofpbuf maskbuf = OFPBUF_STUB_INITIALIZER(mask);
         struct nlattr *nested, *key;
         size_t size;
-        struct parse_odp_context context = (struct parse_odp_context) {
-            .port_names = port_names,
-        };
 
         start_ofs = nl_msg_start_nested(actions, OVS_ACTION_ATTR_SET);
-        retval = parse_odp_key_mask_attr(&context, s + 4, actions, &maskbuf);
+        retval = parse_odp_key_mask_attr(context, s + 4, actions, &maskbuf);
         if (retval < 0) {
             ofpbuf_uninit(&maskbuf);
+            context->depth--;
             return retval;
         }
         if (s[retval + 4] != ')') {
             ofpbuf_uninit(&maskbuf);
+            context->depth--;
             return -EINVAL;
         }
 
@@ -2311,6 +2320,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
         ofpbuf_uninit(&maskbuf);
 
         nl_msg_end_nested(actions, start_ofs);
+        context->depth--;
         return retval + 5;
     }
 
@@ -2330,6 +2340,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
                         &tpid, &vid, &pcp, &cfi, &n)) {
             if ((vid & ~(VLAN_VID_MASK >> VLAN_VID_SHIFT)) != 0
                 || (pcp & ~(VLAN_PCP_MASK >> VLAN_PCP_SHIFT)) != 0) {
+                context->depth--;
                 return -EINVAL;
             }
             push.vlan_tpid = htons(tpid);
@@ -2339,12 +2350,14 @@ parse_odp_action(const char *s, const struct simap *port_names,
             nl_msg_put_unspec(actions, OVS_ACTION_ATTR_PUSH_VLAN,
                               &push, sizeof push);
 
+            context->depth--;
             return n;
         }
     }
 
     if (!strncmp(s, "pop_vlan", 8)) {
         nl_msg_put_flag(actions, OVS_ACTION_ATTR_POP_VLAN);
+        context->depth--;
         return 8;
     }
 
@@ -2354,6 +2367,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
 
         if (sscanf(s, "meter(%lli)%n", &meter_id, &n) > 0 && n > 0) {
             nl_msg_put_u32(actions, OVS_ACTION_ATTR_METER, meter_id);
+            context->depth--;
             return n;
         }
     }
@@ -2376,14 +2390,18 @@ parse_odp_action(const char *s, const struct simap *port_names,
 
             actions_ofs = nl_msg_start_nested(actions,
                                               OVS_SAMPLE_ATTR_ACTIONS);
-            int retval = parse_action_list(s + n, port_names, actions);
-            if (retval < 0)
+            int retval = parse_action_list(context, s + n, actions);
+            if (retval < 0) {
+                context->depth--;
                 return retval;
+            }
+
 
             n += retval;
             nl_msg_end_nested(actions, actions_ofs);
             nl_msg_end_nested(actions, sample_ofs);
 
+            context->depth--;
             return s[n + 1] == ')' ? n + 2 : -EINVAL;
         }
     }
@@ -2394,12 +2412,14 @@ parse_odp_action(const char *s, const struct simap *port_names,
             int n = 6;
 
             actions_ofs = nl_msg_start_nested(actions, OVS_ACTION_ATTR_CLONE);
-            int retval = parse_action_list(s + n, port_names, actions);
+            int retval = parse_action_list(context, s + n, actions);
             if (retval < 0) {
+                context->depth--;
                 return retval;
             }
             n += retval;
             nl_msg_end_nested(actions, actions_ofs);
+            context->depth--;
             return n + 1;
         }
     }
@@ -2408,8 +2428,10 @@ parse_odp_action(const char *s, const struct simap *port_names,
         if (!strncmp(s, "push_nsh(", 9)) {
             int retval = parse_odp_push_nsh_action(s, actions);
             if (retval < 0) {
+                context->depth--;
                 return retval;
             }
+            context->depth--;
             return retval + 1;
         }
     }
@@ -2418,6 +2440,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
         int n;
         if (ovs_scan(s, "pop_nsh()%n", &n)) {
             nl_msg_put_flag(actions, OVS_ACTION_ATTR_POP_NSH);
+            context->depth--;
             return n;
         }
     }
@@ -2428,6 +2451,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
 
         if (ovs_scan(s, "tnl_pop(%"SCNi32")%n", &port, &n)) {
             nl_msg_put_u32(actions, OVS_ACTION_ATTR_TUNNEL_POP, port);
+            context->depth--;
             return n;
         }
     }
@@ -2435,6 +2459,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
     {
         if (!strncmp(s, "ct_clear", 8)) {
             nl_msg_put_flag(actions, OVS_ACTION_ATTR_CT_CLEAR);
+            context->depth--;
             return 8;
         }
     }
@@ -2454,8 +2479,9 @@ parse_odp_action(const char *s, const struct simap *port_names,
             if (!strncasecmp(s + n, "drop", 4)) {
                 n += 4;
             } else {
-                retval = parse_action_list(s + n, port_names, actions);
+                retval = parse_action_list(context, s + n, actions);
                 if (retval < 0) {
+                    context->depth--;
                     return retval;
                 }
 
@@ -2464,6 +2490,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
             nl_msg_end_nested(actions, actions_ofs);
             retval = -1;
             if (!ovs_scan(s + n, "),le(%n", &retval)) {
+                context->depth--;
                 return -EINVAL;
             }
             n += retval;
@@ -2473,14 +2500,16 @@ parse_odp_action(const char *s, const struct simap *port_names,
             if (!strncasecmp(s + n, "drop", 4)) {
                 n += 4;
             } else {
-                retval = parse_action_list(s + n, port_names, actions);
+                retval = parse_action_list(context, s + n, actions);
                 if (retval < 0) {
+                    context->depth--;
                     return retval;
                 }
                 n += retval;
             }
             nl_msg_end_nested(actions, actions_ofs);
             nl_msg_end_nested(actions, cpl_ofs);
+            context->depth--;
             return s[n + 1] == ')' ? n + 2 : -EINVAL;
         }
     }
@@ -2490,6 +2519,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
 
         retval = parse_conntrack_action(s, actions);
         if (retval) {
+            context->depth--;
             return retval;
         }
     }
@@ -2501,11 +2531,14 @@ parse_odp_action(const char *s, const struct simap *port_names,
         n = ovs_parse_tnl_push(s, &data);
         if (n > 0) {
             odp_put_tnl_push_action(actions, &data);
+            context->depth--;
             return n;
         } else if (n < 0) {
+            context->depth--;
             return n;
         }
     }
+    context->depth--;
     return -EINVAL;
 }
 
@@ -2524,6 +2557,10 @@ odp_actions_from_string(const char *s, const struct simap *port_names,
         return 0;
     }
 
+    struct parse_odp_context context = (struct parse_odp_context) {
+        .port_names = port_names,
+    };
+
     old_size = actions->size;
     for (;;) {
         int retval;
@@ -2533,7 +2570,8 @@ odp_actions_from_string(const char *s, const struct simap *port_names,
             return 0;
         }
 
-        retval = parse_odp_action(s, port_names, actions);
+        retval = parse_odp_action(&context, s, actions);
+
         if (retval < 0 || !strchr(delimiters, s[retval])) {
             actions->size = old_size;
             return -retval;
@@ -5591,6 +5629,11 @@ static int
 parse_odp_key_mask_attr(struct parse_odp_context *context, const char *s,
                         struct ofpbuf *key, struct ofpbuf *mask)
 {
+    if (context->depth + 1 == MAX_ODP_NESTED) {
+        return -EINVAL;
+    }
+    context->depth++;
+
     SCAN_SINGLE("skb_priority(", uint32_t, u32, OVS_KEY_ATTR_PRIORITY);
     SCAN_SINGLE("skb_mark(", uint32_t, u32, OVS_KEY_ATTR_SKB_MARK);
     SCAN_SINGLE_FULLY_MASKED("recirc_id(", uint32_t, u32,
@@ -5736,20 +5779,16 @@ parse_odp_key_mask_attr(struct parse_odp_context *context, const char *s,
     /* nsh is nested, it needs special process */
     int ret = parse_odp_nsh_key_mask_attr(s, key, mask);
     if (ret < 0) {
-       return ret;
+        context->depth--;
+        return ret;
     } else {
-       s += ret;
+        s += ret;
     }
 
     /* Encap open-coded. */
     if (!strncmp(s, "encap(", 6)) {
         const char *start = s;
         size_t encap, encap_mask = 0;
-
-        if (context->depth + 1 == MAX_ODP_NESTED) {
-            return -EINVAL;
-        }
-        context->depth++;
 
         encap = nl_msg_start_nested(key, OVS_KEY_ATTR_ENCAP);
         if (mask) {
@@ -5775,6 +5814,7 @@ parse_odp_key_mask_attr(struct parse_odp_context *context, const char *s,
             }
 
             if (nl_attr_oversized(key->size - encap - NLA_HDRLEN)) {
+                context->depth--;
                 return -E2BIG;
             }
             s += retval;
@@ -5785,11 +5825,12 @@ parse_odp_key_mask_attr(struct parse_odp_context *context, const char *s,
         if (mask) {
             nl_msg_end_nested(mask, encap_mask);
         }
-        context->depth--;
 
+        context->depth--;
         return s - start;
     }
 
+    context->depth--;
     return -EINVAL;
 }
 
