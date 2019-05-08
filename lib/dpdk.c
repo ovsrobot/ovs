@@ -47,6 +47,8 @@ static FILE *log_stream = NULL;       /* Stream for DPDK log redirection */
 
 static char *vhost_sock_dir = NULL;   /* Location of vhost-user sockets */
 static bool vhost_iommu_enabled = false; /* Status of vHost IOMMU support */
+static bool vhost_postcopy_enabled = false; /* Status of vHost POSTCOPY
+                                             * support. */
 static bool dpdk_initialized = false; /* Indicates successful initialization
                                        * of DPDK. */
 static bool per_port_memory = false; /* Status of per port memory support */
@@ -316,6 +318,11 @@ dpdk_init__(const struct smap *ovs_other_config)
     VLOG_INFO("Per port memory for DPDK devices %s.",
               per_port_memory ? "enabled" : "disabled");
 
+    vhost_postcopy_enabled = smap_get_bool(ovs_other_config,
+                                           "vhost-postcopy-support", false);
+    VLOG_INFO("POSTCOPY support for vhost-user-client %s.",
+              vhost_postcopy_enabled ? "enabled" : "disabled");
+
     svec_add(&args, ovs_get_program_name());
     construct_dpdk_args(ovs_other_config, &args);
 
@@ -490,6 +497,12 @@ bool
 dpdk_vhost_iommu_enabled(void)
 {
     return vhost_iommu_enabled;
+}
+
+bool
+dpdk_vhost_postcopy_enabled(void)
+{
+    return vhost_postcopy_enabled;
 }
 
 bool
