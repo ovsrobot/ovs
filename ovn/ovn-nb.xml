@@ -158,6 +158,25 @@
       </p>
     </column>
 
+    <column name="network_type">
+      <p>
+        Whether logical switch will fully virtualize the network (i.e overlay)
+        or it simply connects to the physical network (i.e bridged).
+        This field will take either of the following values: "overlay" or
+        "bridged".
+      </p>
+
+      <p>
+        An "overlay" type logical switch means that 24 bit virtual network
+        identifier defines its broadcast domain and hence packets leaving
+        the chassis will be encapsulated. A "bridged" logical switch means that
+        it uses 12 bit vlan id as broadcast domain and packets leaving the
+        chassis would not be encapsulated, but would have a vlan header
+        instead (logical switches with vlan zero are also to be assigned the
+        type as "bridged"). For a "bridged" type logical switch, a localnet
+        port MUST be created.
+      </p>
+    </column>
     <column name="load_balancer">
       Load balance a virtual ip address to a set of logical port endpoint
       ip addresses.

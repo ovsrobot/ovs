@@ -572,7 +572,8 @@ General commands:\n\
   show ROUTER               print overview of database contents for ROUTER\n\
 \n\
 Logical switch commands:\n\
-  ls-add [SWITCH]           create a logical switch named SWITCH\n\
+  ls-add [SWITCH] [TYPE]    create a logical switch named SWITCH of TYPE \n\
+                            bridged or overlay\n\
   ls-del SWITCH             delete SWITCH and all its ports\n\
   ls-list                   print the names of all logical switches\n\
 \n\
@@ -1013,8 +1014,10 @@ print_lr(const struct nbrec_logical_router *lr, struct ds *s)
 static void
 print_ls(const struct nbrec_logical_switch *ls, struct ds *s)
 {
-    ds_put_format(s, "switch "UUID_FMT" (%s)",
-                  UUID_ARGS(&ls->header_.uuid), ls->name);
+    ds_put_format(s, "switch "UUID_FMT" (%s) (type: %s)",
+                  UUID_ARGS(&ls->header_.uuid), ls->name,
+                  ls->network_type && strlen(ls->network_type) ?
+                  ls->network_type : "overlay");
     print_alias(&ls->external_ids, "neutron:network_name", s);
     ds_put_char(s, '\n');
 
@@ -1116,7 +1119,8 @@ nbctl_show(struct ctl_context *ctx)
 static void
 nbctl_ls_add(struct ctl_context *ctx)
 {
-    const char *ls_name = ctx->argc == 2 ? ctx->argv[1] : NULL;
+    const char *ls_name = ctx->argc >= 2 ? ctx->argv[1] : NULL;
+    const char *nw_type = ctx->argc == 3 ? ctx->argv[2] : NULL;
 
     bool may_exist = shash_find(&ctx->options, "--may-exist") != NULL;
     bool add_duplicate = shash_find(&ctx->options, "--add-duplicate") != NULL;
@@ -1153,6 +1157,33 @@ nbctl_ls_add(struct ctl_context *ctx)
     if (ls_name) {
         nbrec_logical_switch_set_name(ls, ls_name);
     }
+
+    if (nw_type) {
+        nbrec_logical_switch_set_network_type(ls, nw_type);
+    }
+}
+
+static void
+nbctl_ls_set_network_type(struct ctl_context *ctx)
+{
+    const char *ls_name = ctx->argv[1];
+    const char *ls_type = ctx->argv[2];
+    const struct nbrec_logical_switch *ls = NULL;
+
+    char *error = ls_by_name_or_uuid(ctx, ls_name, true, &ls);
+
+    if (!ls || error) {
+        ctx->error = error;
+        return;
+    }
+
+    if (strcmp(ls_type, "bridged") && strcmp(ls_type, "overlay")) {
+        ctl_error(ctx, "Invalid type: \"%s\", supported types are \"bridged\" "
+                  "and \"overlay\"", ls_type);
+        return;
+    }
+
+    nbrec_logical_switch_set_network_type(ls, ls_type);
 }
 
 static void
@@ -1182,8 +1213,10 @@ nbctl_ls_list(struct ctl_context *ctx)
 
     smap_init(&switches);
     NBREC_LOGICAL_SWITCH_FOR_EACH(ls, ctx->idl) {
-        smap_add_format(&switches, ls->name, UUID_FMT " (%s)",
-                        UUID_ARGS(&ls->header_.uuid), ls->name);
+        smap_add_format(&switches, ls->name, UUID_FMT " (%s) (type: %s)",
+                        UUID_ARGS(&ls->header_.uuid), ls->name,
+                        ls->network_type && strlen(ls->network_type) ?
+                        ls->network_type : "overlay");
     }
     const struct smap_node **nodes = smap_sort(&switches);
     for (size_t i = 0; i < smap_count(&switches); i++) {
@@ -5504,10 +5537,12 @@ static const struct ctl_command_syntax nbctl_commands[] = {
     { "show", 0, 1, "[SWITCH]", NULL, nbctl_show, NULL, "", RO },
 
     /* logical switch commands. */
-    { "ls-add", 0, 1, "[SWITCH]", NULL, nbctl_ls_add, NULL,
+    { "ls-add", 0, 2, "[SWITCH] [TYPE]", NULL, nbctl_ls_add, NULL,
       "--may-exist,--add-duplicate", RW },
     { "ls-del", 1, 1, "SWITCH", NULL, nbctl_ls_del, NULL, "--if-exists", RW },
     { "ls-list", 0, 0, "", NULL, nbctl_ls_list, NULL, "", RO },
+    { "ls-set-network-type", 2, 2, "SWITCH TYPE", NULL,
+      nbctl_ls_set_network_type, NULL, "", RW },
 
     /* acl commands. */
     { "acl-add", 5, 6, "{SWITCH | PORTGROUP} DIRECTION PRIORITY MATCH ACTION",

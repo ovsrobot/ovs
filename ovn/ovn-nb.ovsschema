@@ -1,7 +1,7 @@
 {
     "name": "OVN_Northbound",
-    "version": "5.16.0",
-    "cksum": "923459061 23095",
+    "version": "5.17.0",
+    "cksum": "1251608309 23487",
     "tables": {
         "NB_Global": {
             "columns": {
@@ -29,6 +29,12 @@
         "Logical_Switch": {
             "columns": {
                 "name": {"type": "string"},
+                "network_type": {"type": {"key": {"type": "string",
+                                                  "enum": ["set", ["overlay",
+                                                                   "bridged"]
+                                                          ]},
+                                          "min": 0,
+                                          "max": 1}},
                 "ports": {"type": {"key": {"type": "uuid",
                                            "refTable": "Logical_Switch_Port",
                                            "refType": "strong"},
