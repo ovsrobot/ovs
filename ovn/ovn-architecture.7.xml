@@ -1441,7 +1441,7 @@
     </li>
   </ol>
 
-  <h3>External traffic</h3>
+  <h3>External traffic (NAT)</h3>
 
   <p>
     The following happens when a VM sends an external traffic (which requires
@@ -1606,6 +1606,91 @@
       logical switch and finally gets delivered to the source VM port.
     </li>
   </ol>
+
+  <h3>External traffic (NO NAT)</h3>
+  <p>
+    The following happens when a VM sends an external traffic (i.e to non
+    logical router connected network), but there is not need for NATing.
+  </p>
+
+  <p>
+    Since, there is no NATing required, hence we need not redirect the packet
+    to a gateway chassis. As a result, this packet flow is same as East-West.
+    In order to ensure that OVN will not redirect the packet over a tunnel
+    to gateway-chassis, "network_type" of destination localnet logical switch,
+    should be set as "bridged". A "bridged" logical switch ensures that there
+    is no tunnel encapsulation done while forwarding the packet on it.
+    Please refer to <code>ovn-nb</code>(5) for more details.
+  </p>
+
+  <ol>
+    <li>
+      It first enters the ingress pipeline, and then egress pipeline of the
+      source localnet logical switch datapath. It then enters the ingress
+      pipeline of the logical router datapath via the logical router port in
+      the source chassis.
+    </li>
+
+    <li>
+      Routing decision is taken. Since, destination network is NOT directly
+      connected to logial router, hence a static route is expected, which will
+      provide next hop ip.
+    </li>
+
+    <li>
+      From the router datapath, packet enters the ingress pipeline and then
+      egress pipeline of the destination localnet logical switch datapath
+      (it is of type "bridged" and this is where the next hop is present)
+      and goes out of the integration bridge to the provider bridge (
+      belonging to the destination logical switch) via the localnet port.
+      Same as East-West, source mac will replaced with chassis mac.
+    </li>
+  </ol>
+
+  <p>
+    The following happens for the reverse external traffic.
+  </p>
+
+  <ol>
+    <li>
+      The gateway chassis receives the packet from the localnet port of
+      the logical switch (bridged type) which provides external connectivity.
+      The packet then enters the ingress pipeline and then egress pipeline of
+      the localnet logical switch (which provides external connectivity).
+      The packet then enters the ingress pipeline of the logical router
+      datapath.
+    </li>
+
+    <li>
+      Routing decision is taken and logical switch of destination VM is
+      identified.
+    </li>
+
+    <li>
+      The packet then enters the ingress pipeline and then egress
+      pipeline of VM's localnet logical switch. Since the source VM
+      doesn't reside in the gateway chassis, the packet is sent out via the
+      localnet port of the VM's logical switch. Source mac of this packet
+      will be replaced with chassis unique mac.
+    </li>
+
+    <li>
+      VM's chassis receives the packet via the localnet port and
+      sends it to the integration bridge. The packet enters the
+      ingress pipeline and then egress pipeline of the localnet
+      logical switch and finally gets delivered to the VM port.
+    </li>
+  </ol>
+
+  <p>
+    One thing to note here is that, while VM to External traffic did not
+    require redirection to gateway chassis, the reverse traffic is through
+    gateway chassis only. This is because, for external router, OVN logical
+    router port IP will be the next hop to reach the endpoints behind it.
+    As a result, we need a centralized chassis, which will respond to ARP
+    requests coming from external network. This centralized chassis, is the
+    gateway chassis which is attached to corresponding router port.
+  </p>
 
   <h2>Life Cycle of a VTEP gateway</h2>
 

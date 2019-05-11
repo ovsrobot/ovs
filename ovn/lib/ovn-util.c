@@ -16,6 +16,7 @@
 #include "ovn-util.h"
 #include "dirs.h"
 #include "openvswitch/vlog.h"
+#include "openvswitch/ofp-parse.h"
 #include "ovn/lib/ovn-nb-idl.h"
 #include "ovn/lib/ovn-sb-idl.h"
 
@@ -370,4 +371,34 @@ ovn_logical_flow_hash(const struct uuid *logical_datapath,
     hash = hash_string(pipeline, hash);
     hash = hash_string(match, hash);
     return hash_string(actions, hash);
+}
+
+/*  Extracts the mac, ip and mask for a sbrec_port_binding.
+ *
+ *  Expects following format:
+ *  "MAC_ADDRESS IP/MASK"
+ *
+ *  Return true if MAC, IP and MASK are found, false otherwise.
+ */
+bool
+ovn_sbrec_get_port_binding_ip_mac(const struct sbrec_port_binding *binding,
+                                  struct eth_addr *mac,
+                                  ovs_be32 *ip, ovs_be32 *mask)
+{
+    char *err_str = NULL;
+
+    err_str = str_to_mac(binding->mac[0], mac);
+    if (err_str) {
+        free(err_str);
+        return false;
+    }
+
+    err_str = ip_parse_masked(binding->mac[0] + ETH_ADDR_STRLEN + 1,
+                              ip, mask);
+    if (err_str) {
+        free(err_str);
+        return false;
+    }
+
+    return true;
 }
