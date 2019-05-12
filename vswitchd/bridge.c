@@ -1026,6 +1026,8 @@ port_configure(struct port *port)
     const char *pt = smap_get_def(&cfg->other_config, "priority-tags", "");
     if (!strcmp(pt, "include-non-zero") || !strcmp(pt, "true")) {
         s.use_priority_tags = PORT_PRIORITY_TAGS_INCLUDE_NON_ZERO;
+    } else if (!strcmp(pt, "include")) {
+        s.use_priority_tags = PORT_PRIORITY_TAGS_INCLUDE;
     } else {
         s.use_priority_tags = PORT_PRIORITY_TAGS_OMIT;
     }

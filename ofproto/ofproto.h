@@ -420,6 +420,7 @@ enum port_vlan_mode {
 enum port_priority_tags_mode {
     PORT_PRIORITY_TAGS_OMIT = 0,
     PORT_PRIORITY_TAGS_INCLUDE_NON_ZERO,
+    PORT_PRIORITY_TAGS_INCLUDE,
 };
 
 /* The behaviour of the port regarding priority tags */
