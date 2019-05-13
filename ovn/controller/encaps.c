@@ -26,6 +26,13 @@
 
 VLOG_DEFINE_THIS_MODULE(encaps);
 
+/*
+ * Given there could be multiple tunnels with different IPs to the same
+ * chassis we annotate the ovn-chassis-id with
+ * <chassis_name>OVN_MVTEP_CHASSISID_DELIM<IP>.
+ */
+#define	OVN_MVTEP_CHASSISID_DELIM '@'
+
 void
 encaps_register_ovs_idl(struct ovsdb_idl *ovs_idl)
 {
@@ -78,6 +85,83 @@ tunnel_create_name(struct tunnel_ctx *tc, const char *chassis_id)
     return NULL;
 }
 
+/*
+ * Returns a tunnel-id of the form 'chassis_id'-delimiter-'encap_ip'.
+ */
+char *
+encaps_tunnel_id_create(const char *chassis_id, const char *encap_ip)
+{
+    return xasprintf("%s%c%s", chassis_id, OVN_MVTEP_CHASSISID_DELIM,
+                     encap_ip);
+}
+
+/*
+ * Parses a 'tunnel_id' of the form <chassis_name><delimiter><IP>.
+ * If the 'chassis_id' argument is not NULL the function will allocate memory
+ * and store the chassis-id part of the tunnel-id at '*chassis_id'.
+ * If the 'encap_ip' argument is not NULL the function will allocate memory
+ * and store the encapsulation IP part of the tunnel-id at '*encap_ip'.
+ */
+bool encaps_tunnel_id_parse(const char *tunnel_id, char **chassis_id,
+                            char **encap_ip)
+{
+    const char *match = strchr(tunnel_id, OVN_MVTEP_CHASSISID_DELIM);
+
+    if (!match) {
+        return false;
+    }
+
+    if (chassis_id) {
+        size_t chassis_id_len = (match - tunnel_id);
+
+        *chassis_id = xmemdup0(tunnel_id, chassis_id_len);
+    }
+
+    /* Consume the tunnel-id delimiter. */
+    match++;
+
+    if (encap_ip) {
+        /*
+         * If the value has morphed into something other than
+         * <chassis-id><delim><encap-ip>, fail and free already allocated
+         * memory (i.e., chassis_id).
+         */
+        if (*match == 0) {
+            if (chassis_id) {
+                free(*chassis_id);
+            }
+            return false;
+        }
+        *encap_ip = xstrdup(match);
+    }
+
+    return true;
+}
+
+/*
+ * Returns true if a given tunnel_id contains 'chassis_id' and, if specified,
+ * the given 'encap_ip'. Returns false otherwise.
+ */
+bool encaps_tunnel_id_match(const char *tunnel_id, const char *chassis_id,
+                            const char *encap_ip)
+{
+    if (strstr(tunnel_id, chassis_id) != tunnel_id) {
+        return false;
+    }
+
+    size_t chassis_id_len = strlen(chassis_id);
+
+    if (tunnel_id[chassis_id_len] != OVN_MVTEP_CHASSISID_DELIM) {
+        return false;
+    }
+
+    if (encap_ip && strcmp(&tunnel_id[chassis_id_len + 1], encap_ip)) {
+        return false;
+    }
+
+    return true;
+}
+
 static void
 tunnel_add(struct tunnel_ctx *tc, const struct sbrec_sb_global *sbg,
            const char *new_chassis_id, const struct sbrec_encap *encap)
@@ -94,8 +178,7 @@ tunnel_add(struct tunnel_ctx *tc, const struct sbrec_sb_global *sbg,
      * combination of the chassis_name and the encap-ip to identify
      * a specific tunnel to the chassis.
      */
-    tunnel_entry_id = xasprintf("%s%s%s", new_chassis_id,
-                                OVN_MVTEP_CHASSISID_DELIM, encap->ip);
+    tunnel_entry_id = encaps_tunnel_id_create(new_chassis_id, encap->ip);
     if (csum && (!strcmp(csum, "true") || !strcmp(csum, "false"))) {
         smap_add(&options, "csum", csum);
     }
