@@ -2260,13 +2260,13 @@ conn_to_ct_dpif_entry(const struct conn *conn, struct ct_dpif_entry *entry,
 
     ovs_mutex_lock(&conn->lock);
     long long expiration = conn->expiration - now;
-    ovs_mutex_unlock(&conn->lock);
     entry->timeout = (expiration > 0) ? expiration / 1000 : 0;
 
     struct ct_l4_proto *class = l4_protos[conn->key.nw_proto];
     if (class->conn_get_protoinfo) {
         class->conn_get_protoinfo(conn, &entry->protoinfo);
     }
+    ovs_mutex_unlock(&conn->lock);
 
     entry->bkt = bkt;
 
