@@ -98,6 +98,12 @@ elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "4" ] && \
      if [ -x "%{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh" ]; then
          %{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
      fi
+elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "12" ] && \
+     [ "$mainline_patch" -ge "14" ]; then
+     # For SLES 12 SP4
+     if [ -x "%{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh" ]; then
+         %{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
+     fi
 else
     # Ensure that modprobe will find our modules.
     for k in $(cd /lib/modules && /bin/ls); do
