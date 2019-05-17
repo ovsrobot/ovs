@@ -101,6 +101,31 @@ enum ct_dpif_tcp_flags {
 #undef CT_DPIF_TCP_FLAG
 };
 
+#ifndef HAVE_SCTP_CONNTRACK_HEARTBEATS
+#define SCTP_CONNTRACK_HEARTBEAT_SENT SCTP_CONNTRACK_SHUTDOWN_ACK_SENT+1
+#define SCTP_CONNTRACK_HEARTBEAT_ACKED SCTP_CONNTRACK_SHUTDOWN_ACK_SENT+2
+#endif
+
+extern const char *ct_dpif_sctp_state_string[];
+
+#define CT_DPIF_SCTP_STATES \
+    CT_DPIF_SCTP_STATE(CLOSED) \
+    CT_DPIF_SCTP_STATE(COOKIE_WAIT) \
+    CT_DPIF_SCTP_STATE(COOKIE_ECHOED) \
+    CT_DPIF_SCTP_STATE(ESTABLISHED) \
+    CT_DPIF_SCTP_STATE(SHUTDOWN_SENT) \
+    CT_DPIF_SCTP_STATE(SHUTDOWN_RECD) \
+    CT_DPIF_SCTP_STATE(SHUTDOWN_ACK_SENT) \
+    CT_DPIF_SCTP_STATE(HEARTBEAT_SENT) \
+    CT_DPIF_SCTP_STATE(HEARTBEAT_ACKED) \
+    CT_DPIF_SCTP_STATE(MAX_NUM)
+
+enum ct_dpif_sctp_state {
+#define CT_DPIF_SCTP_STATE(STATE) CT_DPIF_SCTP_STATE_##STATE,
+    CT_DPIF_SCTP_STATES
+#undef CT_DPIF_SCTP_STATE
+};
+
 struct ct_dpif_protoinfo {
     uint16_t proto; /* IPPROTO_* */
     union {
@@ -112,6 +137,11 @@ struct ct_dpif_protoinfo {
             uint8_t flags_orig;
             uint8_t flags_reply;
         } tcp;
+        struct {
+            uint8_t state;
+            uint32_t vtag_orig;
+            uint32_t vtag_reply;
+        } sctp;
     };
 };
 
