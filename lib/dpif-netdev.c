@@ -684,6 +684,7 @@ struct dp_netdev_pmd_thread {
     uint64_t last_reload_seq;
     atomic_bool reload;             /* Do we need to reload ports? */
     atomic_bool wait_for_reload;    /* Can we busy wait for the next reload? */
+    atomic_bool reload_tx_qid;      /* Do we need to reload static_tx_qid? */
     atomic_bool exit;               /* For terminating the pmd thread. */
     pthread_t thread;
     unsigned core_id;               /* CPU core id of this pmd thread. */
@@ -4720,6 +4721,7 @@ reconfigure_pmd_threads(struct dp_netdev *dp)
                                                     pmd->core_id)) {
             hmapx_add(&to_delete, pmd);
         } else if (need_to_adjust_static_tx_qids) {
+            atomic_store_relaxed(&pmd->reload_tx_qid, true);
             pmd->need_reload = true;
         }
     }
@@ -5442,6 +5444,7 @@ pmd_thread_main(void *f_)
     unsigned int lc = 0;
     struct polled_queue *poll_list;
     bool wait_for_reload = false;
+    bool reload_tx_qid;
     bool exiting;
     bool reload;
     int poll_cnt;
@@ -5456,9 +5459,9 @@ pmd_thread_main(void *f_)
     dpdk_set_lcore_id(pmd->core_id);
     poll_cnt = pmd_load_queues_and_ports(pmd, &poll_list);
     dfc_cache_init(&pmd->flow_cache);
-reload:
     pmd_alloc_static_tx_qid(pmd);
 
+reload:
     atomic_count_init(&pmd->pmd_overloaded, 0);
 
     /* List port/core affinity */
@@ -5539,17 +5542,22 @@ reload:
 
     poll_cnt = pmd_load_queues_and_ports(pmd, &poll_list);
     atomic_read_relaxed(&pmd->wait_for_reload, &wait_for_reload);
+    atomic_read_relaxed(&pmd->reload_tx_qid, &reload_tx_qid);
     atomic_read_relaxed(&pmd->exit, &exiting);
     /* Signal here to make sure the pmd finishes
      * reloading the updated configuration. */
     dp_netdev_pmd_reload_done(pmd);
 
-    pmd_free_static_tx_qid(pmd);
+    if (reload_tx_qid) {
+        pmd_free_static_tx_qid(pmd);
+        pmd_alloc_static_tx_qid(pmd);
+    }
 
     if (!exiting) {
         goto reload;
     }
 
+    pmd_free_static_tx_qid(pmd);
     dfc_cache_uninit(&pmd->flow_cache);
     free(poll_list);
     pmd_free_cached_ports(pmd);
@@ -5876,6 +5884,7 @@ dp_netdev_pmd_reload_done(struct dp_netdev_pmd_thread *pmd)
     uint32_t old;
 
     atomic_store_relaxed(&pmd->wait_for_reload, false);
+    atomic_store_relaxed(&pmd->reload_tx_qid, false);
     atomic_store_relaxed(&pmd->reload, false);
     pmd->last_reload_seq = seq_read(pmd->reload_seq);
     atomic_sub_explicit(&pmd->dp->reloading_pmds, 1, &old,
