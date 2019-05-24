@@ -1093,7 +1093,8 @@ parse_dl_type(const struct eth_header *data_, size_t size)
  * The caller must ensure that 'packet' is at least ETH_HEADER_LEN bytes
  * long.'*/
 uint16_t
-parse_tcp_flags(struct dp_packet *packet)
+parse_tcp_flags(struct dp_packet *packet,
+                ovs_be16 *dl_type_p, uint8_t *nw_frag_p)
 {
     const void *data = dp_packet_data(packet);
     const char *frame = (const char *)data;
@@ -1109,6 +1110,9 @@ parse_tcp_flags(struct dp_packet *packet)
 
     data_pull(&data, &size, ETH_ADDR_LEN * 2);
     dl_type = parse_ethertype(&data, &size);
+    if (dl_type_p) {
+        *dl_type_p = dl_type;
+    }
     if (OVS_UNLIKELY(eth_type_mpls(dl_type))) {
         packet->l2_5_ofs = (char *)data - frame;
     }
@@ -1148,6 +1152,10 @@ parse_tcp_flags(struct dp_packet *packet)
         nw_proto = nh->ip6_nxt;
     } else {
         return 0;
+    }
+
+    if (nw_frag_p) {
+        *nw_frag_p = nw_frag;
     }
 
     packet->l4_ofs = (uint16_t)((char *)data - frame);
