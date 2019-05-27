@@ -135,7 +135,8 @@ bool parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,
                          const struct ovs_16aligned_ip6_frag **frag_hdr);
 ovs_be16 parse_dl_type(const struct eth_header *data_, size_t size);
 bool parse_nsh(const void **datap, size_t *sizep, struct ovs_key_nsh *key);
-uint16_t parse_tcp_flags(struct dp_packet *packet);
+uint16_t parse_tcp_flags(struct dp_packet *packet, ovs_be16 *dl_type_p,
+                                                   uint8_t *nw_frag_p);
 
 static inline uint64_t
 flow_get_xreg(const struct flow *flow, int idx)
