@@ -2383,6 +2383,21 @@ conntrack_get_nconns(struct conntrack *ct, uint32_t *nconns)
     return 0;
 }
 
+int
+conntrack_set_tcp_liberal(struct conntrack *ct, bool enabled)
+{
+    atomic_store_relaxed(&ct->tcp_liberal, enabled);
+    return 0;
+}
+
+bool
+conntrack_get_tcp_liberal(struct conntrack *ct)
+{
+    bool enabled;
+    atomic_read_relaxed(&ct->tcp_liberal, &enabled);
+    return enabled;
+}
+
 /* This function must be called with the ct->resources read lock taken. */
 static struct alg_exp_node *
 expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,

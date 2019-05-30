@@ -318,6 +318,22 @@ Prints the current number of connection tracker entries on \fIdp\fR.
 Only supported for userspace datapath.
 .
 .TP
+\*(DX\fBct\-enable\-tcp\-liberal\fR [\fIdp\fR]
+.TQ
+\*(DX\fBct\-disable\-tcp\-liberal\fR [\fIdp\fR]
+Enables or disables TCP liberal mode for the userspace connection tracker.
+If enabled, TCP sequence number verification will be mostly disabled, except
+for TCP resets.  This is disabled by default to enforce better security and
+should only be enabled if absolutely required.  This command is only
+supported for the userspace datapath, but can be otherwise enabled in the
+Linux kernel datapath.
+.
+.TP
+\*(DX\fBct\-get\-tcp\-liberal\fR [\fIdp\fR]
+Prints whether TCP liberal mode is enabled or disabled on \fIdp\fR.
+Only supported for userspace datapath.
+.
+.TP
 \*(DX\fBct\-set\-limits\fR [\fIdp\fR] [\fBdefault=\fIdefault_limit\fR] [\fBzone=\fIzone\fR,\fBlimit=\fIlimit\fR]...
 Sets the maximum allowed number of connections in a connection tracking
 zone.  A specific \fIzone\fR may be set to \fIlimit\fR, and multiple zones
