@@ -21,6 +21,7 @@
 #include "lflow.h"
 #include "lport.h"
 #include "chassis.h"
+#include "pinctrl.h"
 #include "lib/bundle.h"
 #include "openvswitch/poll-loop.h"
 #include "lib/uuid.h"
@@ -238,9 +239,12 @@ get_zone_ids(const struct sbrec_port_binding *binding,
 }
 
 static void
-put_replace_router_port_mac_flows(const struct
+put_replace_router_port_mac_flows(struct ovsdb_idl_index
+                                  *sbrec_port_binding_by_name,
+                                  const struct
                                   sbrec_port_binding *localnet_port,
                                   const struct sbrec_chassis *chassis,
+                                  const struct sset *active_tunnels,
                                   const struct hmap *local_datapaths,
                                   struct ofpbuf *ofpacts_p,
                                   ofp_port_t ofport,
@@ -281,8 +285,21 @@ put_replace_router_port_mac_flows(const struct
         char *err_str = NULL;
         struct match match;
         struct ofpact_mac *replace_mac;
+        char *cr_peer_name = xasprintf("cr-%s", rport_binding->logical_port);
 
-        /* Table 65, priority 150.
+
+        if (pinctrl_is_chassis_resident(sbrec_port_binding_by_name,
+                                        chassis, active_tunnels,
+                                        cr_peer_name)) {
+            /* If a router port's chassisredirect port is
+             * resident on this chassis, then we need not do mac replace. */
+            free(cr_peer_name);
+            continue;
+        }
+
+        free(cr_peer_name);
+
+       /* Table 65, priority 150.
          * =======================
          *
          * Implements output to localnet port.
@@ -797,7 +814,8 @@ consider_port_binding(struct ovsdb_idl_index *sbrec_port_binding_by_name,
                         &match, ofpacts_p, &binding->header_.uuid);
 
         if (!strcmp(binding->type, "localnet")) {
-            put_replace_router_port_mac_flows(binding, chassis,
+            put_replace_router_port_mac_flows(sbrec_port_binding_by_name,
+                                              binding, chassis, active_tunnels,
                                               local_datapaths, ofpacts_p,
                                               ofport, flow_table);
         }
