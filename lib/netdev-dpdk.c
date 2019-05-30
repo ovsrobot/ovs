@@ -2319,8 +2319,6 @@ __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
     int i, retries = 0;
     int vid = netdev_dpdk_get_vid(dev);
 
-    qid = dev->tx_q[qid % netdev->n_txq].map;
-
     if (OVS_UNLIKELY(vid < 0 || !dev->vhost_reconfigured || qid < 0
                      || !(dev->flags & NETDEV_UP))) {
         rte_spinlock_lock(&dev->stats_lock);
@@ -2328,6 +2326,8 @@ __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
         rte_spinlock_unlock(&dev->stats_lock);
         goto out;
     }
+
+    qid = dev->tx_q[qid % netdev->n_txq].map;
 
     rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
 
