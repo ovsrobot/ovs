@@ -898,3 +898,25 @@ as northd
 OVS_APP_EXIT_AND_WAIT([ovn-northd])
 
 AT_CLEANUP
+
+AT_SETUP([ovn -- check logical switch type propagation from NBDB to SBDB])
+AT_SKIP_IF([test $HAVE_PYTHON = no])
+ovn_start
+
+ovn-nbctl ls-add ls0
+
+uuid=`ovn-sbctl --bare --columns=_uuid list Datapath`
+echo "LS UUID is: " $uuid
+
+type=`ovn-sbctl get Datapath_Binding ${uuid} external_ids:network-type`
+echo "LS TYPE is: " $type
+AT_CHECK([ovn-sbctl get Datapath_Binding ${uuid} external_ids:network-type], [0], [overlay
+])
+
+ovn-nbctl ls-set-network-type ls0 bridged
+type=`ovn-sbctl get Datapath_Binding ${uuid} external_ids:network-type`
+echo "LS TYPE is: " $type
+AT_CHECK([ovn-sbctl get Datapath_Binding ${uuid} external_ids:network-type], [0], [bridged
+])
+
+AT_CLEANUP

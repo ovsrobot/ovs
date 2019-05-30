@@ -86,6 +86,12 @@ enum ovn_datapath_type {
     DP_ROUTER                   /* OVN logical router. */
 };
 
+/* Network type of a datapath */
+enum ovn_datapath_nw_type {
+    DP_NETWORK_OVERLAY,
+    DP_NETWORK_BRIDGED
+};
+
 /* Returns an "enum ovn_stage" built from the arguments.
  *
  * (It's better to use ovn_stage_build() for type-safety reasons, but inline
@@ -445,6 +451,8 @@ struct ovn_datapath {
 
     bool has_unknown;
 
+    enum ovn_datapath_nw_type network_type;
+
     /* IPAM data. */
     struct ipam_info ipam_info;
 
@@ -488,6 +496,27 @@ cleanup_macam(struct hmap *macam_)
     struct macam_node *node;
     HMAP_FOR_EACH_POP (node, hmap_node, macam_) {
         free(node);
+    }
+}
+
+static void
+ovn_datapath_update_nw_type(struct ovn_datapath *od)
+{
+    if (!od->nbs) {
+        return;
+    }
+
+    if (!od->nbs->network_type ||
+        !strlen(od->nbs->network_type) ||
+        !strcmp(od->nbs->network_type, "overlay")) {
+        /* No value in network_type is taken as OVERLAY. */
+        od->network_type = DP_NETWORK_OVERLAY;
+    } else if (!strcmp(od->nbs->network_type, "bridged")) {
+        od->network_type = DP_NETWORK_BRIDGED;
+    } else {
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
+        VLOG_WARN_RL(&rl, "bad network type %s, for %s",
+                     od->nbs->network_type, od->nbs->name);
     }
 }
 
@@ -682,6 +711,13 @@ ovn_datapath_update_external_ids(struct ovn_datapath *od)
     if (name2 && name2[0]) {
         smap_add(&ids, "name2", name2);
     }
+
+    if (od->nbs) {
+        smap_add(&ids, "network-type",
+                 (od->nbs->network_type && strlen(od->nbs->network_type)) ?
+                 od->nbs->network_type : "overlay");
+    }
+
     sbrec_datapath_binding_set_external_ids(od->sb, &ids);
     smap_destroy(&ids);
 }
@@ -734,9 +770,11 @@ join_datapaths(struct northd_context *ctx, struct hmap *datapaths,
             ovs_list_remove(&od->list);
             ovs_list_push_back(both, &od->list);
             ovn_datapath_update_external_ids(od);
+            ovn_datapath_update_nw_type(od);
         } else {
             od = ovn_datapath_create(datapaths, &nbs->header_.uuid,
                                      nbs, NULL, NULL);
+            ovn_datapath_update_nw_type(od);
             ovs_list_push_back(nb_only, &od->list);
         }
 
