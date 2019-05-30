@@ -170,8 +170,10 @@ struct conntrack {
     struct hindex alg_expectation_refs OVS_GUARDED; /* For lookup from
                                                      * control context.  */
 
-    /* Fragmentation handling context. */
-    struct ipf *ipf;
+    struct ipf *ipf; /* Fragmentation handling context. */
+    atomic_bool tcp_liberal; /* TCP liberal mode sequence number verification;
+                                when enabled, this disables most sequence
+                                number verification; disabled by default. */
 };
 
 /* Lock acquisition order:

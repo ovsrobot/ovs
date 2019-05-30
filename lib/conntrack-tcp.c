@@ -272,16 +272,18 @@ tcp_conn_update(struct conntrack *ct, struct conn *conn_,
 
     int ackskew = check_ackskew ? dst->seqlo - ack : 0;
 #define MAXACKWINDOW (0xffff + 1500)    /* 1500 is an arbitrary fudge factor */
-    if (SEQ_GEQ(src->seqhi, end)
-        /* Last octet inside other's window space */
-        && SEQ_GEQ(seq, src->seqlo - (dst->max_win << dws))
-        /* Retrans: not more than one window back */
-        && (ackskew >= -MAXACKWINDOW)
-        /* Acking not more than one reassembled fragment backwards */
-        && (ackskew <= (MAXACKWINDOW << sws))
-        /* Acking not more than one window forward */
+    if (((SEQ_GEQ(src->seqhi, end)
+          /* Last octet inside other's window space */
+          && SEQ_GEQ(seq, src->seqlo - (dst->max_win << dws))
+          /* Retrans: not more than one window back */
+          && ackskew >= -MAXACKWINDOW
+          /* Acking not more than one reassembled fragment backwards */
+          && ackskew <= (MAXACKWINDOW << sws))
+         || conntrack_get_tcp_liberal(ct))
+          /* Acking not more than one window forward */
         && ((tcp_flags & TCP_RST) == 0 || orig_seq == src->seqlo
-            || (orig_seq == src->seqlo + 1) || (orig_seq + 1 == src->seqlo))) {
+             || (orig_seq == src->seqlo + 1)
+             || (orig_seq + 1 == src->seqlo))) {
         /* Require an exact/+1 sequence match on resets when possible */
 
         /* update max window */
