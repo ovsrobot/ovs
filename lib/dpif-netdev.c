@@ -189,6 +189,9 @@ struct netdev_flow_key {
 #define DEFAULT_EM_FLOW_INSERT_MIN (UINT32_MAX /                     \
                                     DEFAULT_EM_FLOW_INSERT_INV_PROB)
 
+/* Prefetch minimum threshold*/
+#define EMC_PREFETCH_MIN_THRESHOLD 10
+
 struct emc_entry {
     struct dp_netdev_flow *flow;
     struct netdev_flow_key key;   /* key.hash used for emc hash value. */
@@ -214,6 +217,11 @@ struct dfc_cache {
     struct emc_cache emc_cache;
     struct smc_cache smc_cache;
 };
+
+/* Prefetch in case of [EMC_PREFETCH_THRESHOLD,EM_FLOW_HASH_ENTRIES) entries*/
+#define EMC_PREFETCH_IN_RANGE(DFC_CACHE)                        \
+    ((DFC_CACHE)->emc_cache.counter >= EMC_PREFETCH_MIN_THRESHOLD \
+    && (DFC_CACHE)->emc_cache.counter < EM_FLOW_HASH_ENTRIES)
 
 /* Iterate in the exact match cache through every entry that might contain a
  * miniflow with hash 'HASH'. */
@@ -6173,41 +6181,41 @@ dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
 }
 
 static inline uint32_t
-dpif_netdev_packet_get_rss_hash_orig_pkt(struct dp_packet *packet,
-                                const struct miniflow *mf)
+dpif_netdev_packet_get_5tuple_hash(struct dp_packet *packet,
+                                   const struct miniflow *mf,
+                                   bool account_recirc_id)
 {
-    uint32_t hash;
+    uint32_t hash, recirc_depth;
 
-    if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
-        hash = dp_packet_get_rss_hash(packet);
-    } else {
-        hash = miniflow_hash_5tuple(mf, 0);
-        dp_packet_set_rss_hash(packet, hash);
+    hash = miniflow_hash_5tuple(mf, 0);
+
+    if (account_recirc_id) {
+        /* The RSS hash must account for the recirculation depth to avoid
+         * collisions in the exact match cache */
+        recirc_depth = *recirc_depth_get_unsafe();
+        hash = hash_finish(hash, recirc_depth);
     }
 
+    dp_packet_set_rss_hash(packet, hash);
     return hash;
 }
 
 static inline uint32_t
 dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
-                                const struct miniflow *mf)
+                                bool account_recirc_id)
 {
     uint32_t hash, recirc_depth;
 
-    if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
-        hash = dp_packet_get_rss_hash(packet);
-    } else {
-        hash = miniflow_hash_5tuple(mf, 0);
-        dp_packet_set_rss_hash(packet, hash);
-    }
+    hash = dp_packet_get_rss_hash(packet);
 
-    /* The RSS hash must account for the recirculation depth to avoid
-     * collisions in the exact match cache */
-    recirc_depth = *recirc_depth_get_unsafe();
-    if (OVS_UNLIKELY(recirc_depth)) {
+    if (account_recirc_id) {
+        /* The RSS hash must account for the recirculation depth to avoid
+         * collisions in the exact match cache */
+        recirc_depth = *recirc_depth_get_unsafe();
         hash = hash_finish(hash, recirc_depth);
         dp_packet_set_rss_hash(packet, hash);
     }
+
     return hash;
 }
 
@@ -6397,6 +6405,8 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     bool smc_enable_db;
     size_t map_cnt = 0;
     bool batch_enable = true;
+    bool rss_valid;
+    bool prefetch_emc = cur_min && EMC_PREFETCH_IN_RANGE(cache);
 
     atomic_read_relaxed(&pmd->dp->smc_enable_db, &smc_enable_db);
     pmd_perf_update_counter(&pmd->perf_stats,
@@ -6443,12 +6453,22 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
             }
         }
 
+        rss_valid = dp_packet_rss_valid(packet);
+        if (rss_valid) {
+            key->hash = dpif_netdev_packet_get_rss_hash(packet, md_is_valid);
+            if (prefetch_emc) {
+                OVS_PREFETCH(&cache->emc_cache.entries[key->hash
+                                                      & EM_FLOW_HASH_MASK]);
+            }
+        }
+
         miniflow_extract(packet, &key->mf);
         key->len = 0; /* Not computed yet. */
-        key->hash =
-                (md_is_valid == false)
-                ? dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf)
-                : dpif_netdev_packet_get_rss_hash(packet, &key->mf);
+
+        if (!rss_valid) {
+            key->hash = dpif_netdev_packet_get_5tuple_hash(packet, &key->mf,
+                                                           md_is_valid);
+        }
 
         /* If EMC is disabled skip emc_lookup */
         flow = (cur_min != 0) ? emc_lookup(&cache->emc_cache, key) : NULL;
