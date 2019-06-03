@@ -197,6 +197,7 @@ struct emc_entry {
 struct emc_cache {
     struct emc_entry entries[EM_FLOW_HASH_ENTRIES];
     int sweep_idx;                /* For emc_cache_slow_sweep(). */
+    uint32_t counter;
 };
 
 struct smc_bucket {
@@ -826,7 +827,7 @@ static int dpif_netdev_xps_get_tx_qid(const struct dp_netdev_pmd_thread *pmd,
                                       struct tx_port *tx);
 
 static inline bool emc_entry_alive(struct emc_entry *ce);
-static void emc_clear_entry(struct emc_entry *ce);
+static void emc_clear_entry(struct emc_cache *cache, struct emc_entry *ce);
 static void smc_clear_entry(struct smc_bucket *b, int idx);
 
 static void dp_netdev_request_reconfigure(struct dp_netdev *dp);
@@ -840,6 +841,7 @@ emc_cache_init(struct emc_cache *flow_cache)
 {
     int i;
 
+    flow_cache->counter = 0;
     flow_cache->sweep_idx = 0;
     for (i = 0; i < ARRAY_SIZE(flow_cache->entries); i++) {
         flow_cache->entries[i].flow = NULL;
@@ -872,8 +874,9 @@ emc_cache_uninit(struct emc_cache *flow_cache)
 {
     int i;
 
+    flow_cache->counter = 0;
     for (i = 0; i < ARRAY_SIZE(flow_cache->entries); i++) {
-        emc_clear_entry(&flow_cache->entries[i]);
+        emc_clear_entry(flow_cache, &flow_cache->entries[i]);
     }
 }
 
@@ -904,7 +907,7 @@ emc_cache_slow_sweep(struct emc_cache *flow_cache)
     struct emc_entry *entry = &flow_cache->entries[flow_cache->sweep_idx];
 
     if (!emc_entry_alive(entry)) {
-        emc_clear_entry(entry);
+        emc_clear_entry(flow_cache,entry);
     }
     flow_cache->sweep_idx = (flow_cache->sweep_idx + 1) & EM_FLOW_HASH_MASK;
 }
@@ -2771,25 +2774,28 @@ emc_entry_alive(struct emc_entry *ce)
 }
 
 static void
-emc_clear_entry(struct emc_entry *ce)
+emc_clear_entry(struct emc_cache *cache, struct emc_entry *ce)
 {
     if (ce->flow) {
         dp_netdev_flow_unref(ce->flow);
         ce->flow = NULL;
+        cache->counter--;
     }
 }
 
 static inline void
-emc_change_entry(struct emc_entry *ce, struct dp_netdev_flow *flow,
-                 const struct netdev_flow_key *key)
+emc_change_entry(struct emc_cache *cache, struct emc_entry *ce,
+                struct dp_netdev_flow *flow, const struct netdev_flow_key *key)
 {
     if (ce->flow != flow) {
         if (ce->flow) {
             dp_netdev_flow_unref(ce->flow);
+            cache->counter--;
         }
 
         if (dp_netdev_flow_ref(flow)) {
             ce->flow = flow;
+            cache->counter++;
         } else {
             ce->flow = NULL;
         }
@@ -2809,7 +2815,7 @@ emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
     EMC_FOR_EACH_POS_WITH_HASH(cache, current_entry, key->hash) {
         if (netdev_flow_key_equal(&current_entry->key, key)) {
             /* We found the entry with the 'mf' miniflow */
-            emc_change_entry(current_entry, flow, NULL);
+            emc_change_entry(cache,current_entry, flow, NULL);
             return;
         }
 
@@ -2825,7 +2831,7 @@ emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
     /* We didn't find the miniflow in the cache.
      * The 'to_be_replaced' entry is where the new flow will be stored */
 
-    emc_change_entry(to_be_replaced, flow, key);
+    emc_change_entry(cache,to_be_replaced, flow, key);
 }
 
 static inline void
