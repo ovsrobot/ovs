@@ -313,6 +313,8 @@ const char *ofproto_port_open_type(const struct ofproto *,
                                    const char *port_type);
 int ofproto_port_add(struct ofproto *, struct netdev *, ofp_port_t *ofp_portp);
 int ofproto_port_del(struct ofproto *, ofp_port_t ofp_port);
+void ofport_set_usage(struct ofproto *, ofp_port_t ofp_port,
+                      long long int last_used);
 void ofproto_port_set_config(struct ofproto *, ofp_port_t ofp_port,
                              const struct smap *cfg);
 int ofproto_port_get_stats(const struct ofport *, struct netdev_stats *stats);

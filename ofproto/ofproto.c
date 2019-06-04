@@ -190,8 +190,6 @@ static void reinit_ports(struct ofproto *);
 
 static long long int ofport_get_usage(const struct ofproto *,
                                       ofp_port_t ofp_port);
-static void ofport_set_usage(struct ofproto *, ofp_port_t ofp_port,
-                             long long int last_used);
 static void ofport_remove_usage(struct ofproto *, ofp_port_t ofp_port);
 
 /* Ofport usage.
@@ -2264,9 +2262,22 @@ static ofp_port_t
 alloc_ofp_port(struct ofproto *ofproto, const char *netdev_name)
 {
     uint16_t port_idx;
+    struct ofport *port;
 
     port_idx = simap_get(&ofproto->ofp_requests, netdev_name);
     port_idx = port_idx ? port_idx : UINT16_MAX;
+
+    /* Check if port_idx is not allocated to any other interface.
+     * If available, then reserve for given netdev and skip
+     * allocation algorithm. */
+    if (port_idx != UINT16_MAX) {
+        port = ofproto_get_port(ofproto, u16_to_ofp(port_idx));
+        if ((!port) || (port->netdev != NULL &&
+                        !strcmp(netdev_name, netdev_get_name(port->netdev)))) {
+            ofport_set_usage(ofproto, u16_to_ofp(port_idx), LLONG_MAX);
+            return u16_to_ofp(port_idx);
+        }
+    }
 
     if (port_idx >= ofproto->max_ports
         || ofport_get_usage(ofproto, u16_to_ofp(port_idx)) == LLONG_MAX) {
@@ -2577,7 +2588,7 @@ ofport_get_usage(const struct ofproto *ofproto, ofp_port_t ofp_port)
     return 0;
 }
 
-static void
+void
 ofport_set_usage(struct ofproto *ofproto, ofp_port_t ofp_port,
                  long long int last_used)
 {
