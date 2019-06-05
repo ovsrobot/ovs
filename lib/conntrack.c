@@ -2039,10 +2039,14 @@ nat_select_range_tuple(struct conntrack *ct, const struct conn *conn,
     while (true) {
         if (conn->nat_info->nat_action & NAT_ACTION_SRC) {
             nat_conn->rev_key.dst.addr = ct_addr;
-            nat_conn->rev_key.dst.port = htons(port);
+            if (pat_enabled) {
+                nat_conn->rev_key.dst.port = htons(port);
+            }
         } else {
             nat_conn->rev_key.src.addr = ct_addr;
-            nat_conn->rev_key.src.port = htons(port);
+            if (pat_enabled) {
+                nat_conn->rev_key.src.port = htons(port);
+            }
         }
 
         uint32_t conn_hash = conn_key_hash(&nat_conn->rev_key,
