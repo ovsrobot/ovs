@@ -58,12 +58,16 @@ Removes each \fInetdev\fR from the list of network devices datapath
 Prints the name of each configured datapath on a separate line.
 .
 .TP
-.DO "[\fB\-s\fR | \fB\-\-statistics\fR]" "\*(DX\fBshow" "\fR[\fIdp\fR...]"
+.DO "[\fB\-s\fR | \fB\-\-statistics\fR [\fB\-\-details\fR]]" \
+"\*(DX\fBshow" "\fR[\fIdp\fR...]"
 Prints a summary of configured datapaths, including their datapath
 numbers and a list of ports connected to each datapath.  (The local
 port is identified as port 0.)  If \fB\-s\fR or \fB\-\-statistics\fR
 is specified, then packet and byte counters are also printed for each
-port.
+port. When dpctl is invoked with ovs-appctl (i.e for netdev datapath),
+if \fB\-\-details\fR is specified after \fB\-s\fR or \fB\-\-statistics\fR,
+then details of packet drop counters are also printed. The detailed
+stats will be available for both dpdk and vhostuser ports.
 .IP
 The datapath numbers consists of flow stats and mega flow mask stats.
 .IP

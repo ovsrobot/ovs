@@ -27,6 +27,11 @@ struct dpctl_params {
     /* -s, --statistics: Print port/flow statistics? */
     bool print_statistics;
 
+    /* --details: Print detailed port/flow statistics?
+     * optional arument for --statistics
+     */
+    bool print_detailed_stats;
+
     /* --clear: Reset existing statistics to zero when modifying a flow? */
     bool zero_statistics;
 

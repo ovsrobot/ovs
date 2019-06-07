@@ -61,6 +61,14 @@ struct netdev_stats {
     uint64_t tx_heartbeat_errors;
     uint64_t tx_window_errors;
 
+    /* Detailed receive drops. */
+    uint64_t rx_qos_drops;
+
+    /* Detailed transmit drops. */
+    uint64_t tx_qfull_drops;
+    uint64_t tx_qos_drops;
+    uint64_t tx_mtu_drops;
+
     /* Extended statistics based on RFC2819. */
     uint64_t rx_1_to_64_packets;
     uint64_t rx_65_to_127_packets;

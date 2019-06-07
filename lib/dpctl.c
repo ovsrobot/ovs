@@ -38,6 +38,7 @@
 #include "flow.h"
 #include "openvswitch/match.h"
 #include "netdev.h"
+#include "netdev-provider.h"
 #include "netlink.h"
 #include "odp-util.h"
 #include "openvswitch/ofpbuf.h"
@@ -683,6 +684,12 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
                 print_stat(dpctl_p, "    RX packets:", s.rx_packets);
                 print_stat(dpctl_p, " errors:", s.rx_errors);
                 print_stat(dpctl_p, " dropped:", s.rx_dropped);
+                if (dpctl_p->print_detailed_stats &&
+                    netdev->netdev_class->is_pmd) {
+                    dpctl_print(dpctl_p, " (");
+                    print_stat(dpctl_p, "qos:", s.rx_qos_drops);
+                    dpctl_print(dpctl_p, ") ");
+                }
                 print_stat(dpctl_p, " overruns:", s.rx_over_errors);
                 print_stat(dpctl_p, " frame:", s.rx_frame_errors);
                 dpctl_print(dpctl_p, "\n");
@@ -690,6 +697,14 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
                 print_stat(dpctl_p, "    TX packets:", s.tx_packets);
                 print_stat(dpctl_p, " errors:", s.tx_errors);
                 print_stat(dpctl_p, " dropped:", s.tx_dropped);
+                if (dpctl_p->print_detailed_stats &&
+                    netdev->netdev_class->is_pmd) {
+                    dpctl_print(dpctl_p, " (");
+                    print_stat(dpctl_p, "queue_full:", s.tx_qfull_drops);
+                    print_stat(dpctl_p, " mtu_exceeded:", s.tx_mtu_drops);
+                    print_stat(dpctl_p, " qos:", s.tx_qos_drops);
+                    dpctl_print(dpctl_p, ") ");
+                }
                 print_stat(dpctl_p, " aborted:", s.tx_aborted_errors);
                 print_stat(dpctl_p, " carrier:", s.tx_carrier_errors);
                 dpctl_print(dpctl_p, "\n");
@@ -2414,7 +2429,8 @@ static const struct dpctl_command all_commands[] = {
     { "del-if", "dp iface...", 2, INT_MAX, dpctl_del_if, DP_RW },
     { "set-if", "dp iface...", 2, INT_MAX, dpctl_set_if, DP_RW },
     { "dump-dps", "", 0, 0, dpctl_dump_dps, DP_RO },
-    { "show", "[dp...]", 0, INT_MAX, dpctl_show, DP_RO },
+    { "show", "[-s | --statistics [--details]] [dp...]", 0, \
+      INT_MAX, dpctl_show, DP_RO },
     { "dump-flows", "[dp] [filter=..] [type=..]",
       0, 3, dpctl_dump_flows, DP_RO },
     { "add-flow", "[dp] flow actions", 2, 3, dpctl_add_flow, DP_RW },
@@ -2545,6 +2561,14 @@ dpctl_unixctl_handler(struct unixctl_conn *conn, int argc, const char *argv[],
             } else if (!strcmp(arg, "--no-names")) {
                 dpctl_p.names = false;
                 set_names = true;
+            } else if (!strcmp(arg, "--details")) {
+                if (dpctl_p.print_statistics) {
+                    dpctl_p.print_detailed_stats = true;
+                } else {
+                    ds_put_format(&ds, "--details should be "
+                                  "preceded by --statistics");
+                    error = true;
+                }
             } else {
                 ds_put_format(&ds, "Unrecognized option %s", argv[1]);
                 error = true;
