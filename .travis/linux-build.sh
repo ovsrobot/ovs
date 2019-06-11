@@ -3,7 +3,6 @@
 set -o errexit
 set -x
 
-KERNELSRC=""
 CFLAGS=""
 SPARSE_FLAGS=""
 EXTRA_OPTS="--enable-Werror"
@@ -57,10 +56,7 @@ function install_kernel()
         make net/bridge/
     fi
 
-    KERNELSRC=$(pwd)
-    if [ ! "$DPDK" ] && [ ! "$DPDK_SHARED" ]; then
-        EXTRA_OPTS="${EXTRA_OPTS} --with-linux=$(pwd)"
-    fi
+    EXTRA_OPTS="${EXTRA_OPTS} --with-linux=$(pwd)"
     echo "Installed kernel source in $(pwd)"
     cd ..
 }
@@ -78,7 +74,6 @@ function install_dpdk()
         if [ $DIR_NAME != "dpdk-$1"  ]; then mv $DIR_NAME dpdk-$1; fi
         cd dpdk-$1
     fi
-    find ./ -type f | xargs sed -i 's/max-inline-insns-single=100/max-inline-insns-single=400/'
     find ./ -type f | xargs sed -i 's/-Werror/-Werror -Wno-error=inline/'
     echo 'CONFIG_RTE_BUILD_FPIC=y' >>config/common_linuxapp
     sed -ri '/EXECENV_CFLAGS  = -pthread -fPIC/{s/$/\nelse ifeq ($(CONFIG_RTE_BUILD_FPIC),y)/;s/$/\nEXECENV_CFLAGS  = -pthread -fPIC/}' mk/exec-env/linuxapp/rte.vars.mk
@@ -86,8 +81,13 @@ function install_dpdk()
         sed -i '/CONFIG_RTE_BUILD_SHARED_LIB=n/s/=n/=y/' config/common_base
         export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/$TARGET/lib
     fi
+
+    # Disable building DPDK kernel modules. Not needed for OVS build or tests.
+    sed -i '/CONFIG_RTE_EAL_IGB_UIO=y/s/=y/=n/' config/common_linuxapp
+    sed -i '/CONFIG_RTE_KNI_KMOD=y/s/=y/=n/' config/common_linuxapp
+
     make config CC=gcc T=$TARGET
-    make -j4 CC=gcc RTE_KERNELDIR=$KERNELSRC
+    make -j4 CC=gcc
     echo "Installed DPDK source in $(pwd)"
     cd ..
 }
@@ -97,7 +97,7 @@ function configure_ovs()
     ./boot.sh && ./configure $* || { cat config.log; exit 1; }
 }
 
-if [ "$KERNEL" ] || [ "$DPDK" ] || [ "$DPDK_SHARED" ]; then
+if [ "$KERNEL" ]; then
     install_kernel $KERNEL
 fi
 
@@ -141,7 +141,7 @@ else
     make selinux-policy
 
     # Only build datapath if we are testing kernel w/o running testsuite
-    if [ "$KERNEL" ] && [ ! "$DPDK" ] && [ ! "$DPDK_SHARED" ]; then
+    if [ "$KERNEL" ]; then
         cd datapath
     fi
     make -j4
