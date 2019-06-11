@@ -1407,6 +1407,30 @@
       egress pipeline of the destination localnet logical switch datapath
       and goes out of the integration bridge to the provider bridge (
       belonging to the destination logical switch) via the localnet port.
+      While sending the packet to provider bridge, we also replace router
+      port mac as source mac with a chassis unique mac.
+
+      This chassis unique mac is configured as global ovs config on each
+      chassis (eg. via "<code>ovs-vsctl set open . external-ids:
+      ovn-chassis-mac-mappings="phys:aa:bb:cc:dd:ee:$i$i"</code>").More
+      details on this config are present in <code>ovn-controller</code>(8).
+
+      If the above is not configured, then source mac would be the router
+      port mac. This could create problem if we have more than one chassis.
+      This is because, since the router port is distributed, hence same
+      mac,vlan tuple will seen by physical network from other chassis
+      as well. This could cause some/all of these issues:
+      <ul>
+        <li>
+          Continous mac moves in top of the rack switch (TOR).
+        </li>
+        <li>
+          TOR dropping the traffic, which is causing continous mac moves.
+        </li>
+        <li>
+          TOR blocking the ports from which mac moves are happening.
+        </li>
+      </ul>
     </li>
 
     <li>
