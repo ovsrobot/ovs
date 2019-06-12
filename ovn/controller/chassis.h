@@ -36,5 +36,6 @@ const struct sbrec_chassis *chassis_run(
     const struct sset *transport_zones);
 bool chassis_cleanup(struct ovsdb_idl_txn *ovnsb_idl_txn,
                      const struct sbrec_chassis *);
+const char *chassis_get_id(void);
 
 #endif /* ovn/chassis.h */
