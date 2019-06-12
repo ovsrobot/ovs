@@ -281,11 +281,10 @@ initialization succeeded::
 Additionally, the library version linked to ovs-vswitchd can be confirmed
 with either the ovs-vswitchd logs, or by running either of the commands::
 
-  $ ovs-vswitchd --version
-  ovs-vswitchd (Open vSwitch) 2.9.0
-  DPDK 17.11.0
+  $ ovs-vswitchd --version |grep -i dpdk
+  DPDK 18.11.1
   $ ovs-vsctl get Open_vSwitch . dpdk_version
-  "DPDK 17.11.0"
+  "DPDK 18.11.1"
 
 At this point you can use ovs-vsctl to set up bridges and other Open vSwitch
 features. Seeing as we've configured the DPDK datapath, we will use DPDK-type
