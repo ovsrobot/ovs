@@ -308,8 +308,14 @@ Let's add that flow::
 
 A TCP syn packet sent from "left" namespace will match flow #1
 because the packet is coming to OVS from veth_l0 port and it is not being
-tracked.  (as the packet just entered OVS. All packets entering OVS for the
-first time are "untracked")
+tracked.  This is because the packet just entered OVS. All packets entering
+OVS for the first time are "untracked" with a minor exception being
+when a packet (re)enters the same datapath that it already belongs to
+there is no need to discard the namespace and other information.  In this
+case the connection will remain in the tracked state.  If the namespace
+has changed then it is discarded and a new connection tracker is
+created since connection tracking information is logically separate
+for different namespaces.
 The flow will send the packet to the connection tracker due to the action "ct".
 Also "table=0" in the "ct" action forks the pipeline processing in two.  The
 original instance of packet will continue processing the current action list
