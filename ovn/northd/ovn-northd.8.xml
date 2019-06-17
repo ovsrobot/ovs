@@ -70,6 +70,23 @@
       <dd>
         Causes <code>ovn-northd</code> to gracefully terminate.
       </dd>
+
+      <dt><code>pause</code></dt>
+      <dd>
+        Pauses the ovn-northd operation from processing any Northbound and
+        Southbound database changes.
+      </dd>
+
+      <dt><code>resume</code></dt>
+      <dd>
+        Resumes the ovn-northd operation to process Northbound and
+        Southbound database contents and generate logical flows.
+      </dd>
+
+      <dt><code>is-paused</code></dt>
+      <dd>
+        Returns "true" if ovn-northd is currently paused, "false" otherwise.
+      </dd>
       </dl>
     </p>
 
