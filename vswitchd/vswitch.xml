@@ -3119,6 +3119,16 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="options" key="vhost-tx-retries"
+              type='{"type": "integer", "minInteger": 0, "maxInteger": 31}'>
+        <p>
+          The value specifies the maximum amount of tx vhost retries that can
+          be made while trying to send a batch of packets to a dpdkvhostclient
+          interface. The max batch size is 32 packets.
+          Only supported by dpdkvhostuserclient interfaces.
+        </p>
+      </column>
+
       <column name="options" key="n_rxq_desc"
               type='{"type": "integer", "minInteger": 1, "maxInteger": 4096}'>
         <p>
