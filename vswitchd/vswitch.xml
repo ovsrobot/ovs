@@ -2555,7 +2555,8 @@
           <dt><code>gre</code></dt>
           <dd>
             Generic Routing Encapsulation (GRE) over IPv4/IPv6 tunnel,
-            configurable to encapsulate layer 2 or layer 3 traffic.
+            configurable to encapsulate layer 2 (both IPv4 and IPv6) or
+            layer 3 (IPv4 only) traffic.
           </dd>
 
           <dt><code>vxlan</code></dt>
