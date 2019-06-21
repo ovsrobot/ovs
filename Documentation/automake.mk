@@ -114,6 +114,11 @@ DOC_SOURCE = \
 	Documentation/internals/contributing/documentation-style.rst \
 	Documentation/internals/contributing/libopenvswitch-abi.rst \
 	Documentation/internals/contributing/submitting-patches.rst \
+	Documentation/fuzzing/index.rst \
+	Documentation/fuzzing/what-is-fuzzing.rst \
+	Documentation/fuzzing/ovs-fuzzing-infrastructure.rst \
+	Documentation/fuzzing/ovs-fuzzers.rst \
+	Documentation/fuzzing/security-analysis-of-ovs-fuzzers.rst \
 	Documentation/requirements.txt \
 	$(addprefix Documentation/ref/,$(RST_MANPAGES) $(RST_MANPAGES_NOINST))
 FLAKE8_PYFILES += Documentation/conf.py
