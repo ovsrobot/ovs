@@ -1732,6 +1732,7 @@ main(int argc, char *argv[])
 
     ovsdb_idl_track_add_all(ovnsb_idl_loop.idl);
     ovsdb_idl_omit_alert(ovnsb_idl_loop.idl, &sbrec_chassis_col_nb_cfg);
+    ovsdb_idl_omit_alert(ovnsb_idl_loop.idl, &sbrec_port_binding_col_external_ids);
     update_sb_monitors(ovnsb_idl_loop.idl, NULL, NULL, NULL);
 
     stopwatch_create(CONTROLLER_LOOP_STOPWATCH_NAME, SW_MS);
