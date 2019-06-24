@@ -124,9 +124,6 @@ engine_ovsdb_node_add_index(struct engine_node *node, const char *name,
 void
 engine_run(struct engine_node *node, uint64_t run_id)
 {
-    if (node->run_id == run_id) {
-        return;
-    }
     node->run_id = run_id;
 
     node->changed = false;
