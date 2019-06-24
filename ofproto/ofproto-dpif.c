@@ -678,7 +678,7 @@ close_dpif_backer(struct dpif_backer *backer, bool del)
     shash_find_and_delete(&all_dpif_backers, backer->type);
     free(backer->type);
     free(backer->dp_version_string);
-    if (del) {
+    if (del || dpif_cleanup_required(backer->dpif)) {
         dpif_delete(backer->dpif);
     }
     dpif_close(backer->dpif);
@@ -1972,6 +1972,8 @@ port_destruct(struct ofport *port_, bool del)
     xlate_txn_start();
     xlate_ofport_remove(port);
     xlate_txn_commit();
+
+    del = del || dpif_cleanup_required(ofproto->backer->dpif);
 
     dp_port_name = netdev_vport_get_dpif_port(port->up.netdev, namebuf,
                                               sizeof namebuf);
