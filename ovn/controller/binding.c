@@ -715,11 +715,21 @@ binding_evaluate_port_binding_changes(
          * - If a regular VIF is unbound from this chassis, the local ovsdb
          *   interface table will be updated, which will trigger recompute.
          *
-         * - If the port is not a regular VIF, always trigger recompute. */
+         * If the port is not a regular VIF, then ignore it. */
         if (binding_rec->chassis == chassis_rec
             || is_our_chassis(chassis_rec, binding_rec,
-                              active_tunnels, &lport_to_iface, local_lports)
-            || strcmp(binding_rec->type, "")) {
+                              active_tunnels, &lport_to_iface,
+                              local_lports)) {
+            changed = true;
+            break;
+        }
+
+        /* Any changes to chassisredirect port (not claimed by this chassis),
+         * doesn't require any logical flow computation. It only requires
+         * physical flow update and thiss will be handled by
+         * flow_output_sb_port_binding_handler() in ovn-controller.c */
+        if (strcmp(binding_rec->type, "") &&
+            strcmp(binding_rec->type, "chassisredirect")) {
             changed = true;
             break;
         }
