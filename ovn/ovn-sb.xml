@@ -364,7 +364,8 @@
     <column name="options">
       <p>
         Options for configuring the encapsulation. Currently, the only
-        option that has been defined is <code>csum</code>.
+        options that has been defined are <code>csum</code> and
+        <code>dst_port</code>.
       </p>
 
       <p>
@@ -407,6 +408,11 @@
       <p>
         <code>csum</code> defaults to <code>false</code> for hardware VTEPs and
         <code>true</code> for all other cases.
+      </p>
+
+      <p>
+        <code>dst_port</code> is used to define the destination port used
+        in tunnel encapsulation
       </p>
     </column>
 
