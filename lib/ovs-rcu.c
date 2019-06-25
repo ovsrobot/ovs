@@ -134,7 +134,6 @@ ovsrcu_quiesce_start(void)
     perthread = pthread_getspecific(perthread_key);
     if (perthread) {
         pthread_setspecific(perthread_key, NULL);
-        ovsrcu_unregister__(perthread);
     }
 
     ovsrcu_quiesced();
