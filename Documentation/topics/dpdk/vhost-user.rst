@@ -391,6 +391,32 @@ The default value is ``false``.
 
 .. _dpdk-testpmd:
 
+vhost-user-client tx retries
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For vhost-user-client interfaces, the max amount of retries can be changed from
+the default 8 by setting ``vhost-tx-retries``.
+
+The minimum is 0 which means there will be no retries and if any packets in
+each batch cannot be sent immediately they will be dropped. The maximum is 31,
+which would mean that after the first packet(s) in the batch was sent there
+could be up to a separate retry for each of the remaining packets, until they
+are all sent or no packet was sent during a retry.
+
+Retries can help with avoiding packet loss when temporarily unable to a vhost
+interface because the virtqueue is full. However, spending more time retrying
+to send to one interface, will reduce the time available for rx/tx and
+processing packets on other interfaces, so some tuning may be required for best
+performance.
+
+Tx retries can be set for vhost-user-client ports::
+
+    $ ovs-vsctl set Interface vhost-client-1 options:vhost-tx-retries=0
+
+.. note::
+
+ Configurable vhost tx retries are not supported with vhost-user ports.
+
 DPDK in the Guest
 -----------------
 
