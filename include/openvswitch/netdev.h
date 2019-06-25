@@ -45,6 +45,7 @@ struct netdev_stats {
     uint64_t tx_dropped;        /* No buffer space. */
     uint64_t multicast;         /* Multicast packets received. */
     uint64_t collisions;
+    uint64_t tx_retries;        /* Retries when unable to transmit.*/
 
     /* Detailed receive errors. */
     uint64_t rx_length_errors;

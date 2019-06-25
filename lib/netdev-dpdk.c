@@ -2297,13 +2297,15 @@ static inline void
 netdev_dpdk_vhost_update_tx_counters(struct netdev_stats *stats,
                                      struct dp_packet **packets,
                                      int attempted,
-                                     int dropped)
+                                     int dropped,
+                                     int retries)
 {
     int i;
     int sent = attempted - dropped;
 
     stats->tx_packets += sent;
     stats->tx_dropped += dropped;
+    stats->tx_retries += retries;
 
     for (i = 0; i < sent; i++) {
         stats->tx_bytes += dp_packet_size(packets[i]);
@@ -2358,7 +2360,7 @@ __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
 
     rte_spinlock_lock(&dev->stats_lock);
     netdev_dpdk_vhost_update_tx_counters(&dev->stats, pkts, total_pkts,
-                                         cnt + dropped);
+                                         cnt + dropped, retries);
     rte_spinlock_unlock(&dev->stats_lock);
 
 out:
@@ -2596,6 +2598,7 @@ netdev_dpdk_vhost_get_stats(const struct netdev *netdev,
     stats->tx_bytes = dev->stats.tx_bytes;
     stats->rx_errors = dev->stats.rx_errors;
     stats->rx_length_errors = dev->stats.rx_length_errors;
+    stats->tx_retries = dev->stats.tx_retries;
 
     stats->rx_1_to_64_packets = dev->stats.rx_1_to_64_packets;
     stats->rx_65_to_127_packets = dev->stats.rx_65_to_127_packets;
