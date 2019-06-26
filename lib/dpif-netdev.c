@@ -5471,7 +5471,6 @@ reload:
                 poll_block();
             }
         }
-        lc = UINT_MAX;
     }
 
     pmd->intrvl_tsc_prev = 0;
@@ -5515,12 +5514,13 @@ reload:
             if (!ovsrcu_try_quiesce()) {
                 emc_cache_slow_sweep(&((pmd->flow_cache).emc_cache));
             }
-
-            atomic_read_explicit(&pmd->reload, &reload, memory_order_acquire);
-            if (reload) {
-                break;
-            }
         }
+
+        atomic_read_explicit(&pmd->reload, &reload, memory_order_acquire);
+        if (OVS_UNLIKELY(reload)) {
+            break;
+        }
+
         pmd_perf_end_iteration(s, rx_packets, tx_packets,
                                pmd_perf_metrics_enabled(pmd));
     }
