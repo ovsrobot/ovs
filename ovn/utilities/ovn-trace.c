@@ -1643,6 +1643,15 @@ execute_icmp6(const struct ovnact_nest *on,
 }
 
 static void
+execute_igmp(const struct ovnact_nest *on OVS_UNUSED,
+             const struct ovntrace_datapath *dp OVS_UNUSED,
+             const struct flow *uflow OVS_UNUSED, uint8_t table_id OVS_UNUSED,
+             enum ovnact_pipeline pipeline OVS_UNUSED, struct ovs_list *super)
+{
+    ovntrace_node_append(super, OVNTRACE_NODE_ACTION, "igmp {};");
+}
+
+static void
 execute_tcp_reset(const struct ovnact_nest *on,
                   const struct ovntrace_datapath *dp,
                   const struct flow *uflow, uint8_t table_id,
@@ -2124,6 +2133,11 @@ trace_actions(const struct ovnact *ovnacts, size_t ovnacts_len,
         case OVNACT_ICMP6:
             execute_icmp6(ovnact_get_ICMP6(a), dp, uflow, table_id, pipeline,
                           super);
+            break;
+
+        case OVNACT_IGMP:
+            execute_igmp(ovnact_get_IGMP(a), dp, uflow, table_id, pipeline,
+                         super);
             break;
 
         case OVNACT_TCP_RESET:

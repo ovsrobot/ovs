@@ -3486,4 +3486,77 @@ tcp.flags = RST;
       </column>
     </group>
   </table>
+  <table name="IP_Multicast">
+    <p>
+      IP Multicast configuration options. For now only applicable to IGMP.
+    </p>
+
+    <column name="datapath">
+      <ref table="Datapath_Binding"/> entry for which these configuration
+      options are defined.
+    </column>
+    <column name="enabled">
+      True when multicast snooping is enabled.
+    </column>
+    <column name="querier">
+      True when multicast querier functionality is enabled. If
+      <ref table="IP_Multicast" column="enabled"/> is set to true the
+      default querier behavior is enabled.
+    </column>
+    <column name="eth_src">
+      Ethernet address to be used as source for self originated IGMP queries.
+    </column>
+    <column name="ip4_src">
+      IPv4 address to be used as source for self originated IGMP queries.
+    </column>
+    <column name="table_size">
+      Maximum number of groups to be stored in the multicast table.
+    </column>
+    <column name="idle_timeout">
+      Idle timeout configuration (in seconds) for IP multicast groups if
+      multicast snooping is enabled.
+    </column>
+    <column name="query_interval">
+      Interval (in seconds) for sending IP Multicast Queries if multicast
+      snooping and multicast querier are enabled. If not specified then
+      queries will be sent at
+      <ref table="IP_Multicast" column="idle_timeout"/>/2 intervals.
+    </column>
+    <column name="query_max_resp">
+      Value (in seconds) to be used as "max-response" field in multicast
+      queries.
+    </column>
+    <column name="seq_no">
+      Used internally for flushing IP Multicast groups.
+    </column>
+  </table>
+  <table name="IGMP_Group">
+    <p>
+      Description of IGMP Group.
+    </p>
+
+    <column name="address">
+      <p>
+        Destination IPv4 address for the IGMP group.
+      </p>
+    </column>
+
+    <column name="datapath">
+      <p>
+        Datapath to which this IGMP group belongs.
+      </p>
+    </column>
+
+    <column name="chassis">
+      <p>
+        Chassis to which this IGMP group belongs.
+      </p>
+    </column>
+
+    <column name="ports">
+      <p>
+        The destination port bindings for this IGMP group.
+      </p>
+    </column>
+  </table>
 </database>
