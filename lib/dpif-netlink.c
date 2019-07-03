@@ -2007,6 +2007,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
 
     /* When we try to install a dummy flow from a probed feature. */
     if (match.flow.dl_type == htons(0x1234)) {
+        VLOG_INFO_RL(&rl, "eth 0x1234 is special and not offloadable");
         return EOPNOTSUPP;
     }
 
