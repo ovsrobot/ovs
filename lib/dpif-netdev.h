@@ -68,6 +68,7 @@ struct dpcls_rule {
  */
 typedef
 uint32_t (*dpcls_subtable_lookup_func)(struct dpcls_subtable *subtable,
+                                       uint64_t *blocks_scratch,
                                        uint32_t keys_map,
                                        const struct netdev_flow_key *keys[],
                                        struct dpcls_rule **rules);
@@ -75,6 +76,7 @@ uint32_t (*dpcls_subtable_lookup_func)(struct dpcls_subtable *subtable,
 /* Prototype for generic lookup func, using same code path as before. */
 uint32_t
 dpcls_subtable_lookup_generic(struct dpcls_subtable *subtable,
+                              uint64_t *blocks_scratch,
                               uint32_t keys_map,
                               const struct netdev_flow_key *keys[],
                               struct dpcls_rule **rules);
@@ -95,7 +97,17 @@ struct dpcls_subtable {
      * subtable matches on. The miniflow "bits" are used to select the actual
      * dpcls lookup implementation at subtable creation time.
      */
+    uint8_t mf_bits_set_unit0;
+    uint8_t mf_bits_set_unit1;
+
+    /* the lookup function to use for this subtable. If there is a known
+     * property of the subtable (eg: only 3 bits of miniflow metadata is
+     * used for the lookup) then this can point at an optimized version of
+     * the lookup function for this particular subtable. */
     dpcls_subtable_lookup_func lookup_func;
+
+    /* caches the masks to match a packet to, reducing runtime calculations */
+    uint64_t *mf_masks;
 
     struct netdev_flow_key mask; /* Wildcards for fields (const). */
     /* 'mask' must be the last field, additional space is allocated here. */
@@ -104,6 +116,12 @@ struct dpcls_subtable {
 /* Iterate through netdev_flow_key TNL u64 values specified by 'FLOWMAP'. */
 #define NETDEV_FLOW_KEY_FOR_EACH_IN_FLOWMAP(VALUE, KEY, FLOWMAP)   \
     MINIFLOW_FOR_EACH_IN_FLOWMAP (VALUE, &(KEY)->mf, FLOWMAP)
+
+void
+netdev_flow_key_gen_masks(const struct netdev_flow_key *tbl,
+                          uint64_t *mf_masks,
+                          const uint32_t mf_bits_u0,
+                          const uint32_t mf_bits_u1);
 
 bool dpcls_rule_matches_key(const struct dpcls_rule *rule,
                             const struct netdev_flow_key *target);
