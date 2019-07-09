@@ -226,7 +226,74 @@ dpcls_subtable_lookup_generic(struct dpcls_subtable *subtable,
                               const struct netdev_flow_key *keys[],
                               struct dpcls_rule **rules)
 {
+    /* Here the runtime subtable->mf_bits counts are used, which forces the
+     * compiler to iterate normal for() loops. Due to this limitation in the
+     * compilers available optimizations, this function has lower performance
+     * than the below specialized functions.
+     */
     return lookup_generic_impl(subtable, blocks_scratch, keys_map, keys, rules,
                                subtable->mf_bits_set_unit0,
                                subtable->mf_bits_set_unit1);
+}
+
+static uint32_t
+dpcls_subtable_lookup_mf_u0w5_u1w1(struct dpcls_subtable *subtable,
+                                   uint64_t *blocks_scratch,
+                                   uint32_t keys_map,
+                                   const struct netdev_flow_key *keys[],
+                                   struct dpcls_rule **rules)
+{
+    /* hard coded bit counts - enables compile time loop unrolling, and
+     * generating of optimized code-sequences due to loop unrolled code.
+     */
+    return lookup_generic_impl(subtable, blocks_scratch, keys_map, keys, rules,
+                               5, 1);
+}
+
+static uint32_t
+dpcls_subtable_lookup_mf_u0w4_u1w1(struct dpcls_subtable *subtable,
+                                   uint64_t *blocks_scratch,
+                                   uint32_t keys_map,
+                                   const struct netdev_flow_key *keys[],
+                                   struct dpcls_rule **rules)
+{
+    return lookup_generic_impl(subtable, blocks_scratch, keys_map, keys, rules,
+                               4, 1);
+}
+
+static uint32_t
+dpcls_subtable_lookup_mf_u0w4_u1w0(struct dpcls_subtable *subtable,
+                                   uint64_t *blocks_scratch,
+                                   uint32_t keys_map,
+                                   const struct netdev_flow_key *keys[],
+                                   struct dpcls_rule **rules)
+{
+    return lookup_generic_impl(subtable, blocks_scratch, keys_map, keys, rules,
+                               4, 0);
+}
+
+/* Probe function to lookup an available specialized function.
+ * If capable to run the requested miniflow fingerprint, this function returns
+ * the most optimal implementation for that miniflow fingerprint.
+ * @retval FunctionAddress A valid function to handle the miniflow bit pattern
+ * @retval 0 The requested miniflow is not supported here, NULL is returned
+ */
+dpcls_subtable_lookup_func
+dpcls_subtable_generic_probe(uint32_t u0_bits, uint32_t u1_bits)
+{
+    dpcls_subtable_lookup_func f = NULL;
+
+    if (u0_bits == 5 && u1_bits == 1) {
+        f = dpcls_subtable_lookup_mf_u0w5_u1w1;
+    } else if (u0_bits == 4 && u1_bits == 1) {
+        f = dpcls_subtable_lookup_mf_u0w4_u1w1;
+    } else if (u0_bits == 4 && u1_bits == 0) {
+        f = dpcls_subtable_lookup_mf_u0w4_u1w0;
+    }
+
+    if (f) {
+        VLOG_INFO("Subtable using Generic Optimized for u0 %d, u1 %d\n",
+                  u0_bits, u1_bits);
+    }
+    return f;
 }
