@@ -52,6 +52,14 @@ struct netdev_flow_key {
     uint64_t buf[FLOW_MAX_PACKET_U64S];
 };
 
+/* A rule to be inserted to the classifier. */
+struct dpcls_rule {
+    struct cmap_node cmap_node;   /* Within struct dpcls_subtable 'rules'. */
+    struct netdev_flow_key *mask; /* Subtable's mask. */
+    struct netdev_flow_key flow;  /* Matching key. */
+    /* 'flow' must be the last field, additional space is allocated here. */
+};
+
 /* Lookup function for a subtable in the dpcls. This function is called
  * by each subtable with an array of packets, and a bitmask of packets to
  * perform the lookup on. Using a function pointer gives flexibility to
@@ -92,6 +100,14 @@ struct dpcls_subtable {
     struct netdev_flow_key mask; /* Wildcards for fields (const). */
     /* 'mask' must be the last field, additional space is allocated here. */
 };
+
+/* Iterate through netdev_flow_key TNL u64 values specified by 'FLOWMAP'. */
+#define NETDEV_FLOW_KEY_FOR_EACH_IN_FLOWMAP(VALUE, KEY, FLOWMAP)   \
+    MINIFLOW_FOR_EACH_IN_FLOWMAP (VALUE, &(KEY)->mf, FLOWMAP)
+
+bool dpcls_rule_matches_key(const struct dpcls_rule *rule,
+                            const struct netdev_flow_key *target);
+
 
 #ifdef  __cplusplus
 }
