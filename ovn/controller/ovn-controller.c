@@ -33,6 +33,7 @@
 #include "openvswitch/dynamic-string.h"
 #include "encaps.h"
 #include "fatal-signal.h"
+#include "ip-mcast.h"
 #include "openvswitch/hmap.h"
 #include "lflow.h"
 #include "lib/vswitch-idl.h"
@@ -43,6 +44,7 @@
 #include "ovn/actions.h"
 #include "ovn/lib/chassis-index.h"
 #include "ovn/lib/extend-table.h"
+#include "ovn/lib/ip-mcast-index.h"
 #include "ovn/lib/ovn-sb-idl.h"
 #include "ovn/lib/ovn-util.h"
 #include "patch.h"
@@ -133,6 +135,10 @@ update_sb_monitors(struct ovsdb_idl *ovnsb_idl,
      * Monitor Logical_Flow, MAC_Binding, Multicast_Group, and DNS tables for
      * local datapaths.
      *
+     * Monitor IP_Multicast for local datapaths.
+     *
+     * Monitor IGMP_Groups for local chassis.
+     *
      * We always monitor patch ports because they allow us to see the linkages
      * between related logical datapaths.  That way, when we know that we have
      * a VIF on a particular logical switch, we immediately know to monitor all
@@ -142,6 +148,8 @@ update_sb_monitors(struct ovsdb_idl *ovnsb_idl,
     struct ovsdb_idl_condition mb = OVSDB_IDL_CONDITION_INIT(&mb);
     struct ovsdb_idl_condition mg = OVSDB_IDL_CONDITION_INIT(&mg);
     struct ovsdb_idl_condition dns = OVSDB_IDL_CONDITION_INIT(&dns);
+    struct ovsdb_idl_condition ip_mcast = OVSDB_IDL_CONDITION_INIT(&ip_mcast);
+    struct ovsdb_idl_condition igmp = OVSDB_IDL_CONDITION_INIT(&igmp);
     sbrec_port_binding_add_clause_type(&pb, OVSDB_F_EQ, "patch");
     /* XXX: We can optimize this, if we find a way to only monitor
      * ports that have a Gateway_Chassis that point's to our own
@@ -165,6 +173,8 @@ update_sb_monitors(struct ovsdb_idl *ovnsb_idl,
         sbrec_port_binding_add_clause_options(&pb, OVSDB_F_INCLUDES, &l2);
         const struct smap l3 = SMAP_CONST1(&l3, "l3gateway-chassis", id);
         sbrec_port_binding_add_clause_options(&pb, OVSDB_F_INCLUDES, &l3);
+        sbrec_igmp_group_add_clause_chassis(&igmp, OVSDB_F_EQ,
+                                            &chassis->header_.uuid);
     }
     if (local_ifaces) {
         const char *name;
@@ -184,6 +194,8 @@ update_sb_monitors(struct ovsdb_idl *ovnsb_idl,
             sbrec_mac_binding_add_clause_datapath(&mb, OVSDB_F_EQ, uuid);
             sbrec_multicast_group_add_clause_datapath(&mg, OVSDB_F_EQ, uuid);
             sbrec_dns_add_clause_datapaths(&dns, OVSDB_F_INCLUDES, &uuid, 1);
+            sbrec_ip_multicast_add_clause_datapath(&ip_mcast, OVSDB_F_EQ,
+                                                   uuid);
         }
     }
     sbrec_port_binding_set_condition(ovnsb_idl, &pb);
@@ -191,11 +203,15 @@ update_sb_monitors(struct ovsdb_idl *ovnsb_idl,
     sbrec_mac_binding_set_condition(ovnsb_idl, &mb);
     sbrec_multicast_group_set_condition(ovnsb_idl, &mg);
     sbrec_dns_set_condition(ovnsb_idl, &dns);
+    sbrec_ip_multicast_set_condition(ovnsb_idl, &ip_mcast);
+    sbrec_igmp_group_set_condition(ovnsb_idl, &igmp);
     ovsdb_idl_condition_destroy(&pb);
     ovsdb_idl_condition_destroy(&lf);
     ovsdb_idl_condition_destroy(&mb);
     ovsdb_idl_condition_destroy(&mg);
     ovsdb_idl_condition_destroy(&dns);
+    ovsdb_idl_condition_destroy(&ip_mcast);
+    ovsdb_idl_condition_destroy(&igmp);
 }
 
 static const char *
@@ -1739,6 +1755,10 @@ main(int argc, char *argv[])
         = ovsdb_idl_index_create2(ovnsb_idl_loop.idl,
                                   &sbrec_mac_binding_col_logical_port,
                                   &sbrec_mac_binding_col_ip);
+    struct ovsdb_idl_index *sbrec_ip_multicast
+        = ip_mcast_index_create(ovnsb_idl_loop.idl);
+    struct ovsdb_idl_index *sbrec_igmp_group
+        = igmp_group_index_create(ovnsb_idl_loop.idl);
 
     ovsdb_idl_track_add_all(ovnsb_idl_loop.idl);
     ovsdb_idl_omit_alert(ovnsb_idl_loop.idl, &sbrec_chassis_col_nb_cfg);
@@ -1980,6 +2000,8 @@ main(int argc, char *argv[])
                                 sbrec_port_binding_by_key,
                                 sbrec_port_binding_by_name,
                                 sbrec_mac_binding_by_lport_ip,
+                                sbrec_igmp_group,
+                                sbrec_ip_multicast,
                                 sbrec_dns_table_get(ovnsb_idl_loop.idl),
                                 br_int, chassis,
                                 &ed_runtime_data.local_datapaths,
@@ -2111,6 +2133,7 @@ main(int argc, char *argv[])
             done = binding_cleanup(ovnsb_idl_txn, port_binding_table, chassis);
             done = chassis_cleanup(ovnsb_idl_txn, chassis) && done;
             done = encaps_cleanup(ovs_idl_txn, br_int) && done;
+            done = igmp_group_cleanup(ovnsb_idl_txn, sbrec_igmp_group) && done;
             if (done) {
                 poll_immediate_wake();
             }

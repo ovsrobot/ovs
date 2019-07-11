@@ -1333,6 +1333,10 @@ tcp_reset { };
     encodes as controller(userdata=00.00.00.0b.00.00.00.00)
     has prereqs tcp
 
+# IGMP
+igmp;
+    encodes as controller(userdata=00.00.00.0f.00.00.00.00)
+
 # Contradictionary prerequisites (allowed but not useful):
 ip4.src = ip6.src[0..31];
     encodes as move:NXM_NX_IPV6_SRC[0..31]->NXM_OF_IP_SRC[]
