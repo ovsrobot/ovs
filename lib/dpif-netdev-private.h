@@ -56,13 +56,15 @@ struct dpcls_rule {
  */
 typedef
 uint32_t (*dpcls_subtable_lookup_func)(struct dpcls_subtable *subtable,
+                                       uint64_t *blocks_scratch,
                                        uint32_t keys_map,
                                        const struct netdev_flow_key *keys[],
                                        struct dpcls_rule **rules);
 
-/* Prototype for generic lookup func, using same code path as before. */
+/* Prototype for generic lookup func, using generic scalar code path. */
 uint32_t
 dpcls_subtable_lookup_generic(struct dpcls_subtable *subtable,
+                              uint64_t *blocks_scratch,
                               uint32_t keys_map,
                               const struct netdev_flow_key *keys[],
                               struct dpcls_rule **rules);
@@ -84,13 +86,13 @@ struct dpcls_subtable {
     uint8_t mf_bits_set_unit0;
     uint8_t mf_bits_set_unit1;
 
-    /* the lookup function to use for this subtable. If there is a known
+    /* The lookup function to use for this subtable. If there is a known
      * property of the subtable (eg: only 3 bits of miniflow metadata is
      * used for the lookup) then this can point at an optimized version of
      * the lookup function for this particular subtable. */
     dpcls_subtable_lookup_func lookup_func;
 
-    /* caches the masks to match a packet to, reducing runtime calculations */
+    /* Caches the masks to match a packet to, reducing runtime calculations. */
     uint64_t *mf_masks;
 
     struct netdev_flow_key mask; /* Wildcards for fields (const). */
