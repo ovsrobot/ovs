@@ -81,6 +81,37 @@ To see a complete list of test options, run::
 The results of a testing run are reported in ``tests/testsuite.log``. Report
 report test failures as bugs and include the ``testsuite.log`` in your report.
 
+Debugging unit tests
+++++++++++++++++++++
+
+To initiate debugging from artifacts generated from `make check` run, use
+following instructions. For example, to re-run test case 139::
+
+   export OVS_PAUSE_TEST=1
+   cd tests/system-userspace-testsuite.dir/139
+   sudo -E ./run
+
+When error occurs, above command would display something like this::
+
+   Set environment variable to use various ovs utilities
+   export OVS_RUNDIR=<dir>/ovs/_build-gcc/tests/system-userspace-testsuite.dir/139
+   Press ENTER to continue:
+
+And from another window, one can execute ovs-xxx commands like::
+
+   export OVS_RUNDIR=/opt/vdasari/Developer/ovs/_build-gcc/tests/system-userspace-testsuite.dir/139
+   $ ovs-ofctl dump-ports br0
+   .
+   .
+
+Once done with investigation, press ENTER to perform cleanup operation.
+
+To be able to pause on error while performing `make check`, one can do::
+
+  $ OVS_PAUSE_TEST=1 make check TESTSUITEFLAGS='-v'
+
+and then follow similar on screen instructions
+
 .. note::
   Sometimes a few tests may fail on some runs but not others. This is usually a
   bug in the testsuite, not a bug in Open vSwitch itself. If you find that a
