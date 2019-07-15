@@ -233,7 +233,58 @@ dpcls_subtable_lookup_generic(struct dpcls_subtable *subtable,
                               const struct netdev_flow_key *keys[],
                               struct dpcls_rule **rules)
 {
+    /* Here the runtime subtable->mf_bits counts are used, which forces the
+     * compiler to iterate normal for() loops. Due to this limitation in the
+     * compilers available optimizations, this function has lower performance
+     * than the below specialized functions.
+     */
     return lookup_generic_impl(subtable, blocks_scratch, keys_map, keys, rules,
                                subtable->mf_bits_set_unit0,
                                subtable->mf_bits_set_unit1);
+}
+
+/* Expand out specialized functions with U0 and U1 bit attributes */
+#define DECLARE_OPTIMIZED_LOOKUP_FUNCTION(U0, U1)                             \
+    static uint32_t                                                           \
+    dpcls_subtable_lookup_mf_u0w##U0##_u1w##U1(                               \
+                                         struct dpcls_subtable *subtable,     \
+                                         uint64_t *blocks_scratch,            \
+                                         uint32_t keys_map,                   \
+                                         const struct netdev_flow_key *keys[],\
+                                         struct dpcls_rule **rules)           \
+    {                                                                         \
+        return lookup_generic_impl(subtable, blocks_scratch, keys_map,        \
+                                   keys, rules, U0, U1);                      \
+    }                                                                         \
+
+DECLARE_OPTIMIZED_LOOKUP_FUNCTION(5,1)
+DECLARE_OPTIMIZED_LOOKUP_FUNCTION(4,1)
+DECLARE_OPTIMIZED_LOOKUP_FUNCTION(4,0)
+
+/* Check if a speicalized function is valid for the required subtable. */
+#define CHECK_LOOKUP_FUNCTION(U0,U1)                                          \
+    if (!f && u0_bits == U0 && u1_bits == U1) {                               \
+        f = dpcls_subtable_lookup_mf_u0w##U0##_u1w##U1;                       \
+    }
+
+/* Probe function to lookup an available specialized function.
+ * If capable to run the requested miniflow fingerprint, this function returns
+ * the most optimal implementation for that miniflow fingerprint.
+ * @retval FunctionAddress A valid function to handle the miniflow bit pattern
+ * @retval 0 The requested miniflow is not supported here, NULL is returned
+ */
+dpcls_subtable_lookup_func
+dpcls_subtable_generic_probe(uint32_t u0_bits, uint32_t u1_bits)
+{
+    dpcls_subtable_lookup_func f = NULL;
+
+    CHECK_LOOKUP_FUNCTION(5, 1);
+    CHECK_LOOKUP_FUNCTION(4, 1);
+    CHECK_LOOKUP_FUNCTION(4, 0);
+
+    if (f) {
+        VLOG_INFO("Subtable using Generic Optimized for u0 %d, u1 %d\n",
+                  u0_bits, u1_bits);
+    }
+    return f;
 }
