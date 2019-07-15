@@ -74,6 +74,12 @@ To run tests matching a keyword, e.g. ``ovsdb``, run::
 
     $ make check TESTSUITEFLAGS='-k ovsdb'
 
+To pause at a failing test (e.g. ``ovsdb``) and inspect the system in failed
+state, follow the instructions given out by issuing following command to use 
+various ovs-* utilities::
+
+    $ OVS_PAUSE_TEST=1 make check TESTSUITEFLAGS='-v -k ovsdb'
+
 To see a complete list of test options, run::
 
     $ make check TESTSUITEFLAGS=--help
