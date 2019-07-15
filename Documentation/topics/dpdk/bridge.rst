@@ -74,6 +74,31 @@ OpenFlow14`` option::
 
     $ ovs-ofctl -O OpenFlow14 dump-ports br0
 
+Detail statistics counters for transmit dropped packets and receive
+dropped packets are implemented and supported only for DPDK physical
+and vHost ports.
+
+Following are the details of the new counters :
+
+tx_failure_drops : Sometimes DPDK transmit API for physical/vHost ports
+                   may fail to transmit all/some packets in its packet
+buffer which is passed as input argument to the dpdk xmit API. These
+untransmitted packets are dropped. The most likely reason for this to
+happens is when the transmit queue is full or has been filled up.
+There are other unlikely reasons such as invalid Tx queue id etc.
+
+tx_mtu_exceeded_drops : These are the packets dropped due to MTU mismatch
+                        (i.e Pkt len > Max Dev MTU).
+
+tx_qos_drops/rx_qos_drops : These are the packets dropped due to
+                            transmission/reception rate exceeding the
+configured Egress/Ingress policer rate on the interface.
+
+These statistic counters can be viewed with the following commands:
+
+$ ovs-vsctl get interface <iface> statistics
+$ ovs-vsctl list interface
+
 EMC Insertion Probability
 -------------------------
 

@@ -61,6 +61,15 @@ struct netdev_stats {
     uint64_t tx_heartbeat_errors;
     uint64_t tx_window_errors;
 
+    /* Detailed receive drops. */
+    uint64_t rx_qos_drops;      /* rx rate exceeded conf'd qos rate */
+
+    /* Detailed transmit drops. */
+    uint64_t tx_failure_drops;  /* Dpdk tx failure, probably tx
+                                 * queue is full. */
+    uint64_t tx_qos_drops;      /* tx rate exceeded conf'd qos rate */
+    uint64_t tx_mtu_drops;      /* tx pkt len exceeded max dev MTU */
+
     /* Extended statistics based on RFC2819. */
     uint64_t rx_1_to_64_packets;
     uint64_t rx_65_to_127_packets;
