@@ -445,6 +445,12 @@ const char *xlate_strerror(enum xlate_error error)
         return "Invalid tunnel metadata";
     case XLATE_UNSUPPORTED_PACKET_TYPE:
         return "Unsupported packet type";
+    case XLATE_CONGESTION_DROP:
+        return "Congestion Drop";
+    case XLATE_FORWARDING_DISABLED:
+        return "Forwarding is disabled";
+    case XLATE_MAX:
+        break;
     }
     return "Unknown error";
 }
@@ -5955,6 +5961,14 @@ put_ct_label(const struct flow *flow, struct ofpbuf *odp_actions,
 }
 
 static void
+put_drop_action(struct ofpbuf *odp_actions, enum xlate_error error)
+{
+    nl_msg_put_unspec(odp_actions, OVS_ACTION_ATTR_DROP,
+                      &error, sizeof error);
+
+}
+
+static void
 put_ct_helper(struct xlate_ctx *ctx,
               struct ofpbuf *odp_actions, struct ofpact_conntrack *ofc)
 {
@@ -7544,8 +7558,9 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
             compose_ipfix_action(&ctx, ODPP_NONE);
         }
         size_t sample_actions_len = ctx.odp_actions->size;
+        bool ecn_drop = !tnl_process_ecn(flow);
 
-        if (tnl_process_ecn(flow)
+        if (!ecn_drop
             && (!in_port || may_receive(in_port, &ctx))) {
             const struct ofpact *ofpacts;
             size_t ofpacts_len;
@@ -7585,6 +7600,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
             if (ctx.freezing) {
                 finish_freezing(&ctx);
             }
+        } else if (ecn_drop) {
+            ctx.error = XLATE_CONGESTION_DROP;
         }
 
         /* Output only fully processed packets. */
@@ -7690,6 +7707,18 @@ exit:
             ofpbuf_clear(xin->odp_actions);
         }
     }
+
+    /*
+     * If we are going to install "drop" action, check whether
+     * datapath supports explicit "drop"action. If datapath
+     * supports explicit "drop"action then install the "drop"
+     * action containing the drop reason.
+     */
+    if (xin->odp_actions && !xin->odp_actions->size &&
+         ovs_explicit_drop_action_supported(ctx.xbridge->ofproto)) {
+        put_drop_action(xin->odp_actions, ctx.error);
+    }
+
     return ctx.error;
 }
 
