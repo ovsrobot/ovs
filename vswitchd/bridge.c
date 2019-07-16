@@ -2408,7 +2408,11 @@ iface_refresh_stats(struct iface *iface)
     IFACE_STAT(rx_undersized_errors,    "rx_undersized_errors")     \
     IFACE_STAT(rx_oversize_errors,      "rx_oversize_errors")       \
     IFACE_STAT(rx_fragmented_errors,    "rx_fragmented_errors")     \
-    IFACE_STAT(rx_jabber_errors,        "rx_jabber_errors")
+    IFACE_STAT(rx_jabber_errors,        "rx_jabber_errors")         \
+    IFACE_STAT(rx_qos_drops,            "rx_qos_drops")             \
+    IFACE_STAT(tx_failure_drops,        "tx_failure_drops")         \
+    IFACE_STAT(tx_qos_drops,            "tx_qos_drops")             \
+    IFACE_STAT(tx_mtu_drops,            "tx_mtu_exceeded_drops")
 
 #define IFACE_STAT(MEMBER, NAME) + 1
     enum { N_IFACE_STATS = IFACE_STATS };
