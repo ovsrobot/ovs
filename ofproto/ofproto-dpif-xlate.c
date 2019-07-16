@@ -3403,6 +3403,19 @@ tnl_route_lookup_flow(const struct xlate_ctx *ctx,
             }
         }
     }
+
+    /* If tunnel IP isn't configured on bridges, then we search all ports. */
+    HMAP_FOR_EACH (xbridge, hmap_node, &ctx->xcfg->xbridges) {
+        struct xport *port;
+
+        HMAP_FOR_EACH (port, ofp_node, &xbridge->xports) {
+            if (!strncmp(netdev_get_name(port->netdev),
+                         out_dev, IFNAMSIZ)) {
+                *out_port = port;
+                return 0;
+            }
+        }
+    }
     return -ENOENT;
 }
 
@@ -3975,10 +3988,11 @@ is_neighbor_reply_correct(const struct xlate_ctx *ctx, const struct flow *flow)
     bool ret = false;
     int i;
     struct xbridge_addr *xbridge_addr = xbridge_addr_ref(ctx->xbridge->addr);
+    struct in6_addr *ip_addr, *mask;
 
     /* Verify if 'nw_dst' of ARP or 'ipv6_dst' of ICMPV6 is in the list. */
     for (i = 0; xbridge_addr && i < xbridge_addr->n_addr; i++) {
-        struct in6_addr *ip_addr = &xbridge_addr->addr[i];
+        ip_addr = &xbridge_addr->addr[i];
         if ((IN6_IS_ADDR_V4MAPPED(ip_addr) &&
              flow->dl_type == htons(ETH_TYPE_ARP) &&
              in6_addr_get_mapped_ipv4(ip_addr) == flow->nw_dst) ||
@@ -3991,20 +4005,48 @@ is_neighbor_reply_correct(const struct xlate_ctx *ctx, const struct flow *flow)
     }
 
     xbridge_addr_unref(xbridge_addr);
+
+    /* If not found in bridge's IPs, search in its ports. */
+    if (flow->dl_type == htons(ETH_TYPE_ARP) && !ret) {
+        struct xport *port;
+        int error, n_in6;
+        HMAP_FOR_EACH (port, ofp_node, &ctx->xbridge->xports) {
+            error = netdev_get_addr_list(port->netdev, &ip_addr,
+                                         &mask, &n_in6);
+            if (error) {
+                continue;
+            }
+            if (IN6_IS_ADDR_V4MAPPED(ip_addr)) {
+                ovs_be32 ip4_mask = in6_addr_get_mapped_ipv4(mask);
+                if ((flow->nw_dst & ip4_mask) ==
+                    (in6_addr_get_mapped_ipv4(ip_addr) & ip4_mask)) {
+                    ret = true;
+                    break;
+                }
+            } else {
+                struct in6_addr masked_dst, masked_addr;
+                masked_dst = ipv6_addr_bitand(&flow->ipv6_dst, mask);
+                masked_addr = ipv6_addr_bitand(ip_addr, mask);
+                if (ipv6_addr_equals(&masked_dst, &masked_addr)) {
+                    ret = true;
+                    break;
+                }
+            }
+        }
+
+    }
     return ret;
 }
 
 static bool
-terminate_native_tunnel(struct xlate_ctx *ctx, ofp_port_t ofp_port,
-                        struct flow *flow, struct flow_wildcards *wc,
-                        odp_port_t *tnl_port)
+terminate_native_tunnel(struct xlate_ctx *ctx, struct flow *flow,
+                        struct flow_wildcards *wc, odp_port_t *tnl_port)
 {
     *tnl_port = ODPP_NONE;
 
     /* XXX: Write better Filter for tunnel port. We can use in_port
      * in tunnel-port flow to avoid these checks completely. */
-    if (ofp_port == OFPP_LOCAL &&
-        ovs_native_tunneling_is_on(ctx->xbridge->ofproto)) {
+    if (ovs_native_tunneling_is_on(ctx->xbridge->ofproto)) {
         *tnl_port = tnl_port_map_lookup(flow, wc);
 
         /* If no tunnel port was found and it's about an ARP or ICMPv6 packet,
@@ -4148,7 +4190,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
             native_tunnel_output(ctx, xport, flow, odp_port, truncate);
             flow->tunnel = flow_tnl; /* Restore tunnel metadata */
 
-        } else if (terminate_native_tunnel(ctx, ofp_port, flow, wc,
+        } else if (terminate_native_tunnel(ctx, flow, wc,
                                            &odp_tnl_port)) {
             /* Intercept packet to be received on native tunnel port. */
             nl_msg_put_odp_port(ctx->odp_actions, OVS_ACTION_ATTR_TUNNEL_POP,
