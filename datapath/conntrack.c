@@ -1864,6 +1864,10 @@ static int ovs_ct_limit_init(struct net *net, struct ovs_net *ovs_net)
 		kfree(ovs_net->ct_limit_info->limits);
 		kfree(ovs_net->ct_limit_info);
 		pr_err("openvswitch: failed to init nf_conncount %d\n", err);
+		if (err == -EPROTOTYPE) {
+			pr_err("openvswitch: probably your kernel isn't configured with "
+				   "CONFIG_NF_CONNTRACK_IPV4 and CONFIG_NF_CONNTRACK_IPV6.\n");
+		}
 		return err;
 	}
 	return 0;
