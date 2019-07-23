@@ -283,6 +283,12 @@ xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
         free(xsk);
         return NULL;
     }
+    if (!prog_id) {
+        VLOG_ERR("No XDP program is loaded at ifindex %d", ifindex);
+        xsk_socket__delete(xsk->xsk);
+        free(xsk);
+        return NULL;
+    }
 
     while (!xsk_ring_prod__reserve(&xsk->umem->fq,
                                    PROD_NUM_DESCS, &idx)) {
