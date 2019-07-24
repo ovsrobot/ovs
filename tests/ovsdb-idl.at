@@ -27,8 +27,8 @@ ovsdb_cluster_start_idltest () {
    done
    for i in `seq $n`; do
      ovsdb-server -vraft -vconsole:warn --detach --no-chdir --log-file=s$i.log --pidfile=s$i.pid --unixctl=s$i --remote=punix:s$i.ovsdb ${2:+--remote=$2} s$i.db || return $?
+     on_exit "kill `cat s$i.pid`"
    done
-   on_exit 'kill `cat s*.pid`'
 }
 
 # ovsdb_cluster_leader [REMOTES] [DATABASE]
