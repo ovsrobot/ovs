@@ -94,3 +94,9 @@ Use Reported-by: and Tested-by: tags in commit messages to indicate the
 source of a bug report.
 
 Keep the ``AUTHORS.rst`` file up to date.
+
+If you mistakenly push a commit that should not have been applied, it's OK to
+use a Git "force-push" to remove it from the tree, as long as you do it within
+a few minutes and no one has pushed other commits to the tree in the meantime.
+Otherwise, it's necessary to revert the commit.  (If you do this frequently,
+more than once or twice a year, then maybe you should be more careful.)
