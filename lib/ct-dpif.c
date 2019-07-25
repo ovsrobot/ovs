@@ -761,6 +761,59 @@ ct_dpif_format_zone_limits(uint32_t default_limit,
     }
 }
 
+static const char *const ct_dpif_tp_attr_string[] = {
+#define CT_DPIF_TP_TCP_ATTR(ATTR) \
+    [CT_DPIF_TP_ATTR_TCP_##ATTR] = "TCP_"#ATTR,
+    CT_DPIF_TP_TCP_ATTRS
+#undef CT_DPIF_TP_TCP_ATTR
+#define CT_DPIF_TP_UDP_ATTR(ATTR) \
+    [CT_DPIF_TP_ATTR_UDP_##ATTR] = "UDP_"#ATTR,
+    CT_DPIF_TP_UDP_ATTRS
+#undef CT_DPIF_TP_UDP_ATTR
+#define CT_DPIF_TP_ICMP_ATTR(ATTR) \
+    [CT_DPIF_TP_ATTR_ICMP_##ATTR] = "ICMP_"#ATTR,
+    CT_DPIF_TP_ICMP_ATTRS
+#undef CT_DPIF_TP_ICMP_ATTR
+};
+
+static bool
+ct_dpif_set_timeout_policy_attr(struct ct_dpif_timeout_policy *tp,
+                                  uint32_t attr, uint32_t value)
+{
+    if (tp->present & (1 << attr) && tp->attrs[attr] == value) {
+        return false;
+    }
+    tp->attrs[attr] = value;
+    tp->present |= 1 << attr;
+    return true;
+}
+
+/* Sets a timeout value identified by '*name' to 'value'.
+ * Returns true if the attribute is changed */
+bool
+ct_dpif_set_timeout_policy_attr_by_name(struct ct_dpif_timeout_policy *tp,
+                                        const char *name, uint32_t value)
+{
+    uint32_t i;
+
+    for (i = 0; i < CT_DPIF_TP_ATTR_MAX; ++i) {
+        if (!strcasecmp(name, ct_dpif_tp_attr_string[i])) {
+            return ct_dpif_set_timeout_policy_attr(tp, i, value);
+        }
+    }
+    return false;
+}
+
+bool
+ct_dpif_timeout_policy_support_ipproto(uint8_t ipproto)
+{
+    if (ipproto == IPPROTO_TCP || ipproto == IPPROTO_UDP ||
+        ipproto == IPPROTO_ICMP || ipproto == IPPROTO_ICMPV6) {
+        return true;
+    }
+    return false;
+}
+
 int
 ct_dpif_add_timeout_policy(struct dpif *dpif, bool is_default,
                            const struct ct_dpif_timeout_policy *tp)
