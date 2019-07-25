@@ -195,7 +195,11 @@ struct group_dpif *group_dpif_lookup(struct ofproto_dpif *,
     DPIF_SUPPORT_FIELD(size_t, max_hash_alg, "Max dp_hash algorithm")       \
                                                                             \
     /* True if the datapath supports OVS_ACTION_ATTR_CHECK_PKT_LEN. */   \
-    DPIF_SUPPORT_FIELD(bool, check_pkt_len, "Check pkt length action")
+    DPIF_SUPPORT_FIELD(bool, check_pkt_len, "Check pkt length action")     \
+                                                                            \
+    /* True if the datapath supports explicit drop action. */               \
+    DPIF_SUPPORT_FIELD(bool, explicit_drop_action, "Explicit Drop action")
+
 
 /* Stores the various features which the corresponding backer supports. */
 struct dpif_backer_support {
@@ -363,5 +367,7 @@ int ofproto_dpif_delete_internal_flow(struct ofproto_dpif *, struct match *,
                                       int priority);
 
 bool ovs_native_tunneling_is_on(struct ofproto_dpif *);
+
+bool ovs_explicit_drop_action_supported(struct ofproto_dpif *);
 
 #endif /* ofproto-dpif.h */

@@ -113,7 +113,8 @@ TESTSUITE_AT = \
 	tests/mcast-snooping.at \
 	tests/packet-type-aware.at \
 	tests/nsh.at \
-	tests/ovn-performance.at
+	tests/ovn-performance.at \
+	tests/drop-stats.at
 
 EXTRA_DIST += $(FUZZ_REGRESSION_TESTS)
 FUZZ_REGRESSION_TESTS = \
