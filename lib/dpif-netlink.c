@@ -50,6 +50,7 @@
 #include "odp-util.h"
 #include "openvswitch/dynamic-string.h"
 #include "openvswitch/flow.h"
+#include "openvswitch/hmap.h"
 #include "openvswitch/match.h"
 #include "openvswitch/ofpbuf.h"
 #include "openvswitch/poll-loop.h"
@@ -3028,6 +3029,425 @@ dpif_netlink_ct_del_limits(struct dpif *dpif OVS_UNUSED,
     ofpbuf_delete(request);
     return err;
 }
+
+#define NL_TP_NAME_PREFIX "ovs_tp_"
+
+struct dpif_netlink_timeout_policy_protocol {
+    uint16_t    l3num;
+    uint8_t     l4num;
+};
+
+enum OVS_PACKED_ENUM dpif_netlink_support_timeout_policy_protocol {
+    DPIF_NL_TP_AF_INET_TCP,
+    DPIF_NL_TP_AF_INET_UDP,
+    DPIF_NL_TP_AF_INET_ICMP,
+    DPIF_NL_TP_AF_INET6_TCP,
+    DPIF_NL_TP_AF_INET6_UDP,
+    DPIF_NL_TP_AF_INET6_ICMPV6,
+    DPIF_NL_TP_MAX
+};
+
+#define DPIF_NL_ALL_TP 0x3F
+
+static struct dpif_netlink_timeout_policy_protocol tp_protos[] = {
+    [DPIF_NL_TP_AF_INET_TCP] = { .l3num = AF_INET, .l4num = IPPROTO_TCP },
+    [DPIF_NL_TP_AF_INET_UDP] = { .l3num = AF_INET, .l4num = IPPROTO_UDP },
+    [DPIF_NL_TP_AF_INET_ICMP] = { .l3num = AF_INET, .l4num = IPPROTO_ICMP },
+    [DPIF_NL_TP_AF_INET6_TCP] = { .l3num = AF_INET6, .l4num = IPPROTO_TCP },
+    [DPIF_NL_TP_AF_INET6_UDP] = { .l3num = AF_INET6, .l4num = IPPROTO_UDP },
+    [DPIF_NL_TP_AF_INET6_ICMPV6] = { .l3num = AF_INET6,
+                                     .l4num = IPPROTO_ICMPV6 },
+};
+
+static void
+dpif_netlink_format_tp_name(uint32_t id, uint16_t l3num, uint8_t l4num,
+                            struct ds *tp_name)
+{
+    ds_clear(tp_name);
+    ds_put_format(tp_name, "%s%"PRIu32"_", NL_TP_NAME_PREFIX, id);
+    ct_dpif_format_ipproto(tp_name, l4num);
+
+    if (l3num == AF_INET) {
+        ds_put_cstr(tp_name, "4");
+    } else if (l3num == AF_INET6 && l4num != IPPROTO_ICMPV6) {
+        ds_put_cstr(tp_name, "6");
+    }
+
+    ovs_assert(tp_name->length < CTNL_TIMEOUT_NAME_MAX);
+}
+
+#define CT_DPIF_TO_NL_TP_TCP_MAPPINGS \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, SYN_SENT, SYN_SENT) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, SYN_RECV, SYN_RECV) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, ESTABLISHED, ESTABLISHED) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, FIN_WAIT, FIN_WAIT) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, CLOSE_WAIT, CLOSE_WAIT) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, LAST_ACK, LAST_ACK) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, TIME_WAIT, TIME_WAIT) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, CLOSE, CLOSE) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, SYN_SENT2, SYN_SENT2) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, RETRANSMIT, RETRANS) \
+    CT_DPIF_TO_NL_TP_MAPPING(TCP, TCP, UNACK, UNACK)
+
+#define CT_DPIF_TO_NL_TP_UDP_MAPPINGS \
+    CT_DPIF_TO_NL_TP_MAPPING(UDP, UDP, FIRST, UNREPLIED) \
+    CT_DPIF_TO_NL_TP_MAPPING(UDP, UDP, MULTIPLE, REPLIED)
+
+#define CT_DPIF_TO_NL_TP_ICMP_MAPPINGS \
+    CT_DPIF_TO_NL_TP_MAPPING(ICMP, ICMP, FIRST, TIMEOUT)
+
+#define CT_DPIF_TO_NL_TP_ICMPV6_MAPPINGS \
+    CT_DPIF_TO_NL_TP_MAPPING(ICMP, ICMPV6, FIRST, TIMEOUT)
+
+
+#define CT_DPIF_TO_NL_TP_MAPPING(PROTO1, PROTO2, ATTR1, ATTR2) \
+if (tp->present & (1 << CT_DPIF_TP_ATTR_##PROTO1##_##ATTR1)) { \
+    nl_tp->present |= 1 << CTA_TIMEOUT_##PROTO2##_##ATTR2;     \
+    nl_tp->attrs[CTA_TIMEOUT_##PROTO2##_##ATTR2] =             \
+        tp->attrs[CT_DPIF_TP_ATTR_##PROTO1##_##ATTR1];         \
+}
+
+static void
+dpif_netlink_get_nl_tp_tcp_attrs(const struct ct_dpif_timeout_policy *tp,
+                                 struct nl_ct_timeout_policy *nl_tp)
+{
+    CT_DPIF_TO_NL_TP_TCP_MAPPINGS
+}
+
+static void
+dpif_netlink_get_nl_tp_udp_attrs(const struct ct_dpif_timeout_policy *tp,
+                                 struct nl_ct_timeout_policy *nl_tp)
+{
+    CT_DPIF_TO_NL_TP_UDP_MAPPINGS
+}
+
+static void
+dpif_netlink_get_nl_tp_icmp_attrs(const struct ct_dpif_timeout_policy *tp,
+                                  struct nl_ct_timeout_policy *nl_tp)
+{
+    CT_DPIF_TO_NL_TP_ICMP_MAPPINGS
+}
+
+static void
+dpif_netlink_get_nl_tp_icmpv6_attrs(const struct ct_dpif_timeout_policy *tp,
+                                    struct nl_ct_timeout_policy *nl_tp)
+{
+    CT_DPIF_TO_NL_TP_ICMPV6_MAPPINGS
+}
+
+#undef CT_DPIF_TO_NL_TP_MAPPING
+
+static void
+dpif_netlink_get_nl_tp_attrs(const struct ct_dpif_timeout_policy *tp,
+                             uint8_t l4num, struct nl_ct_timeout_policy *nl_tp)
+{
+    nl_tp->present = 0;
+
+    if (l4num == IPPROTO_TCP) {
+        dpif_netlink_get_nl_tp_tcp_attrs(tp, nl_tp);
+    } else if (l4num == IPPROTO_UDP) {
+        dpif_netlink_get_nl_tp_udp_attrs(tp, nl_tp);
+    } else if (l4num == IPPROTO_ICMP) {
+        dpif_netlink_get_nl_tp_icmp_attrs(tp, nl_tp);
+    } else if (l4num == IPPROTO_ICMPV6) {
+        dpif_netlink_get_nl_tp_icmpv6_attrs(tp, nl_tp);
+    }
+}
+
+#define CT_DPIF_TO_NL_TP_MAPPING(PROTO1, PROTO2, ATTR1, ATTR2)  \
+if (nl_tp->present & (1 << CTA_TIMEOUT_##PROTO2##_##ATTR2)) {   \
+    tp->present |= 1 << CT_DPIF_TP_ATTR_##PROTO1##_##ATTR1;     \
+    tp->attrs[CT_DPIF_TP_ATTR_##PROTO1##_##ATTR1] =             \
+        nl_tp->attrs[CTA_TIMEOUT_##PROTO2##_##ATTR2];           \
+    }
+
+static void
+dpif_netlink_set_ct_dpif_tp_tcp_attrs(const struct nl_ct_timeout_policy *nl_tp,
+                                      struct ct_dpif_timeout_policy *tp)
+{
+    CT_DPIF_TO_NL_TP_TCP_MAPPINGS
+}
+
+static void
+dpif_netlink_set_ct_dpif_tp_udp_attrs(const struct nl_ct_timeout_policy *nl_tp,
+                                      struct ct_dpif_timeout_policy *tp)
+{
+    CT_DPIF_TO_NL_TP_UDP_MAPPINGS
+}
+
+static void
+dpif_netlink_set_ct_dpif_tp_icmp_attrs(
+    const struct nl_ct_timeout_policy *nl_tp,
+    struct ct_dpif_timeout_policy *tp)
+{
+    CT_DPIF_TO_NL_TP_ICMP_MAPPINGS
+}
+
+static void
+dpif_netlink_set_ct_dpif_tp_icmpv6_attrs(
+    const struct nl_ct_timeout_policy *nl_tp,
+    struct ct_dpif_timeout_policy *tp)
+{
+    CT_DPIF_TO_NL_TP_ICMPV6_MAPPINGS
+}
+
+#undef CT_DPIF_TO_NL_TP_MAPPING
+
+static void
+dpif_netlink_set_ct_dpif_tp_attrs(const struct nl_ct_timeout_policy *nl_tp,
+                               struct ct_dpif_timeout_policy *tp)
+{
+    if (nl_tp->l4num == IPPROTO_TCP) {
+        dpif_netlink_set_ct_dpif_tp_tcp_attrs(nl_tp, tp);
+    } else if (nl_tp->l4num == IPPROTO_UDP) {
+        dpif_netlink_set_ct_dpif_tp_udp_attrs(nl_tp, tp);
+    } else if (nl_tp->l4num == IPPROTO_ICMP) {
+        dpif_netlink_set_ct_dpif_tp_icmp_attrs(nl_tp, tp);
+    } else if (nl_tp->l4num == IPPROTO_ICMPV6) {
+        dpif_netlink_set_ct_dpif_tp_icmpv6_attrs(nl_tp, tp);
+    }
+}
+
+static int
+dpif_netlink_ct_add_timeout_policy(struct dpif *dpif OVS_UNUSED,
+                                   bool is_default,
+                                   const struct ct_dpif_timeout_policy *tp)
+{
+#ifdef _WIN32
+    return EOPNOTSUPP;
+#else
+    struct nl_ct_timeout_policy nl_tp;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    int i, err;
+
+    for (i = 0; i < ARRAY_SIZE(tp_protos); ++i) {
+        dpif_netlink_format_tp_name(tp->id, tp_protos[i].l3num,
+                                    tp_protos[i].l4num, &ds);
+        ovs_strlcpy(nl_tp.name, ds_cstr(&ds), sizeof nl_tp.name);
+        nl_tp.l3num = tp_protos[i].l3num;
+        nl_tp.l4num = tp_protos[i].l4num;
+        dpif_netlink_get_nl_tp_attrs(tp, tp_protos[i].l4num, &nl_tp);
+        if (!is_default) {
+            err = nl_ct_set_timeout_policy(&nl_tp);
+        } else if (tp_protos[i].l3num == AF_INET) {
+            /* The default timeout policy is shared between AF_INET and
+             * AF_INET6 in the kernel. So configure AF_INET is sufficient. */
+            err = nl_ct_set_default_timeout_policy(&nl_tp);
+        }
+        if (err) {
+            VLOG_INFO("failed to set timeout policy %s (%s)", nl_tp.name,
+                      ovs_strerror(err));
+            return err;
+        }
+    }
+
+    ds_destroy(&ds);
+    return  0;
+#endif
+}
+
+static int
+dpif_netlink_ct_get_timeout_policy(struct dpif *dpif OVS_UNUSED,
+                                   bool is_default, uint32_t tp_id,
+                                   struct ct_dpif_timeout_policy *tp)
+{
+#ifdef _WIN32
+    return EOPNOTSUPP;
+#else
+    struct nl_ct_timeout_policy nl_tp;
+    struct ds nl_tp_name = DS_EMPTY_INITIALIZER;
+    int i, err;
+
+    tp->id = tp_id;
+    tp->present = 0;
+    for (i = 0; i < ARRAY_SIZE(tp_protos); ++i) {
+        if (!is_default) {
+            dpif_netlink_format_tp_name(tp_id, tp_protos[i].l3num,
+                                        tp_protos[i].l4num, &nl_tp_name);
+            err = nl_ct_get_timeout_policy(ds_cstr(&nl_tp_name), &nl_tp);
+        } else if (tp_protos[i].l3num == AF_INET) {
+            /* The default timeout is shared between AF_INET and AF_INET6
+             * in the kernel. So get from AF_INET is sufficient. */
+            err = nl_ct_get_default_timeout_policy(tp_protos[i].l3num,
+                                                   tp_protos[i].l4num, &nl_tp);
+        }
+        if (err) {
+            return err;
+        }
+        dpif_netlink_set_ct_dpif_tp_attrs(&nl_tp, tp);
+    }
+
+    ds_destroy(&nl_tp_name);
+    return  0;
+#endif
+}
+
+static int
+dpif_netlink_ct_del_timeout_policy(struct dpif *dpif OVS_UNUSED,
+                                   uint32_t tp_id)
+{
+#ifdef _WIN32
+    return EOPNOTSUPP;
+#else
+    struct ds nl_tp_name = DS_EMPTY_INITIALIZER;
+    int i, err;
+
+    if (!tp_id) {
+        return EINVAL;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(tp_protos); ++i) {
+        dpif_netlink_format_tp_name(tp_id, tp_protos[i].l3num,
+                                    tp_protos[i].l4num, &nl_tp_name);
+        err = nl_ct_del_timeout_policy(ds_cstr(&nl_tp_name));
+        if (err) {
+            VLOG_INFO("failed to delete timeout policy %s (%s)",
+                      ds_cstr(&nl_tp_name), ovs_strerror(err));
+            return err;
+        }
+    }
+
+    ds_destroy(&nl_tp_name);
+    return 0;
+#endif
+}
+
+struct dpif_netlink_ct_timeout_policy_dump_state {
+    struct nl_ct_timeout_policy_dump_state *nl_dump_state;
+    struct hmap tp_dump_map;
+};
+
+struct dpif_netlink_tp_dump_node {
+    struct      hmap_node hmap_node;      /* node in tp_dump_map. */
+    struct      ct_dpif_timeout_policy *tp;
+    uint32_t    present;
+};
+
+static struct dpif_netlink_tp_dump_node *
+get_dpif_netlink_tp_dump_node_by_tp_id(uint32_t tp_id,
+                                       struct hmap *tp_dump_map)
+{
+    struct dpif_netlink_tp_dump_node *tp_dump_node;
+
+    HMAP_FOR_EACH_WITH_HASH (tp_dump_node, hmap_node, hash_int(tp_id, 0),
+                            tp_dump_map) {
+        if (tp_dump_node->tp->id == tp_id) {
+            return tp_dump_node;
+        }
+    }
+    return NULL;
+}
+
+static void
+update_dpif_netlink_tp_dump_node(
+    const struct nl_ct_timeout_policy *nl_tp,
+    struct dpif_netlink_tp_dump_node *tp_dump_node)
+{
+    int i;
+
+    dpif_netlink_set_ct_dpif_tp_attrs(nl_tp, tp_dump_node->tp);
+    for (i = 0; i < DPIF_NL_TP_MAX; ++i) {
+        if (nl_tp->l3num == tp_protos[i].l3num &&
+            nl_tp->l4num == tp_protos[i].l4num) {
+            tp_dump_node->present |= 1 << i;
+            break;
+        }
+    }
+}
+
+static int
+dpif_netlink_ct_timeout_policy_dump_start(struct dpif *dpif OVS_UNUSED,
+                                          void **statep)
+{
+#ifdef _WIN32
+    return EOPNOTSUPP;
+#else
+    struct dpif_netlink_ct_timeout_policy_dump_state *dump_state;
+    int err;
+
+    *statep = dump_state = xzalloc(sizeof *dump_state);
+    err = nl_ct_timeout_policy_dump_start(&dump_state->nl_dump_state);
+    if (err) {
+        free(dump_state);
+        return err;
+    }
+    hmap_init(&dump_state->tp_dump_map);
+    return 0;
+#endif
+}
+
+static int
+dpif_netlink_ct_timeout_policy_dump_next(struct dpif *dpif OVS_UNUSED,
+                                         void *state,
+                                         struct ct_dpif_timeout_policy **tp)
+{
+#ifdef _WIN32
+    return EOPNOTSUPP;
+#else
+    struct dpif_netlink_ct_timeout_policy_dump_state *dump_state = state;
+    struct dpif_netlink_tp_dump_node *tp_dump_node;
+    struct nl_ct_timeout_policy nl_tp;
+    uint32_t tp_id;
+    int err;
+
+    do {
+        err =  nl_ct_timeout_policy_dump_next(dump_state->nl_dump_state,
+                                              &nl_tp);
+        if (err) {
+            break;
+        }
+
+        if (!ovs_scan(nl_tp.name, NL_TP_NAME_PREFIX"%"PRIu32, &tp_id)) {
+            continue;
+        }
+
+        tp_dump_node = get_dpif_netlink_tp_dump_node_by_tp_id(
+                            tp_id, &dump_state->tp_dump_map);
+        if (!tp_dump_node) {
+            tp_dump_node = xzalloc(sizeof *tp_dump_node);
+            tp_dump_node->tp = xzalloc(sizeof *tp_dump_node->tp);
+            tp_dump_node->tp->id = tp_id;
+            hmap_insert(&dump_state->tp_dump_map, &tp_dump_node->hmap_node,
+                        hash_int(tp_id, 0));
+        }
+
+        update_dpif_netlink_tp_dump_node(&nl_tp, tp_dump_node);
+        if (tp_dump_node->present == DPIF_NL_ALL_TP) {
+            hmap_remove(&dump_state->tp_dump_map, &tp_dump_node->hmap_node);
+            *tp = tp_dump_node->tp;
+            free(tp_dump_node);
+            break;
+        }
+    } while (true);
+    return err;
+#endif
+}
+
+static int
+dpif_netlink_ct_timeout_policy_dump_done(struct dpif *dpif OVS_UNUSED,
+                                         void *state)
+{
+#ifdef _WIN32
+    return EOPNOTSUPP;
+#else
+    struct dpif_netlink_ct_timeout_policy_dump_state *dump_state = state;
+    struct dpif_netlink_tp_dump_node *tp_dump_node;
+    int err;
+
+    err = nl_ct_timeout_policy_dump_done(dump_state->nl_dump_state);
+    /* clear dump map, modulize */
+    HMAP_FOR_EACH_POP (tp_dump_node, hmap_node, &dump_state->tp_dump_map) {
+        VLOG_INFO("Partial timeout policy in dpif-netlink %"PRIu32,
+                  tp_dump_node->tp->id);
+        free(tp_dump_node->tp);
+        free(tp_dump_node);
+    }
+    hmap_destroy(&dump_state->tp_dump_map);
+    free(dump_state);
+    return err;
+#endif
+}
+
 
 /* Meters */
 
@@ -3434,12 +3854,12 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_ct_set_limits,
     dpif_netlink_ct_get_limits,
     dpif_netlink_ct_del_limits,
-    NULL,                       /* ct_set_timeout_policy */
-    NULL,                       /* ct_get_timeout_policy */
-    NULL,                       /* ct_del_timeout_policy */
-    NULL,                       /* ct_timeout_policy_dump_start */
-    NULL,                       /* ct_timeout_policy_dump_next */
-    NULL,                       /* ct_timeout_policy_dump_done */
+    dpif_netlink_ct_add_timeout_policy,
+    dpif_netlink_ct_get_timeout_policy,
+    dpif_netlink_ct_del_timeout_policy,
+    dpif_netlink_ct_timeout_policy_dump_start,
+    dpif_netlink_ct_timeout_policy_dump_next,
+    dpif_netlink_ct_timeout_policy_dump_done,
     NULL,                       /* ipf_set_enabled */
     NULL,                       /* ipf_set_min_frag */
     NULL,                       /* ipf_set_max_nfrags */

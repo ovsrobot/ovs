@@ -23,6 +23,7 @@
 #include "odp-netlink.h"
 
 #include "flow.h"
+#include "netlink-conntrack.h"
 
 struct ofpbuf;
 
@@ -50,7 +51,6 @@ struct dpif_netlink_vport {
 };
 
 void dpif_netlink_vport_init(struct dpif_netlink_vport *);
-
 int dpif_netlink_vport_transact(const struct dpif_netlink_vport *request,
                                 struct dpif_netlink_vport *reply,
                                 struct ofpbuf **bufp);
