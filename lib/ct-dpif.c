@@ -760,3 +760,54 @@ ct_dpif_format_zone_limits(uint32_t default_limit,
         ds_put_format(ds, ",count=%"PRIu32, zone_limit->count);
     }
 }
+
+int
+ct_dpif_add_timeout_policy(struct dpif *dpif, bool is_default,
+                           const struct ct_dpif_timeout_policy *tp)
+{
+    return (dpif->dpif_class->ct_add_timeout_policy
+            ? dpif->dpif_class->ct_add_timeout_policy(dpif, is_default, tp)
+            : EOPNOTSUPP);
+}
+
+int
+ct_dpif_del_timeout_policy(struct dpif *dpif, uint32_t tp_id)
+{
+    return (dpif->dpif_class->ct_del_timeout_policy
+            ? dpif->dpif_class->ct_del_timeout_policy(dpif, tp_id)
+            : EOPNOTSUPP);
+}
+
+int
+ct_dpif_get_timeout_policy(struct dpif *dpif, bool is_default, uint32_t tp_id,
+                           struct ct_dpif_timeout_policy *tp)
+{
+    return (dpif->dpif_class->ct_get_timeout_policy
+            ? dpif->dpif_class->ct_get_timeout_policy(
+                dpif, is_default, tp_id, tp) : EOPNOTSUPP);
+}
+
+int
+ct_dpif_timeout_policy_dump_start(struct dpif *dpif, void **statep)
+{
+    return (dpif->dpif_class->ct_timeout_policy_dump_start
+            ? dpif->dpif_class->ct_timeout_policy_dump_start(dpif, statep)
+            : EOPNOTSUPP);
+}
+
+int
+ct_dpif_timeout_policy_dump_next(struct dpif *dpif, void *state,
+                                 struct ct_dpif_timeout_policy **tp)
+{
+    return (dpif->dpif_class->ct_timeout_policy_dump_next
+            ? dpif->dpif_class->ct_timeout_policy_dump_next(dpif, state, tp)
+            : EOPNOTSUPP);
+}
+
+int
+ct_dpif_timeout_policy_dump_done(struct dpif *dpif, void *state)
+{
+    return (dpif->dpif_class->ct_timeout_policy_dump_done
+            ? dpif->dpif_class->ct_timeout_policy_dump_done(dpif, state)
+            : EOPNOTSUPP);
+}

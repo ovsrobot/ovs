@@ -3434,6 +3434,12 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_ct_set_limits,
     dpif_netlink_ct_get_limits,
     dpif_netlink_ct_del_limits,
+    NULL,                       /* ct_set_timeout_policy */
+    NULL,                       /* ct_get_timeout_policy */
+    NULL,                       /* ct_del_timeout_policy */
+    NULL,                       /* ct_timeout_policy_dump_start */
+    NULL,                       /* ct_timeout_policy_dump_next */
+    NULL,                       /* ct_timeout_policy_dump_done */
     NULL,                       /* ipf_set_enabled */
     NULL,                       /* ipf_set_min_frag */
     NULL,                       /* ipf_set_max_nfrags */

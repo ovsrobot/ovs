@@ -80,6 +80,7 @@ dpif_flow_dump_thread_init(struct dpif_flow_dump_thread *thread,
 struct ct_dpif_dump_state;
 struct ct_dpif_entry;
 struct ct_dpif_tuple;
+struct ct_dpif_timeout_policy;
 
 /* 'dpif_ipf_proto_status' and 'dpif_ipf_status' are presently in
  * sync with 'ipf_proto_status' and 'ipf_status', but more
@@ -497,6 +498,48 @@ struct dpif_class {
     /* Deletes per zone limit of all zones specified in 'zone_limits', a
      * list of 'struct ct_dpif_zone_limit' entries. */
     int (*ct_del_limits)(struct dpif *, const struct ovs_list *zone_limits);
+
+    /* Connection tracking timeout policy */
+
+    /* A connection tracking timeout policy contains a list of timeout
+     * attributes that specifies timeout values on various connection states.
+     * In a datapath, the timeout policy is identified by a 4 bytes unsigned
+     * integer, and the unsupported timeout attributes are ignored.
+     * When a connection is committed it can be associated with a timeout
+     * policy, or it defaults to the default timeout policy. */
+
+    /* Add timeout policy '*tp' into the datapath.  If 'is_default' is true
+     * make the timeout policy to be the default timeout policy. */
+    int (*ct_add_timeout_policy)(struct dpif *, bool is_default,
+                                 const struct ct_dpif_timeout_policy *tp);
+    /* Gets a timeout policy and stores that into '*tp'.  If 'is_default' is
+     * true, sets '*tp' to the default timeout policy.  Otherwise, gets the
+     * timeout policy by 'tp_id'. */
+    int (*ct_get_timeout_policy)(struct dpif *, bool is_default,
+                                 uint32_t tp_id,
+                                 struct ct_dpif_timeout_policy *tp);
+    /* Deletes a timeout policy identified by 'tp_id'. */
+    int (*ct_del_timeout_policy)(struct dpif *, uint32_t tp_id);
+
+    /* Conntrack timeout policy dumping interface.
+     *
+     * These functions provide a datapath-agnostic dumping interface
+     * to the conntrack timeout policy provided by the datapaths.
+     *
+     * ct_timeout_policy_dump_start() should put in '*statep' a pointer to
+     * a newly allocated structure that will be passed by the caller to
+     * ct_timeout_policy_dump_next() and ct_timeout_policy_dump_done().
+     *
+     * ct_timeout_policy_dump_next() fills a timeout policy pointed by
+     * '*tp' and prepares to dump the next one on a subsequent invocation.
+     * The caller is responsible to free '*tp'.
+     *
+     * ct_timeout_policy_dump_done() should perform any cleanup necessary
+     * (including deallocating the 'state' structure, if applicable). */
+    int (*ct_timeout_policy_dump_start)(struct dpif *, void **statep);
+    int (*ct_timeout_policy_dump_next)(struct dpif *, void *state,
+                                       struct ct_dpif_timeout_policy **tp);
+    int (*ct_timeout_policy_dump_done)(struct dpif *, void *state);
 
     /* IP Fragmentation. */
 
