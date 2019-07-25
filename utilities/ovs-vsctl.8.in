@@ -353,6 +353,35 @@ list.
 Prints the name of the bridge that contains \fIiface\fR on standard
 output.
 .
+.SS "Datapath Commands"
+These commands examine and manipulate Open vSwitch datapath.
+.
+.IP "\fBadd\-dp \fIdatapath\fR"
+Creates a new datapath named \fIdatapath\fR.  Use "netdev" for userspace
+datapath and "system" for kernel datapath.  Initially the datapath will
+have no CT zones or other data.
+.IP "\fBdel\-dp \fIdatapath\fR"
+Deletes \fIdatapath\fR.
+.IP "\fBlist\-dp \fIdatapath\fR"
+Prints the datapath name and its uuid.
+.
+.SS "Conntrack Zone Commands"
+These commands query and modify datapath CT zones and Timeout Policies.
+.
+.IP "\fBadd\-zone\-tp \fIdatapath \fBzone=\fIzone_id \fIpolicies\fR"
+Creates a conntrack zone with \fIzone_id\fR under the datapath \fIdatapath\fR.
+Associate the conntrack timeout policies to it by a list of
+\fIkey\fB=\fIvalue\fR pairs, separated by space.  For example, specifying
+30-second timeout policy for first icmp packet, and 60-second for icmp reply packet
+by doing \fBicmp_first=30 icmp_reply=60\fR.  See CT_Timeout_Policy TABLE
+at \fBovs-vswitchd.conf.db\fR(5) for all available configurations.
+.
+.IP "\fBdel\-zone\-tp \fIdatapath \fBzone=\fIzone_id\fR"
+Delete a zone under \fIdatapath\fR by specifying its zone ID.
+.
+.IP "\fBlist\-zone\-tp \fIdatapath\fR"
+Prints the timeout policies of all zones under the \fIdatapath\fR.
+.
 .SS "OpenFlow Controller Connectivity"
 .
 \fBovs\-vswitchd\fR can perform all configured bridging and switching

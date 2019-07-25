@@ -40,6 +40,7 @@
 #include "ovsdb-idl.h"
 #include "openvswitch/poll-loop.h"
 #include "process.h"
+#include "simap.h"
 #include "stream.h"
 #include "stream-ssl.h"
 #include "smap.h"
@@ -49,6 +50,7 @@
 #include "table.h"
 #include "timeval.h"
 #include "util.h"
+#include "openvswitch/ofp-parse.h"
 #include "openvswitch/vconn.h"
 #include "openvswitch/vlog.h"
 
@@ -1151,6 +1153,239 @@ cmd_emer_reset(struct ctl_context *ctx)
     }
 
     vsctl_context_invalidate_cache(ctx);
+}
+
+static void
+cmd_add_dp(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    const struct ovsrec_open_vswitch *ovs = vsctl_ctx->ovs;
+    struct ovsrec_datapath *dp;
+    const char *dp_name;
+    int i;
+
+    dp_name = ctx->argv[1];
+
+    for (i = 0; i < ovs->n_datapaths; i++) {
+        if (!strcmp(dp_name, ovs->key_datapaths[i])) {
+            VLOG_ERR("Datapath %s alread exists", dp_name);
+            return;
+        }
+    }
+
+    dp = ovsrec_datapath_insert(ctx->txn);
+    ovsrec_open_vswitch_update_datapaths_setkey(ovs, dp_name, dp);
+}
+
+static void
+cmd_del_dp(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    const struct ovsrec_open_vswitch *ovs = vsctl_ctx->ovs;
+
+    ovsrec_open_vswitch_update_datapaths_delkey(ovs, ctx->argv[1]);
+}
+
+static void
+cmd_list_dp(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    const struct ovsrec_open_vswitch *ovs = vsctl_ctx->ovs;
+    int i;
+
+    for (i = 0; i < ovs->n_datapaths; i++) {
+        struct ovsrec_datapath *dp = ovs->value_datapaths[i];
+        char *key;
+
+        key = ovs->key_datapaths[i];
+        ds_put_format(&ctx->output, "%s uuid="UUID_FMT"\n",
+                      key, UUID_ARGS(&dp->header_.uuid));
+    }
+}
+
+static void
+pre_get_dp(struct ctl_context *ctx)
+{
+    ovsdb_idl_add_column(ctx->idl, &ovsrec_open_vswitch_col_datapaths);
+}
+
+static struct ovsrec_datapath *
+find_datapath(struct vsctl_context *vsctl_ctx, const char *dp_name)
+{
+    const struct ovsrec_open_vswitch *ovs = vsctl_ctx->ovs;
+    int i;
+
+    for (i = 0; i < ovs->n_datapaths; i++) {
+        if (!strcmp(ovs->key_datapaths[i], dp_name)) {
+            return ovs->value_datapaths[i];
+        }
+    }
+    return NULL;
+}
+
+static struct ovsrec_ct_zone *
+find_ct_zone(struct ovsrec_datapath *dp, const int64_t zone_id)
+{
+    int i;
+
+    for (i = 0; i < dp->n_ct_zones; i++) {
+        if (dp->key_ct_zones[i] == zone_id) {
+            return dp->value_ct_zones[i];
+        }
+    }
+    return NULL;
+}
+
+static struct ovsrec_ct_timeout_policy *
+create_timeout_policy(struct ctl_context *ctx, char **argv, int n_tps)
+{
+    const struct ovsrec_ct_timeout_policy_table *tp_table;
+    const struct ovsrec_ct_timeout_policy *row;
+    struct ovsrec_ct_timeout_policy *tp = NULL;
+    const char **key_timeouts;
+    int64_t *value_timeouts;
+    struct simap new_tp, s;
+    uint32_t hash_new_tp;
+    int i, j;
+
+    simap_init(&new_tp);
+
+    key_timeouts = xmalloc(sizeof *key_timeouts * n_tps);
+    value_timeouts = xmalloc(sizeof *value_timeouts * n_tps);
+
+    /* Parse timeout arguments. */
+    for (i = 0; i < n_tps; i++) {
+        char *key, *value, *pos, *copy;
+
+        pos = copy = xstrdup(argv[i]);
+        if (!ofputil_parse_key_value(&pos, &key, &value)) {
+            goto done;
+        }
+        key_timeouts[i] = key;
+        value_timeouts[i] = atoi(value);
+        simap_put(&new_tp, key, (unsigned int)value_timeouts[i]);
+    }
+done:
+    hash_new_tp = simap_hash(&new_tp);
+
+    tp_table = ovsrec_ct_timeout_policy_table_get(ctx->idl);
+    OVSREC_CT_TIMEOUT_POLICY_TABLE_FOR_EACH (row, tp_table) {
+        simap_init(&s);
+        /* Covert to simap. */
+        for (j = 0; j < row->n_timeouts; j++) {
+            simap_put(&s, row->key_timeouts[j], row->value_timeouts[j]);
+        }
+        if (simap_hash(&s) == hash_new_tp) {
+            tp = CONST_CAST(struct ovsrec_ct_timeout_policy *, row);
+            simap_destroy(&s);
+            break;
+        }
+        simap_destroy(&s);
+    }
+
+    if (!tp) {
+        tp = ovsrec_ct_timeout_policy_insert(ctx->txn);
+        ovsrec_ct_timeout_policy_set_timeouts(tp, key_timeouts,
+                                              (const int64_t *)value_timeouts,
+                                              n_tps);
+    }
+
+    free(key_timeouts);
+    free(value_timeouts);
+    return tp;
+}
+
+static void
+cmd_add_zone(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    struct ovsrec_ct_timeout_policy *tp;
+    struct ovsrec_ct_zone *zone;
+    struct ovsrec_datapath *dp;
+    const char *dp_name;
+    int64_t zone_id;
+    int n_tps;
+
+    dp_name = ctx->argv[1];
+    ovs_scan(ctx->argv[2], "zone=%"SCNi64, &zone_id);
+
+    dp = find_datapath(vsctl_ctx, dp_name);
+    if (!dp) {
+        VLOG_ERR("datapath: %s record not found", dp_name);
+        return;
+    }
+
+    n_tps = ctx->argc - 3;
+    tp = create_timeout_policy(ctx, &ctx->argv[3], n_tps);
+
+    zone = find_ct_zone(dp, zone_id);
+    if (zone) {
+        ovsrec_ct_zone_set_timeout_policy(zone, tp);
+    } else {
+        zone = ovsrec_ct_zone_insert(ctx->txn);
+        ovsrec_ct_zone_set_timeout_policy(zone, tp);
+        ovsrec_datapath_update_ct_zones_setkey(dp, zone_id, zone);
+    }
+}
+
+static void
+cmd_del_zone(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    struct ovsrec_datapath *dp;
+    const char *dp_name;
+    int64_t zone_id;
+
+    dp_name = ctx->argv[1];
+    ovs_scan(ctx->argv[2], "zone=%"SCNi64, &zone_id);
+
+    dp = find_datapath(vsctl_ctx, dp_name);
+    if (!dp) {
+        VLOG_ERR("datapath: %s record not found", dp_name);
+        return;
+    }
+
+    ovsrec_datapath_update_ct_zones_delkey(dp, zone_id);
+}
+
+static void
+cmd_list_zone(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    struct ovsrec_ct_timeout_policy *tp;
+    struct ovsrec_ct_zone *zone;
+    struct ovsrec_datapath *dp;
+    int i, j;
+
+    dp = find_datapath(vsctl_ctx, ctx->argv[1]);
+    if (!dp) {
+        VLOG_ERR("datapath: %s record not found", ctx->argv[1]);
+        return;
+    }
+
+    for (i = 0; i < dp->n_ct_zones; i++) {
+        zone = dp->value_ct_zones[i];
+        ds_put_format(&ctx->output, "Zone:%"PRIu64", Timeout Policies: ",
+                      dp->key_ct_zones[i]);
+
+        tp = zone->timeout_policy;
+
+        for (j = 0; j < tp->n_timeouts - 1; j++) {
+            ds_put_format(&ctx->output, "%s=%"PRIu64" ",
+                          tp->key_timeouts[j], tp->value_timeouts[j]);
+        }
+        ds_put_format(&ctx->output, "%s=%"PRIu64"\n",
+                      tp->key_timeouts[j], tp->value_timeouts[j]);
+    }
+}
+
+static void
+pre_get_zone(struct ctl_context *ctx)
+{
+    ovsdb_idl_add_column(ctx->idl, &ovsrec_open_vswitch_col_datapaths);
+    ovsdb_idl_add_column(ctx->idl, &ovsrec_datapath_col_ct_zones);
+    ovsdb_idl_add_column(ctx->idl, &ovsrec_ct_zone_col_timeout_policy);
+    ovsdb_idl_add_column(ctx->idl, &ovsrec_ct_timeout_policy_col_timeouts);
 }
 
 static void
@@ -2895,6 +3130,16 @@ static const struct ctl_command_syntax vsctl_commands[] = {
 
     /* Switch commands. */
     {"emer-reset", 0, 0, "", pre_cmd_emer_reset, cmd_emer_reset, NULL, "", RW},
+
+    /* Datapath commands. */
+    {"add-dp", 1, 1, "", pre_get_dp, cmd_add_dp, NULL, "", RW},
+    {"del-dp", 1, 1, "", pre_get_dp, cmd_del_dp, NULL, "", RW},
+    {"list-dp", 0, 0, "", pre_get_dp, cmd_list_dp, NULL, "", RO},
+
+    /* Zone and CT Timeout Policy commands. */
+    {"add-zone-tp", 2, 19, "", pre_get_zone, cmd_add_zone, NULL, "", RW},
+    {"del-zone-tp", 2, 2, "", pre_get_zone, cmd_del_zone, NULL, "", RW},
+    {"list-zone-tp", 1, 1, "", pre_get_zone, cmd_list_zone, NULL, "", RO},
 
     {NULL, 0, 0, NULL, NULL, NULL, NULL, NULL, RO},
 };
