@@ -26,6 +26,7 @@
 #include "connectivity.h"
 #include "coverage.h"
 #include "daemon.h"
+#include "datapath-config.h"
 #include "dirs.h"
 #include "dpif.h"
 #include "dpdk.h"
@@ -508,6 +509,7 @@ bridge_exit(bool delete_datapath)
     HMAP_FOR_EACH_SAFE (br, next_br, node, &all_bridges) {
         bridge_destroy(br, delete_datapath);
     }
+    destroy_all_datapaths();
     ovsdb_idl_destroy(idl);
 }
 
@@ -669,6 +671,7 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
     }
 
     reconfigure_system_stats(ovs_cfg);
+    reconfigure_datapath(ovs_cfg, idl_seqno);
 
     /* Complete the configuration. */
     sflow_bridge_number = 0;
