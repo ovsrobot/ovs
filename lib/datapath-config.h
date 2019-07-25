@@ -21,5 +21,7 @@
 void reconfigure_datapath(const struct ovsrec_open_vswitch *,
                           unsigned int idl_seqno);
 void destroy_all_datapaths(void);
+bool datapath_get_zone_timeout_policy_id(const char *dp_type, uint16_t zone,
+                                         uint32_t *tp_id);
 
 #endif /* datapath-config.h */

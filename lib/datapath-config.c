@@ -377,3 +377,33 @@ destroy_all_datapaths(void)
         datapath_destroy(dp);
     }
 }
+
+/* If timeout policy is found in datapath '*dp_type' and in 'zone',
+ * sets timeout policy id in '*tp_id' and returns true. Otherwise,
+ * returns false. */
+bool
+datapath_get_zone_timeout_policy_id(const char *dp_type, uint16_t zone,
+                                    uint32_t *tp_id)
+{
+    struct datapath *dp;
+    struct ct_zone *ct_zone;
+    struct ct_timeout_policy *ct_tp;
+
+    dp = datapath_lookup(dp_type);
+    if (!dp) {
+        return false;
+    }
+
+    ct_zone = ct_zone_lookup(&dp->ct_zones, zone);
+    if (!ct_zone) {
+        return false;
+    }
+
+    ct_tp = ct_timeout_policy_lookup(&dp->ct_tps, &ct_zone->tp_uuid);
+    if (!ct_tp) {
+        return false;
+    }
+
+    *tp_id = ct_tp->cdtp.id;
+    return true;
+}
