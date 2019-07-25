@@ -100,6 +100,15 @@ m4_define([CHECK_CONNTRACK_FRAG_OVERLAP],
 #
 m4_define([CHECK_CONNTRACK_NAT])
 
+# CHECK_CONNTRACK_TIMEOUT()
+#
+# Perform requirements checks for running conntrack customized timeout tests.
+#
+m4_define([CHECK_CONNTRACK_TIMEOUT],
+[
+    AT_SKIP_IF([! cat /boot/config-$(uname -r) | grep NF_CONNTRACK_TIMEOUT | grep '=y' > /dev/null])
+])
+
 # CHECK_CT_DPIF_PER_ZONE_LIMIT()
 #
 # Perform requirements checks for running ovs-dpctl ct-[set|get|del]-limits per

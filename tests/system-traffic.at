@@ -3179,6 +3179,71 @@ NXST_FLOW reply:
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([conntrack - zone-based timeout policy])
+CHECK_CONNTRACK()
+CHECK_CONNTRACK_TIMEOUT()
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24")
+
+AT_DATA([flows.txt], [dnl
+priority=1,action=drop
+priority=10,arp,action=normal
+priority=100,in_port=1,ip,action=ct(zone=5, table=1)
+priority=100,in_port=2,ip,action=ct(zone=5, table=1)
+table=1,in_port=2,ip,ct_state=+trk+est,action=1
+table=1,in_port=1,ip,ct_state=+trk+new,action=ct(commit,zone=5),2
+table=1,in_port=1,ip,ct_state=+trk+est,action=2
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+
+dnl Add customized timeout
+dnl Note that the default ICMP timeout is 30 seconds.
+dnl The default timeout for unreplied UDP is 30 seconds, and
+dnl 180 seconds for replied UDP connection.
+AT_CHECK([ovs-vsctl add-dp system])
+AT_CHECK([ovs-vsctl add-zone-tp system zone=5 udp_first=3 icmp_first=3])
+
+dnl ICMP traffic
+NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.2 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0],[dnl
+icmp,orig=(src=10.1.1.1,dst=10.1.1.2,id=<cleared>,type=8,code=0),reply=(src=10.1.1.2,dst=10.1.1.1,id=<cleared>,type=0,code=0),zone=5
+])
+
+dnl Wait until ICMP timeout expire.
+dnl We intend to wait a bit longer, because conntrack does not recycle the entry right after it is expired.
+sleep 4
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
+])
+
+dnl Send out an UDP packet from port 1
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=1 packet=50540000000a50540000000908004500001c000000000011a4cd0a0101010a0101020001000200080000 actions=resubmit(,0)"])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "dst=10\.1\.1\.2,"], [0], [dnl
+udp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=1,dport=2),reply=(src=10.1.1.2,dst=10.1.1.1,sport=2,dport=1),zone=5
+])
+
+dnl Wait until UDP timeout expire
+sleep 4
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
+])
+
+AT_CHECK([ovs-ofctl del-flows br0])
+AT_CHECK([ovs-appctl revalidator/wait])
+AT_CHECK([ovs-vsctl del-zone-tp system zone=5])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_BANNER([conntrack - L7])
 
 AT_SETUP([conntrack - IPv4 HTTP])
