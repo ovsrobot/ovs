@@ -153,6 +153,7 @@ struct xbundle {
                                    /* Use 802.1p tag for frames in VLAN 0? */
     bool floodable;                /* No port has OFPUTIL_PC_NO_FLOOD set? */
     bool protected;                /* Protected port mode */
+    bool is_mirror;                /* True if it is mirror port */
 };
 
 struct xport {
@@ -184,6 +185,7 @@ struct xport {
 
     bool may_enable;                 /* May be enabled in bonds. */
     bool is_tunnel;                  /* Is a tunnel port. */
+    bool is_mirror;                  /* Is a mirror port. */
     enum netdev_pt_mode pt_mode;     /* packet_type handling. */
 
     struct cfm *cfm;                 /* CFM handle or null. */
@@ -2124,6 +2126,7 @@ mirror_packet(struct xlate_ctx *ctx, struct xbundle *xbundle,
         if (out) {
             struct xbundle *out_xbundle = xbundle_lookup(ctx->xcfg, out);
             if (out_xbundle) {
+                out_xbundle->is_mirror = true;
                 output_normal(ctx, out_xbundle, &xvlan);
             }
         } else if (xvlan.v[0].vid != out_vlan
@@ -2458,6 +2461,7 @@ output_normal(struct xlate_ctx *ctx, const struct xbundle *out_xbundle,
     memcpy(&old_vlans, &ctx->xin->flow.vlans, sizeof(old_vlans));
     xvlan_put(&ctx->xin->flow, &out_xvlan, out_xbundle->use_priority_tags);
 
+    xport->is_mirror = out_xbundle->is_mirror;
     compose_output_action(ctx, xport->ofp_port, use_recirc ? &xr : NULL,
                           false, false);
     memcpy(&ctx->xin->flow.vlans, &old_vlans, sizeof(old_vlans));
@@ -4151,8 +4155,8 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
             native_tunnel_output(ctx, xport, flow, odp_port, truncate);
             flow->tunnel = flow_tnl; /* Restore tunnel metadata */
 
-        } else if (terminate_native_tunnel(ctx, ofp_port, flow, wc,
-                                           &odp_tnl_port)) {
+        } else if (!xport->is_mirror && terminate_native_tunnel(ctx, ofp_port,
+                                flow, wc, &odp_tnl_port)) {
             /* Intercept packet to be received on native tunnel port. */
             nl_msg_put_odp_port(ctx->odp_actions, OVS_ACTION_ATTR_TUNNEL_POP,
                                 odp_tnl_port);
