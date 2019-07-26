@@ -478,17 +478,20 @@ get_peer_common_name(const struct ssl_stream *sslv)
     int cn_index = X509_NAME_get_index_by_NID(X509_get_subject_name(peer_cert),
                                               NID_commonName, -1);
     if (cn_index < 0) {
+        X509_free(peer_cert);
         return NULL;
     }
 
     X509_NAME_ENTRY *cn_entry = X509_NAME_get_entry(
         X509_get_subject_name(peer_cert), cn_index);
     if (!cn_entry) {
+        X509_free(peer_cert);
         return NULL;
     }
 
     ASN1_STRING *cn_data = X509_NAME_ENTRY_get_data(cn_entry);
     if (!cn_data) {
+        X509_free(peer_cert);
         return NULL;
     }
 
@@ -499,7 +502,9 @@ get_peer_common_name(const struct ssl_stream *sslv)
 #else
     cn = (const char *)ASN1_STRING_get0_data(cn_data);
  #endif
-    return xstrdup(cn);
+    char *p = xstrdup(cn);
+    X509_free(peer_cert);
+    return p;
 }
 
 static int
