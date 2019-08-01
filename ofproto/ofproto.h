@@ -366,6 +366,8 @@ void ofproto_set_vlan_limit(int vlan_limit);
 void ofproto_ct_zone_timeout_policy_reconfig(const struct ofproto *ofproto,
     const struct ovsrec_datapath *dp_cfg, unsigned int idl_seqno);
 void ofproto_ct_zone_timeout_policy_sweep(const struct ofproto *ofproto);
+bool ofproto_ct_zone_timeout_policy_get(const struct ofproto *ofproto,
+                                       uint16_t zone, uint32_t *tp_id);
 
 /* Configuration of ports. */
 void ofproto_port_unregister(struct ofproto *, ofp_port_t ofp_port);

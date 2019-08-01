@@ -955,6 +955,17 @@ ofproto_ct_zone_timeout_policy_sweep(const struct ofproto *ofproto)
     }
 }
 
+bool
+ofproto_ct_zone_timeout_policy_get(const struct ofproto *ofproto,
+                                   uint16_t zone, uint32_t *tp_id)
+{
+    if (ofproto->ofproto_class->ct_zone_timeout_policy_get) {
+            return ofproto->ofproto_class->ct_zone_timeout_policy_get(
+                        ofproto, zone, tp_id);
+    }
+    return false;
+}
+
 
 /* Spanning Tree Protocol (STP) configuration. */
 

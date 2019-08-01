@@ -536,6 +536,11 @@ struct dpif_class {
                                        struct ct_dpif_timeout_policy *tp);
     int (*ct_timeout_policy_dump_done)(struct dpif *, void *state);
 
+    /* Get timeout policy name (OVS_CT_ATTR_TIMEOUT) from datapath. */
+    int (*ct_format_timeout_policy_name)(struct dpif *, uint32_t tp_id,
+                                         uint16_t dl_type, uint8_t nw_proto,
+                                         struct ds *ds);
+
     /* IP Fragmentation. */
 
     /* Disables or enables conntrack fragment reassembly.  The default

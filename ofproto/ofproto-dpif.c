@@ -5351,6 +5351,29 @@ ct_zone_timeout_policy_reconfig(const struct ofproto *ofproto,
 }
 
 static bool
+ct_zone_timeout_policy_get(const struct ofproto *ofproto_,
+                           uint16_t zone, uint32_t *tp_id)
+{
+    struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
+    struct dpif_backer *backer = ofproto->backer;
+    struct ct_zone *ct_zone;
+    struct ct_timeout_policy *ct_tp;
+
+    ct_zone = ct_zone_lookup(&backer->ct_zones, zone);
+    if (!ct_zone) {
+        return false;
+    }
+
+    ct_tp = ct_timeout_policy_lookup(&backer->ct_tps, &ct_zone->tp_uuid);
+    if (!ct_tp) {
+        return false;
+    }
+
+    *tp_id = ct_tp->cdtp.id;
+    return true;
+}
+
+static bool
 set_frag_handling(struct ofproto *ofproto_,
                   enum ofputil_frag_handling frag_handling)
 {
@@ -6455,4 +6478,5 @@ const struct ofproto_class ofproto_dpif_class = {
     ct_flush,                   /* ct_flush */
     ct_zone_timeout_policy_reconfig,
     ct_zone_timeout_policy_sweep,
+    ct_zone_timeout_policy_get,
 };

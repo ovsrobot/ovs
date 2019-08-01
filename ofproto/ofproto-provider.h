@@ -1880,6 +1880,11 @@ struct ofproto_class {
             const struct ovsrec_datapath *dp_cfg, unsigned int idl_seqno);
     /* Cleans up the to be deleted timeout policy in the pending kill list. */
     void (*ct_zone_timeout_policy_sweep)(const struct ofproto *ofproto_);
+
+    /* Returns true if timeout policy for 'zone' is configured and stores the
+     * timeout policy id in '*tp_id'. */
+    bool (*ct_zone_timeout_policy_get)(const struct ofproto *ofproto_,
+                                       uint16_t zone, uint32_t *tp_id);
 };
 
 extern const struct ofproto_class ofproto_dpif_class;

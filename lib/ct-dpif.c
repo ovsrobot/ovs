@@ -864,3 +864,13 @@ ct_dpif_timeout_policy_dump_done(struct dpif *dpif, void *state)
             ? dpif->dpif_class->ct_timeout_policy_dump_done(dpif, state)
             : EOPNOTSUPP);
 }
+
+int
+ct_dpif_format_timeout_policy_name(struct dpif *dpif, uint32_t tp_id,
+                                   uint16_t dl_type, uint8_t nw_proto,
+                                   struct ds *ds)
+{
+    return (dpif->dpif_class->ct_format_timeout_policy_name
+            ? dpif->dpif_class->ct_format_timeout_policy_name(
+                dpif, tp_id, dl_type, nw_proto, ds) : EOPNOTSUPP);
+}
