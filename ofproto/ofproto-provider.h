@@ -58,6 +58,7 @@
 #include "tun-metadata.h"
 #include "versions.h"
 #include "vl-mff-map.h"
+#include "vswitch-idl.h"
 
 struct match;
 struct ofputil_flow_mod;
@@ -1872,6 +1873,13 @@ struct ofproto_class {
     /* Flushes the connection tracking tables. If 'zone' is not NULL,
      * only deletes connections in '*zone'. */
     void (*ct_flush)(const struct ofproto *, const uint16_t *zone);
+
+    /* Reconfigures the zone-based conntrack tiemout policy based on the
+     * ovsdb configuration. */
+    void (*ct_zone_timeout_policy_reconfig)(const struct ofproto *ofproto_,
+            const struct ovsrec_datapath *dp_cfg, unsigned int idl_seqno);
+    /* Cleans up the to be deleted timeout policy in the pending kill list. */
+    void (*ct_zone_timeout_policy_sweep)(const struct ofproto *ofproto_);
 };
 
 extern const struct ofproto_class ofproto_dpif_class;

@@ -935,6 +935,26 @@ ofproto_get_flow_restore_wait(void)
     return flow_restore_wait;
 }
 
+/* Connection tracking configuration. */
+void
+ofproto_ct_zone_timeout_policy_reconfig(const struct ofproto *ofproto,
+                                        const struct ovsrec_datapath *dp_cfg,
+                                        unsigned int idl_seqno)
+{
+    if (ofproto->ofproto_class->ct_zone_timeout_policy_reconfig) {
+        ofproto->ofproto_class->ct_zone_timeout_policy_reconfig(
+            ofproto, dp_cfg, idl_seqno);
+    }
+}
+
+void
+ofproto_ct_zone_timeout_policy_sweep(const struct ofproto *ofproto)
+{
+    if (ofproto->ofproto_class->ct_zone_timeout_policy_sweep) {
+        ofproto->ofproto_class->ct_zone_timeout_policy_sweep(ofproto);
+    }
+}
+
 
 /* Spanning Tree Protocol (STP) configuration. */
 

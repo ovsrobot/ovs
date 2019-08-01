@@ -156,6 +156,25 @@ struct ofport_dpif {
     size_t n_qdscp;
 };
 
+struct ct_timeout_policy {
+    struct uuid uuid;
+    unsigned int last_used_seqno;
+    struct ct_dpif_timeout_policy cdtp;
+    struct cmap_node node;          /* Element in struct dpif_backer's
+                                     * "ct_tps" cmap. */
+    struct ovs_list list_node;      /* Element in struct dpif_backer's
+                                     * "ct_tp_kill_list" list. */
+};
+
+struct ct_zone {
+    uint16_t id;
+    unsigned int last_used_seqno;
+    struct uuid tp_uuid;            /* uuid that identifies a timeout policy in
+                                     * struct dpif_backer's "ct_tps"  cmap. */
+    struct cmap_node node;          /* Element in struct dpif_backer's
+                                     * "ct_zones" cmap. */
+};
+
 static odp_port_t ofp_port_to_odp_port(const struct ofproto_dpif *,
                                        ofp_port_t);
 
@@ -196,6 +215,8 @@ static struct hmap all_ofproto_dpifs_by_uuid =
 
 static bool ofproto_use_tnl_push_pop = true;
 static void ofproto_unixctl_init(void);
+static void destroy_ct_zone_timeout_policy(struct dpif_backer *backer);
+static void init_ct_zone_timeout_policy(struct dpif_backer *backer);
 
 static inline struct ofproto_dpif *
 ofproto_dpif_cast(const struct ofproto *ofproto)
@@ -683,6 +704,7 @@ close_dpif_backer(struct dpif_backer *backer, bool del)
     }
     dpif_close(backer->dpif);
     id_pool_destroy(backer->meter_ids);
+    destroy_ct_zone_timeout_policy(backer);
     free(backer);
 }
 
@@ -693,6 +715,8 @@ struct odp_garbage {
 };
 
 static void check_support(struct dpif_backer *backer);
+
+#define MAX_TIMEOUT_POLICY_ID UINT32_MAX
 
 static int
 open_dpif_backer(const char *type, struct dpif_backer **backerp)
@@ -810,6 +834,8 @@ open_dpif_backer(const char *type, struct dpif_backer **backerp)
     } else {
         backer->meter_ids = NULL;
     }
+
+    init_ct_zone_timeout_policy(backer);
 
     /* Make a pristine snapshot of 'support' into 'boottime_support'.
      * 'boottime_support' can be checked to prevent 'support' to be changed
@@ -5086,6 +5112,244 @@ ct_flush(const struct ofproto *ofproto_, const uint16_t *zone)
     ct_dpif_flush(ofproto->backer->dpif, zone, NULL);
 }
 
+static struct ct_zone *
+ct_zone_lookup(struct cmap *ct_zones, uint16_t zone_id)
+{
+    struct ct_zone *zone;
+
+    CMAP_FOR_EACH_WITH_HASH (zone, node, hash_int(zone_id, 0), ct_zones) {
+        if (zone->id == zone_id) {
+            return zone;
+        }
+    }
+    return NULL;
+}
+
+static struct ct_zone *
+ct_zone_alloc(uint16_t zone_id)
+{
+    struct ct_zone *zone;
+
+    zone = xzalloc(sizeof *zone);
+    zone->id = zone_id;
+
+    return zone;
+}
+
+static void
+ct_zone_remove_and_destroy(struct dpif_backer *backer, struct ct_zone *zone)
+{
+    cmap_remove(&backer->ct_zones, &zone->node, hash_int(zone->id, 0));
+    ovsrcu_postpone(free, zone);
+}
+
+static struct ct_timeout_policy *
+ct_timeout_policy_lookup(struct cmap *ct_tps, struct uuid *uuid)
+{
+    struct ct_timeout_policy *tp;
+
+    CMAP_FOR_EACH_WITH_HASH (tp, node, uuid_hash(uuid), ct_tps) {
+        if (uuid_equals(&tp->uuid, uuid)) {
+            return tp;
+        }
+    }
+    return NULL;
+}
+
+static struct ct_timeout_policy *
+ct_timeout_policy_alloc(struct ovsrec_ct_timeout_policy *tp_cfg,
+                        struct id_pool *tp_ids)
+{
+    struct ct_timeout_policy *tp;
+    size_t i;
+
+    tp = xzalloc(sizeof *tp);
+    tp->uuid = tp_cfg->header_.uuid;
+    for (i = 0; i < tp_cfg->n_timeouts; i++) {
+        ct_dpif_set_timeout_policy_attr_by_name(&tp->cdtp,
+            tp_cfg->key_timeouts[i], tp_cfg->value_timeouts[i]);
+    }
+    if (!id_pool_alloc_id(tp_ids, &tp->cdtp.id)) {
+        VLOG_WARN_RL(&rl, "failed to allocate timeout policy id.");
+        free(tp);
+        return NULL;
+    }
+
+    return tp;
+}
+
+static void
+ct_timeout_policy_destroy(struct dpif_backer *backer,
+                          struct ct_timeout_policy *tp)
+{
+    id_pool_free_id(backer->timeout_policy_ids, tp->cdtp.id);
+    ovsrcu_postpone(free, tp);
+}
+
+static bool
+ct_timeout_policy_update(struct ovsrec_ct_timeout_policy *tp_cfg,
+                         struct ct_timeout_policy *tp)
+{
+    size_t i;
+    bool changed = false;
+
+    for (i = 0; i < tp_cfg->n_timeouts; i++) {
+        changed |= ct_dpif_set_timeout_policy_attr_by_name(&tp->cdtp,
+                        tp_cfg->key_timeouts[i], tp_cfg->value_timeouts[i]);
+    }
+    return changed;
+}
+
+static void
+init_ct_zone_timeout_policy(struct dpif_backer *backer)
+{
+    cmap_init(&backer->ct_zones);
+    cmap_init(&backer->ct_tps);
+    backer->timeout_policy_ids = id_pool_create(0, MAX_TIMEOUT_POLICY_ID);
+    ovs_list_init(&backer->ct_tp_kill_list);
+
+    /* Remove existing timeout policy from datapath. */
+    struct ct_dpif_timeout_policy cdtp;
+    struct ct_timeout_policy *tp;
+    void *state;
+    int err;
+
+    err = ct_dpif_timeout_policy_dump_start(backer->dpif, &state);
+    if (err) {
+        return;
+    }
+
+    while (!(err = ct_dpif_timeout_policy_dump_next(backer->dpif, state,
+                                                    &cdtp))) {
+        tp = xzalloc(sizeof *tp);
+        tp->cdtp = cdtp;
+        id_pool_add(backer->timeout_policy_ids, cdtp.id);
+        ovs_list_insert(&backer->ct_tp_kill_list, &tp->list_node);
+    }
+
+    ct_dpif_timeout_policy_dump_done(backer->dpif, state);
+}
+
+static void
+destroy_ct_zone_timeout_policy(struct dpif_backer *backer)
+{
+    struct ct_timeout_policy *tp;
+    struct ct_zone *zone;
+
+    CMAP_FOR_EACH (zone, node, &backer->ct_zones) {
+        ct_zone_remove_and_destroy(backer, zone);
+    }
+
+    CMAP_FOR_EACH (tp, node, &backer->ct_tps) {
+        cmap_remove(&backer->ct_tps, &tp->node, uuid_hash(&tp->uuid));
+        ct_timeout_policy_destroy(backer, tp);
+    }
+
+    cmap_destroy(&backer->ct_zones);
+    cmap_destroy(&backer->ct_tps);
+    id_pool_destroy(backer->timeout_policy_ids);
+}
+
+static void
+ct_zone_timeout_policy_revalidate(struct dpif_backer *backer,
+                                  unsigned int idl_seqno)
+{
+    struct ct_timeout_policy *tp;
+    struct ct_zone *zone;
+
+    CMAP_FOR_EACH (zone, node, &backer->ct_zones) {
+        if (zone->last_used_seqno != idl_seqno) {
+            ct_zone_remove_and_destroy(backer, zone);
+        }
+    }
+
+    CMAP_FOR_EACH (tp, node, &backer->ct_tps) {
+        if (tp->last_used_seqno != idl_seqno) {
+            /* Even timeout policy is not referenced by any ct_zone in the
+             * database, vswitchd may not be able to delete it right away
+             * since the datapath flow may still reference to the timeout
+             * policy. Move the timeout policy to ct_tp_kill_list and try to
+             * delete it when possible. */
+            cmap_remove(&backer->ct_tps, &tp->node, uuid_hash(&tp->uuid));
+            ovs_list_push_back(&backer->ct_tp_kill_list, &tp->list_node);
+        }
+    }
+}
+
+static void
+ct_zone_timeout_policy_sweep(const struct ofproto *ofproto)
+{
+    struct dpif_backer *backer = ofproto_dpif_cast(ofproto)->backer;
+    struct ct_timeout_policy *tp;
+    int err;
+
+    if (!ovs_list_is_empty(&backer->ct_tp_kill_list)) {
+        LIST_FOR_EACH (tp, list_node, &backer->ct_tp_kill_list) {
+            err = ct_dpif_del_timeout_policy(backer->dpif, tp->cdtp.id);
+            if (!err) {
+                ovs_list_remove(&tp->list_node);
+                ct_timeout_policy_destroy(backer, tp);
+            } else {
+                VLOG_INFO_RL(&rl, "Failed to delete timeout policy id = "
+                        "%"PRIu32" %s", tp->cdtp.id, ovs_strerror(err));
+            }
+        }
+    }
+}
+
+static void
+ct_zone_timeout_policy_reconfig(const struct ofproto *ofproto,
+                                const struct ovsrec_datapath *dp_cfg,
+                                unsigned int idl_seqno)
+{
+    struct dpif_backer *backer = ofproto_dpif_cast(ofproto)->backer;
+    struct ovsrec_ct_timeout_policy *tp_cfg;
+    struct ovsrec_ct_zone *zone_cfg;
+    struct ct_timeout_policy *tp;
+    struct ct_zone *zone;
+    uint16_t zone_id;
+    bool new_zone;
+    size_t i;
+
+    for (i = 0; i < dp_cfg->n_ct_zones; i++) {
+        /* Update ct_zone config. */
+        zone_cfg = dp_cfg->value_ct_zones[i];
+        zone_id = dp_cfg->key_ct_zones[i];
+        zone = ct_zone_lookup(&backer->ct_zones, zone_id);
+        if (!zone) {
+            new_zone = true;
+            zone = ct_zone_alloc(zone_id);
+        } else {
+            new_zone = false;
+        }
+        zone->last_used_seqno = idl_seqno;
+
+        /* Update timeout policy. */
+        tp_cfg = zone_cfg->timeout_policy;
+        tp = ct_timeout_policy_lookup(&backer->ct_tps, &tp_cfg->header_.uuid);
+        if (!tp) {
+            tp = ct_timeout_policy_alloc(tp_cfg, backer->timeout_policy_ids);
+            if (tp) {
+                cmap_insert(&backer->ct_tps, &tp->node, uuid_hash(&tp->uuid));
+                ct_dpif_set_timeout_policy(backer->dpif, &tp->cdtp);
+            }
+        } else {
+            if (ct_timeout_policy_update(tp_cfg, tp)) {
+                ct_dpif_set_timeout_policy(backer->dpif, &tp->cdtp);
+            }
+        }
+        tp->last_used_seqno = idl_seqno;
+
+        /* Link zone with new timeout policy. */
+        zone->tp_uuid = tp_cfg->header_.uuid;
+        if (new_zone) {
+            cmap_insert(&backer->ct_zones, &zone->node, hash_int(zone_id, 0));
+        }
+    }
+    ct_zone_timeout_policy_revalidate(backer, idl_seqno);
+    ct_zone_timeout_policy_sweep(ofproto);
+}
+
 static bool
 set_frag_handling(struct ofproto *ofproto_,
                   enum ofputil_frag_handling frag_handling)
@@ -6189,4 +6453,6 @@ const struct ofproto_class ofproto_dpif_class = {
     get_datapath_version,       /* get_datapath_version */
     type_set_config,
     ct_flush,                   /* ct_flush */
+    ct_zone_timeout_policy_reconfig,
+    ct_zone_timeout_policy_sweep,
 };

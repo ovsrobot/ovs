@@ -220,6 +220,11 @@ static long long int stats_timer = LLONG_MIN;
 #define AA_REFRESH_INTERVAL (1000) /* In milliseconds. */
 static long long int aa_refresh_timer = LLONG_MIN;
 
+/* Each time this timer expires, the bridge tries to delete the timeout
+ * policies in the kill list. */
+#define CT_ZONE_TIMEOUT_POLICY_TIMER_INTERVAL (5000) /* In milliseconds. */
+static long long int ct_zone_timeout_policy_timer = LLONG_MIN;
+
 /* Whenever system interfaces are added, removed or change state, the bridge
  * will be reconfigured.
  */
@@ -588,6 +593,40 @@ config_ofproto_types(const struct smap *other_config)
 }
 
 static void
+reconfigure_conntrack_timeout_policy(const struct ovsrec_open_vswitch *cfg)
+{
+    struct bridge *br;
+    int i;
+
+    for (i = 0; i < cfg->n_datapaths; i++) {
+        const struct ovsrec_datapath *dp_cfg = cfg->value_datapaths[i];
+        char *key = cfg->key_datapaths[i];
+
+        HMAP_FOR_EACH (br, node, &all_bridges) {
+            if (!strcmp(br->type, key)) {
+                ofproto_ct_zone_timeout_policy_reconfig(br->ofproto, dp_cfg,
+                                                        idl_seqno);
+            }
+            break;
+        }
+    }
+}
+
+static void
+run_ct_zone_timeout_policy_sweep(void)
+{
+    struct bridge *br;
+
+    if (time_msec() >= ct_zone_timeout_policy_timer) {
+        HMAP_FOR_EACH (br, node, &all_bridges) {
+            ofproto_ct_zone_timeout_policy_sweep(br->ofproto);
+        }
+        ct_zone_timeout_policy_timer = time_msec() +
+                                       CT_ZONE_TIMEOUT_POLICY_TIMER_INTERVAL;
+    }
+}
+
+static void
 bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
 {
     struct sockaddr_in *managers;
@@ -669,6 +708,7 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
     }
 
     reconfigure_system_stats(ovs_cfg);
+    reconfigure_conntrack_timeout_policy(ovs_cfg);
 
     /* Complete the configuration. */
     sflow_bridge_number = 0;
@@ -3082,6 +3122,7 @@ bridge_run(void)
     run_stats_update();
     run_status_update();
     run_system_stats();
+    run_ct_zone_timeout_policy_sweep();
 }
 
 void
