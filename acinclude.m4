@@ -1012,6 +1012,8 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
                   [OVS_DEFINE([HAVE_GRE_CALC_HLEN])])
   OVS_GREP_IFELSE([$KSRC/include/net/gre.h], [ip_gre_calc_hlen],
                   [OVS_DEFINE([HAVE_IP_GRE_CALC_HLEN])])
+  OVS_GREP_IFELSE([$KSRC/include/linux/rbtree.h], [rb_link_node_rcu],
+                  [OVS_DEFINE([HAVE_RBTREE_RB_LINK_NODE_RCU])])
 
   if cmp -s datapath/linux/kcompat.h.new \
             datapath/linux/kcompat.h >/dev/null 2>&1; then

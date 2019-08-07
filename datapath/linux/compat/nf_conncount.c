@@ -54,6 +54,7 @@ struct nf_conncount_tuple {
 	struct nf_conntrack_zone	zone;
 	int				cpu;
 	u32				jiffies32;
+	bool				dead;
 	struct rcu_head			rcu_head;
 };
 
@@ -111,15 +112,16 @@ nf_conncount_add(struct nf_conncount_list *list,
 	conn->zone = *zone;
 	conn->cpu = raw_smp_processor_id();
 	conn->jiffies32 = (u32)jiffies;
-	spin_lock(&list->list_lock);
+	conn->dead = false;
+	spin_lock_bh(&list->list_lock);
 	if (list->dead == true) {
 		kmem_cache_free(conncount_conn_cachep, conn);
-		spin_unlock(&list->list_lock);
+		spin_unlock_bh(&list->list_lock);
 		return NF_CONNCOUNT_SKIP;
 	}
 	list_add_tail(&conn->node, &list->head);
 	list->count++;
-	spin_unlock(&list->list_lock);
+	spin_unlock_bh(&list->list_lock);
 	return NF_CONNCOUNT_ADDED;
 }
 
@@ -136,19 +138,22 @@ static bool conn_free(struct nf_conncount_list *list,
 {
 	bool free_entry = false;
 
-	spin_lock(&list->list_lock);
+	spin_lock_bh(&list->list_lock);
 
-	if (list->count == 0) {
-		spin_unlock(&list->list_lock);
+	if (conn->dead) {
+		spin_unlock_bh(&list->list_lock);
 		return free_entry;
 	}
 
 	list->count--;
+	conn->dead = true;
 	list_del_rcu(&conn->node);
-	if (list->count == 0)
+	if (list->count == 0) {
+		list->dead = true;
 		free_entry = true;
+	}
 
-	spin_unlock(&list->list_lock);
+	spin_unlock_bh(&list->list_lock);
 	call_rcu(&conn->rcu_head, __conn_free);
 	return free_entry;
 }
@@ -160,7 +165,7 @@ find_or_evict(struct net *net, struct nf_conncount_list *list,
 	const struct nf_conntrack_tuple_hash *found;
 	unsigned long a, b;
 	int cpu = raw_smp_processor_id();
-	__s32 age;
+	u32 age;
 
 	found = nf_conntrack_find_get(net, &conn->zone, &conn->tuple);
 	if (found)
@@ -248,7 +253,7 @@ static void nf_conncount_list_init(struct nf_conncount_list *list)
 {
 	spin_lock_init(&list->list_lock);
 	INIT_LIST_HEAD(&list->head);
-	list->count = 1;
+	list->count = 0;
 	list->dead = false;
 }
 
@@ -261,6 +266,7 @@ static bool nf_conncount_gc_list(struct net *net,
 	struct nf_conn *found_ct;
 	unsigned int collected = 0;
 	bool free_entry = false;
+	bool ret = false;
 
 	list_for_each_entry_safe(conn, conn_n, &list->head, node) {
 		found = find_or_evict(net, list, conn, &free_entry);
@@ -290,7 +296,15 @@ static bool nf_conncount_gc_list(struct net *net,
 		if (collected > CONNCOUNT_GC_MAX_NODES)
 			return false;
 	}
-	return false;
+
+	spin_lock_bh(&list->list_lock);
+	if (!list->count) {
+		list->dead = true;
+		ret = true;
+	}
+	spin_unlock_bh(&list->list_lock);
+
+	return ret;
 }
 
 static void __tree_nodes_free(struct rcu_head *h)
@@ -310,11 +324,8 @@ static void tree_nodes_free(struct rb_root *root,
 	while (gc_count) {
 		rbconn = gc_nodes[--gc_count];
 		spin_lock(&rbconn->list.list_lock);
-		if (rbconn->list.count == 0 && rbconn->list.dead == false) {
-			rbconn->list.dead = true;
-			rb_erase(&rbconn->node, root);
-			call_rcu(&rbconn->rcu_head, __tree_nodes_free);
-		}
+		rb_erase(&rbconn->node, root);
+		call_rcu(&rbconn->rcu_head, __tree_nodes_free);
 		spin_unlock(&rbconn->list.list_lock);
 	}
 }
@@ -415,8 +426,9 @@ insert_tree(struct net *net,
 	nf_conncount_list_init(&rbconn->list);
 	list_add(&conn->node, &rbconn->list.head);
 	count = 1;
+	rbconn->list.count = count;
 
-	rb_link_node(&rbconn->node, parent, rbnode);
+	rb_link_node_rcu(&rbconn->node, parent, rbnode);
 	rb_insert_color(&rbconn->node, root);
 out_unlock:
 	spin_unlock_bh(&nf_conncount_locks[hash % CONNCOUNT_LOCK_SLOTS]);
