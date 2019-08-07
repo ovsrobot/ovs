@@ -187,6 +187,23 @@ struct pmd_perf_stats {
     char *log_reason;
 };
 
+#ifdef DPDK_NETDEV
+static inline uint64_t
+get_tsc_hz(void)
+{
+    return rte_get_tsc_hz();
+}
+#else
+/* This function is only invoked from PMD threads which depend on DPDK.
+ * A dummy function is sufficient when building without DPDK_NETDEV. */
+static inline uint64_t
+get_tsc_hz(void)
+{
+    return 1;
+}
+#endif
+
+
 #ifdef __linux__
 static inline uint64_t
 rdtsc_syscall(struct pmd_perf_stats *s)

@@ -43,22 +43,6 @@ uint64_t iter_cycle_threshold;
 
 static struct vlog_rate_limit latency_rl = VLOG_RATE_LIMIT_INIT(600, 600);
 
-#ifdef DPDK_NETDEV
-static uint64_t
-get_tsc_hz(void)
-{
-    return rte_get_tsc_hz();
-}
-#else
-/* This function is only invoked from PMD threads which depend on DPDK.
- * A dummy function is sufficient when building without DPDK_NETDEV. */
-static uint64_t
-get_tsc_hz(void)
-{
-    return 1;
-}
-#endif
-
 /* Histogram functions. */
 
 static void

@@ -751,6 +751,9 @@ struct dp_netdev_pmd_thread {
 
     /* Set to true if the pmd thread needs to be reloaded. */
     bool need_reload;
+
+    /* Last time (in tsc) when PMD was last quiesced */
+    uint64_t last_rcu_quiesced;
 };
 
 /* Interface to netdev-based datapath. */
@@ -5445,6 +5448,7 @@ pmd_thread_main(void *f_)
     int poll_cnt;
     int i;
     int process_packets = 0;
+    uint64_t rcu_quiesce_interval = 0;
 
     poll_list = NULL;
 
@@ -5486,12 +5490,32 @@ reload:
     pmd->intrvl_tsc_prev = 0;
     atomic_store_relaxed(&pmd->intrvl_cycles, 0);
     cycles_counter_update(s);
+
+    if (get_tsc_hz() > 1) {
+        /* Calculate ~10 ms interval. */
+        rcu_quiesce_interval = get_tsc_hz() / 100;
+        pmd->last_rcu_quiesced = cycles_counter_get(s);
+    }
+
     /* Protect pmd stats from external clearing while polling. */
     ovs_mutex_lock(&pmd->perf_stats.stats_mutex);
     for (;;) {
         uint64_t rx_packets = 0, tx_packets = 0;
 
         pmd_perf_start_iteration(s);
+
+        /* Do RCU synchronization at fixed interval instead of doing it
+         * at fixed number of iterations. This ensures that synchronization
+         * would not be delayed long even at high load of packet
+         * processing. */
+
+        if (rcu_quiesce_interval &&
+            ((cycles_counter_get(s) - pmd->last_rcu_quiesced) >
+             rcu_quiesce_interval)) {
+            if (!ovsrcu_try_quiesce()) {
+                pmd->last_rcu_quiesced = cycles_counter_get(s);
+            }
+        }
 
         for (i = 0; i < poll_cnt; i++) {
 
@@ -5527,6 +5551,9 @@ reload:
             dp_netdev_pmd_try_optimize(pmd, poll_list, poll_cnt);
             if (!ovsrcu_try_quiesce()) {
                 emc_cache_slow_sweep(&((pmd->flow_cache).emc_cache));
+                if (rcu_quiesce_interval) {
+                    pmd->last_rcu_quiesced = cycles_counter_get(s);
+                }
             }
 
             for (i = 0; i < poll_cnt; i++) {
