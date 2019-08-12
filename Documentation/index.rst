@@ -77,7 +77,8 @@ Deeper Dive
 - **Architecture** :doc:`topics/design` |
   :doc:`topics/openflow` |
   :doc:`topics/integration` |
-  :doc:`topics/porting`
+  :doc:`topics/porting` |
+  :doc:`topics/ovs-nicira-extension`
 
 - **DPDK** :doc:`howto/dpdk` |
   :doc:`topics/dpdk/vhost-user`

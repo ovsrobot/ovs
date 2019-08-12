@@ -51,6 +51,7 @@ OVS
    testing
    tracing
    idl-compound-indexes
+   ovs-nicira-extension
 
 OVN
 ---

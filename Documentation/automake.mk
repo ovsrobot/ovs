@@ -64,6 +64,7 @@ DOC_SOURCE = \
 	Documentation/topics/porting.rst \
 	Documentation/topics/role-based-access-control.rst \
 	Documentation/topics/tracing.rst \
+	Documentation/topics/ovs-nicira-extension.rst \
 	Documentation/topics/windows.rst \
 	Documentation/howto/index.rst \
 	Documentation/howto/docker.rst \
