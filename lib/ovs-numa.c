@@ -532,6 +532,78 @@ ovs_numa_dump_destroy(struct ovs_numa_dump *dump)
     free(dump);
 }
 
+struct ovs_numa_dump *
+ovs_numa_thread_getaffinity_dump(void)
+{
+    if (dummy_numa) {
+        /* Nothing to do. */
+        return NULL;
+    }
+
+#ifndef __linux__
+    return NULL;
+#else
+    struct ovs_numa_dump *dump;
+    const struct numa_node *n;
+    cpu_set_t cpuset;
+    int err;
+
+    CPU_ZERO(&cpuset);
+    err = pthread_getaffinity_np(pthread_self(), sizeof cpuset, &cpuset);
+    if (err) {
+        VLOG_ERR("Thread getaffinity error: %s", ovs_strerror(err));
+        return NULL;
+    }
+
+    dump = ovs_numa_dump_create();
+
+    HMAP_FOR_EACH (n, hmap_node, &all_numa_nodes) {
+        const struct cpu_core *core;
+
+        LIST_FOR_EACH (core, list_node, &n->cores) {
+            if (CPU_ISSET(core->core_id, &cpuset)) {
+                ovs_numa_dump_add(dump, core->numa->numa_id, core->core_id);
+            }
+        }
+    }
+
+    if (!ovs_numa_dump_count(dump)) {
+        ovs_numa_dump_destroy(dump);
+        return NULL;
+    }
+    return dump;
+#endif /* __linux__ */
+}
+
+int
+ovs_numa_thread_setaffinity_dump(struct ovs_numa_dump *dump OVS_UNUSED)
+{
+    if (!dump || dummy_numa) {
+        /* Nothing to do. */
+        return 0;
+    }
+
+#ifdef __linux__
+    struct ovs_numa_info_core *core;
+    cpu_set_t cpuset;
+    int err;
+
+    CPU_ZERO(&cpuset);
+    FOR_EACH_CORE_ON_DUMP (core, dump) {
+        CPU_SET(core->core_id, &cpuset);
+    }
+    err = pthread_setaffinity_np(pthread_self(), sizeof cpuset, &cpuset);
+    if (err) {
+        VLOG_ERR("Thread setaffinity error: %s", ovs_strerror(err));
+        return err;
+    }
+
+    return 0;
+#else /* !__linux__ */
+    return EOPNOTSUPP;
+#endif /* __linux__ */
+}
+
 int ovs_numa_thread_setaffinity_core(unsigned core_id OVS_UNUSED)
 {
     if (dummy_numa) {
@@ -547,7 +619,7 @@ int ovs_numa_thread_setaffinity_core(unsigned core_id OVS_UNUSED)
     CPU_SET(core_id, &cpuset);
     err = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
     if (err) {
-        VLOG_ERR("Thread affinity error %d",err);
+        VLOG_ERR("Thread setaffinity error: %s", ovs_strerror(err));
         return err;
     }
 
