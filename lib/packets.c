@@ -404,6 +404,10 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
         struct mpls_hdr *mh = dp_packet_l2_5(packet);
         size_t len = packet->l2_5_ofs;
 
+        /* Invalidate offload flags as they are not valid after
+         * decapsulation of MPLS header. */
+        dp_packet_reset_offload(packet);
+
         set_ethertype(packet, ethtype);
         if (get_16aligned_be32(&mh->mpls_lse) & htonl(MPLS_BOS_MASK)) {
             dp_packet_set_l2_5(packet, NULL);
