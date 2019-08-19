@@ -695,11 +695,18 @@ reverse_nat_packet(struct dp_packet *pkt, const struct conn *conn)
     uint16_t orig_l4_ofs = pkt->l4_ofs;
 
     if (conn->key.dl_type == htons(ETH_TYPE_IP)) {
+        bool ok;
         struct ip_header *nh = dp_packet_l3(pkt);
         struct icmp_header *icmp = dp_packet_l4(pkt);
         struct ip_header *inner_l3 = (struct ip_header *) (icmp + 1);
-        extract_l3_ipv4(&inner_key, inner_l3, tail - ((char *)inner_l3) - pad,
+
+        ok = extract_l3_ipv4(&inner_key, inner_l3,
+                        tail - ((char *)inner_l3) - pad,
                         &inner_l4, false);
+        if (!ok) {
+            return;
+        }
+
         pkt->l3_ofs += (char *) inner_l3 - (char *) nh;
         pkt->l4_ofs += inner_l4 - (char *) icmp;
 
@@ -715,13 +722,19 @@ reverse_nat_packet(struct dp_packet *pkt, const struct conn *conn)
         icmp->icmp_csum = 0;
         icmp->icmp_csum = csum(icmp, tail - (char *) icmp - pad);
     } else {
+        bool ok;
         struct ovs_16aligned_ip6_hdr *nh6 = dp_packet_l3(pkt);
         struct icmp6_error_header *icmp6 = dp_packet_l4(pkt);
         struct ovs_16aligned_ip6_hdr *inner_l3_6 =
             (struct ovs_16aligned_ip6_hdr *) (icmp6 + 1);
-        extract_l3_ipv6(&inner_key, inner_l3_6,
+
+        ok = extract_l3_ipv6(&inner_key, inner_l3_6,
                         tail - ((char *)inner_l3_6) - pad,
                         &inner_l4);
+
+        if (!ok) {
+            return;
+        }
         pkt->l3_ofs += (char *) inner_l3_6 - (char *) nh6;
         pkt->l4_ofs += inner_l4 - (char *) icmp6;
 
