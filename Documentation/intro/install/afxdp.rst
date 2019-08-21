@@ -426,6 +426,42 @@ In the namespace, run drop or bounce back the packet::
   ip netns exec at_ns0 ./xdp_rxq_info --dev p0 --action XDP_TX
 
 
+Using DPDK's AF_XDP PMD driver
+------------------------------
+Another way to use AF_XDP is to enable DPDK and use DPDK's AF_XDP
+driver. First, enable the AF_XDP PMD config at DPDK's
+config/common_base file by::
+
+  CONFIG_RTE_LIBRTE_PMD_AF_XDP=y
+
+and recompile the DPDK source. Then, compile OVS with DPDK::
+
+  ./configure --with-dpdk=<patch to dpdk build>
+
+Start ovs-vswitchd and initilize DPDK::
+
+  ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+
+Finally, assume eth2 and eth3 are the physical NIC, AF_XDP port can
+be added by::
+
+  ovs-vsctl add-port br0 afxdp-p0 -- set int afxdp-p0 type=dpdk \
+    options:dpdk-devargs=vdev:net_af_xdp0,iface=eth2 \
+    start_queue=0,queue_count=1
+  ovs-vsctl add-port br0 afxdp-p1 -- set int afxdp-p1 type=dpdk \
+    options:dpdk-devargs=vdev:net_af_xdp1,iface=eth3 \
+    start_queue=0,queue_count=1
+
+Execute ovs-vsctl show::
+
+  Bridge "br0"
+    datapath_type: netdev
+    Port "afxdp-p0"
+      Interface "afxdp-p0"
+        type: dpdk
+        options: {dpdk-devargs="vdev:net_af_xdp,iface=eth2"}
+
+
 Bug Reporting
 -------------
 
