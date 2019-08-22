@@ -707,7 +707,8 @@ ipv6_sanity_check(const struct ovs_16aligned_ip6_hdr *nh, size_t size)
 }
 
 /* Initializes 'dst' from 'packet' and 'md', taking the packet type into
- * account.  'dst' must have enough space for FLOW_U64S * 8 bytes.
+ * account.  'dst' must have enough space for FLOW_U64S * 8 bytes. Metadata
+ * initialization should be bypassed if "md_valid" is false.
  *
  * Initializes the layer offsets as follows:
  *
@@ -732,8 +733,9 @@ ipv6_sanity_check(const struct ovs_16aligned_ip6_hdr *nh, size_t size)
  *      present and the packet has at least the content used for the fields
  *      of interest for the flow, otherwise UINT16_MAX.
  */
-void
-miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
+static inline ALWAYS_INLINE void
+miniflow_extract__(struct dp_packet *packet, struct miniflow *dst,
+                    const bool md_valid)
 {
     /* Add code to this function (or its callees) to extract new fields. */
     BUILD_ASSERT_DECL(FLOW_WC_SEQ == 41);
@@ -752,54 +754,60 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
     ovs_be16 ct_tp_src = 0, ct_tp_dst = 0;
 
     /* Metadata. */
-    if (flow_tnl_dst_is_set(&md->tunnel)) {
-        miniflow_push_words(mf, tunnel, &md->tunnel,
-                            offsetof(struct flow_tnl, metadata) /
-                            sizeof(uint64_t));
+    if (md_valid) {
+        if (flow_tnl_dst_is_set(&md->tunnel)) {
+            miniflow_push_words(mf, tunnel, &md->tunnel,
+                                offsetof(struct flow_tnl, metadata) /
+                                sizeof(uint64_t));
 
-        if (!(md->tunnel.flags & FLOW_TNL_F_UDPIF)) {
-            if (md->tunnel.metadata.present.map) {
-                miniflow_push_words(mf, tunnel.metadata, &md->tunnel.metadata,
-                                    sizeof md->tunnel.metadata /
-                                    sizeof(uint64_t));
-            }
-        } else {
-            if (md->tunnel.metadata.present.len) {
-                miniflow_push_words(mf, tunnel.metadata.present,
-                                    &md->tunnel.metadata.present, 1);
-                miniflow_push_words(mf, tunnel.metadata.opts.gnv,
-                                    md->tunnel.metadata.opts.gnv,
-                                    DIV_ROUND_UP(md->tunnel.metadata.present.len,
-                                                 sizeof(uint64_t)));
+            if (!(md->tunnel.flags & FLOW_TNL_F_UDPIF)) {
+                if (md->tunnel.metadata.present.map) {
+                    miniflow_push_words(mf, tunnel.metadata,
+                                        &md->tunnel.metadata,
+                                        sizeof md->tunnel.metadata /
+                                        sizeof(uint64_t));
+                }
+            } else {
+                if (md->tunnel.metadata.present.len) {
+                    miniflow_push_words(mf, tunnel.metadata.present,
+                                        &md->tunnel.metadata.present, 1);
+                    miniflow_push_words(mf, tunnel.metadata.opts.gnv,
+                                        md->tunnel.metadata.opts.gnv,
+                                        DIV_ROUND_UP(
+                                               md->tunnel.metadata.present.len,
+                                               sizeof(uint64_t)));
+                }
             }
         }
-    }
-    if (md->skb_priority || md->pkt_mark) {
-        miniflow_push_uint32(mf, skb_priority, md->skb_priority);
-        miniflow_push_uint32(mf, pkt_mark, md->pkt_mark);
-    }
-    miniflow_push_uint32(mf, dp_hash, md->dp_hash);
-    miniflow_push_uint32(mf, in_port, odp_to_u32(md->in_port.odp_port));
-    if (md->ct_state) {
-        miniflow_push_uint32(mf, recirc_id, md->recirc_id);
-        miniflow_push_uint8(mf, ct_state, md->ct_state);
-        ct_nw_proto_p = miniflow_pointer(mf, ct_nw_proto);
-        miniflow_push_uint8(mf, ct_nw_proto, 0);
-        miniflow_push_uint16(mf, ct_zone, md->ct_zone);
-    } else if (md->recirc_id) {
-        miniflow_push_uint32(mf, recirc_id, md->recirc_id);
-        miniflow_pad_to_64(mf, recirc_id);
-    }
+        if (md->skb_priority || md->pkt_mark) {
+            miniflow_push_uint32(mf, skb_priority, md->skb_priority);
+            miniflow_push_uint32(mf, pkt_mark, md->pkt_mark);
+        }
+        miniflow_push_uint32(mf, dp_hash, md->dp_hash);
+        miniflow_push_uint32(mf, in_port, odp_to_u32(md->in_port.odp_port));
+        if (md->ct_state) {
+            miniflow_push_uint32(mf, recirc_id, md->recirc_id);
+            miniflow_push_uint8(mf, ct_state, md->ct_state);
+            ct_nw_proto_p = miniflow_pointer(mf, ct_nw_proto);
+            miniflow_push_uint8(mf, ct_nw_proto, 0);
+            miniflow_push_uint16(mf, ct_zone, md->ct_zone);
+        } else if (md->recirc_id) {
+            miniflow_push_uint32(mf, recirc_id, md->recirc_id);
+            miniflow_pad_to_64(mf, recirc_id);
+        }
 
-    if (md->ct_state) {
-        miniflow_push_uint32(mf, ct_mark, md->ct_mark);
-        miniflow_push_be32(mf, packet_type, packet_type);
+        if (md->ct_state) {
+            miniflow_push_uint32(mf, ct_mark, md->ct_mark);
+            miniflow_push_be32(mf, packet_type, packet_type);
 
-        if (!ovs_u128_is_zero(md->ct_label)) {
-            miniflow_push_words(mf, ct_label, &md->ct_label,
-                                sizeof md->ct_label / sizeof(uint64_t));
+            if (!ovs_u128_is_zero(md->ct_label)) {
+                miniflow_push_words(mf, ct_label, &md->ct_label,
+                                    sizeof md->ct_label / sizeof(uint64_t));
+            }
         }
     } else {
+        miniflow_push_uint32(mf, dp_hash, md->dp_hash);
+        miniflow_push_uint32(mf, in_port, odp_to_u32(md->in_port.odp_port));
         miniflow_pad_from_64(mf, packet_type);
         miniflow_push_be32(mf, packet_type, packet_type);
     }
@@ -865,6 +873,7 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
 
         /* Push both source and destination address at once. */
         miniflow_push_words(mf, nw_src, &nh->ip_src, 1);
+
         if (ct_nw_proto_p && !md->ct_orig_tuple_ipv6) {
             *ct_nw_proto_p = md->ct_orig_tuple.ipv4.ipv4_proto;
             if (*ct_nw_proto_p) {
@@ -900,6 +909,7 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                             sizeof nh->ip6_src / 8);
         miniflow_push_words(mf, ipv6_dst, &nh->ip6_dst,
                             sizeof nh->ip6_dst / 8);
+
         if (ct_nw_proto_p && md->ct_orig_tuple_ipv6) {
             *ct_nw_proto_p = md->ct_orig_tuple.ipv6.ipv6_proto;
             if (*ct_nw_proto_p) {
@@ -1074,6 +1084,18 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
     }
  out:
     dst->map = mf.map;
+}
+
+void
+miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
+{
+    miniflow_extract__(packet, dst, true);
+}
+
+void
+miniflow_extract_firstpass(struct dp_packet *packet, struct miniflow *dst)
+{
+    miniflow_extract__(packet, dst, false);
 }
 
 ovs_be16

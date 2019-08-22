@@ -6508,12 +6508,15 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
             }
         }
 
-        miniflow_extract(packet, &key->mf);
+        if (!md_is_valid) {
+            miniflow_extract_firstpass(packet, &key->mf);
+            key->hash =
+                dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf);
+        } else {
+            miniflow_extract(packet, &key->mf);
+            key->hash = dpif_netdev_packet_get_rss_hash(packet, &key->mf);
+        }
         key->len = 0; /* Not computed yet. */
-        key->hash =
-                (md_is_valid == false)
-                ? dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf)
-                : dpif_netdev_packet_get_rss_hash(packet, &key->mf);
 
         /* If EMC is disabled skip emc_lookup */
         flow = (cur_min != 0) ? emc_lookup(&cache->emc_cache, key) : NULL;
