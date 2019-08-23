@@ -886,6 +886,7 @@ struct tcp_header {
     ovs_be16 tcp_urg;
 };
 BUILD_ASSERT_DECL(TCP_HEADER_LEN == sizeof(struct tcp_header));
+#define ICMP_L4_DATA_LEN 8
 
 /* Connection states.
  *

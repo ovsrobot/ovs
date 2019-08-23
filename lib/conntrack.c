@@ -1513,10 +1513,18 @@ check_l4_icmp6(const struct conn_key *key, const void *data, size_t size,
     return validate_checksum ? checksum_valid(key, data, size, l3) : true;
 }
 
+/* If related is NULL, we are parsing nested TCP header  inside ICMP packet.
+ * Only 8 bytes of TCP header is required by RFC to be present in such case.
+ */
 static inline bool
-extract_l4_tcp(struct conn_key *key, const void *data, size_t size)
+extract_l4_tcp(struct conn_key *key, const void *data, size_t size,
+               bool *related)
 {
-    if (OVS_UNLIKELY(size < TCP_HEADER_LEN)) {
+    if (!related) {
+        if (size < ICMP_L4_DATA_LEN) {
+            return false;
+        }
+    } else if (size < TCP_HEADER_LEN) {
         return false;
     }
 
@@ -1750,7 +1758,7 @@ extract_l4(struct conn_key *key, const void *data, size_t size, bool *related,
 {
     if (key->nw_proto == IPPROTO_TCP) {
         return (!related || check_l4_tcp(key, data, size, l3,
-                validate_checksum)) && extract_l4_tcp(key, data, size);
+              validate_checksum)) && extract_l4_tcp(key, data, size, related);
     } else if (key->nw_proto == IPPROTO_UDP) {
         return (!related || check_l4_udp(key, data, size, l3,
                 validate_checksum)) && extract_l4_udp(key, data, size);
