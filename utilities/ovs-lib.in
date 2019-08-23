@@ -654,7 +654,7 @@ force_reload_kmod () {
 
     restore_interfaces
 
-    "$datadir/scripts/ovs-check-dead-ifs"
+    timeout 5 "$datadir/scripts/ovs-check-dead-ifs"
 }
 
 ## ------- ##
