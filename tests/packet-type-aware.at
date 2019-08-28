@@ -697,7 +697,6 @@ AT_CHECK([
     ovs-ofctl del-flows br1 &&
     ovs-ofctl del-flows br2 &&
     ovs-ofctl add-flow br0 in_port=n0,actions=decap,output=p0 -OOpenFlow13 &&
-    ovs-ofctl add-flow br1 in_port=p1,actions=output=gre1 &&
     ovs-ofctl add-flow br2 in_port=LOCAL,actions=output=n2
 ], [0])
 
