@@ -302,7 +302,7 @@ static size_t n_ofproto_classes;
 static size_t allocated_ofproto_classes;
 
 /* Global lock that protects all flow table operations. */
-struct ovs_mutex ofproto_mutex = OVS_MUTEX_INITIALIZER;
+struct ovs_mutex ofproto_mutex;
 
 unsigned ofproto_flow_limit = OFPROTO_FLOW_LIMIT_DEFAULT;
 unsigned ofproto_max_idle = OFPROTO_MAX_IDLE_DEFAULT;
@@ -336,6 +336,8 @@ ofproto_init(const struct shash *iface_hints)
 {
     struct shash_node *node;
     size_t i;
+
+    ovs_mutex_init_recursive(&ofproto_mutex);
 
     ofproto_class_register(&ofproto_dpif_class);
 
