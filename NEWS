@@ -4,6 +4,8 @@ v2.9.6 - xx xxx xxxx
 v2.9.5 - 30 Mar 2019
 --------------------
    - Bug fixes
+   - DPDK
+    * OVS validated with DPDK 17.11.6 which is recommended to be used.
 
 v2.9.4 - 20 Feb 2019
 --------------------
