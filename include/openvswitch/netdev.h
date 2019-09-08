@@ -89,6 +89,20 @@ struct netdev_stats {
     uint64_t rx_jabber_errors;
 };
 
+/* Custom software stats for dpdk ports */
+struct netdev_dpdk_sw_stats {
+    /* No. of retries when unable to transmit. */
+    uint64_t tx_retries;
+    /* Pkt drops when unable to transmit; Probably Tx queue is full */
+    uint64_t tx_failure_drops;
+    /* Pkt len greater than max dev MTU */
+    uint64_t tx_mtu_exceeded_drops;
+    /* Pkt drops in egress policier processing */
+    uint64_t tx_qos_drops;
+    /* Pkt drops in ingress policier processing */
+    uint64_t rx_qos_drops;
+};
+
 /* Structure representation of custom statistics counter */
 struct netdev_custom_counter {
     uint64_t value;
