@@ -362,6 +362,8 @@ struct netdev_dpdk {
         bool attached;
         /* If true, rte_eth_dev_start() was successfully called */
         bool started;
+        bool reset_needed;
+        /* 1 pad byte here. */
         struct eth_addr hwaddr;
         int mtu;
         int socket_id;
@@ -1139,6 +1141,8 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     ovsrcu_index_init(&dev->vid, -1);
     dev->vhost_reconfigured = false;
     dev->attached = false;
+    dev->started = false;
+    dev->reset_needed = false;
 
     ovsrcu_init(&dev->qos_conf, NULL);
 
@@ -1733,6 +1737,34 @@ netdev_dpdk_process_devargs(struct netdev_dpdk *dev,
     }
 
     return new_port_id;
+}
+
+static int
+dpdk_eth_event_callback(dpdk_port_t port_id, enum rte_eth_event_type type,
+                        void *param OVS_UNUSED, void *ret_param OVS_UNUSED)
+{
+    struct netdev_dpdk *dev;
+
+    switch ((int) type) {
+    case RTE_ETH_EVENT_INTR_RESET:
+        ovs_mutex_lock(&dpdk_mutex);
+        dev = netdev_dpdk_lookup_by_port_id(port_id);
+        if (dev) {
+            ovs_mutex_lock(&dev->mutex);
+            dev->reset_needed = true;
+            netdev_request_reconfigure(&dev->up);
+            VLOG_DBG_RL(&rl, "Port "DPDK_PORT_ID_FMT" received a reset request",
+                        dev->port_id);
+            ovs_mutex_unlock(&dev->mutex);
+        }
+        ovs_mutex_unlock(&dpdk_mutex);
+        break;
+
+    default:
+        /* Ignore all other types */
+        break;
+   }
+   return 0;
 }
 
 static void
@@ -3777,6 +3809,8 @@ netdev_dpdk_class_init(void)
     /* This function can be called for different classes.  The initialization
      * needs to be done only once */
     if (ovsthread_once_start(&once)) {
+        int ret;
+
         ovs_thread_create("dpdk_watchdog", dpdk_watchdog, NULL);
         unixctl_command_register("netdev-dpdk/set-admin-state",
                                  "[netdev] up|down", 1, 2,
@@ -3789,6 +3823,15 @@ netdev_dpdk_class_init(void)
         unixctl_command_register("netdev-dpdk/get-mempool-info",
                                  "[netdev]", 0, 1,
                                  netdev_dpdk_get_mempool_info, NULL);
+
+        ret = rte_eth_dev_callback_register(RTE_ETH_ALL,
+                                            RTE_ETH_EVENT_INTR_RESET,
+                                            dpdk_eth_event_callback, NULL);
+
+        if (ret != 0) {
+            VLOG_ERR("Ethernet device callback register error: %s",
+                     rte_strerror(-ret));
+        }
 
         ovsthread_once_done(&once);
     }
@@ -4150,13 +4193,19 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
         && dev->rxq_size == dev->requested_rxq_size
         && dev->txq_size == dev->requested_txq_size
         && dev->socket_id == dev->requested_socket_id
-        && dev->started) {
+        && dev->started && !dev->reset_needed) {
         /* Reconfiguration is unnecessary */
 
         goto out;
     }
 
-    rte_eth_dev_stop(dev->port_id);
+    if (dev->reset_needed) {
+        rte_eth_dev_reset(dev->port_id);
+        dev->reset_needed = false;
+    } else {
+        rte_eth_dev_stop(dev->port_id);
+    }
+
     dev->started = false;
 
     err = netdev_dpdk_mempool_configure(dev);
