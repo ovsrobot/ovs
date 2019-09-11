@@ -453,6 +453,14 @@ dpdk_init__(const struct smap *ovs_other_config)
     /* Finally, register the dpdk classes */
     netdev_dpdk_register();
     netdev_register_flow_api_provider(&netdev_offload_dpdk);
+
+    bool multi_seg_mbufs_enable = smap_get_bool(ovs_other_config,
+            "dpdk-multi-seg-mbufs", false);
+    if (multi_seg_mbufs_enable) {
+        VLOG_INFO("DPDK multi-segment mbufs enabled\n");
+        netdev_dpdk_multi_segment_mbufs_enable();
+    }
+
     return true;
 }
 
