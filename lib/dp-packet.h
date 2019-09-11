@@ -28,7 +28,6 @@
 #include "netdev-afxdp.h"
 #include "netdev-dpdk.h"
 #include "openvswitch/list.h"
-#include "packets.h"
 #include "util.h"
 #include "flow.h"
 
@@ -56,6 +55,16 @@ enum dp_packet_offload_mask {
 };
 #endif
 
+#ifdef DPDK_NETDEV
+/* Struct to save data for when a DPBUF_DPDK packet is converted to
+ * DPBUF_MALLOC. */
+struct mbuf_state {
+    void *addr;
+    uint16_t len;
+    uint16_t off;
+};
+#endif
+
 /* Buffer for holding packet data.  A dp_packet is automatically reallocated
  * as necessary if it grows too large for the available memory.
  * By default the packet type is set to Ethernet (PT_ETH).
@@ -63,6 +72,7 @@ enum dp_packet_offload_mask {
 struct dp_packet {
 #ifdef DPDK_NETDEV
     struct rte_mbuf mbuf;       /* DPDK mbuf */
+    struct mbuf_state *mstate;  /* Used when packet has been "linearized" */
 #else
     void *base_;                /* First byte of allocated space. */
     uint16_t allocated_;        /* Number of bytes allocated. */
@@ -103,6 +113,9 @@ static inline void dp_packet_set_data(struct dp_packet *, void *);
 static inline void *dp_packet_base(const struct dp_packet *);
 static inline void dp_packet_set_base(struct dp_packet *, void *);
 
+static inline bool dp_packet_is_linear(const struct dp_packet *);
+static inline void dp_packet_linearize(struct dp_packet *);
+
 static inline uint32_t dp_packet_size(const struct dp_packet *);
 static inline void dp_packet_set_size(struct dp_packet *, uint32_t);
 
@@ -119,6 +132,7 @@ static inline void *dp_packet_l2_5(const struct dp_packet *);
 static inline void dp_packet_set_l2_5(struct dp_packet *, void *);
 static inline void *dp_packet_l3(const struct dp_packet *);
 static inline void dp_packet_set_l3(struct dp_packet *, void *);
+static inline size_t dp_packet_l3_size(const struct dp_packet *);
 static inline void *dp_packet_l4(const struct dp_packet *);
 static inline void dp_packet_set_l4(struct dp_packet *, void *);
 static inline size_t dp_packet_l4_size(const struct dp_packet *);
@@ -157,6 +171,11 @@ static inline void *dp_packet_at(const struct dp_packet *, size_t offset,
                                  size_t size);
 static inline void *dp_packet_at_assert(const struct dp_packet *,
                                         size_t offset, size_t size);
+
+static inline void
+dp_packet_copy_from_offset(const struct dp_packet *b, size_t offset,
+                           size_t size, void *buf);
+
 #ifdef DPDK_NETDEV
 static inline const struct rte_mbuf *
 dp_packet_mbuf_from_offset(const struct dp_packet *b, size_t *offset);
@@ -195,26 +214,27 @@ void *dp_packet_steal_data(struct dp_packet *);
 static inline bool dp_packet_equal(const struct dp_packet *,
                                    const struct dp_packet *);
 
+static inline ssize_t
+dp_packet_read_data(const struct dp_packet *b, size_t offset, size_t size,
+                    void **ptr, void *buf);
+
+
 
 /* Frees memory that 'b' points to, as well as 'b' itself. */
 static inline void
 dp_packet_delete(struct dp_packet *b)
 {
     if (b) {
-        if (b->source == DPBUF_DPDK) {
-            /* If this dp_packet was allocated by DPDK it must have been
-             * created as a dp_packet */
-            free_dpdk_buf((struct dp_packet*) b);
-            return;
-        }
-
         if (b->source == DPBUF_AFXDP) {
             free_afxdp_buf(b);
             return;
         }
 
         dp_packet_uninit(b);
-        free(b);
+
+        if (b->source != DPBUF_DPDK) {
+            free(b);
+        }
     }
 }
 
@@ -384,6 +404,39 @@ dp_packet_try_pull(struct dp_packet *b, size_t size)
         ? dp_packet_pull(b, size) : NULL;
 }
 
+/* Reads 'size' bytes from 'offset' in 'b', linearly, to 'ptr', if 'buf' is
+ * NULL. Otherwise, if a 'buf' is provided, it must have 'size' bytes, and the
+ * data will be copied there, iff it is found to be non-linear. */
+static inline ssize_t
+dp_packet_read_data(const struct dp_packet *b, size_t offset, size_t size,
+                    void **ptr, void *buf) {
+    /* Zero copy */
+    if ((*ptr = dp_packet_at(b, offset, size)) != NULL) {
+        return 0;
+    }
+
+    /* Copy available linear data */
+    if (buf == NULL) {
+#ifdef DPDK_NETDEV
+        size_t mofs = offset;
+        const struct rte_mbuf *mbuf = dp_packet_mbuf_from_offset(b, &mofs);
+        *ptr = dp_packet_at(b, offset, mbuf->data_len - mofs);
+
+        return size - (mbuf->data_len - mofs);
+#else
+        /* Non-DPDK dp_packets should always hit the above condition */
+        ovs_assert(1);
+#endif
+    }
+
+    /* Copy all data */
+
+    *ptr = buf;
+    dp_packet_copy_from_offset(b, offset, size, buf);
+
+    return 0;
+}
+
 static inline bool
 dp_packet_is_eth(const struct dp_packet *b)
 {
@@ -453,6 +506,28 @@ dp_packet_set_l3(struct dp_packet *b, void *l3)
     b->l3_ofs = l3 ? (char *) l3 - (char *) dp_packet_data(b) : UINT16_MAX;
 }
 
+/* Returns the size of the l3 header. Caller must make sure both l3_ofs and
+ * l4_ofs are set*/
+static inline size_t
+dp_packet_l3h_size(const struct dp_packet *b)
+{
+    return b->l4_ofs - b->l3_ofs;
+}
+
+/* Returns the size of the packet from the beginning of the L3 header to the
+ * end of the L3 payload.  Hence L2 padding is not included. */
+static inline size_t
+dp_packet_l3_size(const struct dp_packet *b)
+{
+    if (!dp_packet_may_pull(b, b->l3_ofs, 0)) {
+        return 0;
+    }
+
+    size_t l3_size = dp_packet_size(b) - b->l3_ofs;
+
+    return l3_size - dp_packet_l2_pad_size(b);
+}
+
 static inline void *
 dp_packet_l4(const struct dp_packet *b)
 {
@@ -465,17 +540,6 @@ static inline void
 dp_packet_set_l4(struct dp_packet *b, void *l4)
 {
     b->l4_ofs = l4 ? (char *) l4 - (char *) dp_packet_data(b) : UINT16_MAX;
-}
-
-/* Returns the size of the packet from the beginning of the L3 header to the
- * end of the L3 payload.  Hence L2 padding is not included. */
-static inline size_t
-dp_packet_l3_size(const struct dp_packet *b)
-{
-    return OVS_LIKELY(b->l3_ofs != UINT16_MAX)
-        ? (const char *)dp_packet_tail(b) - (const char *)dp_packet_l3(b)
-        - dp_packet_l2_pad_size(b)
-        : 0;
 }
 
 /* Returns the size of the packet from the beginning of the L4 header to the
@@ -512,21 +576,21 @@ static inline const void *
 dp_packet_get_udp_payload(const struct dp_packet *b)
 {
     return OVS_LIKELY(dp_packet_l4_size(b) >= UDP_HEADER_LEN)
-        ? (const char *)dp_packet_l4(b) + UDP_HEADER_LEN : NULL;
+        ? (const char *) dp_packet_l4(b) + UDP_HEADER_LEN : NULL;
 }
 
 static inline const void *
 dp_packet_get_sctp_payload(const struct dp_packet *b)
 {
     return OVS_LIKELY(dp_packet_l4_size(b) >= SCTP_HEADER_LEN)
-        ? (const char *)dp_packet_l4(b) + SCTP_HEADER_LEN : NULL;
+        ? (const char *) dp_packet_l4(b) + SCTP_HEADER_LEN : NULL;
 }
 
 static inline const void *
 dp_packet_get_icmp_payload(const struct dp_packet *b)
 {
     return OVS_LIKELY(dp_packet_l4_size(b) >= ICMP_HEADER_LEN)
-        ? (const char *)dp_packet_l4(b) + ICMP_HEADER_LEN : NULL;
+        ? (const char *) dp_packet_l4(b) + ICMP_HEADER_LEN : NULL;
 }
 
 static inline const void *
@@ -547,6 +611,7 @@ dp_packet_init_specific(struct dp_packet *p)
     p->mbuf.tx_offload = p->mbuf.packet_type = 0;
     p->mbuf.nb_segs = 1;
     p->mbuf.next = NULL;
+    p->mstate = NULL;
 }
 
 static inline const struct rte_mbuf *
@@ -817,6 +882,74 @@ dp_packet_set_flow_mark(struct dp_packet *p, uint32_t mark)
     p->mbuf.ol_flags |= PKT_RX_FDIR_ID;
 }
 
+static inline void
+dp_packet_copy_from_offset(const struct dp_packet *b, size_t offset,
+                           size_t size, void *buf) {
+    if (dp_packet_is_linear(b)) {
+        memcpy(buf, (char *)dp_packet_data(b) + offset, size);
+    } else {
+        const struct rte_mbuf *mbuf = dp_packet_mbuf_from_offset(b, &offset);
+        rte_pktmbuf_read(mbuf, offset, size, buf);
+    }
+}
+
+static inline bool
+dp_packet_is_linear(const struct dp_packet *b)
+{
+    if (b->source == DPBUF_DPDK) {
+        return rte_pktmbuf_is_contiguous(&b->mbuf);
+    }
+
+    return true;
+}
+
+/* Linearizes the data on packet 'b', by copying the data into system's memory.
+ * After this the packet is effectively a DPBUF_MALLOC packet. If 'b' is
+ * already linear, no operations are performed on the packet.
+ *
+ * This is an expensive operation which should only be performed as a last
+ * resort, when multi-segments are under use but data must be accessed
+ * linearly. */
+static inline void
+dp_packet_linearize(struct dp_packet *b)
+{
+    struct rte_mbuf *mbuf = CONST_CAST(struct rte_mbuf *, &b->mbuf);
+    struct dp_packet *pkt = CONST_CAST(struct dp_packet *, b);
+    struct mbuf_state *mstate = NULL;
+    void *dst = NULL;
+    uint32_t pkt_len = 0;
+
+    /* If already linear, bail out early. */
+    if (OVS_LIKELY(dp_packet_is_linear(b))) {
+        return;
+    }
+
+    pkt_len = dp_packet_size(pkt);
+    dst = xmalloc(pkt_len);
+
+    /* Copy packet's data to system's memory */
+    if (!rte_pktmbuf_read(mbuf, 0, pkt_len, dst)) {
+        free(dst);
+        return;
+    }
+
+    /* Free all mbufs except for the first */
+    dp_packet_clear(pkt);
+
+    /* Save mbuf's buf_addr to restore later */
+    mstate = xmalloc(sizeof(*mstate));
+    mstate->addr = pkt->mbuf.buf_addr;
+    mstate->len = pkt->mbuf.buf_len;
+    mstate->off = pkt->mbuf.data_off;
+    pkt->mstate = mstate;
+
+    /* Tranform DPBUF_DPDK packet into a DPBUF_MALLOC packet */
+    pkt->source = DPBUF_MALLOC;
+    pkt->mbuf.buf_addr = dst;
+    pkt->mbuf.buf_len = pkt_len;
+    pkt->mbuf.data_off = 0;
+    dp_packet_set_size(pkt, pkt_len);
+}
 #else /* DPDK_NETDEV */
 
 static inline bool
@@ -946,6 +1079,24 @@ dp_packet_set_flow_mark(struct dp_packet *p, uint32_t mark)
 {
     p->flow_mark = mark;
     p->ol_flags |= DP_PACKET_OL_FLOW_MARK_MASK;
+}
+
+static inline void
+dp_packet_copy_from_offset(const struct dp_packet *b, size_t offset,
+                           size_t size, void *buf)
+{
+    memcpy(buf, (char *)dp_packet_data(b) + offset, size);
+}
+
+static inline bool
+dp_packet_is_linear(const struct dp_packet *b OVS_UNUSED)
+{
+    return true;
+}
+
+static inline void
+dp_packet_linearize(struct dp_packet *b OVS_UNUSED)
+{
 }
 #endif /* DPDK_NETDEV */
 
