@@ -3147,6 +3147,19 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="options" key="use_need_wakeup"
+              type='{"type": "boolean"}'>
+        <p>
+          Specifies whether to use need_wakeup feature in afxdp netdev.
+          (required kernel version later than 5.3.0-rc1)
+          If enabled, OVS explicitly wakes up the kernel RX, using poll()
+          syscall and wakes up TX, using sendto() syscall. For physical
+          devices, this feature improves the performance by avoiding
+          unnecessary sendto syscalls.
+          Defaults is true.
+        </p>
+      </column>
+
       <column name="options" key="vhost-server-path"
               type='{"type": "string"}'>
         <p>
