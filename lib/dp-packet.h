@@ -40,7 +40,7 @@ enum OVS_PACKED_ENUM dp_packet_source {
     DPBUF_MALLOC,              /* Obtained via malloc(). */
     DPBUF_STACK,               /* Un-movable stack space or static buffer. */
     DPBUF_STUB,                /* Starts on stack, may expand into heap. */
-    DPBUF_DPDK,                /* buffer data is from DPDK allocated memory.
+    DPBUF_DPDK,                /* Buffer data is from DPDK allocated memory.
                                 * ref to dp_packet_init_dpdk() in dp-packet.c.
                                 */
     DPBUF_AFXDP,               /* Buffer data from XDP frame. */
@@ -191,7 +191,7 @@ dp_packet_delete(struct dp_packet *b)
         if (b->source == DPBUF_DPDK) {
             /* If this dp_packet was allocated by DPDK it must have been
              * created as a dp_packet */
-            free_dpdk_buf((struct dp_packet*) b);
+            free_dpdk_buf(b);
             return;
         }
 
