@@ -34,6 +34,11 @@
 
 #include "openvswitch/type-props.h"
 
+#ifdef HAVE_UNWIND
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#endif
+
 #ifndef SIG_ATOMIC_MAX
 #define SIG_ATOMIC_MAX TYPE_MAXIMUM(sig_atomic_t)
 #endif
@@ -42,7 +47,8 @@ VLOG_DEFINE_THIS_MODULE(fatal_signal);
 
 /* Signals to catch. */
 #ifndef _WIN32
-static const int fatal_signals[] = { SIGTERM, SIGINT, SIGHUP, SIGALRM };
+static const int fatal_signals[] = { SIGTERM, SIGINT, SIGHUP, SIGALRM,
+                                     SIGSEGV };
 #else
 static const int fatal_signals[] = { SIGTERM };
 #endif
@@ -151,6 +157,32 @@ fatal_signal_add_hook(void (*hook_cb)(void *aux), void (*cancel_cb)(void *aux),
     ovs_mutex_unlock(&mutex);
 }
 
+#ifdef HAVE_UNWIND
+static void
+show_backtrace(void) {
+    char buf[4096];
+    unw_cursor_t cursor;
+    unw_context_t uc;
+    unw_word_t ip, sp;
+    unw_word_t offset;
+
+    unw_getcontext(&uc);
+    unw_init_local(&cursor, &uc);
+
+    while (unw_step(&cursor) > 0) {
+        unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        unw_get_reg(&cursor, UNW_REG_SP, &sp);
+        unw_get_proc_name(&cursor, buf, 4095, &offset);
+        VLOG_WARN("0x%016lx <%s+0x%lx>\n", ip, buf, offset);
+    }
+}
+#else
+static void
+show_backtrace(void) {
+    /* Nothing. */
+}
+#endif
+
 /* Handles fatal signal number 'sig_nr'.
  *
  * Ordinarily this is the actual signal handler.  When other code needs to
@@ -164,6 +196,12 @@ void
 fatal_signal_handler(int sig_nr)
 {
 #ifndef _WIN32
+    if (sig_nr == SIGSEGV) {
+        show_backtrace();
+        fflush(stderr);
+        signal(sig_nr, SIG_DFL);
+        raise(sig_nr);
+    }
     ignore(write(signal_fds[1], "", 1));
 #else
     SetEvent(wevent);
