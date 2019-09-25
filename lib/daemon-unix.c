@@ -15,6 +15,7 @@
  */
 
 #include <config.h>
+#include "backtrace.h"
 #include "daemon.h"
 #include "daemon-private.h"
 #include <errno.h>
@@ -75,7 +76,7 @@ static bool overwrite_pidfile;
 static bool chdir_ = true;
 
 /* File descriptor used by daemonize_start() and daemonize_complete(). */
-static int daemonize_fd = -1;
+int daemonize_fd = -1;
 
 /* --monitor: Should a supervisory process monitor the daemon and restart it if
  * it dies due to an error signal? */
@@ -291,8 +292,7 @@ fork_and_wait_for_startup(int *fdp, pid_t *child_pid)
                 OVS_NOT_REACHED();
             }
         }
-        close(fds[0]);
-        *fdp = -1;
+        *fdp = fds[0];
     } else if (!pid) {
         /* Running in child process. */
         close(fds[0]);
@@ -313,8 +313,6 @@ fork_notify_startup(int fd)
         if (error) {
             VLOG_FATAL("pipe write failed (%s)", ovs_strerror(error));
         }
-
-        close(fd);
     }
 }
 
@@ -373,6 +371,8 @@ monitor_daemon(pid_t daemon_pid)
         }
 
         if (!child_ready || retval == daemon_pid) {
+            int byte_read;
+            struct unw_backtrace backtrace[UNW_MAX_DEPTH];
             char *s = process_status_msg(status);
             if (should_restart(status)) {
                 free(status_msg);
@@ -390,6 +390,25 @@ monitor_daemon(pid_t daemon_pid)
                     if (setrlimit(RLIMIT_CORE, &r) == -1) {
                         VLOG_WARN("failed to disable core dumps: %s",
                                   ovs_strerror(errno));
+                    }
+                }
+
+                fcntl(daemonize_fd, F_SETFL, O_NONBLOCK);
+                memset(backtrace, 0, UNW_MAX_BUF);
+                byte_read = read(daemonize_fd, backtrace, UNW_MAX_BUF);
+                if (byte_read < 0) {
+                    VLOG_ERR("Read fd %d failed: %s", daemonize_fd,
+                             ovs_strerror(errno));
+                } else if (byte_read > 0) {
+                    VLOG_WARN("SIGSEGV detected, backtrace:");
+                    for (int i = 0; i < UNW_MAX_DEPTH; i++) {
+                        if (backtrace[i].func[0] == 0) {
+                            break;
+                        }
+                        VLOG_WARN("0x%016lx <%s+0x%lx>\n",
+                                   backtrace[i].ip,
+                                   backtrace[i].func,
+                                   backtrace[i].offset);
                     }
                 }
 
@@ -508,7 +527,6 @@ daemonize_complete(void)
         detached = true;
 
         fork_notify_startup(daemonize_fd);
-        daemonize_fd = -1;
         daemonize_post_detach();
     }
 }
