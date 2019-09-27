@@ -552,11 +552,42 @@ out:
 int
 netdev_afxdp_get_numa_id(const struct netdev *netdev)
 {
-    /* FIXME: Get netdev's PCIe device ID, then find
-     * its NUMA node id.
-     */
-    VLOG_INFO("FIXME: Device %s always use numa id 0.",
-              netdev_get_name(netdev));
+    const char *numa_node_path;
+    long int node_id;
+    char buffer[4];
+    FILE *stream;
+    int n;
+
+    numa_node_path = xasprintf("/sys/class/net/%s/device/numa_node",
+                               netdev_get_name(netdev));
+    stream = fopen(numa_node_path, "r");
+    if (!stream) {
+        /* Virtual device does not have this info. */
+        VLOG_INFO_RL(&rl, "Open %s failed: %s, use numa_id 0",
+                     numa_node_path, ovs_strerror(errno));
+        free(numa_node_path);
+        return 0;
+    }
+
+    n = fread(buffer, 1, sizeof buffer, stream);
+    if (!n) {
+        goto error;
+    }
+
+    node_id = strtol(buffer, NULL, 10);
+    if (node_id < 0 || node_id > 2) {
+        goto error;
+    }
+
+    fclose(stream);
+    free(numa_node_path);
+    return (int)node_id;
+
+error:
+    VLOG_WARN_RL(&rl, "Error detecting numa node of %s, use numa_id 0",
+                 numa_node_path);
+    free(numa_node_path);
+    fclose(stream);
     return 0;
 }
 
