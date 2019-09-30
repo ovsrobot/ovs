@@ -222,6 +222,17 @@
         </p>
       </column>
 
+      <column name="other_config" key="max-unkeep-op"
+              type='{"type": "integer", "minInteger": 0}'>
+        <p>
+          The maximum unkeep operations that for each dump in revalidator thread
+          If the vlaue is 0, there is no limitation for unkeep operation
+        </p>
+        <p>
+          The default is 0.
+        </p>
+      </column>
+
       <column name="other_config" key="hw-offload"
               type='{"type": "boolean"}'>
         <p>

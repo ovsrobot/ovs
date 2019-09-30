@@ -2607,6 +2607,7 @@ revalidate(struct revalidator *revalidator)
         long long int now;
         size_t n_dp_flows;
         bool kill_them_all;
+        unsigned int counter = 0;
 
         n_dumped = dpif_flow_dump_next(dump_thread, flows, ARRAY_SIZE(flows));
         if (!n_dumped) {
@@ -2695,9 +2696,12 @@ revalidate(struct revalidator *revalidator)
             }
 
             if (result != UKEY_KEEP) {
-                /* Takes ownership of 'recircs'. */
-                reval_op_init(&ops[n_ops++], result, udpif, ukey, &recircs,
-                              &odp_actions);
+               if (!ofproto_max_unkeep_op ||
+                    ++counter <= ofproto_max_unkeep_op) {
+                    /* Takes ownership of 'recircs'. */
+                    reval_op_init(&ops[n_ops++], result, udpif, ukey, &recircs,
+                                  &odp_actions);
+                }
             }
             ovs_mutex_unlock(&ukey->mutex);
         }

@@ -532,6 +532,9 @@ extern unsigned ofproto_max_revalidator;
  * duration exceeds half of max-revalidator config variable. */
 extern unsigned ofproto_min_revalidate_pps;
 
+/* Maximum unkeep op in revalidator.*/
+extern unsigned ofproto_max_unkeep_op;
+
 /* Number of upcall handler and revalidator threads. Only affects the
  * ofproto-dpif implementation. */
 extern size_t n_handlers, n_revalidators;

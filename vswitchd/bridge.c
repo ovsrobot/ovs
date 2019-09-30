@@ -804,6 +804,9 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
     ofproto_set_min_revalidate_pps(
         smap_get_int(&ovs_cfg->other_config, "min-revalidate-pps",
                      OFPROTO_MIN_REVALIDATE_PPS_DEFAULT));
+    ofproto_set_max_unkeep_op(smap_get_int(&ovs_cfg->other_config,
+                                             "max-ukeep-op",
+                                             OFPROTO_MAX_UNKEEP_OP_DEFAULT));
     ofproto_set_vlan_limit(smap_get_int(&ovs_cfg->other_config, "vlan-limit",
                                        LEGACY_MAX_VLAN_HEADERS));
     ofproto_set_bundle_idle_timeout(smap_get_int(&ovs_cfg->other_config,

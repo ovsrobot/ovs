@@ -308,6 +308,7 @@ unsigned ofproto_flow_limit = OFPROTO_FLOW_LIMIT_DEFAULT;
 unsigned ofproto_max_idle = OFPROTO_MAX_IDLE_DEFAULT;
 unsigned ofproto_max_revalidator = OFPROTO_MAX_REVALIDATOR_DEFAULT;
 unsigned ofproto_min_revalidate_pps = OFPROTO_MIN_REVALIDATE_PPS_DEFAULT;
+unsigned ofproto_max_unkeep_op = OFPROTO_MAX_UNKEEP_OP_DEFAULT;
 
 size_t n_handlers, n_revalidators;
 
@@ -720,6 +721,14 @@ ofproto_set_min_revalidate_pps(unsigned min_revalidate_pps)
 {
     ofproto_min_revalidate_pps = min_revalidate_pps ? min_revalidate_pps : 1;
 }
+
+/* Sets the maximum allowed unkeep operation inrevalidator. */
+void
+ofproto_set_max_unkeep_op(unsigned max_unkeep_op)
+{
+    ofproto_max_unkeep_op = max_unkeep_op;
+}
+
 
 /* If forward_bpdu is true, the NORMAL action will forward frames with
  * reserved (e.g. STP) destination Ethernet addresses. if forward_bpdu is false,
