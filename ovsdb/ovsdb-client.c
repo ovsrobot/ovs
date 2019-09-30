@@ -2464,11 +2464,13 @@ do_wait(struct jsonrpc *rpc_unused OVS_UNUSED,
         if (reply && reply->id) {
             if (sdca_id && json_equal(sdca_id, reply->id)) {
                 if (reply->type == JSONRPC_ERROR) {
+                    jsonrpc_msg_destroy(reply);
                     ovs_fatal(0, "%s: set_db_change_aware failed (%s)",
                               jsonrpc_session_get_name(js),
                               json_to_string(reply->error, 0));
                 }
             } else if (txn_id && json_equal(txn_id, reply->id)) {
+                jsonrpc_msg_destroy(reply);
                 check_transaction_reply(reply);
                 exit(0);
             }
