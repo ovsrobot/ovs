@@ -640,7 +640,21 @@ AC_DEFUN([OVS_CHECK_UNBOUND],
 
 dnl Checks for libunwind.
 AC_DEFUN([OVS_CHECK_UNWIND],
-  [AC_CHECK_LIB(unwind, unw_backtrace, [HAVE_UNWIND=yes], [HAVE_UNWIND=no])
+  [AC_CHECK_LIB(unwind, unw_backtrace,
+     [
+      dnl We need to additionally check if we can build with our CFLAGS
+      dnl because 32bit build could fail if 64bit library installed.
+      dnl 32 and 64 bit versions of libunwind development package could be
+      dnl mutually exclusive in distributions.
+      AC_MSG_CHECKING([whether building with libunwind works])
+      save_cflags="$CFLAGS"
+      CFLAGS="$CFLAGS $OVS_CFLAGS"
+      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <libunwind.h>])],
+                        [HAVE_UNWIND=yes], [HAVE_UNWIND=no])
+      CFLAGS="$save_cflags"
+      AC_MSG_RESULT([$HAVE_UNWIND])
+     ],
+     [HAVE_UNWIND=no])
    if test "$HAVE_UNWIND" = yes; then
      AC_DEFINE([HAVE_UNWIND], [1], [Define to 1 if unwind is detected.])
      LIBS="$LIBS -lunwind"
