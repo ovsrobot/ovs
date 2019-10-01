@@ -1002,6 +1002,23 @@ netdev_afxdp_destruct(struct netdev *netdev)
 }
 
 int
+netdev_afxdp_verify_mtu_size(const struct netdev *netdev, int mtu)
+{
+    /*
+     * If a device is used in xdpmode skb, no driver-specific MTU size is
+     * checked and any value is allowed resulting in packet drops.
+     * This check will verify the maximum supported value based on the
+     * buffer size allocated and the additional headroom required.
+     */
+    if (netdev == NULL || mtu <= 0
+        || mtu > (FRAME_SIZE - OVS_XDP_HEADROOM - XDP_PACKET_HEADROOM)) {
+        return EINVAL;
+    }
+
+    return 0;
+}
+
+int
 netdev_afxdp_get_custom_stats(const struct netdev *netdev,
                               struct netdev_custom_stats *custom_stats)
 {

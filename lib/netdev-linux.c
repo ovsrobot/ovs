@@ -1593,6 +1593,15 @@ netdev_linux_set_mtu(struct netdev *netdev_, int mtu)
         goto exit;
     }
 
+#ifdef HAVE_AF_XDP
+    if (!strcmp(netdev_get_type(netdev_), "afxdp")) {
+        error = netdev_afxdp_verify_mtu_size(netdev_, mtu);
+        if (error) {
+            goto exit;
+        }
+    }
+#endif
+
     if (netdev->cache_valid & VALID_MTU) {
         error = netdev->netdev_mtu_error;
         if (error || netdev->mtu == mtu) {
