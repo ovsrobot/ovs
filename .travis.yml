@@ -34,14 +34,14 @@ env:
   - OPTS="--disable-ssl"
   - TESTSUITE=1 KERNEL=3.16
   - TESTSUITE=1 OPTS="--enable-shared"
-  - TESTSUITE=1 DPDK=1
+  - TESTSUITE=1 DPDK=1 DPDK_VER=refs/heads/master
   - TESTSUITE=1 LIBS=-ljemalloc
   - KERNEL_LIST="5.0  4.20 4.19 4.18 4.17 4.16"
   - KERNEL_LIST="4.15 4.14 4.9  4.4  3.19 3.16"
   - BUILD_ENV="-m32" OPTS="--disable-ssl"
-  - DPDK=1 OPTS="--enable-shared"
-  - DPDK_SHARED=1
-  - DPDK_SHARED=1 OPTS="--enable-shared"
+  - DPDK=1 DPDK_VER=refs/heads/master OPTS="--enable-shared"
+  - DPDK_SHARED=1 DPDK_VER=refs/heads/master
+  - DPDK_SHARED=1 DPDK_VER=refs/heads/master OPTS="--enable-shared"
 
 matrix:
   include:
