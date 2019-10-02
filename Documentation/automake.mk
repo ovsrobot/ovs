@@ -56,6 +56,7 @@ DOC_SOURCE = \
 	Documentation/topics/ovsdb-replication.rst \
 	Documentation/topics/porting.rst \
 	Documentation/topics/tracing.rst \
+	Documentation/topics/ovs-extensions.rst \
 	Documentation/topics/windows.rst \
 	Documentation/howto/index.rst \
 	Documentation/howto/dpdk.rst \
