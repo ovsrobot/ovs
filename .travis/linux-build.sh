@@ -3,7 +3,7 @@
 set -o errexit
 set -x
 
-CFLAGS=""
+CFLAGS_FOR_OVS="-g -O2"
 SPARSE_FLAGS=""
 EXTRA_OPTS="--enable-Werror"
 TARGET="x86_64-native-linuxapp-gcc"
@@ -129,10 +129,10 @@ function build_ovs()
     # Only build datapath if we are testing kernel w/o running testsuite
     if [ "${KERNEL}" ]; then
         pushd datapath
-        make -j4
+        make CFLAGS="${CFLAGS_FOR_OVS}" -j4
         popd
     else
-        make -j4 || { cat config.log; exit 1; }
+        make CFLAGS="${CFLAGS_FOR_OVS}" -j4 || { cat config.log; exit 1; }
     fi
 }
 
@@ -147,18 +147,20 @@ if [ "$DPDK" ] || [ "$DPDK_SHARED" ]; then
     install_dpdk $DPDK_VER
     if [ "$CC" = "clang" ]; then
         # Disregard cast alignment errors until DPDK is fixed
-        CFLAGS="$CFLAGS -Wno-cast-align"
+        CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} -Wno-cast-align"
     fi
 fi
 
 if [ "$CC" = "clang" ]; then
-    export OVS_CFLAGS="$CFLAGS -Wno-error=unused-command-line-argument"
-elif [[ $BUILD_ENV =~ "-m32" ]]; then
-    # Disable sparse for 32bit builds on 64bit machine
-    export OVS_CFLAGS="$CFLAGS $BUILD_ENV"
+    CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} -Wno-error=unused-command-line-argument"
+elif [ "$M32" ]; then
+    # Not using sparse for 32bit builds on 64bit machine.
+    # Adding m32 flag directly to CC to avoid any posiible issues with API/ABI
+    # difference on 'configure' and 'make' stages.
+    export CC="$CC -m32"
 else
     OPTS="--enable-sparse"
-    export OVS_CFLAGS="$CFLAGS $BUILD_ENV $SPARSE_FLAGS"
+    CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${SPARSE_FLAGS}"
 fi
 
 save_OPTS="${OPTS} $*"
@@ -170,7 +172,8 @@ if [ "$TESTSUITE" ]; then
     configure_ovs
 
     export DISTCHECK_CONFIGURE_FLAGS="$OPTS"
-    if ! make distcheck TESTSUITEFLAGS=-j4 RECHECK=yes; then
+    if ! make distcheck CFLAGS="${CFLAGS_FOR_OVS}" \
+         TESTSUITEFLAGS=-j4 RECHECK=yes; then
         # testsuite.log is necessary for debugging.
         cat */_build/sub/tests/testsuite.log
         exit 1
