@@ -5650,6 +5650,82 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
       connection tracking-related OpenFlow matches and actions).
     </column>
 
+    <column name="capabilities" key="max_vlan_headers"
+            type='{"type": "integer", "minInteger": 0}'>
+      Maximum number of 802.1q VLAN headers to serialize in a mask.
+    </column>
+    <column name="capabilities" key="max_mpls_depth"
+            type='{"type": "integer", "minInteger": 0}'>
+      Maximum number of MPLS label stack entries to serialise in a mask.
+    </column>
+    <column name="capabilities" key="recirc" type='{"type": "boolean"}'>
+      If this is true, then recirculation fields will always be serialised.
+    </column>
+    <column name="capabilities" key="ct_state" type='{"type": "boolean"}'>
+      If true, datapath supports OVS_KEY_ATTR_CT_STATE.
+    </column>
+    <column name="capabilities" key="ct_zone" type='{"type": "boolean"}'>
+      If true, datapath supports OVS_KEY_ATTR_CT_ZONE.
+    </column>
+    <column name="capabilities" key="ct_mark" type='{"type": "boolean"}'>
+      If true, datapath supports OVS_KEY_ATTR_CT_MARK.
+    </column>
+    <column name="capabilities" key="ct_label" type='{"type": "boolean"}'>
+      If true, datapath supports OVS_KEY_ATTR_CT_LABEL.
+    </column>
+    <column name="capabilities" key="ct_state_nat" type='{"type": "boolean"}'>
+      If true, it means that the datapath supports the NAT bits in
+      'ct_state'.  The above 'ct_state' member must be true for this
+      to make sense.
+    </column>
+    <column name="capabilities" key="ct_orig_tuple"
+            type='{"type": "boolean"}'>
+      Conntrack original direction tuple matching * supported.
+    </column>
+    <column name="capabilities" key="ct_orig_tuple6"
+            type='{"type": "boolean"}'>
+      Conntrack original direction tuple6 matching * supported.
+    </column>
+    <column name="capabilities" key="masked_set_action"
+            type='{"type": "boolean"}'>
+      True if the datapath supports masked data in
+      OVS_ACTION_ATTR_SET actions.
+    </column>
+    <column name="capabilities" key="tnl_push_pop" type='{"type": "boolean"}'>
+      True if the datapath supports tnl_push and pop actions.
+    </column>
+    <column name="capabilities" key="ufid" type='{"type": "boolean"}'>
+      True if the datapath supports OVS_FLOW_ATTR_UFID.
+    </column>
+    <column name="capabilities" key="trunc" type='{"type": "boolean"}'>
+      True if the datapath supports OVS_ACTION_ATTR_TRUNC action.
+    </column>
+    <column name="capabilities" key="clone" type='{"type": "boolean"}'>
+      True if the datapath supports OVS_ACTION_ATTR_CLONE action.
+    </column>
+    <column name="capabilities" key="sample_nesting"
+            type='{"type": "integer", "minInteger": 0}'>
+      Maximum level of nesting allowed by OVS_ACTION_ATTR_SAMPLE action.
+    </column>
+    <column name="capabilities" key="ct_eventmask" type='{"type": "boolean"}'>
+      OVS_CT_ATTR_EVENTMASK supported by OVS_ACTION_ATTR_CT action.
+    </column>
+    <column name="capabilities" key="ct_clear" type='{"type": "boolean"}'>
+      True if the datapath supports OVS_ACTION_ATTR_CT_CLEAR action.
+    </column>
+    <column name="capabilities" key="max_hash_alg"
+            type='{"type": "integer", "minInteger": 0}'>
+      Highest supported dp_hash algorithm.
+    </column>
+    <column name="capabilities" key="check_pkt_len"
+            type='{"type": "boolean"}'>
+      True if the datapath supports OVS_ACTION_ATTR_CHECK_PKT_LEN.
+    </column>
+    <column name="capabilities" key="ct_timeout" type='{"type": "boolean"}'>
+      True if the datapath supports OVS_CT_ATTR_TIMEOUT in
+      OVS_ACTION_ATTR_CTaction.
+    </column>
+
     <group title="Common Columns">
       The overall purpose of these columns is described under <code>Common
       Columns</code> at the beginning of this document.
