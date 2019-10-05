@@ -103,6 +103,8 @@ struct netdev_linux {
     int xdpmode;                /* AF_XDP running mode: driver or skb. */
     int requested_xdpmode;
     struct ovs_spin *tx_locks;  /* spin lock array for TX queues. */
+    const char *xdpobj;         /* XDP object file path. */
+    const char *requested_xdpobj;
 #endif
 };
 
