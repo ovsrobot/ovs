@@ -184,6 +184,55 @@ static void update_ethertype(struct sk_buff *skb, struct ethhdr *hdr,
 	hdr->h_proto = ethertype;
 }
 
+static int push_ptap_mpls(struct sk_buff *skb, struct sw_flow_key *key,
+		const struct ovs_action_push_mpls *mpls)
+{
+
+	struct mpls_shim_hdr *lse;
+	int err;
+
+	if (unlikely(!eth_p_mpls(mpls->mpls_ethertype)))
+		return -EINVAL;
+
+	/* Networking stack does not allow simultaneous Tunnel and MPLS GSO. */
+	if (skb->encapsulation)
+		return -EINVAL;
+
+	err = skb_cow_head(skb, MPLS_HLEN);
+	if (unlikely(err))
+		return err;
+
+	if (!skb->inner_protocol) {
+		skb_set_inner_network_header(skb, skb->mac_len);
+		skb_set_inner_protocol(skb, skb->protocol);
+	}
+
+	skb_push(skb, MPLS_HLEN);
+	skb_reset_mac_header(skb);
+	skb_reset_network_header(skb);
+
+	lse = mpls_hdr(skb);
+	lse->label_stack_entry = mpls->mpls_lse;
+	skb_postpush_rcsum(skb, lse, MPLS_HLEN);
+	skb->protocol = mpls->mpls_ethertype;
+
+	invalidate_flow_key(key);
+	return 0;
+}
+
+static int ptap_pop_mpls(struct sk_buff *skb, struct sw_flow_key *key,
+		const __be16 ethertype)
+{
+	int err;
+
+	if(!ethertype)
+		key->mac_proto = MAC_PROTO_ETHERNET;
+
+	pop_mpls(skb, key, ethertype);
+	invalidate_flow_key(key);
+	return 0;
+}
+
 static int push_mpls(struct sk_buff *skb, struct sw_flow_key *key,
 		     const struct ovs_action_push_mpls *mpls)
 {
@@ -1313,9 +1362,17 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			err = push_mpls(skb, key, nla_data(a));
 			break;
 
+		case OVS_ACTION_ATTR_PTAP_PUSH_MPLS:
+                        err = push_ptap_mpls(skb, key, nla_data(a));
+                        break;
+
 		case OVS_ACTION_ATTR_POP_MPLS:
 			err = pop_mpls(skb, key, nla_get_be16(a));
 			break;
+
+		 case OVS_ACTION_ATTR_PTAP_POP_MPLS:
+                        err = ptap_pop_mpls(skb, key, nla_get_be16(a));
+                        break;
 
 		case OVS_ACTION_ATTR_PUSH_VLAN:
 			err = push_vlan(skb, key, nla_data(a));

@@ -749,6 +749,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_POP_NSH:
     case OVS_ACTION_ATTR_CT_CLEAR:
     case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+    case OVS_ACTION_ATTR_PTAP_PUSH_MPLS:
+    case OVS_ACTION_ATTR_PTAP_POP_MPLS:
         return false;
 
     case OVS_ACTION_ATTR_UNSPEC:

@@ -141,6 +141,8 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_PUSH_NSH: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_POP_NSH: return 0;
     case OVS_ACTION_ATTR_CHECK_PKT_LEN: return ATTR_LEN_VARIABLE;
+    case OVS_ACTION_ATTR_PTAP_PUSH_MPLS: return sizeof(struct ovs_action_push_mpls);
+    case OVS_ACTION_ATTR_PTAP_POP_MPLS: return sizeof(ovs_be16);
 
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
@@ -1207,11 +1209,24 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
         ds_put_format(ds, ",eth_type=0x%"PRIx16")", ntohs(mpls->mpls_ethertype));
         break;
     }
+    case OVS_ACTION_ATTR_PTAP_PUSH_MPLS: {
+        const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
+        ds_put_cstr(ds, "ptap_push_mpls(");
+        format_mpls_lse(ds, mpls->mpls_lse);
+        ds_put_format(ds, ",eth_type=0x%"PRIx16")", ntohs(mpls->mpls_ethertype));
+        break;
+    }
     case OVS_ACTION_ATTR_POP_MPLS: {
         ovs_be16 ethertype = nl_attr_get_be16(a);
         ds_put_format(ds, "pop_mpls(eth_type=0x%"PRIx16")", ntohs(ethertype));
         break;
     }
+    case OVS_ACTION_ATTR_PTAP_POP_MPLS: {
+        ovs_be16 ethertype = nl_attr_get_be16(a);
+        ds_put_format(ds, "ptap_pop_mpls(eth_type=0x%"PRIx16")", ntohs(ethertype));
+        break;
+    }
+
     case OVS_ACTION_ATTR_SAMPLE:
         format_odp_sample_action(ds, a, portno_names);
         break;
@@ -7469,7 +7484,6 @@ odp_put_push_eth_action(struct ofpbuf *odp_actions,
     nl_msg_put_unspec(odp_actions, OVS_ACTION_ATTR_PUSH_ETH,
                       &eth, sizeof eth);
 }
-
 void
 odp_put_tunnel_action(const struct flow_tnl *tunnel,
                       struct ofpbuf *odp_actions, const char *tnl_type)
@@ -7673,7 +7687,8 @@ commit_vlan_action(const struct flow* flow, struct flow *base,
 /* Wildcarding already done at action translation time. */
 static void
 commit_mpls_action(const struct flow *flow, struct flow *base,
-                   struct ofpbuf *odp_actions)
+                   struct ofpbuf *odp_actions,  bool pending_encap,
+                   bool pending_decap)
 {
     int base_n = flow_count_mpls_labels(base, NULL);
     int flow_n = flow_count_mpls_labels(flow, NULL);
@@ -7712,7 +7727,11 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
             } else {
                 dl_type = flow->dl_type;
             }
-            nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_MPLS, dl_type);
+            if (pending_decap) {
+               nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_PTAP_POP_MPLS, dl_type);
+            } else {
+               nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_MPLS, dl_type);
+            }
             ovs_assert(flow_pop_mpls(base, base_n, flow->dl_type, NULL));
             base_n--;
         }
@@ -7723,9 +7742,16 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
     while (base_n < flow_n) {
         struct ovs_action_push_mpls *mpls;
 
-        mpls = nl_msg_put_unspec_zero(odp_actions,
+        if (!pending_encap) {
+            mpls = nl_msg_put_unspec_zero(odp_actions,
                                       OVS_ACTION_ATTR_PUSH_MPLS,
                                       sizeof *mpls);
+        } else {
+            mpls = nl_msg_put_unspec_zero(odp_actions,
+                                      OVS_ACTION_ATTR_PTAP_PUSH_MPLS,
+                                      sizeof *mpls);
+
+        }
         mpls->mpls_ethertype = flow->dl_type;
         mpls->mpls_lse = flow->mpls_lse[flow_n - base_n - 1];
         /* Update base flow's MPLS stack, but do not clear L3.  We need the L3
@@ -8372,6 +8398,10 @@ commit_encap_decap_action(const struct flow *flow,
             memcpy(&base_flow->dl_dst, &flow->dl_dst,
                    sizeof(*flow) - offsetof(struct flow, dl_dst));
             break;
+        case PT_MPLS:
+             commit_mpls_action(flow, base_flow, odp_actions, pending_encap,
+                                pending_decap);
+             break;
         default:
             /* Only the above protocols are supported for encap.
              * The check is done at action translation. */
@@ -8394,6 +8424,10 @@ commit_encap_decap_action(const struct flow *flow,
                 /* pop_nsh. */
                 odp_put_pop_nsh_action(odp_actions);
                 break;
+            case PT_MPLS:
+                 commit_mpls_action(flow, base_flow, odp_actions,pending_encap,
+                                    pending_decap);
+                 break;
             default:
                 /* Checks are done during translation. */
                 OVS_NOT_REACHED();
@@ -8439,7 +8473,7 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
     /* Make packet a non-MPLS packet before committing L3/4 actions,
      * which would otherwise do nothing. */
     if (eth_type_mpls(base->dl_type) && !eth_type_mpls(flow->dl_type)) {
-        commit_mpls_action(flow, base, odp_actions);
+        commit_mpls_action(flow, base, odp_actions, false, false);
         mpls_done = true;
     }
     commit_set_nsh_action(flow, base, odp_actions, wc, use_masked);
@@ -8447,7 +8481,7 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
     commit_set_port_action(flow, base, odp_actions, wc, use_masked);
     slow2 = commit_set_icmp_action(flow, base, odp_actions, wc);
     if (!mpls_done) {
-        commit_mpls_action(flow, base, odp_actions);
+        commit_mpls_action(flow, base, odp_actions, false, false);
     }
     commit_vlan_action(flow, base, odp_actions, wc);
     commit_set_priority_action(flow, base, odp_actions, wc, use_masked);
