@@ -623,3 +623,64 @@ Because of this limitation, this feature is considered 'experimental'.
 Further information can be found in the
 `DPDK documentation
 <https://doc.dpdk.org/guides-18.11/prog_guide/vhost_lib.html>`__
+
+Troubleshooting vhost-user tx contention
+----------------------------------------
+
+Depending on the number of a virtio port Rx queues enabled by a guest and on
+the number of PMDs used on OVS side, OVS can end up with contention occuring
+on the lock protecting the vhost Tx queue.
+This problem can be hard to catch since it is noticeable as an increased cpu
+cost for handling the received packets and, usually, as drops in the
+statistics of the physical port receiving the packets.
+
+To identify such a situation, a coverage statistic is available::
+
+  $ ovs-appctl coverage/read-counter vhost_tx_contention
+  59530681
+
+If you want to further debug this contention, perf can be used if your OVS
+daemon had been compiled with debug symbols.
+
+First, identify the point in the binary sources where the contention occurs::
+
+  $ perf probe -x $(which ovs-vswitchd) -L __netdev_dpdk_vhost_send \
+     |grep -B 3 -A 3 'COVERAGE_INC(vhost_tx_contention)'
+               }
+
+       21      if (unlikely(!rte_spinlock_trylock(&dev->tx_q[qid].tx_lock))) {
+       22          COVERAGE_INC(vhost_tx_contention);
+       23          rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
+               }
+
+Then, place a probe at the line where the lock is taken.
+You can add additional context to catch which port and queue are concerned::
+
+  $ perf probe -x $(which ovs-vswitchd) \
+    'vhost_tx_contention=__netdev_dpdk_vhost_send:23 netdev->name:string qid'
+
+Finally, gather data and generate a report::
+
+  $ perf record -e probe_ovs:vhost_tx_contention -aR sleep 10
+  [ perf record: Woken up 120 times to write data ]
+  [ perf record: Captured and wrote 30.151 MB perf.data (356278 samples) ]
+
+  $ perf report -F +pid --stdio
+  # To display the perf.data header info, please use --header/--header-only options.
+  #
+  #
+  # Total Lost Samples: 0
+  #
+  # Samples: 356K of event 'probe_ovs:vhost_tx_contention'
+  # Event count (approx.): 356278
+  #
+  # Overhead      Pid:Command        Trace output
+  # ........  .....................  ............................
+  #
+      55.57%    83332:pmd-c01/id:33  (9e9775) name="vhost0" qid=0
+      44.43%    83333:pmd-c15/id:34  (9e9775) name="vhost0" qid=0
+
+
+  #
+  # (Tip: Treat branches as callchains: perf report --branch-history)
+  #
