@@ -165,6 +165,8 @@ static int new_device(int vid);
 static void destroy_device(int vid);
 static int vring_state_changed(int vid, uint16_t queue_id, int enable);
 static void destroy_connection(int vid);
+static void vhost_guest_notified(int vid);
+
 static const struct vhost_device_ops virtio_net_device_ops =
 {
     .new_device =  new_device,
@@ -173,6 +175,7 @@ static const struct vhost_device_ops virtio_net_device_ops =
     .features_changed = NULL,
     .new_connection = NULL,
     .destroy_connection = destroy_connection,
+    .guest_notified = vhost_guest_notified,
 };
 
 enum { DPDK_RING_SIZE = 256 };
@@ -416,6 +419,8 @@ struct netdev_dpdk {
         struct netdev_stats stats;
         /* Custom stat for retries when unable to transmit. */
         uint64_t tx_retries;
+        /* Custom stat counting number of times a vhost remote was woken up */
+        uint64_t vhost_irqs;
         /* Protects stats */
         rte_spinlock_t stats_lock;
         /* 4 pad bytes here. */
@@ -2826,7 +2831,8 @@ netdev_dpdk_vhost_get_custom_stats(const struct netdev *netdev,
     int i;
 
 #define VHOST_CSTATS \
-    VHOST_CSTAT(tx_retries)
+    VHOST_CSTAT(tx_retries) \
+    VHOST_CSTAT(vhost_irqs)
 
 #define VHOST_CSTAT(NAME) + 1
     custom_stats->size = VHOST_CSTATS;
@@ -3744,6 +3750,25 @@ destroy_connection(int vid)
     } else {
         VLOG_INFO("vHost Device '%s' not found", ifname);
     }
+}
+
+static
+void vhost_guest_notified(int vid)
+{
+    struct netdev_dpdk *dev;
+
+    ovs_mutex_lock(&dpdk_mutex);
+    LIST_FOR_EACH (dev, list_node, &dpdk_list) {
+        if (netdev_dpdk_get_vid(dev) == vid) {
+            ovs_mutex_lock(&dev->mutex);
+            rte_spinlock_lock(&dev->stats_lock);
+            dev->vhost_irqs++;
+            rte_spinlock_unlock(&dev->stats_lock);
+            ovs_mutex_unlock(&dev->mutex);
+            break;
+        }
+    }
+    ovs_mutex_unlock(&dpdk_mutex);
 }
 
 /*
