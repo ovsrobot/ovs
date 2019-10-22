@@ -4573,6 +4573,10 @@ rxq_scheduling(struct dp_netdev *dp, bool pinned) OVS_REQUIRES(dp->port_mutex)
                     q->pmd = pmd;
                     pmd->isolated = true;
                     dp_netdev_pmd_unref(pmd);
+                    VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
+                          "rx queue %d.", pmd->core_id, numa_id,
+                          netdev_rxq_get_name(q->rx),
+                          netdev_rxq_get_queue_id(q->rx));
                 }
             } else if (!pinned && q->core_id == OVS_CORE_UNSPEC) {
                 uint64_t cycle_hist = 0;
