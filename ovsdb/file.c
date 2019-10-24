@@ -235,6 +235,8 @@ ovsdb_convert_table(struct ovsdb_txn *txn,
                 continue;
             }
 
+            ovsdb_datum_destroy(&dst_row->fields[dst_column->index], &dst_column->type);
+
             struct ovsdb_error *error = ovsdb_datum_convert(
                 &dst_row->fields[dst_column->index], &dst_column->type,
                 &src_row->fields[src_column->index], &src_column->type);
