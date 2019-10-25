@@ -19,6 +19,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <stdlib.h>
+#include "svec.h"
 #include "openvswitch/dynamic-string.h"
 #include "ovs-thread.h"
 #include "util.h"
@@ -75,6 +76,60 @@ find_option_by_value(const struct option *options, int value)
         }
     }
     return NULL;
+}
+
+/* Parses options set using environment variable.  The caller specifies the
+ * supported options in environment variable.  On success, adds the parsed
+ * env variables in 'argv', the number of options in 'argc', and returns argv.
+ *  */
+char **
+ovs_cmdl_env_parse_all(int *argcp, char *argv_[],
+                       char *env_options)
+{
+    char *str1, *token, *saveptr1;
+    char **argv = NULL;
+    int i, j, total_args, argc;
+    int env_argc = 0;
+
+    argc = *argcp;
+    if (!env_options) {
+        /* Copy args for parsing as is from argv_ */
+        argv = xcalloc(argc + 1, sizeof( *argv_) + 1 );
+        for (i = 0; i < argc; i++) {
+            argv[i] = xstrdup(argv_[i]);
+        }
+        return argv;
+    }
+
+    /* Count number of options passed via environment variable */
+    struct svec env_vars;
+    svec_init(&env_vars);
+    for (j = 1, str1 = env_options; ; j++, str1 = NULL) {
+            token = strtok_r(str1, " ", &saveptr1);
+            if (token == NULL) {
+                break;
+            }
+            svec_add(&env_vars, token);
+            env_argc++;
+    }
+    total_args = argc + env_argc + 1;
+    argv = xcalloc(total_args, sizeof( *argv_) + env_argc + 1);
+
+    /* Construct argv with command line + environment options. */
+    for (i = 0, j = 0; i < argc; i++, j++) {
+        if (j == 1) {
+            const char *env;
+            size_t k;
+            SVEC_FOR_EACH (k, env, &env_vars) {
+                argv[j] = xstrdup(env);
+                j++;
+            }
+        }
+        argv[j] = xstrdup(argv_[i]);
+    }
+    svec_destroy(&env_vars);
+    *argcp = j;
+    return argv;
 }
 
 /* Parses the command-line options in 'argc' and 'argv'.  The caller specifies
