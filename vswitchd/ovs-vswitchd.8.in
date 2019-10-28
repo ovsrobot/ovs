@@ -184,11 +184,12 @@ their controller connections and reconnect.
 .IP
 This command might be useful for debugging OpenFlow controller issues.
 .
-.IP "\fBbridge/dump\-flows\fR \fIbridge\fR"
+.IP "\fBbridge/dump\-flows\fR [\fB\-m\fR | \fB\-\-more\fR] \fIbridge\fR"
 Lists all flows in \fIbridge\fR, including those normally hidden to
 commands such as \fBovs\-ofctl dump\-flows\fR.  Flows set up by mechanisms
 such as in-band control and fail-open are hidden from the controller
 since it is not allowed to modify or override them.
+With \fB\-m\fR or \fB\-\-more\fR, also dump the offloaded packets and bytes.
 .SS "BOND COMMANDS"
 These commands manage bonded ports on an Open vSwitch's bridges.  To
 understand some of these commands, it is important to understand a
