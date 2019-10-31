@@ -41,8 +41,7 @@ To use pdump, simply launch OVS as usual, then navigate to the ``app/pdump``
 directory in DPDK, ``make`` the application and run like so::
 
     $ sudo ./build/app/dpdk-pdump -- \
-        --pdump port=0,queue=0,rx-dev=/tmp/pkts.pcap \
-        --server-socket-path=/usr/local/var/run/openvswitch
+        --pdump port=0,queue=0,rx-dev=/tmp/pkts.pcap
 
 The above command captures traffic received on queue 0 of port 0 and stores it
 in ``/tmp/pkts.pcap``. Other combinations of port numbers, queues numbers and
@@ -50,11 +49,7 @@ pcap locations are of course also available to use. For example, to capture all
 packets that traverse port 0 in a single pcap file::
 
     $ sudo ./build/app/dpdk-pdump -- \
-        --pdump 'port=0,queue=*,rx-dev=/tmp/pkts.pcap,tx-dev=/tmp/pkts.pcap' \
-        --server-socket-path=/usr/local/var/run/openvswitch
-
-``server-socket-path`` must be set to the value of ``ovs_rundir()`` which
-typically resolves to ``/usr/local/var/run/openvswitch``.
+        --pdump 'port=0,queue=*,rx-dev=/tmp/pkts.pcap,tx-dev=/tmp/pkts.pcap'
 
 Many tools are available to view the contents of the pcap file. Once example is
 tcpdump. Issue the following command to view the contents of ``pkts.pcap``::
