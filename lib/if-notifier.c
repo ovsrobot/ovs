@@ -18,9 +18,11 @@
 #include "if-notifier.h"
 #include "rtnetlink.h"
 #include "util.h"
+#include "if-notifier-dpdk.h"
 
 struct if_notifier {
-    struct nln_notifier *notifier;
+    struct nln_notifier *nl_notifier;
+    struct dpdk_notifier *dpdk_notifier;
     if_notify_func *cb;
     void *aux;
 };
@@ -33,6 +35,15 @@ if_notifier_cb(const struct rtnetlink_change *change OVS_UNUSED, void *aux)
     notifier->cb(notifier->aux);
 }
 
+static void
+dpdk_if_notifier_cb(void *aux)
+{
+    struct if_notifier *notifier;
+    notifier = aux;
+    notifier->cb(notifier->aux);
+}
+
+
 struct if_notifier *
 if_notifier_create(if_notify_func *cb, void *aux)
 {
@@ -40,7 +51,10 @@ if_notifier_create(if_notify_func *cb, void *aux)
     notifier = xmalloc(sizeof *notifier);
     notifier->cb = cb;
     notifier->aux = aux;
-    notifier->notifier = rtnetlink_notifier_create(if_notifier_cb, notifier);
+    notifier->nl_notifier = rtnetlink_notifier_create(if_notifier_cb,
+                                                      notifier);
+    notifier->dpdk_notifier = dpdk_notifier_create(dpdk_if_notifier_cb,
+                                                   notifier);
     return notifier;
 }
 
@@ -48,7 +62,8 @@ void
 if_notifier_destroy(struct if_notifier *notifier)
 {
     if (notifier) {
-        rtnetlink_notifier_destroy(notifier->notifier);
+        rtnetlink_notifier_destroy(notifier->nl_notifier);
+        dpdk_notifier_destroy(notifier->dpdk_notifier);
         free(notifier);
     }
 }
