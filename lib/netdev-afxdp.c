@@ -21,6 +21,7 @@
 #include "netdev-afxdp.h"
 #include "netdev-afxdp-pool.h"
 
+#include <bpf/bpf.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <linux/rtnetlink.h>
@@ -30,6 +31,7 @@
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -88,8 +90,11 @@ BUILD_ASSERT_DECL(PROD_NUM_DESCS == CONS_NUM_DESCS);
 
 #define UMEM2DESC(elem, base) ((uint64_t)((char *)elem - (char *)base))
 
+#define LIBBPF_XDP_PROGRAM "__default__"
+
 static struct xsk_socket_info *xsk_configure(int ifindex, int xdp_queue_id,
-                                             int mode, bool use_need_wakeup);
+                                             int mode, bool use_need_wakeup,
+                                             bool use_default_xdp);
 static void xsk_remove_xdp_program(uint32_t ifindex, int xdpmode);
 static void xsk_destroy(struct xsk_socket_info *xsk);
 static int xsk_configure_all(struct netdev *netdev);
@@ -213,6 +218,50 @@ netdev_afxdp_sweep_unused_pools(void *aux OVS_UNUSED)
     ovs_mutex_unlock(&unused_pools_mutex);
 }
 
+static int
+xsk_load_prog(const char *path, struct bpf_object **obj,
+              int *prog_fd)
+{
+    struct bpf_prog_load_attr attr = {
+        .prog_type = BPF_PROG_TYPE_XDP,
+        .file = path,
+    };
+
+    if (bpf_prog_load_xattr(&attr, obj, prog_fd)) {
+        VLOG_ERR("Can't load XDP program at '%s'", path);
+        return EINVAL;
+    }
+
+    return 0;
+}
+
+static int
+xsk_configure_map(struct bpf_object *obj, struct xsk_socket_info *xsk,
+                  int queue_id)
+{
+    struct bpf_map *map;
+    int xsks_map_fd;
+    int xsk_fd;
+    int ret;
+
+    map = bpf_object__find_map_by_name(obj, "xsks_map");
+    if (!map) {
+        VLOG_WARN("XDP map 'xsks_map' not found");
+        return EINVAL;
+    }
+
+    xsks_map_fd = bpf_map__fd(map);
+    xsk_fd = xsk_socket__fd(xsk->xsk);
+
+    ret = bpf_map_update_elem(xsks_map_fd, &queue_id, &xsk_fd, 0);
+    if (ret) {
+        VLOG_WARN("Can't set XSK map, map fd: %d", xsks_map_fd);
+        return EINVAL;
+    }
+
+    return 0;
+}
+
 static struct xsk_umem_info *
 xsk_configure_umem(void *buffer, uint64_t size, int xdpmode)
 {
@@ -290,7 +339,8 @@ xsk_configure_umem(void *buffer, uint64_t size, int xdpmode)
 
 static struct xsk_socket_info *
 xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
-                     uint32_t queue_id, int xdpmode, bool use_need_wakeup)
+                     uint32_t queue_id, int xdpmode, bool use_need_wakeup,
+                     bool use_default_xdp)
 {
     struct xsk_socket_config cfg;
     struct xsk_socket_info *xsk;
@@ -319,6 +369,10 @@ xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
     }
 #endif
 
+    if (!use_default_xdp) {
+        cfg.libbpf_flags |= XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD;
+    }
+
     if (if_indextoname(ifindex, devname) == NULL) {
         VLOG_ERR("ifindex %d to devname failed (%s)",
                  ifindex, ovs_strerror(errno));
@@ -339,17 +393,19 @@ xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
         return NULL;
     }
 
-    /* Make sure the built-in AF_XDP program is loaded. */
-    ret = bpf_get_link_xdp_id(ifindex, &prog_id, cfg.xdp_flags);
-    if (ret || !prog_id) {
-        if (ret) {
-            VLOG_ERR("Get XDP prog ID failed (%s)", ovs_strerror(errno));
-        } else {
-            VLOG_ERR("No XDP program is loaded at ifindex %d", ifindex);
+    if (use_default_xdp) {
+        /* Make sure the built-in AF_XDP program is loaded. */
+        ret = bpf_get_link_xdp_id(ifindex, &prog_id, cfg.xdp_flags);
+        if (ret || !prog_id) {
+            if (ret) {
+                VLOG_ERR("Get XDP prog ID failed (%s)", ovs_strerror(errno));
+            } else {
+                VLOG_ERR("No XDP program is loaded at ifindex %d", ifindex);
+            }
+            xsk_socket__delete(xsk->xsk);
+            free(xsk);
+            return NULL;
         }
-        xsk_socket__delete(xsk->xsk);
-        free(xsk);
-        return NULL;
     }
 
     while (!xsk_ring_prod__reserve(&xsk->umem->fq,
@@ -376,7 +432,7 @@ xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
 
 static struct xsk_socket_info *
 xsk_configure(int ifindex, int xdp_queue_id, int xdpmode,
-              bool use_need_wakeup)
+              bool use_need_wakeup, bool use_default_xdp)
 {
     struct xsk_socket_info *xsk;
     struct xsk_umem_info *umem;
@@ -400,7 +456,7 @@ xsk_configure(int ifindex, int xdp_queue_id, int xdpmode,
     VLOG_DBG("Allocated umem pool at 0x%"PRIxPTR, (uintptr_t) umem);
 
     xsk = xsk_configure_socket(umem, ifindex, xdp_queue_id, xdpmode,
-                               use_need_wakeup);
+                               use_need_wakeup, use_default_xdp);
     if (!xsk) {
         /* Clean up umem and xpacket pool. */
         if (xsk_umem__delete(umem->umem)) {
@@ -420,6 +476,10 @@ xsk_configure_all(struct netdev *netdev)
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     struct xsk_socket_info *xsk_info;
     int i, ifindex, n_rxq, n_txq;
+    bool use_default_xdp;
+    struct bpf_object *obj;
+    int prog_fd = 0;
+    int ret;
 
     ifindex = linux_get_ifindex(netdev_get_name(netdev));
 
@@ -428,6 +488,7 @@ xsk_configure_all(struct netdev *netdev)
 
     n_rxq = netdev_n_rxq(netdev);
     dev->xsks = xcalloc(n_rxq, sizeof *dev->xsks);
+    use_default_xdp = dev->xdpobj ? false : true;
 
     /* Configure each queue. */
     for (i = 0; i < n_rxq; i++) {
@@ -436,7 +497,7 @@ xsk_configure_all(struct netdev *netdev)
                  dev->xdpmode == XDP_COPY ? "SKB" : "DRV",
                  dev->use_need_wakeup ? "true" : "false");
         xsk_info = xsk_configure(ifindex, i, dev->xdpmode,
-                                 dev->use_need_wakeup);
+                                 dev->use_need_wakeup, use_default_xdp);
         if (!xsk_info) {
             VLOG_ERR("Failed to create AF_XDP socket on queue %d.", i);
             dev->xsks[i] = NULL;
@@ -446,6 +507,28 @@ xsk_configure_all(struct netdev *netdev)
         atomic_init(&xsk_info->tx_dropped, 0);
         xsk_info->outstanding_tx = 0;
         xsk_info->available_rx = PROD_NUM_DESCS;
+
+        if (dev->xdpobj) {
+            if (prog_fd == 0) {
+                /* XDP program is per-netdev, so all queues share
+                   the same XDP program. */
+                ret = xsk_load_prog(dev->xdpobj, &obj, &prog_fd);
+                if (ret) {
+                    goto err;
+                }
+            }
+            ret = xsk_configure_map(obj, xsk_info, i);
+            if (ret) {
+                goto err;
+            }
+
+            /* Clear existing XDP program and its associated map. */
+            bpf_set_link_xdp_fd(ifindex, -1, dev->xdpmode);
+
+            bpf_set_link_xdp_fd(ifindex, prog_fd, dev->xdpmode);
+            VLOG_INFO("%s: Load custom XDP program at %s.",
+                      netdev_get_name(netdev), dev->xdpobj);
+        }
     }
 
     n_txq = netdev_n_txq(netdev);
@@ -519,6 +602,8 @@ xsk_destroy_all(struct netdev *netdev)
         free(dev->tx_locks);
         dev->tx_locks = NULL;
     }
+    free(CONST_CAST(char *, dev->xdpobj));
+    dev->xdpobj = NULL;
 }
 
 int
@@ -527,8 +612,10 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
 {
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     const char *str_xdpmode;
+    const char *str_xdpobj;
     int xdpmode, new_n_rxq;
     bool need_wakeup;
+    struct stat s;
 
     ovs_mutex_lock(&dev->mutex);
     new_n_rxq = MAX(smap_get_int(args, "n_rxq", NR_QUEUE), 1);
@@ -545,9 +632,9 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     } else if (!strcasecmp(str_xdpmode, "skb")) {
         xdpmode = XDP_COPY;
     } else {
+        ovs_mutex_unlock(&dev->mutex);
         VLOG_ERR("%s: Incorrect xdpmode (%s).",
                  netdev_get_name(netdev), str_xdpmode);
-        ovs_mutex_unlock(&dev->mutex);
         return EINVAL;
     }
 
@@ -559,12 +646,30 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     }
 #endif
 
+    str_xdpobj = smap_get_def(args, "xdpobj", NULL);
+    if (str_xdpobj) {
+        if (!strcmp(str_xdpobj, LIBBPF_XDP_PROGRAM)) {
+            str_xdpobj = NULL;
+        } else if (stat(str_xdpobj, &s)) {
+            ovs_mutex_unlock(&dev->mutex);
+            VLOG_ERR("Invalid xdpobj '%s': %s.", str_xdpobj,
+                     ovs_strerror(errno));
+            return EINVAL;
+        } else if (!S_ISREG(s.st_mode)) {
+            ovs_mutex_unlock(&dev->mutex);
+            VLOG_ERR("xdpobj '%s' is not a regular file.", str_xdpobj);
+            return EINVAL;
+        }
+    }
+
     if (dev->requested_n_rxq != new_n_rxq
         || dev->requested_xdpmode != xdpmode
-        || dev->requested_need_wakeup != need_wakeup) {
+        || dev->requested_need_wakeup != need_wakeup
+        || !nullable_string_is_equal(dev->requested_xdpobj, str_xdpobj)) {
         dev->requested_n_rxq = new_n_rxq;
         dev->requested_xdpmode = xdpmode;
         dev->requested_need_wakeup = need_wakeup;
+        dev->requested_xdpobj = nullable_xstrdup(str_xdpobj);
         netdev_request_reconfigure(netdev);
     }
     ovs_mutex_unlock(&dev->mutex);
@@ -582,6 +687,8 @@ netdev_afxdp_get_config(const struct netdev *netdev, struct smap *args)
                     dev->xdpmode == XDP_ZEROCOPY ? "drv" : "skb");
     smap_add_format(args, "use-need-wakeup", "%s",
                     dev->use_need_wakeup ? "true" : "false");
+    smap_add_format(args, "xdpobj", "%s",
+                    dev->xdpobj ? dev->xdpobj : LIBBPF_XDP_PROGRAM);
     ovs_mutex_unlock(&dev->mutex);
     return 0;
 }
@@ -598,7 +705,8 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     if (netdev->n_rxq == dev->requested_n_rxq
         && dev->xdpmode == dev->requested_xdpmode
         && dev->use_need_wakeup == dev->requested_need_wakeup
-        && dev->xsks) {
+        && dev->xsks
+        && nullable_string_is_equal(dev->xdpobj, dev->requested_xdpobj)) {
         goto out;
     }
 
@@ -615,6 +723,8 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
         VLOG_ERR("setrlimit(RLIMIT_MEMLOCK) failed: %s", ovs_strerror(errno));
     }
     dev->use_need_wakeup = dev->requested_need_wakeup;
+
+    dev->xdpobj = dev->requested_xdpobj;
 
     err = xsk_configure_all(netdev);
     if (err) {
@@ -1053,10 +1163,12 @@ netdev_afxdp_construct(struct netdev *netdev)
     netdev->n_rxq = 0;
     netdev->n_txq = 0;
     dev->xdpmode = 0;
+    dev->xdpobj = NULL;
 
     dev->requested_n_rxq = NR_QUEUE;
     dev->requested_xdpmode = XDP_COPY;
     dev->requested_need_wakeup = NEED_WAKEUP_DEFAULT;
+    dev->requested_xdpobj = NULL;
 
     dev->xsks = NULL;
     dev->tx_locks = NULL;
