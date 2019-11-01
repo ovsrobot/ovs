@@ -211,3 +211,11 @@ m4_define([VSCTL_ADD_DATAPATH_TABLE],
 # or necessary for the userspace datapath as it is checking for a kernel
 # specific regression.
 m4_define([CHECK_L3L4_CONNTRACK_REASM])
+
+# OVS_CHECK_NC()
+#
+# Check if comman nc is available.
+m4_define([OVS_CHECK_NC],
+[
+    AT_SKIP_IF([test $HAVE_NC = no])
+])

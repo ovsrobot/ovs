@@ -37,3 +37,10 @@ m4_define([CONFIGURE_VETH_OFFLOADS],
 #
 m4_define([OVS_START_L7],
    [AT_SKIP_IF([:])])
+
+# OVS_CHECK_NC()
+#
+# Check if comman nc is available. Always skip because
+# AF_XDP veth does not support TCP with namespaces.
+m4_define([OVS_CHECK_NC],
+    [AT_SKIP_IF([:])])

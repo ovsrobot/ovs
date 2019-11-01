@@ -323,3 +323,11 @@ m4_define([CHECK_L3L4_CONNTRACK_REASM],
 [
     AT_SKIP_IF([:])
 ])
+
+# OVS_CHECK_NC()
+#
+# Check if comman nc is available.
+m4_define([OVS_CHECK_NC],
+[
+    AT_SKIP_IF([test $HAVE_NC = no])
+])
