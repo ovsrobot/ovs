@@ -211,3 +211,9 @@ m4_define([VSCTL_ADD_DATAPATH_TABLE],
 # or necessary for the userspace datapath as it is checking for a kernel
 # specific regression.
 m4_define([CHECK_L3L4_CONNTRACK_REASM])
+
+# OVS_SKIP_AFXDP()
+#
+# Skip when check-afxdp.
+m4_define([OVS_SKIP_AFXDP],
+    [AT_SKIP_IF([false])])

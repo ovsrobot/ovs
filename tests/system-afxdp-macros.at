@@ -37,3 +37,9 @@ m4_define([CONFIGURE_VETH_OFFLOADS],
 #
 m4_define([OVS_START_L7],
    [AT_SKIP_IF([:])])
+
+# OVS_SKIP_AFXDP()
+#
+# Skip when check-afxdp.
+m4_define([OVS_SKIP_AFXDP],
+    [AT_SKIP_IF([:])])

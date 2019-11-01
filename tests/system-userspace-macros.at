@@ -323,3 +323,9 @@ m4_define([CHECK_L3L4_CONNTRACK_REASM],
 [
     AT_SKIP_IF([:])
 ])
+
+# OVS_SKIP_AFXDP()
+#
+# Skip when check-afxdp.
+m4_define([OVS_SKIP_AFXDP],
+    [AT_SKIP_IF([false])])

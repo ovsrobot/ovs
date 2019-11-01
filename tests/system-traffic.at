@@ -5660,6 +5660,7 @@ AT_CLEANUP
 
 AT_SETUP([conntrack - floating IP])
 AT_SKIP_IF([test $HAVE_NC = no])
+OVS_SKIP_AFXDP()
 CHECK_CONNTRACK()
 OVS_TRAFFIC_VSWITCHD_START()
 OVS_CHECK_CT_CLEAR()
@@ -5735,6 +5736,7 @@ AT_SETUP([conntrack - negative test for recirculation optimization])
 dnl This test will fail if 'conn' caching is being used, because the tuple
 dnl has been changed outside of conntrack.
 AT_SKIP_IF([test $HAVE_NC = no])
+OVS_SKIP_AFXDP()
 CHECK_CONNTRACK()
 OVS_TRAFFIC_VSWITCHD_START()
 OVS_CHECK_CT_CLEAR()
