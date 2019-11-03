@@ -3118,6 +3118,19 @@ xlate_normal(struct xlate_ctx *ctx)
 
         if (mac_port) {
             struct xbundle *mac_xbundle = xbundle_lookup(ctx->xcfg, mac_port);
+
+            /* Drop frames if output port is a mirror port. */
+            if (mac_xbundle && xbundle_mirror_out(ctx->xbridge, mac_xbundle)) {
+                if (ctx->xin->packet != NULL) {
+                    xlate_report_error(ctx, "dropping packet received on port %s, "
+                                       "which is reserved exclusively for mirroring",
+                                       mac_xbundle->name);
+                }
+                xlate_report(ctx, OFT_WARN,
+                             "output port is a mirror port, dropping");
+                return;
+            }
+
             if (mac_xbundle
                 && mac_xbundle != in_xbundle
                 && mac_xbundle->ofbundle != in_xbundle->ofbundle) {
