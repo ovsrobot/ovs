@@ -186,6 +186,14 @@ AC_DEFUN([OVS_CHECK_LINUX_TC], [
                [Define to 1 if TCA_FLOWER_KEY_ENC_IP_TTL_MASK is available.])])
 
   AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#include <linux/pkt_cls.h>], [
+        struct tcf_t x;
+	x.firstuse = 1;
+    ])],
+    [AC_DEFINE([HAVE_TCF_T_FIRSTUSE], [1],
+               [Define to 1 if struct tcf_t have firstuse.])])
+
+  AC_COMPILE_IFELSE([
     AC_LANG_PROGRAM([#include <linux/tc_act/tc_vlan.h>], [
         int x = TCA_VLAN_PUSH_VLAN_PRIORITY;
     ])],
