@@ -205,7 +205,7 @@ int xlate_lookup(const struct dpif_backer *, const struct flow *,
                  struct ofproto_dpif **, struct dpif_ipfix **,
                  struct dpif_sflow **, struct netflow **,
                  ofp_port_t *ofp_in_port);
-
+/*
 enum xlate_error {
     XLATE_OK = 0,
     XLATE_BRIDGE_NOT_FOUND,
@@ -217,8 +217,11 @@ enum xlate_error {
     XLATE_TOO_MANY_MPLS_LABELS,
     XLATE_INVALID_TUNNEL_METADATA,
     XLATE_UNSUPPORTED_PACKET_TYPE,
+    XLATE_CONGESTION_DROP,
+    XLATE_FORWARDING_DISABLED,
+    XLATE_MAX,
 };
-
+*/
 const char *xlate_strerror(enum xlate_error error);
 
 enum xlate_error xlate_actions(struct xlate_in *, struct xlate_out *);
