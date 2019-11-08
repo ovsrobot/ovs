@@ -105,6 +105,10 @@ struct netdev_linux {
     bool use_need_wakeup;
     bool requested_need_wakeup;
     struct ovs_spin *tx_locks;  /* spin lock array for TX queues. */
+    const char *xdpobj;         /* XDP object file path. */
+    const char *requested_xdpobj;
+    int prog_fd;
+    int map_fd;
 #endif
 };
 
