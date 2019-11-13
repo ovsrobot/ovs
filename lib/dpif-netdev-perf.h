@@ -220,6 +220,11 @@ cycles_counter_update(struct pmd_perf_stats *s)
     asm volatile("rdtsc" : "=a" (l), "=d" (h));
 
     return s->last_tsc = ((uint64_t) h << 32) | l;
+#elif !defined(_MSC_VER) && defined(__aarch64__)
+    uint64_t tsc;
+    asm volatile("mrs %0, cntvct_el0" : "=r" (tsc));
+
+    return s->last_tsc = tsc;
 #elif defined(__linux__)
     return rdtsc_syscall(s);
 #else
