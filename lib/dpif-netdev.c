@@ -6457,16 +6457,13 @@ smc_lookup_batch(struct dp_netdev_pmd_thread *pmd,
  * beginning of the 'packets' array. The pointers of missed keys are put in the
  * missed_keys pointer array for future processing.
  *
- * The function returns the number of packets that needs to be processed in the
- * 'packets' array (they have been moved to the beginning of the vector).
- *
  * For performance reasons a caller may choose not to initialize the metadata
  * in 'packets_'.  If 'md_is_valid' is false, the metadata in 'packets'
  * is not valid and must be initialized by this function using 'port_no'.
  * If 'md_is_valid' is true, the metadata is already valid and 'port_no'
  * will be ignored.
  */
-static inline size_t
+static inline void
 dfc_processing(struct dp_netdev_pmd_thread *pmd,
                struct dp_packet_batch *packets_,
                struct netdev_flow_key *keys,
@@ -6582,15 +6579,11 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
 
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_EXACT_HIT, n_emc_hit);
 
-    if (!smc_enable_db) {
-        return dp_packet_batch_size(packets_);
+    if (smc_enable_db) {
+        /* Packets miss EMC will do a batch lookup in SMC if enabled */
+        smc_lookup_batch(pmd, keys, missed_keys, packets_,
+                              n_missed, flow_map, index_map);
     }
-
-    /* Packets miss EMC will do a batch lookup in SMC if enabled */
-    smc_lookup_batch(pmd, keys, missed_keys, packets_,
-                     n_missed, flow_map, index_map);
-
-    return dp_packet_batch_size(packets_);
 }
 
 static inline int
