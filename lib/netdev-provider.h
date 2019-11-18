@@ -91,11 +91,13 @@ struct netdev {
 static inline void
 netdev_change_seq_changed(const struct netdev *netdev_)
 {
+    uint64_t orig;
     struct netdev *netdev = CONST_CAST(struct netdev *, netdev_);
     seq_change(connectivity_seq_get());
-    netdev->change_seq++;
-    if (!netdev->change_seq) {
-        netdev->change_seq++;
+    atomic_add_explicit(&netdev->change_seq, 1, &orig, memory_order_release);
+    if (OVS_UNLIKELY(!netdev->change_seq)) {
+        atomic_add_explicit(&netdev->change_seq, 1, &orig,
+                            memory_order_release);
     }
 }
 
