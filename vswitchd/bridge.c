@@ -2758,7 +2758,6 @@ port_refresh_stp_status(struct port *port)
     smap_init(&smap);
     smap_add_format(&smap, "stp_port_id", "%d", status.port_id);
     smap_add(&smap, "stp_state", stp_state_name(status.state));
-    smap_add_format(&smap, "stp_sec_in_state", "%u", status.sec_in_state);
     smap_add(&smap, "stp_role", stp_role_name(status.role));
     ovsrec_port_set_status(port->cfg, &smap);
     smap_destroy(&smap);
@@ -2770,8 +2769,8 @@ port_refresh_stp_stats(struct port *port)
     struct ofproto *ofproto = port->bridge->ofproto;
     struct iface *iface;
     struct ofproto_port_stp_stats stats;
-    const char *keys[3];
-    int64_t int_values[3];
+    const char *keys[4];
+    int64_t int_values[4];
 
     if (port_is_synthetic(port)) {
         return;
@@ -2799,6 +2798,8 @@ port_refresh_stp_stats(struct port *port)
     int_values[1] = stats.rx_count;
     keys[2] = "stp_error_count";
     int_values[2] = stats.error_count;
+    keys[3] = "stp_sec_in_state";
+    int_values[3] = stats.sec_in_state;
 
     ovsrec_port_set_statistics(port->cfg, keys, int_values,
                                ARRAY_SIZE(int_values));
