@@ -1256,7 +1256,7 @@ AC_DEFUN([OVS_CHECK_SPARSE_TARGET],
    dnl allow "sparse" correctly check the same code that will be built.
    dnl Required for checking DPDK headers.
    AC_MSG_CHECKING([vector options for cgcc])
-   VECTOR=$($CC -dM -E - < /dev/null | grep -E "MMX|SSE|AVX" | \
+   VECTOR=$($CC -dM -E - < /dev/null | grep -E "MMX|SSE|AVX|NEON|SIMD" | \
             cut -c 9- | sed 's/ /=/' | sed 's/^/-D/' | tr '\n' ' ')
    AC_MSG_RESULT([$VECTOR])
    CGCCFLAGS="$CGCCFLAGS $VECTOR"
