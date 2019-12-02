@@ -33,6 +33,7 @@
 
 #include "dirs.h"
 #include "fatal-signal.h"
+#include "id-pool.h"
 #include "netdev-dpdk.h"
 #include "netdev-offload-provider.h"
 #include "openvswitch/dynamic-string.h"
@@ -54,6 +55,9 @@ static bool vhost_postcopy_enabled = false; /* Status of vHost POSTCOPY
 static bool dpdk_initialized = false; /* Indicates successful initialization
                                        * of DPDK. */
 static bool per_port_memory = false; /* Status of per port memory support */
+
+static struct id_pool *lcore_id_pool;
+static struct ovs_mutex lcore_id_pool_mutex = OVS_MUTEX_INITIALIZER;
 
 static int
 process_vhost_flags(char *flag, const char *default_val, int size,
@@ -346,7 +350,8 @@ dpdk_init__(const struct smap *ovs_other_config)
         }
     }
 
-    if (args_contains(&args, "-c") || args_contains(&args, "-l")) {
+    if (args_contains(&args, "-c") || args_contains(&args, "-l") ||
+        args_contains(&args, "--lcores")) {
         auto_determine = false;
     }
 
@@ -372,8 +377,8 @@ dpdk_init__(const struct smap *ovs_other_config)
              * thread affintity - default to core #0 */
             VLOG_ERR("Thread getaffinity failed. Using core #0");
         }
-        svec_add(&args, "-l");
-        svec_add_nocopy(&args, xasprintf("%d", cpu));
+        svec_add(&args, "--lcores");
+        svec_add_nocopy(&args, xasprintf("0@%d", cpu));
     }
 
     svec_terminate(&args);
@@ -428,6 +433,23 @@ dpdk_init__(const struct smap *ovs_other_config)
                      ovs_strerror(errno));
         }
     }
+
+    ovs_mutex_lock(&lcore_id_pool_mutex);
+    lcore_id_pool = id_pool_create(0, RTE_MAX_LCORE);
+    /* Empty the whole pool... */
+    for (uint32_t lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
+        uint32_t lcore_id;
+
+        id_pool_alloc_id(lcore_id_pool, &lcore_id);
+    }
+    /* ...and release the unused spots. */
+    for (uint32_t lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
+        if (rte_eal_lcore_role(lcore) != ROLE_OFF) {
+             continue;
+        }
+        id_pool_free_id(lcore_id_pool, lcore);
+    }
+    ovs_mutex_unlock(&lcore_id_pool_mutex);
 
     /* We are called from the main thread here */
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
@@ -522,11 +544,48 @@ dpdk_available(void)
 }
 
 void
-dpdk_set_lcore_id(unsigned cpu)
+dpdk_init_thread_context(unsigned cpu)
 {
+    cpu_set_t cpuset;
+    unsigned lcore;
+    int err;
+
     /* NON_PMD_CORE_ID is reserved for use by non pmd threads. */
     ovs_assert(cpu != NON_PMD_CORE_ID);
-    RTE_PER_LCORE(_lcore_id) = cpu;
+
+    ovs_mutex_lock(&lcore_id_pool_mutex);
+    if (lcore_id_pool == NULL || !id_pool_alloc_id(lcore_id_pool, &lcore)) {
+        lcore = NON_PMD_CORE_ID;
+    }
+    ovs_mutex_unlock(&lcore_id_pool_mutex);
+
+    RTE_PER_LCORE(_lcore_id) = lcore;
+
+    /* DPDK is not initialised, nothing more to do. */
+    if (lcore == NON_PMD_CORE_ID) {
+        return;
+    }
+
+    CPU_ZERO(&cpuset);
+    err = pthread_getaffinity_np(pthread_self(), sizeof cpuset, &cpuset);
+    if (err) {
+        VLOG_ABORT("Thread getaffinity error: %s", ovs_strerror(err));
+    }
+
+    rte_thread_set_affinity(&cpuset);
+    VLOG_INFO("Initialised lcore %u for core %u", lcore, cpu);
+}
+
+void
+dpdk_uninit_thread_context(void)
+{
+    if (RTE_PER_LCORE(_lcore_id) == NON_PMD_CORE_ID) {
+        return;
+    }
+
+    ovs_mutex_lock(&lcore_id_pool_mutex);
+    id_pool_free_id(lcore_id_pool, RTE_PER_LCORE(_lcore_id));
+    ovs_mutex_unlock(&lcore_id_pool_mutex);
 }
 
 void
