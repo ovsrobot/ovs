@@ -3535,6 +3535,7 @@ propagate_tunnel_data_to_flow(struct xlate_ctx *ctx, struct eth_addr dmac,
         break;
     case OVS_VPORT_TYPE_VXLAN:
     case OVS_VPORT_TYPE_GENEVE:
+    case OVS_VPORT_TYPE_GTPU:
         nw_proto = IPPROTO_UDP;
         break;
     case OVS_VPORT_TYPE_LISP:
@@ -7574,7 +7575,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     }
 
     if (flow->packet_type != htonl(PT_ETH) && in_port &&
-        in_port->pt_mode == NETDEV_PT_LEGACY_L3 && ctx.table_id == 0) {
+        in_port->pt_mode == NETDEV_PT_LEGACY_L3 && ctx.table_id == 0 &&
+        flow->packet_type != htonl(PT_GTPU_MSG)) {
         /* Add dummy Ethernet header to non-L2 packet if it's coming from a
          * L3 port. So all packets will be L2 packets for lookup.
          * The dl_type has already been set from the packet_type. */

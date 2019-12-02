@@ -375,6 +375,34 @@ match_set_tun_erspan_hwid(struct match *match, uint8_t hwid)
 }
 
 void
+match_set_tun_gtpu_flags_masked(struct match *match, uint8_t flags,
+                                uint8_t mask)
+{
+    match->wc.masks.tunnel.gtpu_flags = flags;
+    match->flow.tunnel.gtpu_flags = flags & mask;
+}
+
+void
+match_set_tun_gtpu_flags(struct match *match, uint8_t flags)
+{
+    match_set_tun_gtpu_flags_masked(match, flags, UINT8_MAX);
+}
+
+void
+match_set_tun_gtpu_msgtype_masked(struct match *match, uint8_t msgtype,
+                                  uint8_t mask)
+{
+    match->wc.masks.tunnel.gtpu_msgtype = msgtype;
+    match->flow.tunnel.gtpu_msgtype = msgtype & mask;
+}
+
+void
+match_set_tun_gtpu_msgtype(struct match *match, uint8_t msgtype)
+{
+    match_set_tun_gtpu_msgtype_masked(match, msgtype, UINT8_MAX);
+}
+
+void
 match_set_in_port(struct match *match, ofp_port_t ofp_port)
 {
     match->wc.masks.in_port.ofp_port = u16_to_ofp(UINT16_MAX);
