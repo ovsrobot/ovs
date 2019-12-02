@@ -76,6 +76,13 @@ enum ct_alg_ctl_type {
     CT_ALG_CTL_SIP,
 };
 
+struct zone_limit {
+    struct hmap_node node;
+    int32_t zone;
+    uint32_t limit;
+    uint32_t count;
+};
+
 static bool conn_key_extract(struct conntrack *, struct dp_packet *,
                              ovs_be16 dl_type, struct conn_lookup_ctx *,
                              uint16_t zone);
@@ -305,6 +312,7 @@ conntrack_init(void)
     for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
         ovs_list_init(&ct->exp_lists[i]);
     }
+    hmap_init(&ct->zone_limits);
     ovs_mutex_unlock(&ct->ct_lock);
 
     ct->hash_basis = random_uint32();
@@ -318,6 +326,111 @@ conntrack_init(void)
     return ct;
 }
 
+static uint32_t
+zone_key_hash(int32_t zone, uint32_t basis)
+{
+    size_t hash = hash_int((OVS_FORCE uint32_t) zone, basis);
+    return hash;
+}
+
+static struct zone_limit *
+zone_limit_lookup(struct conntrack *ct, int32_t zone)
+    OVS_REQUIRES(ct->ct_lock)
+{
+    uint32_t hash = zone_key_hash(zone, ct->hash_basis);
+    struct zone_limit *zl;
+    HMAP_FOR_EACH_WITH_HASH (zl, node, hash, &ct->zone_limits) {
+        if (zl->zone == zone) {
+            return zl;
+        }
+    }
+    return NULL;
+}
+
+struct conntrack_zone_limit
+zone_limit_get(struct conntrack *ct, int32_t zone)
+{
+    struct conntrack_zone_limit czl = {INVALID_ZONE, 0, 0};
+    ovs_mutex_lock(&ct->ct_lock);
+    struct zone_limit *zl = zone_limit_lookup(ct, zone);
+    if (zl) {
+        czl.zone = zl->zone;
+        czl.limit = zl->limit;
+        czl.count = zl->count;
+    } else {
+        zl = zone_limit_lookup(ct, DEFAULT_ZONE);
+        if (zl) {
+            czl.zone = zl->zone;
+            czl.limit = zl->limit;
+            czl.count = zl->count;
+        }
+    }
+    ovs_mutex_unlock(&ct->ct_lock);
+    return czl;
+}
+
+static int
+zone_limit_create(struct conntrack *ct, int32_t zone, uint32_t limit)
+    OVS_REQUIRES(ct->ct_lock)
+{
+    if (zone >= DEFAULT_ZONE && zone <= MAX_ZONE) {
+        struct zone_limit *zl = xzalloc(sizeof *zl);
+        zl->limit = limit;
+        zl->zone = zone;
+        uint32_t hash = zone_key_hash(zone, ct->hash_basis);
+        hmap_insert(&ct->zone_limits, &zl->node, hash);
+        return 0;
+    } else {
+        return EINVAL;
+    }
+}
+
+int
+zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
+{
+    int err = 0;
+    ovs_mutex_lock(&ct->ct_lock);
+    struct zone_limit *zl = zone_limit_lookup(ct, zone);
+    if (zl) {
+        zl->limit = limit;
+        VLOG_INFO("Changed zone limit of %u for zone %d", limit, zone);
+    } else {
+        err = zone_limit_create(ct, zone, limit);
+        if (!err) {
+            VLOG_INFO("Created zone limit of %u for zone %d", limit, zone);
+        } else {
+            VLOG_WARN("Request to create zone limit for invalid zone %d",
+                      zone);
+        }
+    }
+    ovs_mutex_unlock(&ct->ct_lock);
+    return err;
+}
+
+static void
+zone_limit_clean(struct conntrack *ct, struct zone_limit *zl)
+    OVS_REQUIRES(ct->ct_lock)
+{
+    hmap_remove(&ct->zone_limits, &zl->node);
+    free(zl);
+}
+
+int
+zone_limit_delete(struct conntrack *ct, int32_t zone)
+{
+    ovs_mutex_lock(&ct->ct_lock);
+    struct zone_limit *zl = zone_limit_lookup(ct, zone);
+    if (zl) {
+        zone_limit_clean(ct, zl);
+        VLOG_INFO("Deleted zone limit for zone %d", zone);
+    } else {
+        VLOG_INFO("Attempted delete of non-existent zone limit: zone %d",
+                  zone);
+    }
+    ovs_mutex_unlock(&ct->ct_lock);
+    return 0;
+}
+
 static void
 conn_clean_cmn(struct conntrack *ct, struct conn *conn)
     OVS_REQUIRES(ct->ct_lock)
@@ -328,6 +441,11 @@ conn_clean_cmn(struct conntrack *ct, struct conn *conn)
 
     uint32_t hash = conn_key_hash(&conn->key, ct->hash_basis);
     cmap_remove(&ct->conns, &conn->cm_node, hash);
+
+    struct zone_limit *zl = zone_limit_lookup(ct, conn->key.zone);
+    if (zl) {
+        zl->count--;
+    }
 }
 
 /* Must be called with 'conn' of 'conn_type' CT_CONN_TYPE_DEFAULT.  Also
@@ -378,6 +496,13 @@ conntrack_destroy(struct conntrack *ct)
         conn_clean_one(ct, conn);
     }
     cmap_destroy(&ct->conns);
+
+    struct zone_limit *zl;
+    HMAP_FOR_EACH_POP (zl, node, &ct->zone_limits) {
+        free(zl);
+    }
+    hmap_destroy(&ct->zone_limits);
+
     ovs_mutex_unlock(&ct->ct_lock);
     ovs_mutex_destroy(&ct->ct_lock);
 
@@ -843,6 +968,8 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
         return nc;
     }
 
+
+
     pkt->md.ct_state = CS_NEW;
 
     if (alg_exp) {
@@ -855,6 +982,18 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
         if (atomic_count_get(&ct->n_conn) >= n_conn_limit) {
             COVERAGE_INC(conntrack_full);
             return nc;
+        }
+
+        struct zone_limit *zl = zone_limit_lookup(ct, ctx->key.zone);
+        if (zl) {
+            if (zl->count >= zl->limit) {
+                return nc;
+            }
+        } else {
+            zl = zone_limit_lookup(ct, DEFAULT_ZONE);
+                if (zl && zl->count >= zl->limit) {
+                    return nc;
+                }
         }
 
         nc = new_conn(ct, pkt, &ctx->key, now);
@@ -915,6 +1054,9 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
         cmap_insert(&ct->conns, &nc->cm_node, ctx->hash);
         atomic_count_inc(&ct->n_conn);
         ctx->conn = nc; /* For completeness. */
+        if (zl) {
+            zl->count++;
+        }
     }
 
     return nc;
