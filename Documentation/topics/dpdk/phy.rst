@@ -215,6 +215,24 @@ If the log is not seen then the port can be detached like so::
     to be an example of this behavior; check the driver documentation if this
     is suspected.
 
+Hotplugging with IGB_UIO
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+As of DPDK 19.11, igb_uio will no longer support hotplugging by default.
+To hotplug a port with igb_uio, DPDK must be configured to use physical
+addressing for IOVA mode. For more information regarding IOVA modes in
+DPDK please refer to the `DPDK IOVA Mode Detection`__.
+
+__ http://doc.dpdk.org/guides/prog_guide/env_abstraction_layer.html#iova-mode-detection
+
+To configure OVS DPDK to use physical addressing for IOVA::
+
+    $ ovs-vsctl set Open_vSwitch . other_config:dpdk-extra="--iova-mode=pa"
+
+.. note::
+
+   Changing IOVA mode requires restarting the ovs-vswitchd application.
+
 For more information please refer to the `DPDK Port Hotplug Framework`__.
 
 __ http://dpdk.org/doc/guides/prog_guide/port_hotplug_framework.html#hotplug
