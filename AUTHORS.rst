@@ -421,6 +421,7 @@ wenxu                              wenxu@ucloud.cn
 wisd0me                            ak47izatool@gmail.com
 xushengping                        shengping.xu@huawei.com
 yinpeijun                          yinpeijun@huawei.com
+Yi Yang                            yangyi01@inspur.com
 zangchuanqiang                     zangchuanqiang@huawei.com
 zhaojingjing                       zhao.jingjing1@zte.com.cn
 zhongbaisong                       zhongbaisong@huawei.com
