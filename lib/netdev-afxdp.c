@@ -661,6 +661,9 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY};
     int err = 0;
 
+    /* Time for umem to be released in kernel. */
+    xnanosleep(500000);
+
     ovs_mutex_lock(&dev->mutex);
 
     if (netdev->n_rxq == dev->requested_n_rxq
