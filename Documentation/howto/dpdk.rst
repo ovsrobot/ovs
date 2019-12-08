@@ -396,6 +396,7 @@ Supported actions for hardware offload are:
 - Modification of IPv4 (mod_nw_src/mod_nw_dst/mod_nw_ttl).
 - Clone with tnl_push and output (a single clone, as the last action,
   with a single output, as the last nested clone action).
+- Modification of TCP/UDP (mod_tp_src/mod_tp_dst).
 
 Further Reading
 ---------------

@@ -4776,6 +4776,20 @@ ds_put_flow_action(struct ds *s, const struct rte_flow_action *actions)
         } else {
             ds_put_cstr(s, "  Raw-encap = null\n");
         }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_TP_SRC ||
+               actions->type == RTE_FLOW_ACTION_TYPE_SET_TP_DST) {
+        const struct rte_flow_action_set_tp *set_tp = actions->conf;
+        char *dirstr = actions->type == RTE_FLOW_ACTION_TYPE_SET_TP_DST
+                       ? "dst" : "src";
+
+        ds_put_format(s, "rte flow set-tcp/udp-port-%s action:\n", dirstr);
+        if (set_tp) {
+            ds_put_format(s,
+                          "  Set-%s-tcp/udp-port: %"PRIu16"\n",
+                          dirstr, ntohs(set_tp->port));
+        } else {
+            ds_put_format(s, "  Set-%s-tcp/udp-port = null\n", dirstr);
+        }
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }
