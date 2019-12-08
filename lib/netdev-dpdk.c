@@ -4458,8 +4458,251 @@ netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
     ovs_mutex_lock(&dev->mutex);
     ret = rte_flow_destroy(dev->port_id, rte_flow, error);
     ovs_mutex_unlock(&dev->mutex);
+    if (!ret) {
+        VLOG_DBG_RL(&rl, "Destroy rte_flow %p: netdev=%s, port=%d\n",
+                    rte_flow, netdev_get_name(netdev), dev->port_id);
+    } else {
+        VLOG_ERR_RL(&rl, "Destroy rte_flow %p: netdev=%s, port=%d\n"
+                    "FAILED. error %u : message : %s",
+                    rte_flow, netdev_get_name(netdev), dev->port_id,
+                    error->type, error->message);
+    }
     return ret;
 }
+
+static void
+ds_put_flow_attr(struct ds *s, const struct rte_flow_attr *attr)
+{
+    ds_put_format(s,
+                  "  Attributes: "
+                  "ingress=%d, egress=%d, prio=%d, group=%d, transfer=%d\n",
+                  attr->ingress, attr->egress, attr->priority, attr->group,
+                  attr->transfer);
+}
+
+static void
+ds_put_flow_pattern(struct ds *s, const struct rte_flow_item *item)
+{
+    if (item->type == RTE_FLOW_ITEM_TYPE_ETH) {
+        const struct rte_flow_item_eth *eth_spec = item->spec;
+        const struct rte_flow_item_eth *eth_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow eth pattern:\n");
+        if (eth_spec) {
+            ds_put_format(s,
+                          "  Spec: src="ETH_ADDR_FMT", dst="ETH_ADDR_FMT", "
+                          "type=0x%04" PRIx16"\n",
+                          ETH_ADDR_BYTES_ARGS(eth_spec->src.addr_bytes),
+                          ETH_ADDR_BYTES_ARGS(eth_spec->dst.addr_bytes),
+                          ntohs(eth_spec->type));
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+        if (eth_mask) {
+            ds_put_format(s,
+                          "  Mask: src="ETH_ADDR_FMT", dst="ETH_ADDR_FMT", "
+                          "type=0x%04"PRIx16"\n",
+                          ETH_ADDR_BYTES_ARGS(eth_mask->src.addr_bytes),
+                          ETH_ADDR_BYTES_ARGS(eth_mask->dst.addr_bytes),
+                          ntohs(eth_mask->type));
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_VLAN) {
+        const struct rte_flow_item_vlan *vlan_spec = item->spec;
+        const struct rte_flow_item_vlan *vlan_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow vlan pattern:\n");
+        if (vlan_spec) {
+            ds_put_format(s,
+                          "  Spec: inner_type=0x%"PRIx16", tci=0x%"PRIx16"\n",
+                          ntohs(vlan_spec->inner_type), ntohs(vlan_spec->tci));
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+
+        if (vlan_mask) {
+            ds_put_format(s,
+                          "  Mask: inner_type=0x%"PRIx16", tci=0x%"PRIx16"\n",
+                          ntohs(vlan_mask->inner_type), ntohs(vlan_mask->tci));
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_IPV4) {
+        const struct rte_flow_item_ipv4 *ipv4_spec = item->spec;
+        const struct rte_flow_item_ipv4 *ipv4_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow ipv4 pattern:\n");
+        if (ipv4_spec) {
+            ds_put_format(s,
+                          "  Spec: tos=0x%"PRIx8", ttl=%"PRIx8
+                          ", proto=0x%"PRIx8
+                          ", src="IP_FMT", dst="IP_FMT"\n",
+                          ipv4_spec->hdr.type_of_service,
+                          ipv4_spec->hdr.time_to_live,
+                          ipv4_spec->hdr.next_proto_id,
+                          IP_ARGS(ipv4_spec->hdr.src_addr),
+                          IP_ARGS(ipv4_spec->hdr.dst_addr));
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+        if (ipv4_mask) {
+            ds_put_format(s,
+                          "  Mask: tos=0x%"PRIx8", ttl=%"PRIx8
+                          ", proto=0x%"PRIx8
+                          ", src="IP_FMT", dst="IP_FMT"\n",
+                          ipv4_mask->hdr.type_of_service,
+                          ipv4_mask->hdr.time_to_live,
+                          ipv4_mask->hdr.next_proto_id,
+                          IP_ARGS(ipv4_mask->hdr.src_addr),
+                          IP_ARGS(ipv4_mask->hdr.dst_addr));
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_UDP) {
+        const struct rte_flow_item_udp *udp_spec = item->spec;
+        const struct rte_flow_item_udp *udp_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow udp pattern:\n");
+        if (udp_spec) {
+            ds_put_format(s,
+                          "  Spec: src_port=%"PRIu16", dst_port=%"PRIu16"\n",
+                          ntohs(udp_spec->hdr.src_port),
+                          ntohs(udp_spec->hdr.dst_port));
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+        if (udp_mask) {
+            ds_put_format(s,
+                          "  Mask: src_port=0x%"PRIx16
+                          ", dst_port=0x%"PRIx16"\n",
+                          ntohs(udp_mask->hdr.src_port),
+                          ntohs(udp_mask->hdr.dst_port));
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_SCTP) {
+        const struct rte_flow_item_sctp *sctp_spec = item->spec;
+        const struct rte_flow_item_sctp *sctp_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow sctp pattern:\n");
+        if (sctp_spec) {
+            ds_put_format(s,
+                          "  Spec: src_port=%"PRIu16", dst_port=%"PRIu16"\n",
+                          ntohs(sctp_spec->hdr.src_port),
+                          ntohs(sctp_spec->hdr.dst_port));
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+        if (sctp_mask) {
+            ds_put_format(s,
+                          "  Mask: src_port=0x%"PRIx16
+                          ", dst_port=0x%"PRIx16"\n",
+                          ntohs(sctp_mask->hdr.src_port),
+                          ntohs(sctp_mask->hdr.dst_port));
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_ICMP) {
+        const struct rte_flow_item_icmp *icmp_spec = item->spec;
+        const struct rte_flow_item_icmp *icmp_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow icmp pattern:\n");
+        if (icmp_spec) {
+            ds_put_format(s,
+                          "  Spec: icmp_type=%"PRIu8", icmp_code=%"PRIu8"\n",
+                          icmp_spec->hdr.icmp_type,
+                          icmp_spec->hdr.icmp_code);
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+        if (icmp_mask) {
+            ds_put_format(s,
+                          "  Mask: icmp_type=0x%"PRIx8
+                          ", icmp_code=0x%"PRIx8"\n",
+                          icmp_spec->hdr.icmp_type,
+                          icmp_spec->hdr.icmp_code);
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_TCP) {
+        const struct rte_flow_item_tcp *tcp_spec = item->spec;
+        const struct rte_flow_item_tcp *tcp_mask = item->mask;
+
+        ds_put_cstr(s, "rte flow tcp pattern:\n");
+        if (tcp_spec) {
+            ds_put_format(s,
+                          "  Spec: src_port=%"PRIu16", dst_port=%"PRIu16
+                          ", data_off=0x%"PRIx8", tcp_flags=0x%"PRIx8"\n",
+                          ntohs(tcp_spec->hdr.src_port),
+                          ntohs(tcp_spec->hdr.dst_port),
+                          tcp_spec->hdr.data_off,
+                          tcp_spec->hdr.tcp_flags);
+        } else {
+            ds_put_cstr(s, "  Spec = null\n");
+        }
+        if (tcp_mask) {
+            ds_put_format(s,
+                          "  Mask: src_port=%"PRIx16", dst_port=%"PRIx16
+                          ", data_off=0x%"PRIx8", tcp_flags=0x%"PRIx8"\n",
+                          ntohs(tcp_mask->hdr.src_port),
+                          ntohs(tcp_mask->hdr.dst_port),
+                          tcp_mask->hdr.data_off,
+                          tcp_mask->hdr.tcp_flags);
+        } else {
+            ds_put_cstr(s, "  Mask = null\n");
+        }
+    } else {
+        ds_put_format(s, "unknown rte flow pattern (%d)\n", item->type);
+    }
+}
+
+static void
+ds_put_flow_action(struct ds *s, const struct rte_flow_action *actions)
+{
+    if (actions->type == RTE_FLOW_ACTION_TYPE_MARK) {
+        const struct rte_flow_action_mark *mark = actions->conf;
+
+        ds_put_cstr(s, "rte flow mark action:\n");
+        if (mark) {
+            ds_put_format(s,
+                          "  Mark: id=%d\n",
+                          mark->id);
+        } else {
+            ds_put_cstr(s, "  Mark = null\n");
+        }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_RSS) {
+        const struct rte_flow_action_rss *rss = actions->conf;
+
+        ds_put_cstr(s, "rte flow RSS action:\n");
+        if (rss) {
+            ds_put_format(s,
+                          "  RSS: queue_num=%d\n", rss->queue_num);
+        } else {
+            ds_put_cstr(s, "  RSS = null\n");
+        }
+    } else {
+        ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
+    }
+}
+
+static struct ds *
+ds_put_flow(struct ds *s,
+            const struct rte_flow_attr *attr,
+            const struct rte_flow_item *items,
+            const struct rte_flow_action *actions)
+{
+    if (attr) {
+        ds_put_flow_attr(s, attr);
+    }
+    while (items && items->type != RTE_FLOW_ITEM_TYPE_END) {
+        ds_put_flow_pattern(s, items++);
+    }
+    while (actions && actions->type != RTE_FLOW_ACTION_TYPE_END) {
+        ds_put_flow_action(s, actions++);
+    }
+    return s;
+ }
 
 struct rte_flow *
 netdev_dpdk_rte_flow_create(struct netdev *netdev,
@@ -4470,10 +4713,27 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
 {
     struct rte_flow *flow;
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    struct ds s;
 
     ovs_mutex_lock(&dev->mutex);
     flow = rte_flow_create(dev->port_id, attr, items, actions, error);
     ovs_mutex_unlock(&dev->mutex);
+    ds_init(&s);
+    if (flow) {
+        VLOG_DBG_RL(&rl, "Create rte_flow: netdev=%s, port=%d\n"
+                    "%s"
+                    "Flow handle=%p\n",
+                    netdev_get_name(netdev), dev->port_id,
+                    ds_cstr(ds_put_flow(&s, attr, items, actions)), flow);
+    } else {
+        VLOG_ERR_RL(&rl, "Create rte_flow: netdev=%s, port=%d\n"
+                    "%s"
+                    "FAILED. error %u : message : %s\n",
+                    netdev_get_name(netdev), dev->port_id,
+                    ds_cstr(ds_put_flow(&s, attr, items, actions)),
+                    error->type, error->message);
+    }
+    ds_destroy(&s);
     return flow;
 }
 
