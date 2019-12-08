@@ -51,6 +51,7 @@ static struct vlog_rate_limit error_rl = VLOG_RATE_LIMIT_INIT(100, 5);
  * A mapping from ufid to dpdk rte_flow.
  */
 static struct cmap ufid_to_rte_flow = CMAP_INITIALIZER;
+static struct ovs_mutex ufid_map_mutex = OVS_MUTEX_INITIALIZER;
 
 struct ufid_to_rte_flow_data {
     struct cmap_node node;
@@ -630,8 +631,11 @@ netdev_offload_dpdk_destroy_flow(struct netdev *netdev,
                                  struct rte_flow *rte_flow)
 {
     struct rte_flow_error error;
-    int ret = netdev_dpdk_rte_flow_destroy(netdev, rte_flow, &error);
+    int ret;
 
+    ovs_mutex_lock(&ufid_map_mutex);
+
+    ret = netdev_dpdk_rte_flow_destroy(netdev, rte_flow, &error);
     if (ret == 0) {
         ufid_to_rte_flow_disassociate(ufid);
         VLOG_DBG("%s: removed rte flow %p associated with ufid " UUID_FMT "\n",
@@ -642,6 +646,7 @@ netdev_offload_dpdk_destroy_flow(struct netdev *netdev,
                  netdev_get_name(netdev), error.message, error.type);
     }
 
+    ovs_mutex_unlock(&ufid_map_mutex);
     return ret;
 }
 
