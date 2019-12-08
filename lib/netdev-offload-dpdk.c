@@ -705,9 +705,49 @@ netdev_offload_dpdk_init_flow_api(struct netdev *netdev)
     return netdev_dpdk_flow_api_supported(netdev) ? 0 : EOPNOTSUPP;
 }
 
+static int
+netdev_offload_dpdk_flow_get(struct netdev *netdev,
+                             struct match *match OVS_UNUSED,
+                             struct nlattr **actions OVS_UNUSED,
+                             const ovs_u128 *ufid,
+                             struct dpif_flow_stats *stats,
+                             struct dpif_flow_attrs *attrs OVS_UNUSED,
+                             struct ofpbuf *buf OVS_UNUSED)
+{
+    struct rte_flow_query_count query = { .reset = 1 };
+    struct rte_flow_error error;
+    struct rte_flow *rte_flow;
+    int ret = 0;
+
+    ovs_mutex_lock(&ufid_map_mutex);
+    rte_flow = ufid_to_rte_flow_find(ufid);
+    if (!rte_flow) {
+        ret = -1;
+        goto out;
+    }
+
+    memset(stats, 0, sizeof *stats);
+    ret = netdev_dpdk_rte_flow_query(netdev, rte_flow, &query, &error);
+    if (ret) {
+        VLOG_DBG_RL(&error_rl,
+                    "%s: Failed to query ufid "UUID_FMT" flow: %p\n",
+                    netdev_get_name(netdev), UUID_ARGS((struct uuid *)ufid),
+                    rte_flow);
+        ret = -1;
+        goto out;
+    }
+    stats->n_packets += (query.hits_set) ? query.hits : 0;
+    stats->n_bytes += (query.bytes_set) ? query.bytes : 0;
+
+out:
+    ovs_mutex_unlock(&ufid_map_mutex);
+    return ret;
+}
+
 const struct netdev_flow_api netdev_offload_dpdk = {
     .type = "dpdk_flow_api",
     .flow_put = netdev_offload_dpdk_flow_put,
     .flow_del = netdev_offload_dpdk_flow_del,
     .init_flow_api = netdev_offload_dpdk_init_flow_api,
+    .flow_get = netdev_offload_dpdk_flow_get,
 };
