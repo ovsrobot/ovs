@@ -4699,6 +4699,28 @@ ds_put_flow_action(struct ds *s, const struct rte_flow_action *actions)
         } else {
             ds_put_cstr(s, "  RSS = null\n");
         }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_COUNT) {
+        const struct rte_flow_action_count *count = actions->conf;
+
+        ds_put_cstr(s, "rte flow count action:\n");
+        if (count) {
+            ds_put_format(s,
+                          "  Count: shared=%d, id=%d\n",
+                          count->shared, count->id);
+        } else {
+            ds_put_cstr(s, "  Count = null\n");
+        }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_PORT_ID) {
+        const struct rte_flow_action_port_id *port_id = actions->conf;
+
+        ds_put_cstr(s, "rte flow port-id action:\n");
+        if (port_id) {
+            ds_put_format(s,
+                          "  Port-id: original=%d, id=%d\n",
+                          port_id->original, port_id->id);
+        } else {
+            ds_put_cstr(s, "  Port-id = null\n");
+        }
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }
