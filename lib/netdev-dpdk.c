@@ -4738,6 +4738,30 @@ ds_put_flow_action(struct ds *s, const struct rte_flow_action *actions)
         } else {
             ds_put_format(s, "  Set-mac-%s = null\n", dirstr);
         }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_SRC ||
+               actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DST) {
+        const struct rte_flow_action_set_ipv4 *set_ipv4 = actions->conf;
+        char *dirstr = actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DST
+                       ? "dst" : "src";
+
+        ds_put_format(s, "rte flow set-ipv4-%s action:\n", dirstr);
+        if (set_ipv4) {
+            ds_put_format(s,
+                          "  Set-ipv4-%s: "IP_FMT"\n",
+                          dirstr, IP_ARGS(set_ipv4->ipv4_addr));
+        } else {
+            ds_put_format(s, "  Set-ipv4-%s = null\n", dirstr);
+        }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_TTL) {
+        const struct rte_flow_action_set_ttl *set_ttl = actions->conf;
+
+        ds_put_cstr(s, "rte flow set-ttl action:\n");
+        if (set_ttl) {
+            ds_put_format(s,
+                          "  Set-ttl: %d\n", set_ttl->ttl_value);
+        } else {
+            ds_put_cstr(s, "  Set-ttl = null\n");
+        }
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }

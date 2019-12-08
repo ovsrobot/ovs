@@ -598,6 +598,32 @@ parse_set_actions(struct flow_actions *actions,
                                     ARRAY_SIZE(sa_info_arr))) {
                 return -1;
             }
+        } else if (nl_attr_type(sa) == OVS_KEY_ATTR_IPV4) {
+            const struct ovs_key_ipv4 *key = nl_attr_get(sa);
+            const struct ovs_key_ipv4 *mask = masked ?
+                get_mask(sa, struct ovs_key_ipv4) : NULL;
+            struct rte_flow_action_set_ipv4 *src = xzalloc(sizeof *src);
+            struct rte_flow_action_set_ipv4 *dst = xzalloc(sizeof *dst);
+            struct rte_flow_action_set_ttl *ttl = xzalloc(sizeof *ttl);
+            struct set_action_info sa_info_arr[] = {
+                SA_INFO(ipv4_src, src->ipv4_addr,
+                        RTE_FLOW_ACTION_TYPE_SET_IPV4_SRC),
+                SA_INFO(ipv4_dst, dst->ipv4_addr,
+                        RTE_FLOW_ACTION_TYPE_SET_IPV4_DST),
+                SA_INFO(ipv4_ttl, ttl->ttl_value,
+                        RTE_FLOW_ACTION_TYPE_SET_TTL),
+            };
+
+            if (mask && (mask->ipv4_proto || mask->ipv4_tos ||
+                mask->ipv4_frag)) {
+                VLOG_DBG_RL(&error_rl, "Unsupported IPv4 set action");
+                return -1;
+            }
+
+            if (add_set_flow_action(actions, sa_info_arr,
+                                    ARRAY_SIZE(sa_info_arr))) {
+                return -1;
+            }
         } else {
             VLOG_DBG_RL(&error_rl,
                         "Unsupported set action type=%d", nl_attr_type(sa));
