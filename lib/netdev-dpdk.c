@@ -4721,6 +4721,8 @@ ds_put_flow_action(struct ds *s, const struct rte_flow_action *actions)
         } else {
             ds_put_cstr(s, "  Port-id = null\n");
         }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_DROP) {
+        ds_put_cstr(s, "rte flow drop action\n");
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }

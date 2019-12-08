@@ -391,6 +391,7 @@ Supported protocols for hardware offload matches are:
 Supported actions for hardware offload are:
 
 - Output (a single output, as the last action).
+- Drop.
 
 Further Reading
 ---------------
