@@ -4762,6 +4762,20 @@ ds_put_flow_action(struct ds *s, const struct rte_flow_action *actions)
         } else {
             ds_put_cstr(s, "  Set-ttl = null\n");
         }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_RAW_ENCAP) {
+        const struct rte_flow_action_raw_encap *raw_encap = actions->conf;
+
+        ds_put_cstr(s, "rte flow raw-encap action:\n");
+        if (raw_encap) {
+            ds_put_format(s,
+                          "  Raw-encap: size=%ld\n",
+                          raw_encap->size);
+            ds_put_format(s,
+                          "  Raw-encap: encap=\n");
+            ds_put_hex_dump(s, raw_encap->data, raw_encap->size, 0, false);
+        } else {
+            ds_put_cstr(s, "  Raw-encap = null\n");
+        }
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }
