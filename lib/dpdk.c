@@ -30,6 +30,7 @@
 #include <rte_pdump.h>
 #endif
 
+#include "bitmap.h"
 #include "dirs.h"
 #include "fatal-signal.h"
 #include "netdev-dpdk.h"
@@ -39,6 +40,7 @@
 #include "ovs-numa.h"
 #include "smap.h"
 #include "svec.h"
+#include "unixctl.h"
 #include "util.h"
 #include "vswitch-idl.h"
 
@@ -53,6 +55,9 @@ static bool vhost_postcopy_enabled = false; /* Status of vHost POSTCOPY
 static bool dpdk_initialized = false; /* Indicates successful initialization
                                        * of DPDK. */
 static bool per_port_memory = false; /* Status of per port memory support */
+
+static struct ovs_mutex lcore_bitmap_mutex = OVS_MUTEX_INITIALIZER;
+static unsigned long *lcore_bitmap OVS_GUARDED_BY(lcore_bitmap_mutex);
 
 static int
 process_vhost_flags(char *flag, const char *default_val, int size,
@@ -95,6 +100,38 @@ args_contains(const struct svec *args, const char *value)
 }
 
 static void
+construct_dpdk_lcore_option(const struct smap *ovs_other_config,
+                            struct svec *args)
+{
+    const char *cmask = smap_get(ovs_other_config, "dpdk-lcore-mask");
+    struct svec lcores = SVEC_EMPTY_INITIALIZER;
+    struct ovs_numa_info_core *core;
+    struct ovs_numa_dump *cores;
+    int index = 0;
+
+    if (!cmask) {
+        return;
+    }
+    if (args_contains(args, "-c") || args_contains(args, "-l") ||
+        args_contains(args, "--lcores")) {
+                VLOG_WARN("Ignoring database defined option 'dpdk-lcore-mask' "
+                          "due to dpdk-extra config");
+        return;
+    }
+
+    cores = ovs_numa_dump_cores_with_cmask(cmask);
+    FOR_EACH_CORE_ON_DUMP(core, cores) {
+        svec_add_nocopy(&lcores, xasprintf("%d@%d", index, core->core_id));
+        index++;
+    }
+    svec_terminate(&lcores);
+    ovs_numa_dump_destroy(cores);
+    svec_add(args, "--lcores");
+    svec_add_nocopy(args, svec_join(&lcores, ",", ""));
+    svec_destroy(&lcores);
+}
+
+static void
 construct_dpdk_options(const struct smap *ovs_other_config, struct svec *args)
 {
     struct dpdk_options_map {
@@ -103,7 +140,6 @@ construct_dpdk_options(const struct smap *ovs_other_config, struct svec *args)
         bool default_enabled;
         const char *default_value;
     } opts[] = {
-        {"dpdk-lcore-mask",   "-c",             false, NULL},
         {"dpdk-hugepage-dir", "--huge-dir",     false, NULL},
         {"dpdk-socket-limit", "--socket-limit", false, NULL},
     };
@@ -224,6 +260,7 @@ construct_dpdk_args(const struct smap *ovs_other_config, struct svec *args)
         svec_parse_words(args, extra_configuration);
     }
 
+    construct_dpdk_lcore_option(ovs_other_config, args);
     construct_dpdk_options(ovs_other_config, args);
     construct_dpdk_mutex_options(ovs_other_config, args);
 }
@@ -263,6 +300,58 @@ dpdk_log_write(void *c OVS_UNUSED, const char *buf, size_t size)
 static cookie_io_functions_t dpdk_log_func = {
     .write = dpdk_log_write,
 };
+
+static void
+dpdk_dump_lcore(struct ds *ds, unsigned lcore)
+{
+    struct svec cores = SVEC_EMPTY_INITIALIZER;
+    rte_cpuset_t cpuset;
+    unsigned cpu;
+
+    cpuset = rte_lcore_cpuset(lcore);
+    for (cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        if (!CPU_ISSET(cpu, &cpuset)) {
+            continue;
+        }
+        svec_add_nocopy(&cores, xasprintf("%u", cpu));
+    }
+    svec_terminate(&cores);
+    ds_put_format(ds, "lcore%u (%s) is running on core %s\n", lcore,
+                  rte_eal_lcore_role(lcore) != ROLE_OFF ? "DPDK" : "OVS",
+                  svec_join(&cores, ",", ""));
+    svec_destroy(&cores);
+}
+
+static void
+dpdk_dump_lcores(struct unixctl_conn *conn, int argc, const char *argv[],
+                 void *aux OVS_UNUSED)
+{
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    unsigned lcore;
+
+    ovs_mutex_lock(&lcore_bitmap_mutex);
+    if (lcore_bitmap == NULL) {
+        unixctl_command_reply_error(conn, "DPDK has not been initialised");
+        goto out;
+    }
+    if (argc > 1) {
+        if (!str_to_uint(argv[1], 0, &lcore) || lcore >= RTE_MAX_LCORE ||
+            !bitmap_is_set(lcore_bitmap, lcore)) {
+            unixctl_command_reply_error(conn, "incorrect lcoreid");
+            goto out;
+        }
+        dpdk_dump_lcore(&ds, lcore);
+    } else for (lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
+        if (!bitmap_is_set(lcore_bitmap, lcore)) {
+            continue;
+        }
+        dpdk_dump_lcore(&ds, lcore);
+    }
+    unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
+out:
+    ovs_mutex_unlock(&lcore_bitmap_mutex);
+}
 
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
@@ -345,7 +434,8 @@ dpdk_init__(const struct smap *ovs_other_config)
         }
     }
 
-    if (args_contains(&args, "-c") || args_contains(&args, "-l")) {
+    if (args_contains(&args, "-c") || args_contains(&args, "-l") ||
+        args_contains(&args, "--lcores")) {
         auto_determine = false;
     }
 
@@ -371,8 +461,8 @@ dpdk_init__(const struct smap *ovs_other_config)
              * thread affintity - default to core #0 */
             VLOG_ERR("Thread getaffinity failed. Using core #0");
         }
-        svec_add(&args, "-l");
-        svec_add_nocopy(&args, xasprintf("%d", cpu));
+        svec_add(&args, "--lcores");
+        svec_add_nocopy(&args, xasprintf("0@%d", cpu));
     }
 
     svec_terminate(&args);
@@ -427,6 +517,24 @@ dpdk_init__(const struct smap *ovs_other_config)
                      ovs_strerror(errno));
         }
     }
+
+    ovs_mutex_lock(&lcore_bitmap_mutex);
+    lcore_bitmap = bitmap_allocate(RTE_MAX_LCORE);
+    /* Mark DPDK threads. */
+    for (uint32_t lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+
+        if (rte_eal_lcore_role(lcore) == ROLE_OFF) {
+             continue;
+        }
+        bitmap_set1(lcore_bitmap, lcore);
+        dpdk_dump_lcore(&ds, lcore);
+        VLOG_INFO("%s", ds_cstr(&ds));
+        ds_destroy(&ds);
+    }
+    unixctl_command_register("dpdk/dump-lcores", "[lcore]", 0, 1,
+                             dpdk_dump_lcores, NULL);
+    ovs_mutex_unlock(&lcore_bitmap_mutex);
 
     /* We are called from the main thread here */
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
@@ -512,11 +620,54 @@ dpdk_available(void)
 }
 
 void
-dpdk_set_lcore_id(unsigned cpu)
+dpdk_init_thread_context(unsigned cpu)
 {
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    rte_cpuset_t cpuset;
+    unsigned lcore;
+
     /* NON_PMD_CORE_ID is reserved for use by non pmd threads. */
     ovs_assert(cpu != NON_PMD_CORE_ID);
-    RTE_PER_LCORE(_lcore_id) = cpu;
+
+    ovs_mutex_lock(&lcore_bitmap_mutex);
+    if (lcore_bitmap == NULL) {
+        lcore = NON_PMD_CORE_ID;
+    } else {
+        lcore = bitmap_scan(lcore_bitmap, 0, 0, RTE_MAX_LCORE);
+        if (lcore == RTE_MAX_LCORE) {
+            VLOG_WARN("Reached maximum number of DPDK lcores, core %u will "
+                      "have lower performance", cpu);
+            lcore = NON_PMD_CORE_ID;
+        } else {
+            bitmap_set1(lcore_bitmap, lcore);
+        }
+    }
+    ovs_mutex_unlock(&lcore_bitmap_mutex);
+
+    RTE_PER_LCORE(_lcore_id) = lcore;
+
+    if (lcore == NON_PMD_CORE_ID) {
+        return;
+    }
+
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    rte_thread_set_affinity(&cpuset);
+    dpdk_dump_lcore(&ds, lcore);
+    VLOG_INFO("%s", ds_cstr(&ds));
+    ds_destroy(&ds);
+}
+
+void
+dpdk_uninit_thread_context(void)
+{
+    if (RTE_PER_LCORE(_lcore_id) == NON_PMD_CORE_ID) {
+        return;
+    }
+
+    ovs_mutex_lock(&lcore_bitmap_mutex);
+    bitmap_set0(lcore_bitmap, RTE_PER_LCORE(_lcore_id));
+    ovs_mutex_unlock(&lcore_bitmap_mutex);
 }
 
 void

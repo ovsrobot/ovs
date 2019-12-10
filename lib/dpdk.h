@@ -22,7 +22,9 @@
 #ifdef DPDK_NETDEV
 
 #include <rte_config.h>
+#define ALLOW_EXPERIMENTAL_API
 #include <rte_lcore.h>
+#undef ALLOW_EXPERIMENTAL_API
 
 #define NON_PMD_CORE_ID LCORE_ID_ANY
 
@@ -36,7 +38,8 @@ struct smap;
 struct ovsrec_open_vswitch;
 
 void dpdk_init(const struct smap *ovs_other_config);
-void dpdk_set_lcore_id(unsigned cpu);
+void dpdk_init_thread_context(unsigned cpu);
+void dpdk_uninit_thread_context(void);
 const char *dpdk_get_vhost_sock_dir(void);
 bool dpdk_vhost_iommu_enabled(void);
 bool dpdk_vhost_postcopy_enabled(void);
