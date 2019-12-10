@@ -749,6 +749,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_POP_NSH:
     case OVS_ACTION_ATTR_CT_CLEAR:
     case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+    case OVS_ACTION_ATTR_PTAP_PUSH_MPLS:
+    case OVS_ACTION_ATTR_PTAP_POP_MPLS:
         return false;
 
     case OVS_ACTION_ATTR_UNSPEC:
@@ -876,10 +878,22 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             }
             break;
          }
+         case OVS_ACTION_ATTR_PTAP_PUSH_MPLS: {
+            const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
 
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                ptap_push_mpls(packet, mpls->mpls_ethertype, mpls->mpls_lse);
+            }
+            break;
+         }
         case OVS_ACTION_ATTR_POP_MPLS:
             DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
                 pop_mpls(packet, nl_attr_get_be16(a));
+            }
+            break;
+        case OVS_ACTION_ATTR_PTAP_POP_MPLS:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                ptap_pop_mpls(packet, nl_attr_get_be16(a));
             }
             break;
 

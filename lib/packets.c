@@ -395,6 +395,24 @@ push_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse)
     pkt_metadata_init_conn(&packet->md);
 }
 
+/* Push MPLS label stack entry 'lse' onto 'packet' as the outermost MPLS
+ *  * header.  If 'packet' does not already have any MPLS labels, then its
+ *   * Ethertype is changed to 'ethtype' (which must be an MPLS Ethertype). */
+void
+ptap_push_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse)
+{
+    char * header;
+
+    if (!eth_type_mpls(ethtype)) {
+        return;
+    }
+    header =  dp_packet_push_uninit(packet, MPLS_HLEN);
+    memcpy(header, &lse, sizeof lse);
+    packet->l2_5_ofs = 0;
+    packet->packet_type = htonl(PT_MPLS);
+}
+
+
 /* If 'packet' is an MPLS packet, removes its outermost MPLS label stack entry.
  * If the label that was removed was the only MPLS label, changes 'packet''s
  * Ethertype to 'ethtype' (which ordinarily should not be an MPLS
@@ -419,6 +437,16 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
         dp_packet_reset_offload(packet);
     }
 }
+
+void
+ptap_pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
+{
+    if (!ethtype) {
+        packet->packet_type = htonl(PT_ETH);
+    }
+    pop_mpls(packet, ethtype);
+}
+
 
 void
 push_nsh(struct dp_packet *packet, const struct nsh_hdr *nsh_hdr_src)
