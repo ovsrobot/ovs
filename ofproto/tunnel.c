@@ -587,8 +587,10 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
                     /* Look for a legacy L2 or L3 tunnel port first. */
                     if (pt_ns(flow->packet_type) == OFPHTN_ETHERTYPE) {
                         match.pt_mode = NETDEV_PT_LEGACY_L3;
+                        VLOG_INFO("l3 tunnel");
                     } else {
                         match.pt_mode = NETDEV_PT_LEGACY_L2;
+                        VLOG_INFO("l2 tunnel");
                     }
                     tnl_port = tnl_find_exact(&match, map);
                     if (tnl_port) {

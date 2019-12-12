@@ -2426,6 +2426,8 @@ metadata in_port in_port_oxm pkt_mark ct_mark ct_label reg0 reg1 reg2 reg3 reg4 
       tun_erspan_ver: arbitrary mask
       tun_erspan_dir: arbitrary mask
       tun_erspan_hwid: arbitrary mask
+      tun_gtpu_flags: arbitrary mask
+      tun_gtpu_msgtype: arbitrary mask
       tun_metadata0: arbitrary mask
       tun_metadata1: arbitrary mask
       tun_metadata2: arbitrary mask
