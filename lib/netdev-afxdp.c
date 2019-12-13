@@ -42,6 +42,7 @@
 #include "openvswitch/list.h"
 #include "openvswitch/vlog.h"
 #include "packets.h"
+#include "pcap-file.h"
 #include "socket-util.h"
 #include "util.h"
 
@@ -591,6 +592,7 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     const char *str_xdp_mode;
     enum afxdp_mode xdp_mode;
+    const char *pcap;
     bool need_wakeup;
     int new_n_rxq;
 
@@ -625,6 +627,21 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
         need_wakeup = false;
     }
 #endif
+
+    pcap = smap_get(args, "pcap");
+    if (pcap) {
+        dev->rxq_pcap = dev->tx_pcap = ovs_pcap_open(pcap, "ab");
+    } else {
+        const char *rxq_pcap = smap_get(args, "rxq_pcap");
+        const char *tx_pcap = smap_get(args, "rx_pcap");
+
+        if (rxq_pcap) {
+            dev->rxq_pcap = ovs_pcap_open(rxq_pcap, "ab");
+        }
+        if (tx_pcap) {
+            dev->tx_pcap = ovs_pcap_open(tx_pcap, "ab");
+        }
+    }
 
     if (dev->requested_n_rxq != new_n_rxq
         || dev->requested_xdp_mode != xdp_mode
@@ -662,6 +679,14 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     int err = 0;
 
     ovs_mutex_lock(&dev->mutex);
+
+    if (dev->rxq_pcap) {
+        ovs_pcap_close(dev->rxq_pcap);
+    }
+    if (dev->tx_pcap && dev->tx_pcap != dev->rxq_pcap) {
+        ovs_pcap_close(dev->tx_pcap);
+    }
+    dev->rxq_pcap = dev->tx_pcap = NULL;
 
     if (netdev->n_rxq == dev->requested_n_rxq
         && dev->xdp_mode == dev->requested_xdp_mode
@@ -830,6 +855,10 @@ netdev_afxdp_rxq_recv(struct netdev_rxq *rxq_, struct dp_packet_batch *batch,
         dp_packet_batch_add(batch, packet);
 
         idx_rx++;
+
+        if (OVS_UNLIKELY(dev->rxq_pcap)) {
+            ovs_pcap_write(dev->rxq_pcap, packet);
+        }
     }
     /* Release the RX queue. */
     xsk_ring_cons__release(&xsk_info->rx, rcvd);
@@ -1044,6 +1073,14 @@ __netdev_afxdp_batch_send(struct netdev *netdev, int qid,
         xsk_ring_prod__tx_desc(&xsk_info->tx, idx + i)->addr = index;
         xsk_ring_prod__tx_desc(&xsk_info->tx, idx + i)->len
             = dp_packet_size(packet);
+
+        if (OVS_UNLIKELY(dev->tx_pcap)) {
+            struct dp_packet dp;
+
+            dp_packet_use_const(&dp, dp_packet_data(packet),
+                                dp_packet_size(packet));
+            ovs_pcap_write(dev->tx_pcap, &dp);
+        }
     }
     xsk_ring_prod__submit(&xsk_info->tx, dp_packet_batch_size(batch));
     xsk_info->outstanding_tx += dp_packet_batch_size(batch);

@@ -109,6 +109,7 @@ struct netdev_linux {
     bool requested_need_wakeup;
 
     struct ovs_spin *tx_locks;  /* spin lock array for TX queues. */
+    struct pcap_file *tx_pcap, *rxq_pcap OVS_GUARDED;
 #endif
 };
 
