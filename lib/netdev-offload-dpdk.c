@@ -405,6 +405,19 @@ dump_flow_action(struct ds *s, const struct rte_flow_action *actions)
         } else {
             ds_put_cstr(s, "  Set-ttl = null\n");
         }
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_TP_SRC ||
+               actions->type == RTE_FLOW_ACTION_TYPE_SET_TP_DST) {
+        const struct rte_flow_action_set_tp *set_tp = actions->conf;
+        char *dirstr = actions->type == RTE_FLOW_ACTION_TYPE_SET_TP_DST
+                       ? "dst" : "src";
+
+        ds_put_format(s, "rte flow set-tcp/udp-port-%s action:\n", dirstr);
+        if (set_tp) {
+            ds_put_format(s, "  Set-%s-tcp/udp-port: %"PRIu16"\n", dirstr,
+                          ntohs(set_tp->port));
+        } else {
+            ds_put_format(s, "  Set-%s-tcp/udp-port = null\n", dirstr);
+        }
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }
@@ -955,6 +968,78 @@ parse_set_actions(struct flow_actions *actions,
 
             if (!is_all_zeros(&consumed_mask, sizeof consumed_mask)) {
                 VLOG_DBG_RL(&error_rl, "Unsupported IPv4 set action");
+                return -1;
+            }
+        } else if (nl_attr_type(sa) == OVS_KEY_ATTR_TCP) {
+            const struct ovs_key_tcp *key = nl_attr_get(sa);
+            const struct ovs_key_tcp *mask = masked ?
+                get_mask(sa, struct ovs_key_tcp) : NULL;
+            struct ovs_key_tcp consumed_mask;
+
+            if (masked) {
+                memcpy(&consumed_mask, mask, sizeof consumed_mask);
+            } else {
+                memset(&consumed_mask, 0, sizeof consumed_mask);
+            }
+
+            BUILD_ASSERT(sizeof(struct rte_flow_action_set_tp) ==
+                         sizeof key->tcp_src);
+            if (add_set_flow_action(actions, &key->tcp_src,
+                                    mask ? &mask->tcp_src : NULL,
+                                    sizeof key->tcp_src,
+                                    RTE_FLOW_ACTION_TYPE_SET_TP_SRC)) {
+                return -1;
+            }
+            memset(&consumed_mask.tcp_src, 0, sizeof consumed_mask.tcp_src);
+
+            BUILD_ASSERT(sizeof(struct rte_flow_action_set_tp) ==
+                         sizeof key->tcp_dst);
+            if (add_set_flow_action(actions, &key->tcp_dst,
+                                    mask ? &mask->tcp_dst : NULL,
+                                    sizeof key->tcp_dst,
+                                    RTE_FLOW_ACTION_TYPE_SET_TP_DST)) {
+                return -1;
+            }
+            memset(&consumed_mask.tcp_dst, 0, sizeof consumed_mask.tcp_dst);
+
+            if (!is_all_zeros(&consumed_mask, sizeof consumed_mask)) {
+                VLOG_DBG_RL(&error_rl, "Unsupported TCP set action");
+                return -1;
+            }
+        } else if (nl_attr_type(sa) == OVS_KEY_ATTR_UDP) {
+            const struct ovs_key_udp *key = nl_attr_get(sa);
+            const struct ovs_key_udp *mask = masked ?
+                get_mask(sa, struct ovs_key_udp) : NULL;
+            struct ovs_key_udp consumed_mask;
+
+            if (masked) {
+                memcpy(&consumed_mask, mask, sizeof consumed_mask);
+            } else {
+                memset(&consumed_mask, 0, sizeof consumed_mask);
+            }
+
+            BUILD_ASSERT(sizeof(struct rte_flow_action_set_tp) ==
+                         sizeof key->udp_src);
+            if (add_set_flow_action(actions, &key->udp_src,
+                                    mask ? &mask->udp_src : NULL,
+                                    sizeof key->udp_src,
+                                    RTE_FLOW_ACTION_TYPE_SET_TP_SRC)) {
+                return -1;
+            }
+            memset(&consumed_mask.udp_src, 0, sizeof consumed_mask.udp_src);
+
+            BUILD_ASSERT(sizeof(struct rte_flow_action_set_tp) ==
+                         sizeof key->udp_dst);
+            if (add_set_flow_action(actions, &key->udp_dst,
+                                    mask ? &mask->udp_dst : NULL,
+                                    sizeof key->udp_dst,
+                                    RTE_FLOW_ACTION_TYPE_SET_TP_DST)) {
+                return -1;
+            }
+            memset(&consumed_mask.udp_dst, 0, sizeof consumed_mask.udp_dst);
+
+            if (!is_all_zeros(&consumed_mask, sizeof consumed_mask)) {
+                VLOG_DBG_RL(&error_rl, "Unsupported UDP set action");
                 return -1;
             }
         } else {
