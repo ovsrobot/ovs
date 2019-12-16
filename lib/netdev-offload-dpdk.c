@@ -367,6 +367,21 @@ dump_flow_action(struct ds *s, const struct rte_flow_action *actions)
         }
     } else if (actions->type == RTE_FLOW_ACTION_TYPE_DROP) {
         ds_put_cstr(s, "rte flow drop action\n");
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_MAC_SRC ||
+               actions->type == RTE_FLOW_ACTION_TYPE_SET_MAC_DST) {
+        const struct rte_flow_action_set_mac *set_mac = actions->conf;
+
+        char *dirstr = actions->type == RTE_FLOW_ACTION_TYPE_SET_MAC_DST
+                       ? "dst" : "src";
+
+        ds_put_format(s, "rte flow set-mac-%s action:\n", dirstr);
+        if (set_mac) {
+            ds_put_format(s,
+                          "  Set-mac-%s: "ETH_ADDR_FMT"\n", dirstr,
+                          ETH_ADDR_BYTES_ARGS(set_mac->mac_addr));
+        } else {
+            ds_put_format(s, "  Set-mac-%s = null\n", dirstr);
+        }
     } else {
         ds_put_format(s, "unknown rte flow action (%d)\n", actions->type);
     }
@@ -795,6 +810,95 @@ add_output_action(struct netdev *netdev,
 }
 
 static int
+add_set_flow_action(struct flow_actions *actions,
+                    const void *value,
+                    const void *mask,
+                    const size_t size,
+                    const int attr)
+{
+    void *spec;
+
+    if (mask) {
+        /* DPDK does not support partially masked set actions. In such
+         * case, fail the offload.
+         */
+        if (is_all_zeros(mask, size)) {
+            return 0;
+        }
+        if (!is_all_ones(mask, size)) {
+            VLOG_DBG_RL(&error_rl,
+                        "Partial mask is not supported");
+            return -1;
+        }
+    }
+
+    spec = xzalloc(size);
+    memcpy(spec, value, size);
+    add_flow_action(actions, attr, spec);
+
+    return 0;
+}
+
+/* Mask is at the midpoint of the data. */
+#define get_mask(a, type) ((const type *)(const void *)(a + 1) + 1)
+
+static int
+parse_set_actions(struct flow_actions *actions,
+                  const struct nlattr *set_actions,
+                  const size_t set_actions_len,
+                  bool masked)
+{
+    const struct nlattr *sa;
+    unsigned int sleft;
+
+    NL_ATTR_FOR_EACH_UNSAFE (sa, sleft, set_actions, set_actions_len) {
+        if (nl_attr_type(sa) == OVS_KEY_ATTR_ETHERNET) {
+            const struct ovs_key_ethernet *key = nl_attr_get(sa);
+            const struct ovs_key_ethernet *mask = masked ?
+                get_mask(sa, struct ovs_key_ethernet) : NULL;
+            struct ovs_key_ethernet consumed_mask;
+
+            if (masked) {
+                memcpy(&consumed_mask, mask, sizeof consumed_mask);
+            } else {
+                memset(&consumed_mask, 0, sizeof consumed_mask);
+            }
+
+            BUILD_ASSERT(sizeof(struct rte_flow_action_set_mac) ==
+                         sizeof key->eth_src);
+            if (add_set_flow_action(actions, &key->eth_src,
+                                    mask ? &mask->eth_src : NULL,
+                                    sizeof key->eth_src,
+                                    RTE_FLOW_ACTION_TYPE_SET_MAC_SRC)) {
+                return -1;
+            }
+            memset(&consumed_mask.eth_src, 0, sizeof consumed_mask.eth_src);
+
+            BUILD_ASSERT(sizeof(struct rte_flow_action_set_mac) ==
+                         sizeof key->eth_dst);
+            if (add_set_flow_action(actions, &key->eth_dst,
+                                    mask ? &mask->eth_dst : NULL,
+                                    sizeof key->eth_dst,
+                                    RTE_FLOW_ACTION_TYPE_SET_MAC_DST)) {
+                return -1;
+            }
+            memset(&consumed_mask.eth_dst, 0, sizeof consumed_mask.eth_dst);
+
+            if (!is_all_zeros(&consumed_mask, sizeof consumed_mask)) {
+                VLOG_DBG_RL(&error_rl, "Unsupported ETHERNET set action");
+                return -1;
+            }
+        } else {
+            VLOG_DBG_RL(&error_rl,
+                        "Unsupported set action type=%d", nl_attr_type(sa));
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int
 parse_flow_actions(struct netdev *netdev,
                    struct flow_actions *actions,
                    struct nlattr *nl_actions,
@@ -808,6 +912,16 @@ parse_flow_actions(struct netdev *netdev,
     NL_ATTR_FOR_EACH_UNSAFE (nla, left, nl_actions, nl_actions_len) {
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
             if (add_output_action(netdev, actions, nla, info)) {
+                return -1;
+            }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SET ||
+                   nl_attr_type(nla) == OVS_ACTION_ATTR_SET_MASKED) {
+            const struct nlattr *set_actions = nl_attr_get(nla);
+            const size_t set_actions_len = nl_attr_get_size(nla);
+            bool masked = nl_attr_type(nla) == OVS_ACTION_ATTR_SET_MASKED;
+
+            if (parse_set_actions(actions, set_actions, set_actions_len,
+                                  masked)) {
                 return -1;
             }
         } else {
