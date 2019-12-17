@@ -79,6 +79,7 @@
 #include "unixctl.h"
 #include "util.h"
 #include "uuid.h"
+#include "ofproto/bond.h"
 
 VLOG_DEFINE_THIS_MODULE(dpif_netdev);
 
@@ -366,6 +367,11 @@ struct dp_netdev {
 
     struct conntrack *conntrack;
     struct pmd_auto_lb pmd_alb;
+    /* Bonds.
+     *
+     * Any lookup into 'bonds' requires taking 'bond_mutex'. */
+    struct ovs_mutex bond_mutex;
+    struct hmap bonds;
 };
 
 static void meter_lock(const struct dp_netdev *dp, uint32_t meter_id)
@@ -596,6 +602,20 @@ struct tx_port {
     struct dp_netdev_rxq *output_pkts_rxqs[NETDEV_MAX_BURST];
 };
 
+/* Contained by struct tx_bond 'slave_buckets' */
+struct slave_entry {
+    uint32_t slave_id;
+    atomic_ullong n_packets;
+    atomic_ullong n_bytes;
+};
+
+/* Contained by struct dp_netdev_pmd_thread's 'bond_cache' or 'tx_bonds'. */
+struct tx_bond {
+    struct hmap_node node;
+    uint32_t bond_id;
+    struct slave_entry slave_buckets[BOND_BUCKETS];
+};
+
 /* A set of properties for the current processing loop that is not directly
  * associated with the pmd thread itself, but with the packets being
  * processed or the short-term system configuration (for example, time).
@@ -707,7 +727,6 @@ struct dp_netdev_pmd_thread {
     atomic_bool wait_for_reload;    /* Can we busy wait for the next reload? */
     atomic_bool reload_tx_qid;      /* Do we need to reload static_tx_qid? */
     atomic_bool exit;               /* For terminating the pmd thread. */
-
     pthread_t thread;
     unsigned core_id;               /* CPU core id of this pmd thread. */
     int numa_id;                    /* numa node id of this pmd thread. */
@@ -728,6 +747,11 @@ struct dp_netdev_pmd_thread {
      * read by the pmd thread. */
     struct hmap tx_ports OVS_GUARDED;
 
+    struct ovs_mutex bond_mutex;    /* Mutex for 'tx_bonds'. */
+    /* Map of 'tx_bond's used for transmission.  Written by the main thread,
+     * read/written by the pmd thread. */
+    struct hmap tx_bonds OVS_GUARDED;
+
     /* These are thread-local copies of 'tx_ports'.  One contains only tunnel
      * ports (that support push_tunnel/pop_tunnel), the other contains ports
      * with at least one txq (that support send).  A port can be in both.
@@ -740,6 +764,8 @@ struct dp_netdev_pmd_thread {
      * other instance will only be accessed by its own pmd thread. */
     struct hmap tnl_port_cache;
     struct hmap send_port_cache;
+    /* These are thread-local copies of 'tx_bonds' */
+    struct hmap bond_cache;
 
     /* Keep track of detailed PMD performance statistics. */
     struct pmd_perf_stats perf_stats;
@@ -819,6 +845,12 @@ static void dp_netdev_del_rxq_from_pmd(struct dp_netdev_pmd_thread *pmd,
 static int
 dp_netdev_pmd_flush_output_packets(struct dp_netdev_pmd_thread *pmd,
                                    bool force);
+static void dp_netdev_add_bond_tx_to_pmd(struct dp_netdev_pmd_thread *pmd,
+                                         struct tx_bond *bond)
+    OVS_REQUIRES(pmd->bond_mutex);
+static void dp_netdev_del_bond_tx_from_pmd(struct dp_netdev_pmd_thread *pmd,
+                                           struct tx_bond *tx)
+    OVS_REQUIRES(pmd->bond_mutex);
 
 static void reconfigure_datapath(struct dp_netdev *dp)
     OVS_REQUIRES(dp->port_mutex);
@@ -827,6 +859,10 @@ static void dp_netdev_pmd_unref(struct dp_netdev_pmd_thread *pmd);
 static void dp_netdev_pmd_flow_flush(struct dp_netdev_pmd_thread *pmd);
 static void pmd_load_cached_ports(struct dp_netdev_pmd_thread *pmd)
     OVS_REQUIRES(pmd->port_mutex);
+static void pmd_load_cached_bonds(struct dp_netdev_pmd_thread *pmd)
+    OVS_REQUIRES(pmd->bond_mutex);
+static void pmd_load_bond_cache(struct dp_netdev_pmd_thread *pmd);
+
 static inline void
 dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
                            struct polled_queue *poll_list, int poll_cnt);
@@ -1385,6 +1421,45 @@ pmd_perf_show_cmd(struct unixctl_conn *conn, int argc,
     par.command_type = PMD_INFO_PERF_SHOW;
     dpif_netdev_pmd_info(conn, argc, argv, &par);
 }
+
+static void
+dpif_netdev_dp_bond_show(struct unixctl_conn *conn, int argc,
+                         const char *argv[], void *aux OVS_UNUSED)
+{
+    struct ds reply = DS_EMPTY_INITIALIZER;
+    struct dp_netdev *dp = NULL;
+    uint32_t bucket;
+    struct tx_bond *dp_bond_entry = NULL;
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+
+    if (argc == 2) {
+        dp = shash_find_data(&dp_netdevs, argv[1]);
+    } else if (shash_count(&dp_netdevs) == 1) {
+        /* There's only one datapath */
+        dp = shash_first(&dp_netdevs)->data;
+    }
+    if (!dp) {
+        ovs_mutex_unlock(&dp_netdev_mutex);
+        unixctl_command_reply_error(conn,
+                                    "please specify an existing datapath");
+        return;
+    }
+    ds_put_cstr(&reply, "\nBonds:\n");
+    HMAP_FOR_EACH (dp_bond_entry, node, &dp->bonds) {
+        ds_put_format(&reply, "\tbond-id %u :\n",
+                      dp_bond_entry->bond_id);
+        for (bucket = 0; bucket < BOND_BUCKETS; bucket++) {
+            ds_put_format(&reply, "\t\tbucket %u - slave %u \n",
+                      bucket,
+                      dp_bond_entry->slave_buckets[bucket].slave_id);
+        }
+    }
+    ovs_mutex_unlock(&dp_netdev_mutex);
+    unixctl_command_reply(conn, ds_cstr(&reply));
+    ds_destroy(&reply);
+}
+
 
 static int
 dpif_netdev_init(void)
@@ -1415,6 +1490,9 @@ dpif_netdev_init(void)
                              "on|off [-b before] [-a after] [-e|-ne] "
                              "[-us usec] [-q qlen]",
                              0, 10, pmd_perf_log_set_cmd,
+                             NULL);
+    unixctl_command_register("dpif-netdev/dp-bond-show", "[dp]",
+                             0, 1, dpif_netdev_dp_bond_show,
                              NULL);
     return 0;
 }
@@ -1540,6 +1618,9 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
     ovs_mutex_init(&dp->port_mutex);
     hmap_init(&dp->ports);
     dp->port_seq = seq_create();
+    ovs_mutex_init(&dp->bond_mutex);
+    hmap_init(&dp->bonds);
+
     fat_rwlock_init(&dp->upcall_rwlock);
 
     dp->reconfigure_seq = seq_create();
@@ -1654,6 +1735,7 @@ dp_netdev_free(struct dp_netdev *dp)
     OVS_REQUIRES(dp_netdev_mutex)
 {
     struct dp_netdev_port *port, *next;
+    struct tx_bond *bond, *next_bond;
 
     shash_find_and_delete(&dp_netdevs, dp->name);
 
@@ -1662,6 +1744,13 @@ dp_netdev_free(struct dp_netdev *dp)
         do_del_port(dp, port);
     }
     ovs_mutex_unlock(&dp->port_mutex);
+
+    ovs_mutex_lock(&dp->bond_mutex);
+    HMAP_FOR_EACH_SAFE (bond, next_bond, node, &dp->bonds) {
+        hmap_remove(&dp->bonds, &bond->node);
+        free(bond);
+    }
+    ovs_mutex_unlock(&dp->bond_mutex);
 
     dp_netdev_destroy_all_pmds(dp, true);
     cmap_destroy(&dp->poll_threads);
@@ -1680,6 +1769,9 @@ dp_netdev_free(struct dp_netdev *dp)
     seq_destroy(dp->port_seq);
     hmap_destroy(&dp->ports);
     ovs_mutex_destroy(&dp->port_mutex);
+
+    hmap_destroy(&dp->bonds);
+    ovs_mutex_destroy(&dp->bond_mutex);
 
     /* Upcalls must be disabled at this point */
     dp_netdev_destroy_upcall_lock(dp);
@@ -1784,6 +1876,7 @@ dp_netdev_reload_pmd__(struct dp_netdev_pmd_thread *pmd)
         ovs_mutex_lock(&pmd->port_mutex);
         pmd_load_cached_ports(pmd);
         ovs_mutex_unlock(&pmd->port_mutex);
+        pmd_load_bond_cache(pmd);
         ovs_mutex_unlock(&pmd->dp->non_pmd_mutex);
         return;
     }
@@ -1796,6 +1889,12 @@ static uint32_t
 hash_port_no(odp_port_t port_no)
 {
     return hash_int(odp_to_u32(port_no), 0);
+}
+
+static uint32_t
+hash_bond_id(uint32_t bond_id)
+{
+    return hash_int(bond_id, 0);
 }
 
 static int
@@ -4327,6 +4426,19 @@ tx_port_lookup(const struct hmap *hmap, odp_port_t port_no)
     return NULL;
 }
 
+static struct tx_bond *
+tx_bond_lookup(const struct hmap *hmap, uint32_t bond_id)
+{
+    struct tx_bond *tx;
+
+    HMAP_FOR_EACH_IN_BUCKET (tx, node, hash_bond_id(bond_id), hmap) {
+        if (tx->bond_id == bond_id) {
+            return tx;
+        }
+    }
+    return NULL;
+}
+
 static int
 port_reconfigure(struct dp_netdev_port *port)
 {
@@ -4815,6 +4927,27 @@ pmd_remove_stale_ports(struct dp_netdev *dp,
     ovs_mutex_unlock(&pmd->port_mutex);
 }
 
+static void
+pmd_remove_stale_bonds(struct dp_netdev *dp,
+                       struct dp_netdev_pmd_thread *pmd)
+    OVS_EXCLUDED(pmd->bond_mutex)
+    OVS_EXCLUDED(dp->bond_mutex)
+{
+    struct tx_bond *tx, *tx_next;
+
+    ovs_mutex_lock(&dp->bond_mutex);
+    ovs_mutex_lock(&pmd->bond_mutex);
+
+    HMAP_FOR_EACH_SAFE (tx, tx_next, node, &pmd->tx_bonds) {
+        if (!tx_bond_lookup(&dp->bonds, tx->bond_id)) {
+            dp_netdev_del_bond_tx_from_pmd(pmd, tx);
+        }
+    }
+
+    ovs_mutex_unlock(&pmd->bond_mutex);
+    ovs_mutex_unlock(&dp->bond_mutex);
+}
+
 /* Must be called each time a port is added/removed or the cmask changes.
  * This creates and destroys pmd threads, reconfigures ports, opens their
  * rxqs and assigns all rxqs/txqs to pmd threads. */
@@ -4825,6 +4958,7 @@ reconfigure_datapath(struct dp_netdev *dp)
     struct hmapx busy_threads = HMAPX_INITIALIZER(&busy_threads);
     struct dp_netdev_pmd_thread *pmd;
     struct dp_netdev_port *port;
+    struct tx_bond *bond;
     int wanted_txqs;
 
     dp->last_reconfigure_seq = seq_read(dp->reconfigure_seq);
@@ -4853,10 +4987,11 @@ reconfigure_datapath(struct dp_netdev *dp)
         }
     }
 
-    /* Remove from the pmd threads all the ports that have been deleted or
-     * need reconfiguration. */
+    /* Remove from the pmd threads all the ports/bonds that have been deleted
+     * or need reconfiguration. */
     CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
         pmd_remove_stale_ports(dp, pmd);
+        pmd_remove_stale_bonds(dp, pmd);
     }
 
     /* Reload affected pmd threads.  We must wait for the pmd threads before
@@ -4977,6 +5112,20 @@ reconfigure_datapath(struct dp_netdev *dp)
         }
         ovs_mutex_unlock(&pmd->port_mutex);
     }
+
+    /* Add every bond to the tx cache of every pmd thread, if it's not
+     * there already and if this pmd has at least one rxq to poll. */
+    ovs_mutex_lock(&dp->bond_mutex);
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        ovs_mutex_lock(&pmd->bond_mutex);
+        if (hmap_count(&pmd->poll_list) || pmd->core_id == NON_PMD_CORE_ID) {
+            HMAP_FOR_EACH (bond, node, &dp->bonds) {
+                dp_netdev_add_bond_tx_to_pmd(pmd, bond);
+            }
+        }
+        ovs_mutex_unlock(&pmd->bond_mutex);
+    }
+    ovs_mutex_unlock(&dp->bond_mutex);
 
     /* Reload affected pmd threads. */
     reload_affected_pmds(dp);
@@ -5236,7 +5385,6 @@ pmd_rebalance_dry_run(struct dp_netdev *dp)
     return ret;
 }
 
-
 /* Return true if needs to revalidate datapath flows. */
 static bool
 dpif_netdev_run(struct dpif *dpif)
@@ -5406,6 +5554,58 @@ pmd_load_cached_ports(struct dp_netdev_pmd_thread *pmd)
 }
 
 static void
+pmd_free_cached_bonds(struct dp_netdev_pmd_thread *pmd)
+{
+    struct tx_bond *bond, *next;
+
+    /* Remove bonds from pmd which no longer exists. */
+    HMAP_FOR_EACH_SAFE (bond, next, node, &pmd->bond_cache) {
+        struct tx_bond *tx = NULL;
+
+        tx = tx_bond_lookup(&pmd->tx_bonds, bond->bond_id);
+        if (!tx) {
+            /* Bond no longer exist. Delete it from pmd. */
+            hmap_remove(&pmd->bond_cache, &bond->node);
+            free(bond);
+        }
+    }
+}
+
+/* Copies bonds from 'pmd->tx_bonds' (shared with the main thread) to
+ * 'pmd->bond_cache' (thread local) */
+static void
+pmd_load_cached_bonds(struct dp_netdev_pmd_thread *pmd)
+    OVS_REQUIRES(pmd->bond_mutex)
+{
+    struct tx_bond *tx_bond, *tx_bond_cached;
+
+    pmd_free_cached_bonds(pmd);
+    hmap_shrink(&pmd->bond_cache);
+
+    HMAP_FOR_EACH (tx_bond, node, &pmd->tx_bonds) {
+        uint32_t bucket = 0;
+        /* Check if bond already exist on pmd. */
+        tx_bond_cached = tx_bond_lookup(&pmd->bond_cache, tx_bond->bond_id);
+
+        if (!tx_bond_cached) {
+            /* Create new bond entry in cache. */
+            tx_bond_cached = xmemdup(tx_bond, sizeof *tx_bond_cached);
+            hmap_insert(&pmd->bond_cache, &tx_bond_cached->node,
+                        hash_bond_id(tx_bond_cached->bond_id));
+        } else {
+            /* Update the slave-map. */
+            for (bucket = 0; bucket <= BOND_MASK; bucket++) {
+                tx_bond_cached->slave_buckets[bucket].slave_id =
+                    tx_bond->slave_buckets[bucket].slave_id;
+            }
+        }
+        VLOG_DBG("Caching bond-id %d pmd %d\n",
+                 tx_bond_cached->bond_id, pmd->core_id);
+    }
+}
+
+
+static void
 pmd_alloc_static_tx_qid(struct dp_netdev_pmd_thread *pmd)
 {
     ovs_mutex_lock(&pmd->dp->tx_qid_pool_mutex);
@@ -5425,6 +5625,14 @@ pmd_free_static_tx_qid(struct dp_netdev_pmd_thread *pmd)
     ovs_mutex_lock(&pmd->dp->tx_qid_pool_mutex);
     id_pool_free_id(pmd->dp->tx_qid_pool, pmd->static_tx_qid);
     ovs_mutex_unlock(&pmd->dp->tx_qid_pool_mutex);
+}
+
+static void
+pmd_load_bond_cache(struct dp_netdev_pmd_thread *pmd)
+{
+    ovs_mutex_lock(&pmd->bond_mutex);
+    pmd_load_cached_bonds(pmd);
+    ovs_mutex_unlock(&pmd->bond_mutex);
 }
 
 static int
@@ -5453,6 +5661,8 @@ pmd_load_queues_and_ports(struct dp_netdev_pmd_thread *pmd,
     pmd_load_cached_ports(pmd);
 
     ovs_mutex_unlock(&pmd->port_mutex);
+
+    pmd_load_bond_cache(pmd);
 
     *ppoll_list = poll_list;
     return i;
@@ -6016,6 +6226,7 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     atomic_init(&pmd->reload, false);
     ovs_mutex_init(&pmd->flow_mutex);
     ovs_mutex_init(&pmd->port_mutex);
+    ovs_mutex_init(&pmd->bond_mutex);
     cmap_init(&pmd->flow_table);
     cmap_init(&pmd->classifiers);
     pmd->ctx.last_rxq = NULL;
@@ -6026,6 +6237,8 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     hmap_init(&pmd->tx_ports);
     hmap_init(&pmd->tnl_port_cache);
     hmap_init(&pmd->send_port_cache);
+    hmap_init(&pmd->tx_bonds);
+    hmap_init(&pmd->bond_cache);
     /* init the 'flow_cache' since there is no
      * actual thread created for NON_PMD_CORE_ID. */
     if (core_id == NON_PMD_CORE_ID) {
@@ -6046,6 +6259,8 @@ dp_netdev_destroy_pmd(struct dp_netdev_pmd_thread *pmd)
     hmap_destroy(&pmd->send_port_cache);
     hmap_destroy(&pmd->tnl_port_cache);
     hmap_destroy(&pmd->tx_ports);
+    hmap_destroy(&pmd->bond_cache);
+    hmap_destroy(&pmd->tx_bonds);
     hmap_destroy(&pmd->poll_list);
     /* All flows (including their dpcls_rules) have been deleted already */
     CMAP_FOR_EACH (cls, node, &pmd->classifiers) {
@@ -6057,6 +6272,7 @@ dp_netdev_destroy_pmd(struct dp_netdev_pmd_thread *pmd)
     ovs_mutex_destroy(&pmd->flow_mutex);
     seq_destroy(pmd->reload_seq);
     ovs_mutex_destroy(&pmd->port_mutex);
+    ovs_mutex_destroy(&pmd->bond_mutex);
     free(pmd);
 }
 
@@ -6207,6 +6423,48 @@ dp_netdev_del_port_tx_from_pmd(struct dp_netdev_pmd_thread *pmd,
     OVS_REQUIRES(pmd->port_mutex)
 {
     hmap_remove(&pmd->tx_ports, &tx->node);
+    free(tx);
+    pmd->need_reload = true;
+}
+
+static void
+dp_netdev_add_bond_tx_to_pmd(struct dp_netdev_pmd_thread *pmd,
+                             struct tx_bond *bond)
+    OVS_REQUIRES(pmd->bond_mutex)
+{
+    struct tx_bond *tx;
+    uint32_t i;
+    bool reload = false;
+
+    tx = tx_bond_lookup(&pmd->tx_bonds, bond->bond_id);
+    if (tx) {
+        /* Check if mapping is changed. */
+        for (i = 0; i <= BOND_MASK; i++) {
+            if (bond->slave_buckets[i].slave_id !=
+                     tx->slave_buckets[i].slave_id) {
+                /* Mapping is modified. Reload pmd bond cache again. */
+                reload = true;
+            }
+            /* Copy the map always. */
+            tx->slave_buckets[i].slave_id = bond->slave_buckets[i].slave_id;
+        }
+    } else {
+        tx = xmemdup(bond, sizeof *tx);
+        hmap_insert(&pmd->tx_bonds, &tx->node, hash_bond_id(bond->bond_id));
+        reload = true;
+    }
+    if (reload == true) {
+        pmd->need_reload = true;
+    }
+}
+
+/* Del 'tx' from the tx bond cache of 'pmd' */
+static void
+dp_netdev_del_bond_tx_from_pmd(struct dp_netdev_pmd_thread *pmd,
+                               struct tx_bond *tx)
+    OVS_REQUIRES(pmd->bond_mutex)
+{
+    hmap_remove(&pmd->tx_bonds, &tx->node);
     free(tx);
     pmd->need_reload = true;
 }
@@ -6982,6 +7240,13 @@ pmd_send_port_cache_lookup(const struct dp_netdev_pmd_thread *pmd,
     return tx_port_lookup(&pmd->send_port_cache, port_no);
 }
 
+static struct tx_bond *
+pmd_tx_bond_cache_lookup(const struct dp_netdev_pmd_thread *pmd,
+                         uint32_t bond_id)
+{
+    return tx_bond_lookup(&pmd->bond_cache, bond_id);
+}
+
 static int
 push_tnl_action(const struct dp_netdev_pmd_thread *pmd,
                 const struct nlattr *attr,
@@ -7031,6 +7296,51 @@ dp_execute_userspace_action(struct dp_netdev_pmd_thread *pmd,
     }
 }
 
+static int
+dp_execute_output_action(struct dp_netdev_pmd_thread *pmd,
+                         struct dp_packet_batch *packets_,
+                         bool should_steal,
+                         odp_port_t port_no)
+{
+    struct tx_port *p;
+    p = pmd_send_port_cache_lookup(pmd, port_no);
+    if (OVS_LIKELY(p)) {
+        struct dp_packet *packet;
+        struct dp_packet_batch out;
+        if (!should_steal) {
+            dp_packet_batch_clone(&out, packets_);
+            dp_packet_batch_reset_cutlen(packets_);
+            packets_ = &out;
+        }
+        dp_packet_batch_apply_cutlen(packets_);
+#ifdef DPDK_NETDEV
+        if (OVS_UNLIKELY(!dp_packet_batch_is_empty(&p->output_pkts)
+                         && packets_->packets[0]->source
+                            != p->output_pkts.packets[0]->source)) {
+            /* netdev-dpdk assumes that all packets in a single
+             * output batch has the same source. Flush here to
+             * avoid memory access issues. */
+            dp_netdev_pmd_flush_output_on_port(pmd, p);
+        }
+#endif
+        if (dp_packet_batch_size(&p->output_pkts)
+            + dp_packet_batch_size(packets_) > NETDEV_MAX_BURST) {
+            /* Flush here to avoid overflow. */
+            dp_netdev_pmd_flush_output_on_port(pmd, p);
+        }
+        if (dp_packet_batch_is_empty(&p->output_pkts)) {
+            pmd->n_output_batches++;
+        }
+        DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
+            p->output_pkts_rxqs[dp_packet_batch_size(&p->output_pkts)] =
+                                                         pmd->ctx.last_rxq;
+            dp_packet_batch_add(&p->output_pkts, packet);
+        }
+        return 0;
+    }
+    return -1;
+}
+
 static void
 dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
               const struct nlattr *a, bool should_steal)
@@ -7042,49 +7352,59 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     struct dp_netdev *dp = pmd->dp;
     int type = nl_attr_type(a);
     struct tx_port *p;
+    int ret;
 
     switch ((enum ovs_action_attr)type) {
     case OVS_ACTION_ATTR_OUTPUT:
-        p = pmd_send_port_cache_lookup(pmd, nl_attr_get_odp_port(a));
-        if (OVS_LIKELY(p)) {
-            struct dp_packet *packet;
-            struct dp_packet_batch out;
-
-            if (!should_steal) {
-                dp_packet_batch_clone(&out, packets_);
-                dp_packet_batch_reset_cutlen(packets_);
-                packets_ = &out;
-            }
-            dp_packet_batch_apply_cutlen(packets_);
-
-#ifdef DPDK_NETDEV
-            if (OVS_UNLIKELY(!dp_packet_batch_is_empty(&p->output_pkts)
-                             && packets_->packets[0]->source
-                                != p->output_pkts.packets[0]->source)) {
-                /* XXX: netdev-dpdk assumes that all packets in a single
-                 *      output batch has the same source. Flush here to
-                 *      avoid memory access issues. */
-                dp_netdev_pmd_flush_output_on_port(pmd, p);
-            }
-#endif
-            if (dp_packet_batch_size(&p->output_pkts)
-                + dp_packet_batch_size(packets_) > NETDEV_MAX_BURST) {
-                /* Flush here to avoid overflow. */
-                dp_netdev_pmd_flush_output_on_port(pmd, p);
-            }
-
-            if (dp_packet_batch_is_empty(&p->output_pkts)) {
-                pmd->n_output_batches++;
-            }
-
-            DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
-                p->output_pkts_rxqs[dp_packet_batch_size(&p->output_pkts)] =
-                                                             pmd->ctx.last_rxq;
-                dp_packet_batch_add(&p->output_pkts, packet);
-            }
+        ret = dp_execute_output_action(pmd, packets_, should_steal,
+                                       nl_attr_get_odp_port(a));
+        if (ret == 0) {
+            /* Output action executed successfully. */
             return;
         }
         break;
+
+    case OVS_ACTION_ATTR_LB_OUTPUT: {
+        uint32_t bond = nl_attr_get_u32(a);
+        uint32_t bond_member;
+        uint32_t bucket, hash;
+        struct dp_packet_batch del_pkts;
+        struct dp_packet_batch output_pkt;
+        struct dp_packet *packet;
+        struct tx_bond *p_bond;
+        struct slave_entry *s_entry;
+        uint32_t size;
+
+        p_bond = pmd_tx_bond_cache_lookup(pmd, bond);
+        dp_packet_batch_init(&del_pkts);
+        if (p_bond) {
+            DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
+                /*
+                 * Lookup the bond-hash table using hash to get the slave.
+                 */
+                hash = dp_packet_get_rss_hash(packet);
+                bucket = hash & BOND_MASK;
+                s_entry = &p_bond->slave_buckets[bucket];
+                bond_member = s_entry->slave_id;
+                size = dp_packet_size(packet);
+
+                dp_packet_batch_init_packet(&output_pkt, packet);
+                ret = dp_execute_output_action(pmd, &output_pkt, should_steal,
+                                               u32_to_odp(bond_member));
+                if (OVS_UNLIKELY(ret != 0)) {
+                    dp_packet_batch_add(&del_pkts, packet);
+                } else {
+                    /* Update slave stats. */
+                    non_atomic_ullong_add(&s_entry->n_packets, 1);
+                    non_atomic_ullong_add(&s_entry->n_bytes, size);
+                }
+            }
+            /* Delete packets that failed OUTPUT action */
+            dp_packet_delete_batch(&del_pkts, should_steal);
+            return;
+        }
+        break;
+    }
 
     case OVS_ACTION_ATTR_TUNNEL_PUSH:
         if (should_steal) {
@@ -7615,6 +7935,110 @@ dpif_netdev_ipf_dump_done(struct dpif *dpif OVS_UNUSED, void *ipf_dump_ctx)
 
 }
 
+static int
+dpif_netdev_bond_add(struct dpif *dpif, uint32_t bond_id, uint32_t slave_map[])
+{
+    struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_pmd_thread *pmd;
+    uint32_t bucket;
+    struct tx_bond *dp_bond_entry = NULL;
+
+    ovs_mutex_lock(&dp->bond_mutex);
+    /*
+     * Lookup for the bond. If already exists, just update the slave-map.
+     * Else create new.
+     */
+    dp_bond_entry = tx_bond_lookup(&dp->bonds, bond_id);
+    if (dp_bond_entry) {
+        for (bucket = 0; bucket <= BOND_MASK; bucket++) {
+            dp_bond_entry->slave_buckets[bucket].slave_id = slave_map[bucket];
+        }
+        CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+            ovs_mutex_lock(&pmd->bond_mutex);
+            dp_netdev_add_bond_tx_to_pmd(pmd, dp_bond_entry);
+            ovs_mutex_unlock(&pmd->bond_mutex);
+        }
+    } else {
+        struct tx_bond *dp_bond = xzalloc(sizeof *dp_bond);
+        dp_bond->bond_id = bond_id;
+        for (bucket = 0; bucket < BOND_BUCKETS; bucket++) {
+            dp_bond->slave_buckets[bucket].slave_id = slave_map[bucket];
+        }
+        hmap_insert(&dp->bonds, &dp_bond->node,
+                    hash_bond_id(dp_bond->bond_id));
+        /* Insert the bond map in all pmds. */
+        CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+            ovs_mutex_lock(&pmd->bond_mutex);
+            dp_netdev_add_bond_tx_to_pmd(pmd, dp_bond);
+            ovs_mutex_unlock(&pmd->bond_mutex);
+        }
+    }
+    ovs_mutex_unlock(&dp->bond_mutex);
+    return 0;
+}
+
+static int
+dpif_netdev_bond_del(struct dpif *dpif, uint32_t bond_id)
+{
+    struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_pmd_thread *pmd;
+    struct tx_bond *dp_bond_entry = NULL;
+
+    ovs_mutex_lock(&dp->bond_mutex);
+
+    /* Find the bond and delete it if present */
+    dp_bond_entry = tx_bond_lookup(&dp->bonds, bond_id);
+    if (dp_bond_entry) {
+        /* Remove the bond map in all pmds. */
+        CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+            ovs_mutex_lock(&pmd->bond_mutex);
+            dp_netdev_del_bond_tx_from_pmd(pmd, dp_bond_entry);
+            ovs_mutex_unlock(&pmd->bond_mutex);
+        }
+        hmap_remove(&dp->bonds, &dp_bond_entry->node);
+        free(dp_bond_entry);
+    }
+
+    ovs_mutex_unlock(&dp->bond_mutex);
+    return 0;
+}
+
+static int
+dpif_netdev_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
+                           uint64_t *n_bytes)
+{
+    struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_pmd_thread *pmd;
+    struct tx_bond *dp_bond_entry = NULL;
+    struct tx_bond *pmd_bond_entry = NULL;
+    uint32_t i;
+
+    ovs_mutex_lock(&dp->bond_mutex);
+
+    /* Find the bond and retrieve stats if present */
+    dp_bond_entry = tx_bond_lookup(&dp->bonds, bond_id);
+    if (dp_bond_entry) {
+        /* Search the bond in all PMDs */
+        CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+            uint64_t pmd_n_bytes;
+            ovs_mutex_lock(&pmd->bond_mutex);
+            pmd_bond_entry = tx_bond_lookup(&pmd->bond_cache, bond_id);
+            if (pmd_bond_entry) {
+                /* Read bond stats. */
+                for (i = 0;i <= BOND_MASK; i++) {
+                    atomic_read_relaxed(
+                         &pmd_bond_entry->slave_buckets[i].n_bytes,
+                         &pmd_n_bytes);
+                    n_bytes[i] += pmd_n_bytes;
+                }
+            }
+            ovs_mutex_unlock(&pmd->bond_mutex);
+        }
+    }
+    ovs_mutex_unlock(&dp->bond_mutex);
+    return 0;
+}
+
 const struct dpif_class dpif_netdev_class = {
     "netdev",
     true,                       /* cleanup_required */
@@ -7687,6 +8111,9 @@ const struct dpif_class dpif_netdev_class = {
     dpif_netdev_meter_set,
     dpif_netdev_meter_get,
     dpif_netdev_meter_del,
+    dpif_netdev_bond_add,
+    dpif_netdev_bond_del,
+    dpif_netdev_bond_stats_get,
 };
 
 static void

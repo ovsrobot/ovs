@@ -199,7 +199,10 @@ struct group_dpif *group_dpif_lookup(struct ofproto_dpif *,
                                                                             \
     /* True if the datapath supports OVS_CT_ATTR_TIMEOUT in                 \
      * OVS_ACTION_ATTR_CT action. */                                        \
-    DPIF_SUPPORT_FIELD(bool, ct_timeout, "Conntrack timeout policy")
+    DPIF_SUPPORT_FIELD(bool, ct_timeout, "Conntrack timeout policy")        \
+                                                                            \
+    /* True if the datapath supports balance_tcp optimization */            \
+    DPIF_SUPPORT_FIELD(bool, balance_tcp_opt, "Balance-tcp opt")
 
 /* Stores the various features which the corresponding backer supports. */
 struct dpif_backer_support {
@@ -375,6 +378,11 @@ int ofproto_dpif_add_internal_flow(struct ofproto_dpif *,
                                    struct rule **rulep);
 int ofproto_dpif_delete_internal_flow(struct ofproto_dpif *, struct match *,
                                       int priority);
+int ofproto_dpif_bundle_add(struct ofproto_dpif *,
+                            uint32_t bond_id,
+                            uint32_t slave_map[]);
+int ofproto_dpif_bundle_del(struct ofproto_dpif *,
+                            uint32_t bond_id);
 
 bool ovs_native_tunneling_is_on(struct ofproto_dpif *);
 
