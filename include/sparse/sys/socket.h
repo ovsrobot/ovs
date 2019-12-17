@@ -27,6 +27,7 @@
 
 typedef unsigned short int sa_family_t;
 typedef __socklen_t socklen_t;
+struct timespec;
 
 struct sockaddr {
     sa_family_t sa_family;
@@ -126,7 +127,8 @@ enum {
     MSG_PEEK,
     MSG_TRUNC,
     MSG_WAITALL,
-    MSG_DONTWAIT
+    MSG_DONTWAIT,
+    MSG_WAITFORONE
 };
 
 enum {
@@ -170,5 +172,8 @@ int shutdown(int, int);
 int sockatmark(int);
 int socket(int, int, int);
 int socketpair(int, int, int, int[2]);
+
+int sendmmsg(int, struct mmsghdr *, unsigned int, int);
+int recvmmsg(int, struct mmsghdr *, unsigned int, int, struct timespec *);
 
 #endif /* <sys/socket.h> for sparse */
