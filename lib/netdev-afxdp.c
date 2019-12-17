@@ -26,6 +26,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/if_xdp.h>
 #include <net/if.h>
+#include <numa.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <sys/resource.h>
@@ -469,7 +470,7 @@ xsk_configure_all(struct netdev *netdev)
 {
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     int i, ifindex, n_rxq, n_txq;
-    int qid = 0;
+    int qid = 0, err = 0;
 
     ifindex = linux_get_ifindex(netdev_get_name(netdev));
 
@@ -477,6 +478,14 @@ xsk_configure_all(struct netdev *netdev)
     ovs_assert(dev->tx_locks == NULL);
 
     n_rxq = netdev_n_rxq(netdev);
+
+    /* Allocate all the xsk related memory in the netdev's NUMA domain. */
+    struct bitmask *old_bm = numa_get_membind();
+    struct bitmask *new_bm = numa_allocate_nodemask();
+    netdev_get_numa_id(netdev);
+    numa_bitmask_setbit(new_bm, dev->numa_id);
+    numa_set_membind(new_bm);
+
     dev->xsks = xcalloc(n_rxq, sizeof *dev->xsks);
 
     if (dev->xdp_mode == OVS_AF_XDP_MODE_BEST_EFFORT) {
@@ -518,11 +527,17 @@ xsk_configure_all(struct netdev *netdev)
         ovs_spin_init(&dev->tx_locks[i]);
     }
 
-    return 0;
+    goto out;
 
 err:
     xsk_destroy_all(netdev);
-    return EINVAL;
+    err = EINVAL;
+
+out:
+    numa_set_membind(old_bm);
+    numa_bitmask_free(old_bm);
+    numa_bitmask_free(new_bm);
+    return err;
 }
 
 static void
