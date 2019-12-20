@@ -857,6 +857,8 @@ static inline bool
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd);
 static void queue_netdev_flow_del(struct dp_netdev_pmd_thread *pmd,
                                   struct dp_netdev_flow *flow);
+static void pmd_info_show_subtable(struct ds *reply,
+                                   struct dp_netdev_pmd_thread *pmd);
 
 static void
 emc_cache_init(struct emc_cache *flow_cache)
@@ -979,6 +981,7 @@ enum pmd_info_type {
     PMD_INFO_CLEAR_STATS, /* Set the cycles count to 0. */
     PMD_INFO_SHOW_RXQ,    /* Show poll lists of pmd threads. */
     PMD_INFO_PERF_SHOW,   /* Show pmd performance details. */
+    PMD_INFO_SHOW_SUBTABLE, /* Show subtable miniflow bits. */
 };
 
 static void
@@ -1334,6 +1337,8 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
             pmd_info_show_stats(&reply, pmd);
         } else if (type == PMD_INFO_PERF_SHOW) {
             pmd_info_show_perf(&reply, pmd, (struct pmd_perf_params *)aux);
+        } else if (type == PMD_INFO_SHOW_SUBTABLE) {
+            pmd_info_show_subtable(&reply, pmd);
         }
     }
     free(pmd_list);
@@ -1391,7 +1396,8 @@ dpif_netdev_init(void)
 {
     static enum pmd_info_type show_aux = PMD_INFO_SHOW_STATS,
                               clear_aux = PMD_INFO_CLEAR_STATS,
-                              poll_aux = PMD_INFO_SHOW_RXQ;
+                              poll_aux = PMD_INFO_SHOW_RXQ,
+                              subtable_aux = PMD_INFO_SHOW_SUBTABLE;
 
     unixctl_command_register("dpif-netdev/pmd-stats-show", "[-pmd core] [dp]",
                              0, 3, dpif_netdev_pmd_info,
@@ -1416,6 +1422,9 @@ dpif_netdev_init(void)
                              "[-us usec] [-q qlen]",
                              0, 10, pmd_perf_log_set_cmd,
                              NULL);
+    unixctl_command_register("dpif-netdev/subtable-show", "[-pmd core] [dp]",
+                             0, 3, dpif_netdev_pmd_info,
+                             (void *)&subtable_aux);
     return 0;
 }
 
@@ -8139,3 +8148,45 @@ dpcls_lookup(struct dpcls *cls, const struct netdev_flow_key *keys[],
     }
     return false;
 }
+
+/* Iterate through all dpcls instances and dump out all subtable
+ * miniflow bits. */
+static void
+pmd_info_show_subtable(struct ds *reply, struct dp_netdev_pmd_thread *pmd)
+    OVS_REQUIRES(dp_netdev_mutex)
+{
+     if (pmd->core_id != NON_PMD_CORE_ID) {
+        struct dp_netdev_port *port = NULL;
+        struct dp_netdev *dp = pmd->dp;
+
+         ovs_mutex_lock(&dp->port_mutex);
+         HMAP_FOR_EACH (port, node, &dp->ports) {
+             odp_port_t in_port = port->port_no;
+
+            struct dpcls *cls = dp_netdev_pmd_lookup_dpcls(pmd, in_port);
+            if (!cls) {
+                 continue;
+            } else {
+                struct pvector *pvec = &cls->subtables;
+                ds_put_format(reply, "pmd thread numa_id %d "
+                              "core_id %u: \n",
+                              pmd->numa_id, pmd->core_id);
+                 ds_put_format(reply, "  dpcls port %d: \n",cls->in_port);
+
+                struct dpcls_subtable *subtable;
+                PVECTOR_FOR_EACH (subtable, pvec) {
+                     ds_put_format(reply, "    subtable: \n");
+                     ds_put_format(reply,
+                                   "     unit_0: %d (0x%x)\n"
+                                   "     unit_1: %d (0x%x)\n",
+                                   count_1bits(subtable->mf_bits_set_unit0),
+                                   subtable->mf_bits_set_unit0,
+                                   count_1bits(subtable->mf_bits_set_unit1),
+                                   subtable->mf_bits_set_unit1);
+                }
+            }
+        }
+        ovs_mutex_unlock(&dp->port_mutex);
+    }
+}
+

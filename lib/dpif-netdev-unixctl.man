@@ -217,3 +217,7 @@ with port names, which this thread polls.
 .
 .IP "\fBdpif-netdev/pmd-rxq-rebalance\fR [\fIdp\fR]"
 Reassigns rxqs to pmds in the datapath \fIdp\fR based on their current usage.
+.
+.IP "\fBdpif-netdev/subtable-show\fR [\fB-pmd\fR \fIcore\fR] [\fIdp\fR]"
+For one or all pmd threads of the datapath \fIdp\fR show the list of miniflow
+bits for each subtable in the datapath classifier.
