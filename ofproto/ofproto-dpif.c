@@ -1584,6 +1584,8 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.max_hash_alg = check_max_dp_hash_alg(backer);
     backer->rt_support.check_pkt_len = check_check_pkt_len(backer);
     backer->rt_support.ct_timeout = check_ct_timeout_policy(backer);
+    backer->rt_support.lb_output_action=
+        dpif_supports_lb_output_action(backer->dpif);
 
     /* Flow fields. */
     backer->rt_support.odp.ct_state = check_ct_state(backer);
@@ -3435,6 +3437,27 @@ bundle_remove(struct ofport *port_)
             bundle->bond = NULL;
         }
     }
+}
+
+int
+ofproto_dpif_bundle_add(struct ofproto_dpif *ofproto,
+                        uint32_t bond_id, const ofp_port_t slave_map[])
+{
+    /* Convert ofp_port to odp_port */
+    odp_port_t odp_map[BOND_BUCKETS];
+    for (int bucket = 0; bucket < BOND_BUCKETS; bucket++) {
+        odp_map[bucket] = (slave_map[bucket] == OFP_PORT_C(-1)
+                           ? ODP_PORT_C(-1)
+                           : ofp_port_to_odp_port(ofproto, slave_map[bucket]));
+    }
+
+    return dpif_bond_add(ofproto->backer->dpif, bond_id, odp_map);
+}
+
+int
+ofproto_dpif_bundle_del(struct ofproto_dpif *ofproto, uint32_t bond_id)
+{
+    return dpif_bond_del(ofproto->backer->dpif, bond_id);
 }
 
 static void
@@ -5566,6 +5589,7 @@ get_datapath_cap(const char *datapath_type, struct smap *cap)
     smap_add_format(cap, "max_hash_alg", "%"PRIuSIZE, s.max_hash_alg);
     smap_add(cap, "check_pkt_len", s.check_pkt_len ? "true" : "false");
     smap_add(cap, "ct_timeout", s.ct_timeout ? "true" : "false");
+    smap_add(cap, "lb_output_action", s.lb_output_action ? "true" : "false");
 }
 
 /* Gets timeout policy name in 'backer' based on 'zone', 'dl_type' and
