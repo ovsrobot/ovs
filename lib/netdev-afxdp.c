@@ -82,7 +82,7 @@ static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
  * enough for most corner cases.
  */
 #define NUM_FRAMES          (4 * (PROD_NUM_DESCS + CONS_NUM_DESCS))
-#define BATCH_SIZE          NETDEV_MAX_BURST
+#define BATCH_SIZE          16
 
 BUILD_ASSERT_DECL(IS_POW2(NUM_FRAMES));
 BUILD_ASSERT_DECL(PROD_NUM_DESCS == CONS_NUM_DESCS);
