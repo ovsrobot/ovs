@@ -601,6 +601,14 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     enum afxdp_mode xdp_mode;
     bool need_wakeup;
     int new_n_rxq;
+    int combined_channels;
+
+    if (netdev_linux_ethtool_get_combined_channels(netdev,
+                                                   &combined_channels)) {
+        VLOG_INFO("Cannot get the number of combined channels of %s. "
+                  "Defaults it to 1.", netdev_get_name(netdev));
+        combined_channels = 1;
+    }
 
     ovs_mutex_lock(&dev->mutex);
     new_n_rxq = MAX(smap_get_int(args, "n_rxq", NR_QUEUE), 1);
@@ -608,6 +616,13 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
         ovs_mutex_unlock(&dev->mutex);
         VLOG_ERR("%s: Too big 'n_rxq' (%d > %d).",
                  netdev_get_name(netdev), new_n_rxq, MAX_XSKQ);
+        return EINVAL;
+    }
+
+    if (new_n_rxq != combined_channels) {
+        ovs_mutex_unlock(&dev->mutex);
+        VLOG_ERR("%s: n_rxq: %d != combined channels: %d.",
+                 netdev_get_name(netdev), new_n_rxq, combined_channels);
         return EINVAL;
     }
 

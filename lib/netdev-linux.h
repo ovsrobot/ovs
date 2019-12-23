@@ -27,6 +27,8 @@ struct netdev;
 
 int netdev_linux_ethtool_set_flag(struct netdev *netdev, uint32_t flag,
                                   const char *flag_name, bool enable);
+int netdev_linux_ethtool_get_combined_channels(struct netdev *netdev,
+                                               int *combined_channels);
 int linux_get_ifindex(const char *netdev_name);
 
 #endif /* netdev-linux.h */

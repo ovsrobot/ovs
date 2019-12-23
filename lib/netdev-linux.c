@@ -2166,6 +2166,33 @@ out:
     netdev->get_features_error = error;
 }
 
+int
+netdev_linux_ethtool_get_combined_channels(struct netdev *netdev_,
+                                           int *combined_channels)
+{
+    struct netdev_linux *netdev = netdev_linux_cast(netdev_);
+    struct ethtool_channels echannels;
+    int err;
+
+    ovs_mutex_lock(&netdev->mutex);
+
+    COVERAGE_INC(netdev_get_ethtool);
+
+    memset(&echannels, 0, sizeof echannels);
+    err = netdev_linux_do_ethtool(netdev_get_name(netdev_),
+                                  (struct ethtool_cmd *) &echannels,
+                                  ETHTOOL_GCHANNELS, "ETHTOOL_GCHANNELS");
+    if (err) {
+        goto exit;
+    }
+
+    *combined_channels = echannels.combined_count;
+
+exit:
+    ovs_mutex_unlock(&netdev->mutex);
+    return err;
+}
+
 /* Stores the features supported by 'netdev' into of '*current', '*advertised',
  * '*supported', and '*peer'.  Each value is a bitmap of NETDEV_* bits.
  * Returns 0 if successful, otherwise a positive errno value. */
