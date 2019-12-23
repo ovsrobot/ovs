@@ -4698,7 +4698,7 @@ iface_set_mac(const struct bridge *br, const struct port *port, struct iface *if
     struct eth_addr ea, *mac = NULL;
     struct iface *hw_addr_iface;
 
-    if (strcmp(iface->type, "internal")) {
+    if (strcmp(iface->type, "internal") && strcmp(iface->type, "dpdk")) {
         return;
     }
 
