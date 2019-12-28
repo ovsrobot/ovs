@@ -1112,6 +1112,12 @@ netdev_dpdk_cast(const struct netdev *netdev)
     return CONTAINER_OF(netdev, struct netdev_dpdk, up);
 }
 
+int
+netdev_dpdk_get_portid(const struct netdev *netdev)
+{
+    return netdev_dpdk_cast(netdev)->port_id;
+}
+
 static struct netdev *
 netdev_dpdk_alloc(void)
 {

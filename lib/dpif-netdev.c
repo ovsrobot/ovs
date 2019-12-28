@@ -392,6 +392,7 @@ struct dp_flow_offload_item {
     size_t actions_len;
 
     struct ovs_list node;
+    struct dpif *dpif;
 };
 
 struct dp_flow_offload {
@@ -1608,6 +1609,31 @@ dpif_netdev_open(const struct dpif_class *class, const char *name,
     return error;
 }
 
+static struct dpif *
+dpif_netdev_dump_create(struct dp_netdev *dp)
+{
+    struct dpif *dpif = NULL;
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+    dpif = create_dpif_netdev(dp);
+    ovs_mutex_unlock(&dp_netdev_mutex);
+
+    return dpif;
+}
+
+static void
+dpif_netdev_dump_destroy(struct dp_netdev *dp, struct dpif *dpif)
+{
+    ovs_mutex_lock(&dp_netdev_mutex);
+
+    free(dpif->base_name);
+    free(dpif->full_name);
+    free(dpif);
+    ovs_refcount_unref(&dp->ref_cnt);
+
+    ovs_mutex_unlock(&dp_netdev_mutex);
+}
+
 static void
 dp_netdev_destroy_upcall_lock(struct dp_netdev *dp)
     OVS_NO_THREAD_SAFETY_ANALYSIS
@@ -1625,6 +1651,15 @@ dp_delete_meter(struct dp_netdev *dp, uint32_t meter_id)
     OVS_REQUIRES(dp->meter_locks[meter_id % N_METER_LOCKS])
 {
     if (dp->meters[meter_id]) {
+        if (dp->meters[meter_id]->offload) {
+            struct netdev_offload_meter *nom;
+
+            nom = dp->meters[meter_id]->offload;
+            nom->meter_ops->meter_destroy(nom->priv_data);
+            free(nom);
+            dp->meters[meter_id]->offload = NULL;
+        }
+
         free(dp->meters[meter_id]);
         dp->meters[meter_id] = NULL;
     }
@@ -2323,6 +2358,7 @@ dp_netdev_alloc_flow_offload(struct dp_netdev_pmd_thread *pmd,
     offload->pmd = pmd;
     offload->flow = flow;
     offload->op = op;
+    offload->dpif = dpif_netdev_dump_create(pmd->dp);
 
     dp_netdev_flow_ref(flow);
     dp_netdev_pmd_try_ref(pmd);
@@ -2333,6 +2369,7 @@ dp_netdev_alloc_flow_offload(struct dp_netdev_pmd_thread *pmd,
 static void
 dp_netdev_free_flow_offload(struct dp_flow_offload_item *offload)
 {
+    dpif_netdev_dump_destroy(offload->pmd->dp, offload->dpif);
     dp_netdev_pmd_unref(offload->pmd);
     dp_netdev_flow_unref(offload->flow);
 
@@ -2407,6 +2444,7 @@ dp_netdev_flow_offload_put(struct dp_flow_offload_item *offload)
         }
     }
     info.flow_mark = mark;
+    info.dpif_class = pmd->dp->class;
 
     port = netdev_ports_get(in_port, pmd->dp->class);
     if (!port || netdev_vport_is_vport_class(port->netdev_class)) {
@@ -2416,7 +2454,7 @@ dp_netdev_flow_offload_put(struct dp_flow_offload_item *offload)
     /* Taking a global 'port_mutex' to fulfill thread safety restrictions for
      * the netdev-offload-dpdk module. */
     ovs_mutex_lock(&pmd->dp->port_mutex);
-    ret = netdev_flow_put(NULL, port, &offload->match,
+    ret = netdev_flow_put(offload->dpif, port, &offload->match,
                           CONST_CAST(struct nlattr *, offload->actions),
                           offload->actions_len, &flow->mega_ufid, &info,
                           NULL);
@@ -5829,6 +5867,15 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
     }
 
     meter_lock(dp, mid);
+    if (dp->meters[mid] && dp->meters[mid]->offload) {
+        struct netdev_offload_meter *nom;
+
+        nom = dp->meters[mid]->offload;
+        nom->meter_ops->meter_update(nom->priv_data, config);
+        meter->offload = nom;
+        dp->meters[mid]->offload = NULL;
+    }
+
     dp_delete_meter(dp, mid); /* Free existing meter, if any */
     dp->meters[mid] = meter;
     meter_unlock(dp, mid);

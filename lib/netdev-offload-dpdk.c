@@ -17,10 +17,12 @@
 #include <config.h>
 
 #include <rte_flow.h>
+#include <rte_mtr.h>
 
 #include "cmap.h"
 #include "dpif-netdev.h"
 #include "netdev-offload-provider.h"
+#include "openvswitch/ofp-meter.h"
 #include "netdev-provider.h"
 #include "openvswitch/match.h"
 #include "openvswitch/vlog.h"
@@ -374,55 +376,218 @@ add_flow_action(struct flow_actions *actions, enum rte_flow_action_type type,
     actions->cnt++;
 }
 
-struct action_rss_data {
-    struct rte_flow_action_rss conf;
-    uint16_t queue[0];
+struct dpdk_meter_offload {
+    uint32_t port_id;
+    uint32_t max_rate;
+    uint32_t mp_id;
+    struct rte_flow_action_meter mc;
 };
 
-static struct action_rss_data *
-add_flow_rss_action(struct flow_actions *actions,
-                    struct netdev *netdev)
+static void dpdk_meter_destroy(void *priv_data)
 {
-    int i;
-    struct action_rss_data *rss_data;
+    struct dpdk_meter_offload *dmo = priv_data;
+    struct rte_mtr_error mtr_error;
+    
+    if (dmo) {
+        rte_mtr_meter_profile_delete(dmo->port_id,
+                                     dmo->mc.mtr_id,
+                                     &mtr_error);
+        rte_mtr_destroy(dmo->port_id, dmo->mc.mtr_id,
+                        &mtr_error);
+        free(dmo);
+    }
+}
 
-    rss_data = xmalloc(sizeof *rss_data +
-                       netdev_n_rxq(netdev) * sizeof rss_data->queue[0]);
-    *rss_data = (struct action_rss_data) {
-        .conf = (struct rte_flow_action_rss) {
-            .func = RTE_ETH_HASH_FUNCTION_DEFAULT,
-            .level = 0,
-            .types = 0,
-            .queue_num = netdev_n_rxq(netdev),
-            .queue = rss_data->queue,
-            .key_len = 0,
-            .key  = NULL
-        },
-    };
+#define DPDK_METER_UPATE_UP 65536 
 
-    /* Override queue array with default. */
-    for (i = 0; i < netdev_n_rxq(netdev); i++) {
-       rss_data->queue[i] = i;
+static void dpdk_meter_update(void *priv_data, void *config)
+{
+    struct dpdk_meter_offload *dmo = priv_data;
+    struct rte_mtr_meter_profile mp;
+    struct rte_mtr_error mtr_error;
+    uint32_t mp_id, new_mp_id;
+    uint32_t max_rate;
+    uint32_t ret;
+
+    if (!priv_data || !config) {
+        return;
+    }
+    
+    max_rate = ofputil_meter_config_max_rate(config);
+    if (dmo->max_rate == max_rate) {
+        return;
     }
 
-    add_flow_action(actions, RTE_FLOW_ACTION_TYPE_RSS, &rss_data->conf);
+    memset(&mp, 0, sizeof(struct rte_mtr_meter_profile));
+    mp.alg = RTE_MTR_SRTCM_RFC2697;
+    mp.srtcm_rfc2697.cir = max_rate *1024 /8;
+    mp.srtcm_rfc2697.cbs = max_rate *1024 /8;
+    mp.srtcm_rfc2697.ebs = 0;
 
-    return rss_data;
+    if (dmo->mp_id < DPDK_METER_UPATE_UP) {
+        new_mp_id = dmo->mp_id + DPDK_METER_UPATE_UP;
+    } else {
+        new_mp_id = dmo->mp_id - DPDK_METER_UPATE_UP;
+    }
+
+    ret = rte_mtr_meter_profile_add(dmo->port_id, new_mp_id,
+                                    &mp, &mtr_error);
+    if (ret) {
+        VLOG_ERR("rte_mtr_meter_profile_add fail: err_type: %d err_msg: %s\n",
+                 mtr_error.type, mtr_error.message);
+        return;
+    }
+
+    ret = rte_mtr_meter_profile_update(dmo->port_id, dmo->mc.mtr_id,
+                                       new_mp_id, &mtr_error);
+    if (ret) {
+        VLOG_ERR("rte_mtr_meter_profile_update fail: err_type: %d err_msg: %s\n",
+                 mtr_error.type, mtr_error.message);
+        mp_id = new_mp_id;
+        goto out;
+    }
+
+    mp_id = dmo->mp_id;
+    dmo->mp_id = new_mp_id;
+out:
+    ret = rte_mtr_meter_profile_delete(dmo->port_id, mp_id, &mtr_error);
+    if (ret) {
+        VLOG_ERR("rte_mtr_meter_profile_update fail: err_type: %d err_msg: %s\n",
+                 mtr_error.type, mtr_error.message);
+    }
+}
+
+static struct netdev_offload_meter_api dpdk_meter_offload_api = {
+    .meter_destroy  = dpdk_meter_destroy,
+    .meter_update   = dpdk_meter_update,
+};
+
+static struct rte_flow_action_meter*
+dpdk_meter_create(struct dpif *dpif, struct netdev *netdev, uint32_t mid)
+{
+    uint32_t port_id = netdev_dpdk_get_portid(netdev);
+    struct netdev_offload_meter *nom;
+    struct dpdk_meter_offload *dmo;
+    struct ofputil_meter_config config;
+    ofproto_meter_id meter_id;
+    struct rte_mtr_meter_profile mp;
+    struct rte_mtr_params params;
+    struct rte_mtr_error mtr_error;
+    uint32_t max_rate;
+    int ret;
+
+    meter_id.uint32 = mid;
+    
+    if (dpif_meter_get_config(dpif, meter_id, &config)) {
+        return NULL;
+    }
+
+    nom = xmalloc(sizeof *nom);
+    dmo = xmalloc(sizeof *dmo);
+
+    nom->meter_ops = &dpdk_meter_offload_api;
+    nom->priv_data = dmo;
+
+    memset(&mp, 0, sizeof(struct rte_mtr_meter_profile));
+    max_rate = ofputil_meter_config_max_rate(&config);
+
+    dmo->mc.mtr_id = mid;
+    dmo->port_id = port_id;
+    dmo->max_rate = max_rate;
+    dmo->mp_id = mid;
+
+    mp.alg = RTE_MTR_SRTCM_RFC2697;
+    mp.srtcm_rfc2697.cir = max_rate *1024 /8; /* rate_max Kbps*/
+    mp.srtcm_rfc2697.cbs = max_rate *1024 /8;
+    mp.srtcm_rfc2697.ebs = 0;
+
+    ret = rte_mtr_meter_profile_add(dmo->port_id, dmo->mc.mtr_id,
+                                    &mp, &mtr_error);
+    if (ret && ret != -EEXIST) {
+        VLOG_ERR("rte_mtr_meter_profile_add fail: err_type: %d err_msg: %s, portid: %d\n",
+                   mtr_error.type, mtr_error.message, netdev_dpdk_get_portid(netdev));
+        goto profile_err;
+    }
+
+    enum rte_color dscp_table[2];
+    dscp_table[0] = RTE_COLOR_YELLOW;
+    dscp_table[1] = RTE_COLOR_RED;
+
+    params.meter_profile_id = dmo->mc.mtr_id;
+    params.dscp_table = dscp_table;
+    params.meter_enable = 1;
+    params.use_prev_mtr_color = 0;
+    params.action[RTE_COLOR_GREEN]  = MTR_POLICER_ACTION_COLOR_GREEN;
+    params.action[RTE_COLOR_YELLOW] = MTR_POLICER_ACTION_DROP;
+    params.action[RTE_COLOR_RED]    = MTR_POLICER_ACTION_DROP;
+
+    ret = rte_mtr_create(dmo->port_id, dmo->mc.mtr_id, &params, 0, &mtr_error);
+    if (ret && ret != -EEXIST) {
+        VLOG_ERR("rte_mtr_create fail: err_type: %d err_msg: %s, portid: %d\n",
+                   mtr_error.type, mtr_error.message, netdev_dpdk_get_portid(netdev));
+        goto mtr_err;
+    }
+
+    dpif_meter_set_offload(dpif, meter_id, nom);
+    
+    free(config.bands);
+    return &dmo->mc;
+
+mtr_err:
+    rte_mtr_meter_profile_delete(dmo->port_id, dmo->mc.mtr_id, &mtr_error);
+
+profile_err:
+    free(nom);
+    free(dmo);
+    free(config.bands);
+    return NULL;
+}
+
+static struct rte_flow_action_meter *
+netdev_offload_dpdk_meter_conf(struct dpif *dpif, struct netdev *netdev, uint32_t mid)
+{
+    uint32_t port_id = netdev_dpdk_get_portid(netdev);
+    struct netdev_offload_meter *nom = NULL;
+    struct dpdk_meter_offload *dmo;
+    ofproto_meter_id meter_id;
+    uint32_t ret;
+    meter_id.uint32 = mid;
+
+    ret = dpif_meter_get_offload(dpif, meter_id, (void **)&nom,
+                                 sizeof *nom + sizeof *dmo);
+    if (ret) {
+        VLOG_INFO("netdev offload dpdk meter, can't get the meter");
+        return NULL;
+    }
+
+    if (!nom) {
+        return dpdk_meter_create(dpif, netdev, mid);
+    }
+
+    dmo = (struct dpdk_meter_offload *)nom->priv_data;
+    if (port_id != dmo->port_id) {
+        VLOG_INFO("dpdk meter %d is used on %d, can't be used for : %d",
+                  mid, dmo->port_id, port_id);
+        return NULL;
+    }
+
+    return &dmo->mc;
 }
 
 static int
-netdev_offload_dpdk_add_flow(struct netdev *netdev,
+netdev_offload_dpdk_add_flow(struct dpif *dpif, struct netdev *netdev,
                              const struct match *match,
-                             struct nlattr *nl_actions OVS_UNUSED,
-                             size_t actions_len OVS_UNUSED,
+                             struct nlattr *nl_actions,
+                             size_t actions_len,
                              const ovs_u128 *ufid,
-                             struct offload_info *info)
+                             struct offload_info *info OVS_UNUSED)
 {
     const struct rte_flow_attr flow_attr = {
         .group = 0,
         .priority = 0,
         .ingress = 1,
-        .egress = 0
+        .egress = 0,
+        .transfer = 1,
     };
     struct flow_patterns patterns = { .items = NULL, .cnt = 0 };
     struct flow_actions actions = { .actions = NULL, .cnt = 0 };
@@ -583,20 +748,66 @@ netdev_offload_dpdk_add_flow(struct netdev *netdev,
 
     add_flow_pattern(&patterns, RTE_FLOW_ITEM_TYPE_END, NULL, NULL);
 
-    struct rte_flow_action_mark mark;
-    struct action_rss_data *rss;
+    const struct nlattr *a;
+    unsigned int left;
 
-    mark.id = info->flow_mark;
-    add_flow_action(&actions, RTE_FLOW_ACTION_TYPE_MARK, &mark);
+    if (!actions_len || !nl_actions) {
+        VLOG_INFO("%s: skip flow offload without actions\n", netdev_get_name(netdev));
+        ret = -1;
+        goto out;
+    }
 
-    rss = add_flow_rss_action(&actions, netdev);
+    NL_ATTR_FOR_EACH_UNSAFE (a, left, nl_actions, actions_len) {
+        int type = nl_attr_type(a);
+        switch ((enum ovs_action_attr) type) {
+        case OVS_ACTION_ATTR_METER: {
+            struct rte_flow_action_meter *mc;
+            mc = netdev_offload_dpdk_meter_conf(dpif,
+                                                netdev,
+                                                nl_attr_get_u32(a));
+            if (mc) {
+                add_flow_action(&actions, RTE_FLOW_ACTION_TYPE_METER, mc);
+            }
+            break;
+        }
+        case OVS_ACTION_ATTR_OUTPUT:
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+        case OVS_ACTION_ATTR_POP_VLAN:
+        case OVS_ACTION_ATTR_UNSPEC:
+        case OVS_ACTION_ATTR_USERSPACE:
+        case OVS_ACTION_ATTR_SET:
+        case OVS_ACTION_ATTR_SAMPLE:
+        case OVS_ACTION_ATTR_RECIRC:
+        case OVS_ACTION_ATTR_HASH:
+        case OVS_ACTION_ATTR_PUSH_MPLS:
+        case OVS_ACTION_ATTR_POP_MPLS:
+        case OVS_ACTION_ATTR_SET_MASKED:
+        case OVS_ACTION_ATTR_CT:
+        case OVS_ACTION_ATTR_TRUNC:
+        case OVS_ACTION_ATTR_PUSH_ETH:
+        case OVS_ACTION_ATTR_POP_ETH:
+        case OVS_ACTION_ATTR_CT_CLEAR:
+        case OVS_ACTION_ATTR_PUSH_NSH:
+        case OVS_ACTION_ATTR_POP_NSH:
+        case OVS_ACTION_ATTR_TUNNEL_PUSH:
+        case OVS_ACTION_ATTR_TUNNEL_POP:
+        case OVS_ACTION_ATTR_CLONE:
+        case __OVS_ACTION_ATTR_MAX:
+        default:
+            VLOG_INFO("%s: the offload action %d is not supported yet.\n",
+                      netdev_get_name(netdev),
+                      type);
+            ret = -1;
+            goto out;
+        }
+    }
+
     add_flow_action(&actions, RTE_FLOW_ACTION_TYPE_END, NULL);
 
     flow = netdev_dpdk_rte_flow_create(netdev, &flow_attr,
                                        patterns.items,
                                        actions.actions, &error);
-
-    free(rss);
     if (!flow) {
         VLOG_ERR("%s: rte flow creat error: %u : message : %s\n",
                  netdev_get_name(netdev), error.type, error.message);
@@ -707,7 +918,7 @@ netdev_offload_dpdk_destroy_flow(struct netdev *netdev,
 }
 
 static int
-netdev_offload_dpdk_flow_put(struct dpif *dpif OVS_UNUSED, struct netdev *netdev,
+netdev_offload_dpdk_flow_put(struct dpif *dpif, struct netdev *netdev,
                              struct match *match, struct nlattr *actions,
                              size_t actions_len, const ovs_u128 *ufid,
                              struct offload_info *info,
@@ -736,7 +947,7 @@ netdev_offload_dpdk_flow_put(struct dpif *dpif OVS_UNUSED, struct netdev *netdev
     if (stats) {
         memset(stats, 0, sizeof *stats);
     }
-    return netdev_offload_dpdk_add_flow(netdev, match, actions,
+    return netdev_offload_dpdk_add_flow(dpif, netdev, match, actions,
                                         actions_len, ufid, info);
 }
 
