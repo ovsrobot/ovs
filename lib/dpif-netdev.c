@@ -2416,7 +2416,7 @@ dp_netdev_flow_offload_put(struct dp_flow_offload_item *offload)
     /* Taking a global 'port_mutex' to fulfill thread safety restrictions for
      * the netdev-offload-dpdk module. */
     ovs_mutex_lock(&pmd->dp->port_mutex);
-    ret = netdev_flow_put(port, &offload->match,
+    ret = netdev_flow_put(NULL, port, &offload->match,
                           CONST_CAST(struct nlattr *, offload->actions),
                           offload->actions_len, &flow->mega_ufid, &info,
                           NULL);
