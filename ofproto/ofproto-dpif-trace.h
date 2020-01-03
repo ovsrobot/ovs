@@ -91,6 +91,7 @@ struct oftrace_node *oftrace_report(struct ovs_list *, enum oftrace_node_type,
                                     const char *text);
 bool oftrace_add_recirc_node(struct ovs_list *recirc_queue,
                              enum oftrace_recirc_type, const struct flow *,
+                             const struct ofpact_nat *,
                              const struct dp_packet *, uint32_t recirc_id,
                              const uint16_t zone);
 

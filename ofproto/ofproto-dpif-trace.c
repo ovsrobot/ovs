@@ -86,6 +86,7 @@ oftrace_node_destroy(struct oftrace_node *node)
 bool
 oftrace_add_recirc_node(struct ovs_list *recirc_queue,
                         enum oftrace_recirc_type type, const struct flow *flow,
+                        const struct ofpact_nat *ofn,
                         const struct dp_packet *packet, uint32_t recirc_id,
                         const uint16_t zone)
 {
@@ -101,6 +102,38 @@ oftrace_add_recirc_node(struct ovs_list *recirc_queue,
     node->flow = *flow;
     node->flow.recirc_id = recirc_id;
     node->flow.ct_zone = zone;
+
+    /* If there's any snat/dnat information assume we always translate to
+     * the first IP/port to make sure we don't match on incorrect flows later
+     * on.
+     */
+    if (ofn) {
+        if (ofn->flags & NX_NAT_F_SRC) {
+            if (ofn->range_af == AF_INET) {
+                node->flow.nw_src = ofn->range.addr.ipv4.min;
+            } else if (ofn->range_af == AF_INET6) {
+                memcpy(&node->flow.ipv6_src, &ofn->range.addr.ipv6.min,
+                       sizeof node->flow.ipv6_src);
+            }
+
+            if (ofn->range_af != AF_UNSPEC && ofn->range.proto.min) {
+                node->flow.tp_src = htons(ofn->range.proto.min);
+            }
+        }
+        if (ofn->flags & NX_NAT_F_DST) {
+            if (ofn->range_af == AF_INET) {
+                node->flow.nw_dst = ofn->range.addr.ipv4.min;
+            } else if (ofn->range_af == AF_INET6) {
+                memcpy(&node->flow.ipv6_dst, &ofn->range.addr.ipv6.min,
+                       sizeof node->flow.ipv6_dst);
+            }
+
+            if (ofn->range_af != AF_UNSPEC && ofn->range.proto.min) {
+                node->flow.tp_dst = htons(ofn->range.proto.min);
+            }
+        }
+    }
+
     node->packet = packet ? dp_packet_clone(packet) : NULL;
 
     return true;
