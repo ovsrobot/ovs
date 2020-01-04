@@ -26,6 +26,8 @@
 #include <linux/rtnetlink.h>
 #include <linux/if_xdp.h>
 #include <net/if.h>
+#include <numa.h>
+#include <numaif.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <sys/resource.h>
@@ -669,6 +671,24 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY};
     int err = 0;
 
+    /* Allocate all the xsk related memory in the netdev's NUMA domain. */
+    struct bitmask *old_bm = NULL;
+    int old_policy, numa_id;
+    if (numa_available() != -1) {
+        numa_id = netdev_get_numa_id(netdev);
+        if (numa_id != NETDEV_NUMA_UNSPEC) {
+            old_bm = numa_allocate_nodemask();
+            if (get_mempolicy(&old_policy, old_bm->maskp, old_bm->size + 1,
+                              NULL, 0)) {
+                VLOG_INFO("Failed to get NUMA memory policy.");
+                numa_bitmask_free(old_bm);
+                old_bm = NULL;
+            } else {
+                numa_set_preferred(numa_id);
+            }
+        }
+    }
+
     ovs_mutex_lock(&dev->mutex);
 
     if (netdev->n_rxq == dev->requested_n_rxq
@@ -700,6 +720,12 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     netdev_change_seq_changed(netdev);
 out:
     ovs_mutex_unlock(&dev->mutex);
+    if (old_bm) {
+        if (set_mempolicy(old_policy, old_bm->maskp, old_bm->size + 1)) {
+            VLOG_WARN("Failed to restore NUMA memory policy.");
+        }
+        numa_bitmask_free(old_bm);
+    }
     return err;
 }
 
