@@ -217,3 +217,7 @@ with port names, which this thread polls.
 .
 .IP "\fBdpif-netdev/pmd-rxq-rebalance\fR [\fIdp\fR]"
 Reassigns rxqs to pmds in the datapath \fIdp\fR based on their current usage.
+.IP "\fBdpif-netdev/pmd-set-max-flow\fR [\fInumber\fR]"
+Sets the max flow which netdev datapath supports (default 65536).
+.IP "\fBdpif-netdev/pmd-show-max-flow"
+Shows the current max flow which netdev datapath supports.

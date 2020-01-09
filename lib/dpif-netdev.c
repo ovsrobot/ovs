@@ -97,7 +97,6 @@ DEFINE_STATIC_PER_THREAD_DATA(uint32_t, recirc_depth, 0)
 #define DEFAULT_TX_FLUSH_INTERVAL 0
 
 /* Configuration parameters. */
-enum { MAX_FLOWS = 65536 };     /* Maximum number of flows in flow table. */
 enum { MAX_METERS = 65536 };    /* Maximum number of meters. */
 enum { MAX_BANDS = 8 };         /* Maximum number of bands / meter. */
 enum { N_METER_LOCKS = 64 };    /* Maximum number of meters. */
@@ -115,6 +114,9 @@ COVERAGE_DEFINE(datapath_drop_rx_invalid_packet);
 
 /* Protects against changes to 'dp_netdevs'. */
 static struct ovs_mutex dp_netdev_mutex = OVS_MUTEX_INITIALIZER;
+
+/* Maximum number of flows in flow table. */
+static atomic_uint32_t netdev_max_flow = ATOMIC_VAR_INIT(65536);
 
 /* Contains all 'struct dp_netdev's. */
 static struct shash dp_netdevs OVS_GUARDED_BY(dp_netdev_mutex)
@@ -1122,6 +1124,39 @@ pmd_info_show_perf(struct ds *reply,
     }
 }
 
+static void
+dpif_netdev_set_max_flow(struct unixctl_conn *conn,
+                         int argc OVS_UNUSED,
+                         const char *argv[],
+                         void *aux OVS_UNUSED)
+{
+    long long max_flow = atoll(argv[1]);
+
+    if (max_flow <= 0 || max_flow >= UINT32_MAX) {
+        unixctl_command_reply_error(conn,
+                                    "max-flow should: > 0 and < UINT32_MAX");
+        return;
+    }
+
+    atomic_store_relaxed(&netdev_max_flow, max_flow);
+    unixctl_command_reply(conn, NULL);
+}
+
+static void
+dpif_netdev_show_max_flow(struct unixctl_conn *conn,
+                          int argc OVS_UNUSED,
+                          const char *argv[] OVS_UNUSED,
+                          void *aux OVS_UNUSED)
+{
+    uint32_t max_flow;
+
+    atomic_read_relaxed(&netdev_max_flow, &max_flow);
+
+    char *reply = xasprintf("%u", max_flow);
+    unixctl_command_reply(conn, reply);
+    free(reply);
+}
+
 static int
 compare_poll_list(const void *a_, const void *b_)
 {
@@ -1425,6 +1460,14 @@ dpif_netdev_init(void)
                              "on|off [-b before] [-a after] [-e|-ne] "
                              "[-us usec] [-q qlen]",
                              0, 10, pmd_perf_log_set_cmd,
+                             NULL);
+    unixctl_command_register("dpif-netdev/pmd-set-max-flow",
+                             "number",
+                             1, 1, dpif_netdev_set_max_flow,
+                             NULL);
+    unixctl_command_register("dpif-netdev/pmd-show-max-flow",
+                             "",
+                             0, 0, dpif_netdev_show_max_flow,
                              NULL);
     return 0;
 }
@@ -3354,7 +3397,9 @@ flow_put_on_pmd(struct dp_netdev_pmd_thread *pmd,
     netdev_flow = dp_netdev_pmd_lookup_flow(pmd, key, NULL);
     if (!netdev_flow) {
         if (put->flags & DPIF_FP_CREATE) {
-            if (cmap_count(&pmd->flow_table) < MAX_FLOWS) {
+            uint32_t max_flow;
+            atomic_read_relaxed(&netdev_max_flow, &max_flow);
+            if (cmap_count(&pmd->flow_table) < max_flow) {
                 dp_netdev_flow_add(pmd, match, ufid, put->actions,
                                    put->actions_len);
                 error = 0;
