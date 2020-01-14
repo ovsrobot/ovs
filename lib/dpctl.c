@@ -825,6 +825,10 @@ format_dpif_flow(struct ds *ds, const struct dpif_flow *f, struct hmap *ports,
     }
     ds_put_cstr(ds, ", actions:");
     format_odp_actions(ds, f->actions, f->actions_len, ports);
+    if (dpctl_p->verbosity && f->attrs.subtable) {
+        ds_put_cstr(ds, ", dp-extra-info:");
+        dpif_flow_attrs_format(&f->attrs, ds);
+    }
 }
 
 struct dump_types {

@@ -50,6 +50,7 @@
 #include "openvswitch/ofp-errors.h"
 #include "openvswitch/vlog.h"
 #include "lib/netdev-provider.h"
+#include "dpif-netdev-private.h"
 
 VLOG_DEFINE_THIS_MODULE(dpif);
 
@@ -911,6 +912,14 @@ dpif_flow_stats_format(const struct dpif_flow_stats *stats, struct ds *s)
         ds_put_cstr(s, ", flags:");
         packet_format_tcp_flags(s, stats->tcp_flags);
     }
+}
+
+void
+dpif_flow_attrs_format(const struct dpif_flow_attrs *attrs, struct ds *s)
+{
+    ds_put_format(s, "miniflow_bits:(0x%X, 0x%X) ",
+                  attrs->subtable->mf_bits_set_unit0,
+                  attrs->subtable->mf_bits_set_unit1);
 }
 
 /* Deletes all flows from 'dpif'.  Returns 0 if successful, otherwise a

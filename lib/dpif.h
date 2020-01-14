@@ -513,6 +513,7 @@ struct dpif_flow_detailed_stats {
 struct dpif_flow_attrs {
     bool offloaded;         /* True if flow is offloaded to HW. */
     const char *dp_layer;   /* DP layer the flow is handled in. */
+    struct dpcls_subtable *subtable;
 };
 
 struct dpif_flow_dump_types {
@@ -523,6 +524,7 @@ struct dpif_flow_dump_types {
 void dpif_flow_stats_extract(const struct flow *, const struct dp_packet *packet,
                              long long int used, struct dpif_flow_stats *);
 void dpif_flow_stats_format(const struct dpif_flow_stats *, struct ds *);
+void dpif_flow_attrs_format(const struct dpif_flow_attrs *attrs, struct ds *s);
 
 enum dpif_flow_put_flags {
     DPIF_FP_CREATE = 1 << 0,    /* Allow creating a new flow. */

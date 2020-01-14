@@ -867,6 +867,8 @@ static inline bool
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd);
 static void queue_netdev_flow_del(struct dp_netdev_pmd_thread *pmd,
                                   struct dp_netdev_flow *flow);
+static struct dpcls_subtable *get_subtable(struct dp_netdev_pmd_thread *,
+                                           const struct dp_netdev_flow *);
 
 static void
 emc_cache_init(struct emc_cache *flow_cache)
@@ -3054,10 +3056,14 @@ get_dpif_flow_stats(const struct dp_netdev_flow *netdev_flow_,
  * 'mask_buf'. Actions will be returned without copying, by relying on RCU to
  * protect them. */
 static void
-dp_netdev_flow_to_dpif_flow(const struct dp_netdev_flow *netdev_flow,
+dp_netdev_flow_to_dpif_flow(struct dp_netdev *dp,
+                            const struct dp_netdev_flow *netdev_flow,
                             struct ofpbuf *key_buf, struct ofpbuf *mask_buf,
                             struct dpif_flow *flow, bool terse)
 {
+    struct dp_netdev_pmd_thread *pmd_thread;
+    struct dpcls_subtable *subtable;
+
     if (terse) {
         memset(flow, 0, sizeof *flow);
     } else {
@@ -3101,6 +3107,10 @@ dp_netdev_flow_to_dpif_flow(const struct dp_netdev_flow *netdev_flow,
 
     flow->attrs.offloaded = false;
     flow->attrs.dp_layer = "ovs";
+
+    pmd_thread = dp_netdev_get_pmd(dp, flow->pmd_id);
+    subtable = get_subtable(pmd_thread, netdev_flow);
+    flow->attrs.subtable = subtable;
 }
 
 static int
@@ -3203,8 +3213,8 @@ dpif_netdev_flow_get(const struct dpif *dpif, const struct dpif_flow_get *get)
         netdev_flow = dp_netdev_pmd_find_flow(pmd, get->ufid, get->key,
                                               get->key_len);
         if (netdev_flow) {
-            dp_netdev_flow_to_dpif_flow(netdev_flow, get->buffer, get->buffer,
-                                        get->flow, false);
+            dp_netdev_flow_to_dpif_flow(dp, netdev_flow, get->buffer,
+                                        get->buffer, get->flow, false);
             error = 0;
             break;
         } else {
@@ -3634,11 +3644,11 @@ dpif_netdev_flow_dump_next(struct dpif_flow_dump_thread *thread_,
     struct dp_netdev_flow *netdev_flows[FLOW_DUMP_MAX_BATCH];
     int n_flows = 0;
     int i;
+    struct dpif_netdev *dpif = dpif_netdev_cast(thread->up.dpif);
+    struct dp_netdev *dp = get_dp_netdev(&dpif->dpif);
 
     ovs_mutex_lock(&dump->mutex);
     if (!dump->status) {
-        struct dpif_netdev *dpif = dpif_netdev_cast(thread->up.dpif);
-        struct dp_netdev *dp = get_dp_netdev(&dpif->dpif);
         struct dp_netdev_pmd_thread *pmd = dump->cur_pmd;
         int flow_limit = MIN(max_flows, FLOW_DUMP_MAX_BATCH);
 
@@ -3695,7 +3705,7 @@ dpif_netdev_flow_dump_next(struct dpif_flow_dump_thread *thread_,
 
         ofpbuf_use_stack(&key, keybuf, sizeof *keybuf);
         ofpbuf_use_stack(&mask, maskbuf, sizeof *maskbuf);
-        dp_netdev_flow_to_dpif_flow(netdev_flow, &key, &mask, f,
+        dp_netdev_flow_to_dpif_flow(dp, netdev_flow, &key, &mask, f,
                                     dump->up.terse);
     }
 
@@ -8177,4 +8187,25 @@ dpcls_lookup(struct dpcls *cls, const struct netdev_flow_key *keys[],
         *num_lookups_p = lookups_match;
     }
     return false;
+}
+
+static struct dpcls_subtable *
+get_subtable(struct dp_netdev_pmd_thread *pmd,
+             const struct dp_netdev_flow *netdev_flow)
+{
+    if (pmd->core_id != NON_PMD_CORE_ID) {
+        odp_port_t in_port = netdev_flow->flow.in_port.odp_port;
+        struct dpcls *cls = dp_netdev_pmd_lookup_dpcls(pmd, in_port);
+        struct netdev_flow_key *mask = netdev_flow->cr.mask;
+        struct dpcls_subtable *subtable = NULL;
+        if (cls) {
+            CMAP_FOR_EACH_WITH_HASH (subtable, cmap_node, mask->hash,
+                                     &cls->subtables_map) {
+                if (netdev_flow_key_equal(&subtable->mask, mask)) {
+                    return subtable;
+                }
+            }
+        }
+    }
+    return NULL;
 }
