@@ -3101,6 +3101,20 @@ dp_netdev_flow_to_dpif_flow(const struct dp_netdev_flow *netdev_flow,
 
     flow->attrs.offloaded = false;
     flow->attrs.dp_layer = "ovs";
+
+    struct ds extra_info = DS_EMPTY_INITIALIZER;
+    size_t unit;
+
+    ds_put_cstr(&extra_info, "miniflow_bits("); FLOWMAP_FOR_EACH_UNIT (unit) {
+        if (unit) {
+            ds_put_char(&extra_info, ',');
+        }
+        ds_put_format(&extra_info, "%d",
+                      count_1bits(netdev_flow->cr.mask->mf.map.bits[unit]));
+    }
+    ds_put_char(&extra_info, ')');
+    flow->attrs.dp_extra_info = ds_steal_cstr(&extra_info);
+    ds_destroy(&extra_info);
 }
 
 static int
