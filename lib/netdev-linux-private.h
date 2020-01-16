@@ -109,6 +109,10 @@ struct netdev_linux {
     bool requested_need_wakeup;
 
     struct netdev_afxdp_tx_lock *tx_locks;  /* Array of locks for TX queues. */
+    const char *xdp_obj;         /* XDP object file path. */
+    const char *requested_xdp_obj;
+    int prog_fd;
+    int map_fd;
 #endif
 };
 
