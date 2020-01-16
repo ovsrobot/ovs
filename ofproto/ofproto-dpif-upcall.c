@@ -2169,7 +2169,7 @@ revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
 {
     struct xlate_out *xoutp;
     struct netflow *netflow;
-    struct flow_wildcards dp_mask, wc;
+    struct flow_wildcards dp_mask, wc, wc_from_flow;
     enum reval_result result;
     struct reval_context ctx = {
         .odp_actions = odp_actions,
@@ -2214,6 +2214,18 @@ revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
         == ODP_FIT_ERROR) {
         goto exit;
     }
+
+    /* Clear flow wildcard bits for fields which are not present
+     * in the original packet header. These wildcards may get set
+     * due to push/set_field actions. This results into frequent
+     * invalidation of datapath flows by revalidator thread. */
+
+    /* Create wc mask based on incoming packet. */
+    flow_wildcards_init_for_packet(&wc_from_flow,
+                                   &ctx.flow);
+
+    /* Clear mask fields in ctx which are not relevant for packet. */
+    flow_wildcards_and(ctx.wc, &wc_from_flow, ctx.wc);
 
     /* Do not modify if any bit is wildcarded by the installed datapath flow,
      * but not the newly revalidated wildcard mask (wc), i.e., if revalidation
