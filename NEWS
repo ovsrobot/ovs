@@ -31,6 +31,7 @@ Post-v2.12.0
      * Add hardware offload support for output, drop, set of MAC, IPv4 and
        TCP/UDP ports actions (experimental).
      * Add experimental support for TSO.
+     * Add hardware offload support for matching IPv6 protocol.
    - RSTP:
      * The rstp_statistics column in Port table will only be updated every
        stats-update-interval configured in Open_vSwitch table.
