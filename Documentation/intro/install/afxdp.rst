@@ -125,6 +125,7 @@ Second, go into the Linux source directory and build libbpf in the tools
 directory::
 
   cd bpf-next/
+  make headers_install INSTALL_HDR_PATH=/usr
   cd tools/lib/bpf/
   make && make install
   make install_headers
