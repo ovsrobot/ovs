@@ -1095,6 +1095,29 @@ AC_DEFUN([OVS_CHECK_IF_DL],
       AC_SEARCH_LIBS([pcap_open_live], [pcap])
    fi])
 
+dnl OVS_CHECK_LINUX_TPACKET
+dnl
+dnl Configure Linux TPACKET.
+AC_DEFUN([OVS_CHECK_LINUX_TPACKET], [
+  AC_CHECK_HEADER([linux/if_packet.h],
+                  [HAVE_TPACKET=yes],
+                  [HAVE_TPACKET=no])
+  AM_CONDITIONAL([HAVE_TPACKET], [test "$HAVE_TPACKET" = yes])
+  if test "$HAVE_TPACKET" = yes; then
+    AC_DEFINE([HAVE_TPACKET], [1],
+              [Define to 1 if linux/if_packet.h is available.])
+    OVS_GREP_IFELSE([/usr/include/linux/if_packet.h], [struct tpacket3_hdr ],
+                    [AC_DEFINE([HAVE_TPACKET_V3], [1],
+                      [Define to 1 if struct tpacket3_hdr is defined])])
+    OVS_GREP_IFELSE([/usr/include/linux/if_packet.h], [struct tpacket2_hdr ],
+                    [AC_DEFINE([HAVE_TPACKET_V2], [1],
+                      [Define to 1 if struct tpacket2_hdr is defined])])
+    OVS_GREP_IFELSE([/usr/include/linux/if_packet.h], [struct tpacket_hdr ],
+                    [AC_DEFINE([HAVE_TPACKET_V1], [1],
+                      [Define to 1 if struct tpacket_hdr is defined])])
+  fi
+])
+
 dnl Checks for buggy strtok_r.
 dnl
 dnl Some versions of glibc 2.7 has a bug in strtok_r when compiling

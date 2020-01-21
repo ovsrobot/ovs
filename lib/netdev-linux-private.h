@@ -26,6 +26,9 @@
 #include <linux/mii.h>
 #include <stdint.h>
 #include <stdbool.h>
+#ifdef HAVE_TPACKET
+#include <linux/if_packet.h>
+#endif
 
 #include "dp-packet.h"
 #include "netdev-afxdp.h"
@@ -39,6 +42,25 @@
 struct netdev;
 
 #define LINUX_RXQ_TSO_MAX_LEN 65536
+
+#ifdef HAVE_TPACKET
+struct tpacket_ring {
+    int sockfd;
+    struct iovec *rd;
+    uint8_t *mm_space;
+    size_t mm_len, rd_len;
+    struct sockaddr_ll ll;
+    int type, rd_num, flen, version;
+    union {
+        struct tpacket_req  req;
+        struct tpacket_req3 req3;
+    };
+    uint32_t block_num;
+    uint32_t frame_num;
+    uint32_t frame_num_in_block;
+    void * ppd;
+};
+#endif /* HAVE_TPACKET */
 
 struct netdev_rxq_linux {
     struct netdev_rxq up;
@@ -102,6 +124,11 @@ struct netdev_linux {
     bool is_lag_master;         /* True if the netdev is a LAG master. */
 
     int numa_id;                /* NUMA node id. */
+
+#ifdef HAVE_TPACKET
+    struct tpacket_ring *tp_rx_ring;
+    struct tpacket_ring *tp_tx_ring;
+#endif
 
 #ifdef HAVE_AF_XDP
     /* AF_XDP information. */

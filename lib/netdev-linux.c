@@ -48,6 +48,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef HAVE_TPACKET
+#include <sys/mman.h>
+#endif
 
 #include "coverage.h"
 #include "dp-packet.h"
@@ -152,6 +155,34 @@ struct tpacket_auxdata {
     uint16_t tp_vlan_tci;
     uint16_t tp_vlan_tpid;
 };
+
+#ifdef HAVE_TPACKET /* All the definitions for TPACKET */
+#ifndef __aligned_tpacket
+# define __aligned_tpacket __attribute__((aligned(TPACKET_ALIGNMENT)))
+#endif
+
+#ifndef __align_tpacket
+# define __align_tpacket(x) __attribute__((aligned(TPACKET_ALIGN(x))))
+#endif
+
+struct block_desc {
+    uint32_t version;
+    uint32_t offset_to_priv;
+    struct tpacket_hdr_v1 h1;
+};
+
+union frame_map {
+    struct {
+        struct tpacket_hdr tp_h __aligned_tpacket;
+        struct sockaddr_ll s_ll __align_tpacket(sizeof(struct tpacket_hdr));
+    } *v1;
+    struct {
+        struct tpacket2_hdr tp_h __aligned_tpacket;
+        struct sockaddr_ll s_ll __align_tpacket(sizeof(struct tpacket2_hdr));
+    } *v2;
+    void *raw;
+};
+#endif /* HAVE_TPACKET */
 
 /* Linux 2.6.27 introduced ethtool_cmd_speed
  *
@@ -1064,6 +1095,141 @@ netdev_linux_rxq_alloc(void)
     return &rx->up;
 }
 
+#ifdef HAVE_TPACKET
+static inline int
+tpacket_set_packet_loss_discard(int sock)
+{
+    int discard = 1;
+
+    return setsockopt(sock, SOL_PACKET, PACKET_LOSS, (void *) &discard,
+                      sizeof(discard));
+}
+
+static inline void *
+tpacket_get_next_frame(struct tpacket_ring *ring, uint32_t frame_num)
+{
+#ifdef HAVE_TPACKET_V3
+    uint8_t *f0 = ring->rd[0].iov_base;
+
+    return f0 + (frame_num * ring->req3.tp_frame_size);
+#else
+    return ring->rd[frame_num].iov_base;
+#endif
+}
+
+/*
+ * For TPACKET_V1&V2, ring->rd_num is tp_frame_nr, ring->flen is tp_frame_size
+ */
+static inline void
+tpacket_v1_v2_fill_ring(struct tpacket_ring *ring, unsigned int blocks)
+{
+    ring->req.tp_block_size = getpagesize() << 2;
+    ring->req.tp_frame_size = TPACKET_ALIGNMENT << 7;
+    ring->req.tp_block_nr = blocks;
+
+    ring->req.tp_frame_nr = ring->req.tp_block_size /
+                            ring->req.tp_frame_size *
+                            ring->req.tp_block_nr;
+
+    ring->mm_len = ring->req.tp_block_size * ring->req.tp_block_nr;
+    ring->rd_num = ring->req.tp_frame_nr;
+    ring->flen = ring->req.tp_frame_size;
+}
+
+/*
+ * For TPACKET_V3, ring->rd_num is tp_block_nr, ring->flen is tp_block_size
+ */
+static inline void
+tpacket_v3_fill_ring(struct tpacket_ring *ring, unsigned int blocks, int type)
+{
+    if (type == PACKET_RX_RING) {
+        ring->req3.tp_retire_blk_tov = 0;
+        ring->req3.tp_sizeof_priv = 0;
+        ring->req3.tp_feature_req_word = 0;
+    }
+    ring->req3.tp_block_size = getpagesize() << 2;
+    ring->req3.tp_frame_size = TPACKET_ALIGNMENT << 7;
+    ring->req3.tp_block_nr = blocks;
+
+    ring->req3.tp_frame_nr = ring->req3.tp_block_size /
+                             ring->req3.tp_frame_size *
+                             ring->req3.tp_block_nr;
+
+    ring->mm_len = ring->req3.tp_block_size * ring->req3.tp_block_nr;
+    ring->rd_num = ring->req3.tp_block_nr;
+    ring->flen = ring->req3.tp_block_size;
+}
+
+static int
+tpacket_setup_ring(int sock, struct tpacket_ring *ring, int version, int type)
+{
+    int ret = 0;
+    unsigned int blocks = 256;
+
+    ring->type = type;
+    ring->version = version;
+
+    switch (version) {
+    case TPACKET_V1:
+    case TPACKET_V2:
+            if (type == PACKET_TX_RING) {
+                    tpacket_set_packet_loss_discard(sock);
+            }
+            tpacket_v1_v2_fill_ring(ring, blocks);
+            ret = setsockopt(sock, SOL_PACKET, type, &ring->req,
+                             sizeof(ring->req));
+            break;
+
+    case TPACKET_V3:
+            tpacket_v3_fill_ring(ring, blocks, type);
+            ret = setsockopt(sock, SOL_PACKET, type, &ring->req3,
+                             sizeof(ring->req3));
+            break;
+    }
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    ring->rd_len = ring->rd_num * sizeof(*ring->rd);
+    ring->rd = xmalloc(ring->rd_len);
+    if (ring->rd == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static inline int
+tpacket_mmap_rx_tx_ring(int sock, struct tpacket_ring *rx_ring,
+                struct tpacket_ring *tx_ring)
+{
+    int i;
+
+    rx_ring->mm_space = mmap(0, rx_ring->mm_len + tx_ring->mm_len,
+                          PROT_READ | PROT_WRITE,
+                          MAP_SHARED | MAP_LOCKED | MAP_POPULATE, sock, 0);
+    if (rx_ring->mm_space == MAP_FAILED) {
+        return -1;
+    }
+
+    memset(rx_ring->rd, 0, rx_ring->rd_len);
+    for (i = 0; i < rx_ring->rd_num; ++i) {
+            rx_ring->rd[i].iov_base = rx_ring->mm_space + (i * rx_ring->flen);
+            rx_ring->rd[i].iov_len = rx_ring->flen;
+    }
+
+    tx_ring->mm_space = rx_ring->mm_space + rx_ring->mm_len;
+    memset(tx_ring->rd, 0, tx_ring->rd_len);
+    for (i = 0; i < tx_ring->rd_num; ++i) {
+            tx_ring->rd[i].iov_base = tx_ring->mm_space + (i * tx_ring->flen);
+            tx_ring->rd[i].iov_len = tx_ring->flen;
+    }
+
+    return 0;
+}
+#endif
+
 static int
 netdev_linux_rxq_construct(struct netdev_rxq *rxq_)
 {
@@ -1079,6 +1245,15 @@ netdev_linux_rxq_construct(struct netdev_rxq *rxq_)
     } else {
         struct sockaddr_ll sll;
         int ifindex, val;
+#ifdef HAVE_TPACKET
+#ifdef HAVE_TPACKET_V3
+        int ver = TPACKET_V3;
+#elif defined(HAVE_TPACKET_V2)
+        int ver = TPACKET_V2;
+#else
+        int ver = TPACKET_V1;
+#endif
+#endif
         /* Result of tcpdump -dd inbound */
         static const struct sock_filter filt[] = {
             { 0x28, 0, 0, 0xfffff004 }, /* ldh [0] */
@@ -1091,12 +1266,51 @@ netdev_linux_rxq_construct(struct netdev_rxq *rxq_)
         };
 
         /* Create file descriptor. */
-        rx->fd = socket(PF_PACKET, SOCK_RAW, 0);
+        rx->fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
         if (rx->fd < 0) {
             error = errno;
             VLOG_ERR("failed to create raw socket (%s)", ovs_strerror(error));
             goto error;
         }
+
+#ifdef HAVE_TPACKET
+        error = setsockopt(rx->fd, SOL_PACKET, PACKET_VERSION, &ver,
+                           sizeof(ver));
+        if (error != 0) {
+            error = errno;
+            VLOG_ERR("%s: failed to set tpacket version (%s)",
+                     netdev_get_name(netdev_), ovs_strerror(error));
+            goto error;
+        }
+        netdev->tp_rx_ring = xzalloc(sizeof(struct tpacket_ring));
+        netdev->tp_tx_ring = xzalloc(sizeof(struct tpacket_ring));
+        netdev->tp_rx_ring->sockfd = rx->fd;
+        netdev->tp_tx_ring->sockfd = rx->fd;
+        error = tpacket_setup_ring(rx->fd, netdev->tp_rx_ring, ver,
+                                   PACKET_RX_RING);
+        if (error != 0) {
+            error = errno;
+            VLOG_ERR("%s: failed to set tpacket rx ring (%s)",
+                     netdev_get_name(netdev_), ovs_strerror(error));
+            goto error;
+        }
+        error = tpacket_setup_ring(rx->fd, netdev->tp_tx_ring, ver,
+                                   PACKET_TX_RING);
+        if (error != 0) {
+            error = errno;
+            VLOG_ERR("%s: failed to set tpacket tx ring (%s)",
+                     netdev_get_name(netdev_), ovs_strerror(error));
+            goto error;
+        }
+        error = tpacket_mmap_rx_tx_ring(rx->fd, netdev->tp_rx_ring,
+                                       netdev->tp_tx_ring);
+        if (error != 0) {
+            error = errno;
+            VLOG_ERR("%s: failed to mmap tpacket rx & tx ring (%s)",
+                     netdev_get_name(netdev_), ovs_strerror(error));
+            goto error;
+        }
+#endif
 
         val = 1;
         if (setsockopt(rx->fd, SOL_PACKET, PACKET_AUXDATA, &val, sizeof val)) {
@@ -1129,7 +1343,12 @@ netdev_linux_rxq_construct(struct netdev_rxq *rxq_)
 
         /* Bind to specific ethernet device. */
         memset(&sll, 0, sizeof sll);
-        sll.sll_family = AF_PACKET;
+        sll.sll_family = PF_PACKET;
+#ifdef HAVE_TPACKET
+        sll.sll_hatype = 0;
+        sll.sll_pkttype = 0;
+        sll.sll_halen = 0;
+#endif
         sll.sll_ifindex = ifindex;
         sll.sll_protocol = htons(ETH_P_ALL);
         if (bind(rx->fd, (struct sockaddr *) &sll, sizeof sll) < 0) {
@@ -1168,6 +1387,17 @@ netdev_linux_rxq_destruct(struct netdev_rxq *rxq_)
     int i;
 
     if (!rx->is_tap) {
+#ifdef HAVE_TPACKET
+        struct netdev_linux *netdev = netdev_linux_cast(rx->up.netdev);
+
+        if (netdev->tp_rx_ring) {
+            munmap(netdev->tp_rx_ring->mm_space,
+                   2 * netdev->tp_rx_ring->mm_len);
+            free(netdev->tp_rx_ring->rd);
+            free(netdev->tp_tx_ring->rd);
+        }
+#endif
+
         close(rx->fd);
     }
 
@@ -1184,6 +1414,7 @@ netdev_linux_rxq_dealloc(struct netdev_rxq *rxq_)
     free(rx);
 }
 
+#ifndef HAVE_TPACKET
 static ovs_be16
 auxdata_to_vlan_tpid(const struct tpacket_auxdata *aux, bool double_tagged)
 {
@@ -1345,6 +1576,7 @@ netdev_linux_batch_rxq_recv_sock(struct netdev_rxq_linux *rx, int mtu,
     return 0;
 }
 
+#else /* ifdef HAVE_TPACKET */
 /*
  * Receive packets from tap by batch process for better performance,
  * it can receive NETDEV_MAX_BURST packets at most once, the received
@@ -1428,6 +1660,125 @@ netdev_linux_batch_rxq_recv_tap(struct netdev_rxq_linux *rx, int mtu,
 
     return 0;
 }
+static int
+netdev_linux_batch_recv_tpacket(struct netdev_rxq *rxq_, int mtu,
+                                struct dp_packet_batch *batch)
+{
+    struct netdev_rxq_linux *rx = netdev_rxq_linux_cast(rxq_);
+    struct netdev_linux *netdev = netdev_linux_cast(rx->up.netdev);
+    struct dp_packet *buffer;
+    int i = 0;
+
+#ifdef HAVE_TPACKET_V3
+    unsigned int block_num;
+    unsigned int fn_in_block;
+    struct block_desc *pbd;
+    struct tpacket3_hdr *ppd;
+
+    ppd = (struct tpacket3_hdr *)netdev->tp_rx_ring->ppd;
+    block_num = netdev->tp_rx_ring->block_num;
+    fn_in_block = netdev->tp_rx_ring->frame_num_in_block;
+    pbd = (struct block_desc *) netdev->tp_rx_ring->rd[block_num].iov_base;
+#else
+#if defined(HAVE_TPACKET_V2)
+    struct tpacket2_hdr *ppd;
+#else
+    struct tpacket_hdr *ppd;
+#endif
+    unsigned int frame_num;
+    unsigned int frame_nr = netdev->tp_rx_ring->rd_num;
+
+    frame_num = netdev->tp_rx_ring->frame_num;
+#endif
+
+    while (i < NETDEV_MAX_BURST) {
+#ifdef HAVE_TPACKET_V3
+        if ((pbd->h1.block_status & TP_STATUS_USER) == 0) {
+            break;
+        }
+        if (fn_in_block == 0) {
+            ppd = (struct tpacket3_hdr *) ((uint8_t *) pbd +
+                                           pbd->h1.offset_to_first_pkt);
+        }
+#elif defined(HAVE_TPACKET_V2)
+        ppd = (struct tpacket2_hdr *)
+                  netdev->tp_rx_ring->rd[frame_num].iov_base;
+        if ((ppd->tp_status & TP_STATUS_USER) == 0) {
+            break;
+        }
+#else
+        ppd = (struct tpacket_hdr *)netdev->tp_rx_ring->rd[frame_num].iov_base;
+        if ((ppd->tp_status & TP_STATUS_USER) == 0) {
+            break;
+        }
+#endif
+
+        buffer = dp_packet_new_with_headroom(VLAN_ETH_HEADER_LEN + mtu,
+                                             DP_NETDEV_HEADROOM);
+        memcpy(dp_packet_data(buffer),
+               (uint8_t *) ppd + ppd->tp_mac, ppd->tp_snaplen);
+        dp_packet_set_size(buffer,
+                           dp_packet_size(buffer) + ppd->tp_snaplen);
+#if defined(HAVE_TPACKET_V2) || defined(HAVE_TPACKET_V3)
+        if (ppd->tp_status & TP_STATUS_VLAN_VALID) {
+            struct eth_header *eth;
+            bool double_tagged;
+            ovs_be16 vlan_tpid;
+
+            eth = dp_packet_data(buffer);
+            double_tagged = eth->eth_type == htons(ETH_TYPE_VLAN_8021Q);
+            if (ppd->tp_status & TP_STATUS_VLAN_TPID_VALID) {
+#ifdef HAVE_TPACKET_V3
+                vlan_tpid = htons(ppd->hv1.tp_vlan_tpid);
+#else
+                vlan_tpid = htons(ppd->tp_vlan_tpid);
+#endif
+            } else if (double_tagged) {
+                vlan_tpid = htons(ETH_TYPE_VLAN_8021AD);
+            } else {
+                vlan_tpid = htons(ETH_TYPE_VLAN_8021Q);
+            }
+#ifdef HAVE_TPACKET_V3
+            eth_push_vlan(buffer, vlan_tpid, htons(ppd->hv1.tp_vlan_tci));
+#else
+            eth_push_vlan(buffer, vlan_tpid, htons(ppd->tp_vlan_tci));
+#endif
+        }
+#endif
+        dp_packet_batch_add(batch, buffer);
+
+#ifdef HAVE_TPACKET_V3
+        fn_in_block++;
+        if (fn_in_block >= pbd->h1.num_pkts) {
+            pbd->h1.block_status = TP_STATUS_KERNEL;
+            block_num = (block_num + 1) %
+                            netdev->tp_rx_ring->req3.tp_block_nr;
+            pbd = (struct block_desc *)
+                     netdev->tp_rx_ring->rd[block_num].iov_base;
+            fn_in_block = 0;
+            ppd = NULL;
+        } else {
+            ppd = (struct tpacket3_hdr *)
+                   ((uint8_t *) ppd + ppd->tp_next_offset);
+        }
+#else
+        ppd->tp_status = TP_STATUS_KERNEL;
+        frame_num = (frame_num + 1) % frame_nr;
+#endif
+        i++;
+    }
+
+#ifdef HAVE_TPACKET_V3
+    netdev->tp_rx_ring->block_num = block_num;
+    netdev->tp_rx_ring->frame_num_in_block = fn_in_block;
+    netdev->tp_rx_ring->ppd = ppd;
+#else
+    netdev->tp_rx_ring->frame_num = frame_num;
+#endif
+
+    return 0;
+}
+#endif
 
 static int
 netdev_linux_rxq_recv(struct netdev_rxq *rxq_, struct dp_packet_batch *batch,
@@ -1443,9 +1794,15 @@ netdev_linux_rxq_recv(struct netdev_rxq *rxq_, struct dp_packet_batch *batch,
     }
 
     dp_packet_batch_init(batch);
-    retval = (rx->is_tap
-              ? netdev_linux_batch_rxq_recv_tap(rx, mtu, batch)
-              : netdev_linux_batch_rxq_recv_sock(rx, mtu, batch));
+    if (rx->is_tap) {
+        retval = netdev_linux_batch_rxq_recv_tap(rx, mtu, batch);
+    } else {
+#ifndef HAVE_TPACKET
+        retval = netdev_linux_batch_rxq_recv_sock(rx, mtu, batch);
+#else
+        retval = netdev_linux_batch_recv_tpacket(rxq_, mtu, batch);
+#endif
+    }
 
     if (retval) {
         if (retval != EAGAIN && retval != EMSGSIZE) {
@@ -1486,6 +1843,7 @@ netdev_linux_rxq_drain(struct netdev_rxq *rxq_)
     }
 }
 
+#ifndef HAVE_TPACKET
 static int
 netdev_linux_sock_batch_send(int sock, int ifindex, bool tso, int mtu,
                              struct dp_packet_batch *batch)
@@ -1531,6 +1889,7 @@ netdev_linux_sock_batch_send(int sock, int ifindex, bool tso, int mtu,
     return error;
 }
 
+#else /* ifdef HAVE_TPACKET */
 /* Use the tap fd to send 'batch' to tap device 'netdev'.  Using the tap fd is
  * essential, because packets sent to a tap device with an AF_PACKET socket
  * will loop back to be *received* again on the tap device.  This doesn't occur
@@ -1650,6 +2009,114 @@ netdev_linux_get_numa_id(const struct netdev *netdev_)
     return numa_id;
 }
 
+static inline int
+tpacket_tx_is_ready(void * next_frame)
+{
+#ifdef HAVE_TPACKE_V3
+    struct tpacket3_hdr *hdr = (struct tpacket3_hdr *)next_frame;
+#elif defined(HAVE_TPACKE_V2)
+    struct tpacket2_hdr *hdr = (struct tpacket2_hdr *)next_frame;
+#else
+    struct tpacket_hdr *hdr = (struct tpacket_hdr *)next_frame;
+#endif
+    return !(hdr->tp_status & (TP_STATUS_SEND_REQUEST | TP_STATUS_SENDING));
+}
+
+static int
+netdev_linux_tpacket_batch_send(struct netdev *netdev_,
+                            struct dp_packet_batch *batch)
+{
+    struct netdev_linux *netdev = netdev_linux_cast(netdev_);
+    struct dp_packet *packet;
+    int sockfd;
+    ssize_t bytes_sent;
+    int total_pkts = 0;
+
+#ifdef HAVE_TPACKET_V3
+    unsigned int frame_nr = netdev->tp_tx_ring->req3.tp_frame_nr;
+#else
+    unsigned int frame_nr = netdev->tp_tx_ring->rd_num;
+#endif
+    unsigned int frame_num = netdev->tp_tx_ring->frame_num;
+
+    /* The Linux tap driver returns EIO if the device is not up,
+     * so if the device is not up, don't waste time sending it.
+     * However, if the device is in another network namespace
+     * then OVS can't retrieve the state. In that case, send the
+     * packets anyway. */
+    if (netdev->present && !(netdev->ifi_flags & IFF_UP)) {
+        netdev->tx_dropped += dp_packet_batch_size(batch);
+        return 0;
+    }
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        union frame_map ppd;
+        size_t size = dp_packet_size(packet);
+#ifdef HAVE_TPACKET_V3
+        struct tpacket3_hdr *next_frame
+                    = tpacket_get_next_frame(netdev->tp_tx_ring, frame_num);
+#elif defined(HAVE_TPACKET_V2)
+        struct tpacket2_hdr *next_frame
+                    = tpacket_get_next_frame(netdev->tp_tx_ring, frame_num);
+#else
+        struct tpacket_hdr *next_frame
+                    = tpacket_get_next_frame(netdev->tp_tx_ring, frame_num);
+#endif
+
+        ppd.raw = next_frame;
+        if (!tpacket_tx_is_ready(next_frame)) {
+            break;
+        }
+#ifdef HAVE_TPACKET_V3
+        next_frame->tp_snaplen = size;
+        next_frame->tp_len = size;
+        next_frame->tp_next_offset = 0;
+
+        memcpy((uint8_t *)ppd.raw + TPACKET3_HDRLEN
+                   - sizeof(struct sockaddr_ll),
+               dp_packet_data(packet),
+               size);
+#elif defined(HAVE_TPACKET_V2)
+        ppd.v2->tp_h.tp_snaplen = size;
+        ppd.v2->tp_h.tp_len = size;
+
+        memcpy((uint8_t *)ppd.raw + TPACKET2_HDRLEN
+                   - sizeof(struct sockaddr_ll),
+               dp_packet_data(packet),
+               size);
+#else
+        ppd.v1->tp_h.tp_snaplen = size;
+        ppd.v1->tp_h.tp_len = size;
+
+        memcpy((uint8_t *)ppd.raw + TPACKET_HDRLEN
+                   - sizeof(struct sockaddr_ll),
+               dp_packet_data(packet),
+               size);
+#endif
+        next_frame->tp_status = TP_STATUS_SEND_REQUEST;
+        frame_num = (frame_num + 1) % frame_nr;
+        total_pkts++;
+    }
+    netdev->tp_tx_ring->frame_num = frame_num;
+
+    /* kick-off transmits */
+    if (total_pkts != 0) {
+        sockfd = netdev->tp_tx_ring->sockfd;
+        bytes_sent = sendto(sockfd, NULL, 0, MSG_DONTWAIT, NULL, 0);
+        if (bytes_sent == -1 &&
+                errno != ENOBUFS && errno != EAGAIN) {
+            /*
+             * In case of an ENOBUFS/EAGAIN error all of the enqueued
+             * packets will be considered successful even though only some
+             * are sent.
+             */
+            netdev->tx_dropped += dp_packet_batch_size(batch);
+        }
+    }
+    return 0;
+}
+#endif
+
 /* Sends 'batch' on 'netdev'.  Returns 0 if successful, otherwise a positive
  * errno value.  Returns EAGAIN without blocking if the packet cannot be queued
  * immediately.  Returns EMSGSIZE if a partial packet was transmitted or if
@@ -1689,7 +2156,11 @@ netdev_linux_send(struct netdev *netdev_, int qid OVS_UNUSED,
             goto free_batch;
         }
 
+#ifndef HAVE_TPACKET
         error = netdev_linux_sock_batch_send(sock, ifindex, tso, mtu, batch);
+#else
+        error = netdev_linux_tpacket_batch_send(netdev_, batch);
+#endif
     } else {
         error = netdev_linux_tap_batch_send(netdev_, tso, mtu, batch);
     }
