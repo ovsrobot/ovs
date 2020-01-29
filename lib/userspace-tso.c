@@ -35,12 +35,13 @@ userspace_tso_init(const struct smap *ovs_other_config)
 
         if (ovsthread_once_start(&once)) {
 #ifdef DPDK_NETDEV
-            VLOG_INFO("Userspace TCP Segmentation Offloading support enabled");
-            userspace_tso = true;
+            VLOG_INFO("Userspace TCP Segmentation Offloading support enabled"
+                      " by DPDK");
 #else
-            VLOG_WARN("Userspace TCP Segmentation Offloading can not be enabled"
-                      "since OVS is built without DPDK support.");
+            VLOG_INFO("Userspace TCP Segmentation Offloading support enabled"
+                      " by native OVS");
 #endif
+            userspace_tso = true;
             ovsthread_once_done(&once);
         }
     }
