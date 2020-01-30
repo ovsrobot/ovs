@@ -161,6 +161,11 @@ pkt_metadata_init(struct pkt_metadata *md, odp_port_t port)
      */
     memset(md, 0, offsetof(struct pkt_metadata, ct_orig_tuple_ipv6));
 
+    /* Explicitly zero out ct_zone in order to be able to properly determine
+     * when a packet enters a new conntrack zone.
+     */
+    md->ct_zone = 0;
+
     /* It can be expensive to zero out all of the tunnel metadata. However,
      * we can just zero out ip_dst and the rest of the data will never be
      * looked at. */
