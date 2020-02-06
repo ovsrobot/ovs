@@ -259,6 +259,7 @@ void ovsdb_datum_add_unsafe(struct ovsdb_datum *,
 struct json *ovsdb_datum_to_json_with_row_names(const struct ovsdb_datum *,
                                                 const struct ovsdb_type *);
 char *ovsdb_data_row_name(const struct uuid *);
+char *ovsdb_data_row_uuid(const struct uuid *);
 
 /* Type checking. */
 static inline bool

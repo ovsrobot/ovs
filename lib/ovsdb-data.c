@@ -2239,3 +2239,12 @@ ovsdb_data_row_name(const struct uuid *uuid)
 
     return name;
 }
+
+char *
+ovsdb_data_row_uuid(const struct uuid *uuid)
+{
+    char *row_uuid;
+
+    row_uuid = xasprintf(UUID_FMT, UUID_ARGS(uuid));
+    return row_uuid;
+}
