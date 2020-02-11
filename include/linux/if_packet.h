@@ -1,25 +1,20 @@
-#ifndef FIX_LINUX_IF_PACKET_H
-#define FIX_LINUX_IF_PACKET_H
+#ifndef __LINUX_IF_PACKET_WRAPPER_H
+#define __LINUX_IF_PACKET_WRAPPER_H 1
 
-#ifndef __CHECKER__
-#error "Use this header only with sparse.  It is not a correct implementation."
-#endif
-
+#ifdef HAVE_TPACKET_V3
 #include_next <linux/if_packet.h>
+#else
+#define HAVE_TPACKET_V3 1
 
-/* Fix endianness of 'spkt_protocol' and 'sll_protocol' members. */
-
-#define sockaddr_pkt rpl_sockaddr_pkt
 struct sockaddr_pkt {
-        unsigned short spkt_family;
-        unsigned char spkt_device[14];
-        ovs_be16 spkt_protocol;
+        unsigned short  spkt_family;
+        unsigned char   spkt_device[14];
+        uint16_t        spkt_protocol;
 };
 
-#define sockaddr_ll rpl_sockaddr_ll
 struct sockaddr_ll {
         unsigned short  sll_family;
-        ovs_be16        sll_protocol;
+        uint16_t        sll_protocol;
         int             sll_ifindex;
         unsigned short  sll_hatype;
         unsigned char   sll_pkttype;
@@ -46,7 +41,6 @@ struct sockaddr_ll {
 #define TP_STATUS_SEND_REQUEST    (1 << 0)
 #define TP_STATUS_SENDING         (1 << 1)
 
-#define tpacket_hdr rpl_tpacket_hdr
 struct tpacket_hdr {
     unsigned long tp_status;
     unsigned int tp_len;
@@ -60,7 +54,6 @@ struct tpacket_hdr {
 #define TPACKET_ALIGNMENT 16
 #define TPACKET_ALIGN(x) (((x)+TPACKET_ALIGNMENT-1)&~(TPACKET_ALIGNMENT-1))
 
-#define tpacket_hdr_variant1 rpl_tpacket_hdr_variant1
 struct tpacket_hdr_variant1 {
     uint32_t tp_rxhash;
     uint32_t tp_vlan_tci;
@@ -68,7 +61,6 @@ struct tpacket_hdr_variant1 {
     uint16_t tp_padding;
 };
 
-#define tpacket3_hdr rpl_tpacket3_hdr
 struct tpacket3_hdr {
     uint32_t  tp_next_offset;
     uint32_t  tp_sec;
@@ -85,7 +77,6 @@ struct tpacket3_hdr {
     uint8_t  tp_padding[8];
 };
 
-#define tpacket_bd_ts rpl_tpacket_bd_ts
 struct tpacket_bd_ts {
     unsigned int ts_sec;
     union {
@@ -94,7 +85,6 @@ struct tpacket_bd_ts {
     };
 };
 
-#define tpacket_hdr_v1 rpl_tpacket_hdr_v1
 struct tpacket_hdr_v1 {
     uint32_t block_status;
     uint32_t num_pkts;
@@ -104,12 +94,10 @@ struct tpacket_hdr_v1 {
     struct tpacket_bd_ts ts_first_pkt, ts_last_pkt;
 };
 
-#define tpacket_bd_header_u rpl_tpacket_bd_header_u
 union tpacket_bd_header_u {
     struct tpacket_hdr_v1 bh1;
 };
 
-#define tpacket_block_desc rpl_tpacket_block_desc
 struct tpacket_block_desc {
     uint32_t version;
     uint32_t offset_to_priv;
@@ -119,13 +107,12 @@ struct tpacket_block_desc {
 #define TPACKET3_HDRLEN \
     (TPACKET_ALIGN(sizeof(struct tpacket3_hdr)) + sizeof(struct sockaddr_ll))
 
-enum rpl_tpacket_versions {
+enum tpacket_versions {
     TPACKET_V1,
     TPACKET_V2,
     TPACKET_V3
 };
 
-#define tpacket_req3 rpl_tpacket_req3
 struct tpacket_req3 {
     unsigned int tp_block_size; /* Minimal size of contiguous block */
     unsigned int tp_block_nr; /* Number of blocks */
@@ -135,4 +122,5 @@ struct tpacket_req3 {
     unsigned int tp_sizeof_priv; /* offset to private data area */
     unsigned int tp_feature_req_word;
 };
-#endif
+#endif /* HAVE_TPACKET_V3 */
+#endif /* __LINUX_IF_PACKET_WRAPPER_H */

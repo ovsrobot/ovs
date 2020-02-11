@@ -1093,6 +1093,18 @@ AC_DEFUN([OVS_CHECK_IF_DL],
       AC_SEARCH_LIBS([pcap_open_live], [pcap])
    fi])
 
+dnl OVS_CHECK_LINUX_TPACKET
+dnl
+dnl Configure Linux TPACKET.
+AC_DEFUN([OVS_CHECK_LINUX_TPACKET], [
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#include <linux/if_packet.h>], [
+        struct tpacket3_hdr x =  { 0 };
+    ])],
+    [AC_DEFINE([HAVE_TPACKET_V3], [1],
+    [Define to 1 if struct tpacket3_hdr is available.])])
+])
+
 dnl Checks for buggy strtok_r.
 dnl
 dnl Some versions of glibc 2.7 has a bug in strtok_r when compiling
