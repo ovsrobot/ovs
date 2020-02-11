@@ -907,6 +907,13 @@ char *dpif_get_dp_version(const struct dpif *);
 bool dpif_supports_tnl_push_pop(const struct dpif *);
 bool dpif_supports_explicit_drop_action(const struct dpif *);
 
+bool dpif_supports_lb_output_action(const struct dpif *);
+
+int dpif_bond_add(struct dpif *dpif, uint32_t bond_id, odp_port_t slave_map[]);
+int dpif_bond_del(struct dpif *dpif, uint32_t bond_id);
+int dpif_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
+                        uint64_t *n_bytes);
+
 /* Log functions. */
 struct vlog_module;
 
