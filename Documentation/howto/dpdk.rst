@@ -377,10 +377,21 @@ drivers that support the configured rte_flow actions.
 Partial flow offload requires support of "MARK + RSS" actions. Full
 hardware offload requires support of the actions listed below.
 
-The validated NICs are:
+.. table:: Validated NICs
 
-- Mellanox (ConnectX-4, ConnectX-4 Lx, ConnectX-5)
-- Napatech (NT200B01)
+  +----------+---------------+--------------+-----------------+
+  | Vendor   | Model         | Full offload | Partial offload |
+  +==========+===============+==============+=================+
+  | Intel    | 700 Series    | no           | yes             |
+  +----------+---------------+--------------+-----------------+
+  | Mellanox | ConnectX-4    |              | yes             |
+  |          +---------------+--------------+-----------------+
+  |          | ConnectX-4 Lx |              | yes             |
+  |          +---------------+--------------+-----------------+
+  |          | ConnectX-5    |              | yes             |
+  +----------+---------------+--------------+-----------------+
+  | Napatech | NT200B01      |              | yes             |
+  +----------+---------------+--------------+-----------------+
 
 Supported protocols for hardware offload matches are:
 

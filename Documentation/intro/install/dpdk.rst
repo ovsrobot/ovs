@@ -687,6 +687,10 @@ Limitations
   around is temporary and is expected to be removed once a method is provided
   by DPDK to query the upper bound MTU value for a given device.
 
+- Flow Hardware Offload: i40e devices (Intel(R) 700 Series) do not support
+  L2: Ethernet and L4: ICMP for offload matches. Flow rule needs to specify
+  highest supported layer for traffic match.
+
 Reporting Bugs
 --------------
 
