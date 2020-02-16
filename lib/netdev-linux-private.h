@@ -26,6 +26,7 @@
 #include <linux/mii.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <linux/if_packet.h>
 
 #include "dp-packet.h"
 #include "netdev-afxdp.h"
@@ -40,6 +41,22 @@ struct netdev;
 
 /* The maximum packet length is 16 bits */
 #define LINUX_RXQ_TSO_MAX_LEN 65535
+
+#ifdef HAVE_TPACKET_V3
+struct tpacket_ring {
+    int sockfd;
+    struct iovec *rd;
+    uint8_t *mm_space;
+    size_t mm_len, rd_len;
+    struct sockaddr_ll ll;
+    int type, rd_num, flen;
+    struct tpacket_req3 req;
+    uint32_t block_num;
+    uint32_t frame_num;
+    uint32_t frame_num_in_block;
+    void * ppd;
+};
+#endif /* HAVE_TPACKET_V3 */
 
 struct netdev_rxq_linux {
     struct netdev_rxq up;
@@ -104,6 +121,11 @@ struct netdev_linux {
     bool is_lag_master;         /* True if the netdev is a LAG master. */
 
     int numa_id;                /* NUMA node id. */
+
+#ifdef HAVE_TPACKET_V3
+    struct tpacket_ring *tp_rx_ring;
+    struct tpacket_ring *tp_tx_ring;
+#endif
 
 #ifdef HAVE_AF_XDP
     /* AF_XDP information. */
