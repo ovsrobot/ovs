@@ -48,6 +48,7 @@ v2.13.0 - 14 Feb 2020
        replication server. This value is configurable with the unixctl
        command - ovsdb-server/set-active-ovsdb-server-probe-interval.
      * ovsdb-server: New OVSDB extension to allow clients to specify row UUIDs.
+     * db-ctl-base: New row_uuid parameter specified for create cmd
    - 'ovs-appctl dpctl/dump-flows' can now show offloaded=partial for
      partially offloaded flows, dp:dpdk for fully offloaded by dpdk, and
      type filter supports new filters: "dpdk" and "partially-offloaded".

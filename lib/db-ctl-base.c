@@ -1718,10 +1718,12 @@ static void
 cmd_create(struct ctl_context *ctx)
 {
     const char *id = shash_find_data(&ctx->options, "--id");
+    const char *row_uuid = shash_find_data(&ctx->options, "--row_uuid");
     const char *table_name = ctx->argv[1];
     const struct ovsdb_idl_table_class *table;
     const struct ovsdb_idl_row *row;
     const struct uuid *uuid = NULL;
+    struct uuid uuid_from_cmd;
     int i;
 
     ctx->error = get_table(table_name, &table);
@@ -1741,7 +1743,17 @@ cmd_create(struct ctl_context *ctx)
              * warnings about that by pretending that there is a reference. */
             symbol->strong_ref = true;
         }
-        uuid = &symbol->uuid;
+        if (!row_uuid) {
+            uuid = &symbol->uuid;
+        }
+    }
+    if (row_uuid) {
+        if (!uuid_from_string(&uuid_from_cmd, row_uuid)) {
+            ctl_error(ctx, "row_uuid '%s' is not a valid UUID", row_uuid);
+            return ;
+        }
+        uuid = &uuid_from_cmd;
+        ovsdb_idl_txn_set_uuid_specified(ctx->txn);
     }
 
     row = ovsdb_idl_txn_insert(ctx->txn, table, uuid);
@@ -2465,7 +2477,7 @@ static const struct ctl_command_syntax db_ctl_commands[] = {
     {"clear", 3, INT_MAX, "TABLE RECORD COLUMN...", pre_cmd_clear, cmd_clear,
      NULL, "--if-exists", RW},
     {"create", 2, INT_MAX, "TABLE COLUMN[:KEY]=VALUE...", pre_create,
-     cmd_create, post_create, "--id=", RW},
+     cmd_create, post_create, "--id=,--row_uuid=", RW},
     {"destroy", 1, INT_MAX, "TABLE [RECORD]...", pre_cmd_destroy, cmd_destroy,
      NULL, "--if-exists,--all", RW},
     {"wait-until", 2, INT_MAX, "TABLE RECORD [COLUMN[:KEY]=VALUE]...",

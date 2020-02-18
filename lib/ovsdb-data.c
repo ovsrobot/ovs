@@ -2223,7 +2223,7 @@ ovsdb_atom_range_check_size(int64_t range_start, int64_t range_end)
     }
     return NULL;
 }
-
+
 char *
 ovsdb_data_row_name(const struct uuid *uuid)
 {
