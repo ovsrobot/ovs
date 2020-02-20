@@ -53,7 +53,25 @@ enum OVS_PACKED_ENUM dp_packet_source {
 enum dp_packet_offload_mask {
     DP_PACKET_OL_RSS_HASH_MASK  = 0x1, /* Is the 'rss_hash' valid? */
     DP_PACKET_OL_FLOW_MARK_MASK = 0x2, /* Is the 'flow_mark' valid? */
+    DP_PACKET_OL_RX_L4_CKSUM_BAD = 1 << 3,
+    DP_PACKET_OL_RX_IP_CKSUM_BAD = 1 << 4,
+    DP_PACKET_OL_RX_L4_CKSUM_GOOD = 1 << 5,
+    DP_PACKET_OL_RX_IP_CKSUM_GOOD = 1 << 6,
+    DP_PACKET_OL_TX_TCP_SEG = 1 << 7,
+    DP_PACKET_OL_TX_IPV4 = 1 << 8,
+    DP_PACKET_OL_TX_IPV6 = 1 << 9,
+    DP_PACKET_OL_TX_TCP_CKSUM = 1 << 10,
+    DP_PACKET_OL_TX_UDP_CKSUM = 1 << 11,
+    DP_PACKET_OL_TX_SCTP_CKSUM = 1 << 12,
 };
+
+#define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CKSUM | \
+                                 DP_PACKET_OL_TX_UDP_CKSUM | \
+                                 DP_PACKET_OL_TX_SCTP_CKSUM)
+#define DP_PACKET_OL_RX_IP_CKSUM_MASK (DP_PACKET_OL_RX_IP_CKSUM_GOOD | \
+                                       DP_PACKET_OL_RX_IP_CKSUM_BAD)
+#define DP_PACKET_OL_RX_L4_CKSUM_MASK (DP_PACKET_OL_RX_L4_CKSUM_GOOD | \
+                                       DP_PACKET_OL_RX_L4_CKSUM_BAD)
 #else
 /* DPDK mbuf ol_flags that are not really an offload flags.  These are mostly
  * related to mbuf memory layout and OVS should not touch/clear them. */
@@ -739,82 +757,79 @@ dp_packet_set_allocated(struct dp_packet *b, uint16_t s)
     b->allocated_ = s;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline bool
-dp_packet_hwol_is_tso(const struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_is_tso(const struct dp_packet *b)
 {
-    return false;
+    return !!(b->ol_flags & DP_PACKET_OL_TX_TCP_SEG);
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline bool
-dp_packet_hwol_is_ipv4(const struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_is_ipv4(const struct dp_packet *b)
 {
-    return false;
+    return !!(b->ol_flags & DP_PACKET_OL_TX_IPV4);
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline uint64_t
-dp_packet_hwol_l4_mask(const struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_l4_mask(const struct dp_packet *b)
 {
-    return 0;
+    return b->ol_flags & DP_PACKET_OL_TX_L4_MASK;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline bool
-dp_packet_hwol_l4_is_tcp(const struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_l4_is_tcp(const struct dp_packet *b)
 {
-    return false;
+    return (b->ol_flags & DP_PACKET_OL_TX_L4_MASK) ==
+            DP_PACKET_OL_TX_TCP_CKSUM;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline bool
-dp_packet_hwol_l4_is_udp(const struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_l4_is_udp(const struct dp_packet *b)
 {
-    return false;
+    return (b->ol_flags & DP_PACKET_OL_TX_L4_MASK) ==
+            DP_PACKET_OL_TX_UDP_CKSUM;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline bool
-dp_packet_hwol_l4_is_sctp(const struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_l4_is_sctp(const struct dp_packet *b)
 {
-    return false;
+    return (b->ol_flags & DP_PACKET_OL_TX_L4_MASK) ==
+            DP_PACKET_OL_TX_SCTP_CKSUM;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline void
-dp_packet_hwol_set_tx_ipv4(struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_set_tx_ipv4(struct dp_packet *b)
 {
+    b->ol_flags |= DP_PACKET_OL_TX_IPV4;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline void
-dp_packet_hwol_set_tx_ipv6(struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_set_tx_ipv6(struct dp_packet *b)
 {
+    b->ol_flags |= DP_PACKET_OL_TX_IPV6;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline void
-dp_packet_hwol_set_csum_tcp(struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_set_csum_tcp(struct dp_packet *b)
 {
+    b->ol_flags |= DP_PACKET_OL_TX_TCP_CKSUM;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline void
-dp_packet_hwol_set_csum_udp(struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_set_csum_udp(struct dp_packet *b)
 {
+    b->ol_flags |= DP_PACKET_OL_TX_UDP_CKSUM;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline void
-dp_packet_hwol_set_csum_sctp(struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_set_csum_sctp(struct dp_packet *b)
 {
+    b->ol_flags |= DP_PACKET_OL_TX_SCTP_CKSUM;
 }
 
-/* There are no implementation when not DPDK enabled datapath. */
 static inline void
-dp_packet_hwol_set_tcp_seg(struct dp_packet *b OVS_UNUSED)
+dp_packet_hwol_set_tcp_seg(struct dp_packet *b)
 {
+    b->ol_flags |= DP_PACKET_OL_TX_TCP_SEG;
 }
 
 /* Returns the RSS hash of the packet 'p'.  Note that the returned value is
@@ -845,27 +860,31 @@ dp_packet_reset_offload(struct dp_packet *p)
 }
 
 static inline bool
-dp_packet_ip_checksum_valid(const struct dp_packet *p OVS_UNUSED)
+dp_packet_ip_checksum_valid(const struct dp_packet *p)
 {
-    return false;
+    return (p->ol_flags & DP_PACKET_OL_RX_IP_CKSUM_MASK) ==
+            DP_PACKET_OL_RX_IP_CKSUM_GOOD;
 }
 
 static inline bool
-dp_packet_ip_checksum_bad(const struct dp_packet *p OVS_UNUSED)
+dp_packet_ip_checksum_bad(const struct dp_packet *p)
 {
-    return false;
+    return (p->ol_flags & DP_PACKET_OL_RX_IP_CKSUM_MASK) ==
+            DP_PACKET_OL_RX_IP_CKSUM_BAD;
 }
 
 static inline bool
-dp_packet_l4_checksum_valid(const struct dp_packet *p OVS_UNUSED)
+dp_packet_l4_checksum_valid(const struct dp_packet *p)
 {
-    return false;
+    return (p->ol_flags & DP_PACKET_OL_RX_L4_CKSUM_MASK) ==
+            DP_PACKET_OL_RX_L4_CKSUM_GOOD;
 }
 
 static inline bool
-dp_packet_l4_checksum_bad(const struct dp_packet *p OVS_UNUSED)
+dp_packet_l4_checksum_bad(const struct dp_packet *p)
 {
-    return false;
+    return (p->ol_flags & DP_PACKET_OL_RX_L4_CKSUM_MASK) ==
+            DP_PACKET_OL_RX_L4_CKSUM_BAD;
 }
 
 static inline bool
