@@ -3186,6 +3186,18 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="options" key="use-intr"
+              type='{"type": "boolean"}'>
+        <p>
+          Specifies whether to use interrupt mode feature in afxdp netdev.
+          If enabled, the pmd thread calls poll() syscall on the RX path.
+          If there is no packet at rx queue, the pmd is blocked at poll()
+          until it is timeout or new packets arrive. This saves CPU cycles
+          when packet arrival rate is low.
+          Defaults to false.
+        </p>
+      </column>
+
       <column name="options" key="vhost-server-path"
               type='{"type": "string"}'>
         <p>

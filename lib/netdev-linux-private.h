@@ -116,6 +116,8 @@ struct netdev_linux {
 
     bool use_need_wakeup;
     bool requested_need_wakeup;
+    bool use_intr;
+    bool requested_use_intr;
 
     struct netdev_afxdp_tx_lock *tx_locks;  /* Array of locks for TX queues. */
 #endif

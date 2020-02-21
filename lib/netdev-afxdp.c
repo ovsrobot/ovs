@@ -604,6 +604,7 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     enum afxdp_mode xdp_mode;
     bool need_wakeup;
     int new_n_rxq;
+    bool use_intr;
 
     ovs_mutex_lock(&dev->mutex);
     new_n_rxq = MAX(smap_get_int(args, "n_rxq", NR_QUEUE), 1);
@@ -637,12 +638,16 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     }
 #endif
 
+    use_intr = smap_get_bool(args, "use-intr", false);
+
     if (dev->requested_n_rxq != new_n_rxq
         || dev->requested_xdp_mode != xdp_mode
-        || dev->requested_need_wakeup != need_wakeup) {
+        || dev->requested_need_wakeup != need_wakeup
+        || dev->requested_use_intr != use_intr) {
         dev->requested_n_rxq = new_n_rxq;
         dev->requested_xdp_mode = xdp_mode;
         dev->requested_need_wakeup = need_wakeup;
+        dev->requested_use_intr = use_intr;
         netdev_request_reconfigure(netdev);
     }
     ovs_mutex_unlock(&dev->mutex);
@@ -661,6 +666,8 @@ netdev_afxdp_get_config(const struct netdev *netdev, struct smap *args)
                     xdp_modes[dev->xdp_mode_in_use].name);
     smap_add_format(args, "use-need-wakeup", "%s",
                     dev->use_need_wakeup ? "true" : "false");
+    smap_add_format(args, "use-intr", "%s",
+                    dev->use_intr ? "true" : "false");
     ovs_mutex_unlock(&dev->mutex);
     return 0;
 }
@@ -696,6 +703,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     if (netdev->n_rxq == dev->requested_n_rxq
         && dev->xdp_mode == dev->requested_xdp_mode
         && dev->use_need_wakeup == dev->requested_need_wakeup
+        && dev->use_intr == dev->requested_use_intr
         && dev->xsks) {
         goto out;
     }
@@ -713,6 +721,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
         VLOG_ERR("setrlimit(RLIMIT_MEMLOCK) failed: %s", ovs_strerror(errno));
     }
     dev->use_need_wakeup = dev->requested_need_wakeup;
+    dev->use_intr = dev->requested_use_intr;
 
     err = xsk_configure_all(netdev);
     if (err) {
@@ -815,6 +824,32 @@ prepare_fill_queue(struct xsk_socket_info *xsk_info)
     xsk_info->available_rx += BATCH_SIZE;
 }
 
+static int
+enable_intr_mode(int fd, struct netdev *netdev)
+{
+    struct pollfd fds[1];
+    int ret;
+
+    memset(fds, 0, sizeof fds);
+    fds[0].fd = fd;
+    fds[0].events = POLLIN;
+
+    ret = poll(fds, 1, 1);
+    if (OVS_UNLIKELY(ret == 0)) {
+        /* Timeout. */
+        ovsrcu_quiesce_start();
+        return EAGAIN;
+    }
+    if (OVS_UNLIKELY(ret < 0)) {
+        VLOG_WARN_RL(&rl, "%s: error polling rx fd: %s.",
+                     netdev_get_name(netdev),
+                     ovs_strerror(errno));
+        return EAGAIN;
+    }
+
+    return 0;
+}
+
 int
 netdev_afxdp_rxq_recv(struct netdev_rxq *rxq_, struct dp_packet_batch *batch,
                       int *qfill)
@@ -827,6 +862,7 @@ netdev_afxdp_rxq_recv(struct netdev_rxq *rxq_, struct dp_packet_batch *batch,
     uint32_t idx_rx = 0;
     int qid = rxq_->queue_id;
     unsigned int rcvd, i;
+    int ret;
 
     xsk_info = dev->xsks[qid];
     if (!xsk_info || !xsk_info->xsk) {
@@ -837,6 +873,13 @@ netdev_afxdp_rxq_recv(struct netdev_rxq *rxq_, struct dp_packet_batch *batch,
 
     umem = xsk_info->umem;
     rx->fd = xsk_socket__fd(xsk_info->xsk);
+
+    if (OVS_UNLIKELY(dev->use_intr)) {
+        ret = enable_intr_mode(rx->fd, netdev);
+        if (ret > 0) {
+            return ret;
+        }
+    }
 
     rcvd = xsk_ring_cons__peek(&xsk_info->rx, BATCH_SIZE, &idx_rx);
     if (!rcvd) {
