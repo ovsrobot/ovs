@@ -346,6 +346,19 @@ xasprintf(const char *format, ...)
     return s;
 }
 
+/* free array of char pointers and array itself */
+void
+xstrsfree(char **strs, size_t size)
+{
+    size_t i;
+
+    for (i = 0; i < size; i++) {
+        free(strs[i]);
+    }
+    free(strs);
+}
+
+
 /* Similar to strlcpy() from OpenBSD, but it never reads more than 'size - 1'
  * bytes from 'src' and doesn't return anything. */
 void

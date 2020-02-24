@@ -159,6 +159,7 @@ bool nullable_string_is_equal(const char *a, const char *b);
 char *xasprintf(const char *format, ...) OVS_PRINTF_FORMAT(1, 2) MALLOC_LIKE;
 char *xvasprintf(const char *format, va_list) OVS_PRINTF_FORMAT(1, 0) MALLOC_LIKE;
 void *x2nrealloc(void *p, size_t *n, size_t s);
+void  xstrsfree(char **, size_t);
 
 void *xmalloc_cacheline(size_t) MALLOC_LIKE;
 void *xzalloc_cacheline(size_t) MALLOC_LIKE;
