@@ -26,6 +26,7 @@
 
 #define METER_HASH_BUCKETS 1024
 
+#ifdef HAVE_GENL_OPS_POLICY
 static const struct nla_policy meter_policy[OVS_METER_ATTR_MAX + 1] = {
 	[OVS_METER_ATTR_ID] = { .type = NLA_U32, },
 	[OVS_METER_ATTR_KBPS] = { .type = NLA_FLAG },
@@ -36,6 +37,7 @@ static const struct nla_policy meter_policy[OVS_METER_ATTR_MAX + 1] = {
 	[OVS_METER_ATTR_MAX_METERS] = { .type = NLA_U32 },
 	[OVS_METER_ATTR_MAX_BANDS] = { .type = NLA_U32 },
 };
+#endif
 
 static const struct nla_policy band_policy[OVS_BAND_ATTR_MAX + 1] = {
 	[OVS_BAND_ATTR_TYPE] = { .type = NLA_U32, },
@@ -542,7 +544,9 @@ static struct genl_ops dp_meter_genl_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 		.flags = 0,		  /* OK for unprivileged users. */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = meter_policy,
+#endif
 		.doit = ovs_meter_cmd_features
 	},
 	{ .cmd = OVS_METER_CMD_SET,
@@ -552,7 +556,9 @@ static struct genl_ops dp_meter_genl_ops[] = {
 		.flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN
 					   *  privilege.
 					   */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = meter_policy,
+#endif
 		.doit = ovs_meter_cmd_set,
 	},
 	{ .cmd = OVS_METER_CMD_GET,
@@ -560,7 +566,9 @@ static struct genl_ops dp_meter_genl_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 		.flags = 0,		  /* OK for unprivileged users. */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = meter_policy,
+#endif
 		.doit = ovs_meter_cmd_get,
 	},
 	{ .cmd = OVS_METER_CMD_DEL,
@@ -570,7 +578,9 @@ static struct genl_ops dp_meter_genl_ops[] = {
 		.flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN
 					   *  privilege.
 					   */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = meter_policy,
+#endif
 		.doit = ovs_meter_cmd_del
 	},
 };
