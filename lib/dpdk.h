@@ -44,4 +44,11 @@ bool dpdk_per_port_memory(void);
 bool dpdk_available(void);
 void print_dpdk_version(void);
 void dpdk_status(const struct ovsrec_open_vswitch *);
+
+/* Returns 1 if the CPU has support for the requested architecture specific
+ * ISA capability. Eg: "x86_64", "avx512f". The strings to use here are as
+ * shown in "lscpu" Architecture: and Flags: fields.
+ */
+int dpdk_get_cpu_has_isa(const char * arch, const char *feature);
+
 #endif /* dpdk.h */

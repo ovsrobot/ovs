@@ -301,6 +301,13 @@ DECLARE_OPTIMIZED_LOOKUP_FUNCTION(4, 0)
 dpcls_subtable_lookup_func
 dpcls_subtable_generic_probe(uint32_t u0_bits, uint32_t u1_bits)
 {
+    /* POC only: check if we can use CPU based info */
+    int avx512f_available = dpdk_get_cpu_has_isa("x86_64", "avx512f");
+    printf("avx512f available? %d\n", avx512f_available);
+
+    if (!avx512f_available)
+        return 0;
+
     dpcls_subtable_lookup_func f = NULL;
 
     CHECK_LOOKUP_FUNCTION(5, 1);

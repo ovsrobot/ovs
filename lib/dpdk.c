@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <getopt.h>
 
+#include <rte_cpuflags.h>
 #include <rte_errno.h>
 #include <rte_log.h>
 #include <rte_memzone.h>
@@ -523,6 +524,21 @@ void
 print_dpdk_version(void)
 {
     puts(rte_version());
+}
+
+int
+dpdk_get_cpu_has_isa(const char *arch, const char *feature)
+{
+    /* Ensure Arch is x86_64 */
+    if (strncmp(arch, "x86_64", 6))
+        return 0;
+
+    if (strncmp(feature, "avx512f", 7) == 0)
+        return rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512F) > 0;
+
+    VLOG_WARN("%s does not know the %s, %s combo, returning not supported.\n",
+              __func__, arch, feature);
+    return 0;
 }
 
 void
