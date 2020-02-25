@@ -321,6 +321,18 @@ free_cacheline(void *p)
     free_size_align(p);
 }
 
+/* free array of char pointers and array itself */
+void
+free_strings(char **strs, size_t size)
+{
+    size_t i;
+
+    for (i = 0; i < size; i++) {
+        free(strs[i]);
+    }
+    free(strs);
+}
+
 void *
 xmalloc_pagealign(size_t size)
 {

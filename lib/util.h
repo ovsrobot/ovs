@@ -163,6 +163,7 @@ void *x2nrealloc(void *p, size_t *n, size_t s);
 void *xmalloc_cacheline(size_t) MALLOC_LIKE;
 void *xzalloc_cacheline(size_t) MALLOC_LIKE;
 void free_cacheline(void *);
+void free_strings(char **, size_t);
 
 void ovs_strlcpy(char *dst, const char *src, size_t size);
 void ovs_strzcpy(char *dst, const char *src, size_t size);
