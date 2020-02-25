@@ -173,6 +173,17 @@ netdev_assign_flow_api(struct netdev *netdev)
 {
     struct netdev_registered_flow_api *rfa;
 
+    if (netdev->flow_api_type &&
+        (rfa = netdev_lookup_flow_api(netdev->flow_api_type))) {
+        if (!rfa->flow_api->init_flow_api(netdev)) {
+            ovs_refcount_ref(&rfa->refcnt);
+            ovsrcu_set(&netdev->flow_api, rfa->flow_api);
+            VLOG_INFO("%s: Sepecified flow API '%s'.",
+                      netdev_get_name(netdev), rfa->flow_api->type);
+            return 0;
+        }
+    }
+
     CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
         if (!rfa->flow_api->init_flow_api(netdev)) {
             ovs_refcount_ref(&rfa->refcnt);

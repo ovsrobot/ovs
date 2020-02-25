@@ -423,6 +423,7 @@ netdev_open(const char *name, const char *type, struct netdev **netdevp)
                 netdev->reconfigure_seq = seq_create();
                 netdev->last_reconfigure_seq =
                     seq_read(netdev->reconfigure_seq);
+                netdev->flow_api_type = NULL;
                 ovsrcu_set(&netdev->flow_api, NULL);
                 netdev->hw_info.oor = false;
                 netdev->node = shash_add(&netdev_shash, name, netdev);

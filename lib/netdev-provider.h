@@ -93,6 +93,7 @@ struct netdev {
     struct ovs_list saved_flags_list; /* Contains "struct netdev_saved_flags". */
 
     /* Functions to control flow offloading. */
+    char *flow_api_type;
     OVSRCU_TYPE(const struct netdev_flow_api *) flow_api;
     struct netdev_hw_info hw_info;	/* offload-capable netdev info */
 };

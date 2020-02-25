@@ -50,6 +50,8 @@ VLOG_DEFINE_THIS_MODULE(netdev_dummy);
 
 #define C_STATS_SIZE 2
 
+#define DUMMY_OFFLOAD_TYPE "dummy"
+
 struct reconnect;
 
 struct dummy_packet_stream {
@@ -709,6 +711,7 @@ netdev_dummy_construct(struct netdev *netdev_)
 
     dummy_packet_conn_init(&netdev->conn);
 
+    netdev_->flow_api_type = DUMMY_OFFLOAD_TYPE;
     ovs_list_init(&netdev->rxes);
     hmap_init(&netdev->offloaded_flows);
     ovs_mutex_unlock(&netdev->mutex);
@@ -1588,7 +1591,7 @@ netdev_dummy_offloads_init_flow_api(struct netdev *netdev)
 }
 
 static const struct netdev_flow_api netdev_offload_dummy = {
-    .type = "dummy",
+    .type = DUMMY_OFFLOAD_TYPE,
     .flow_put = netdev_dummy_flow_put,
     .flow_del = netdev_dummy_flow_del,
     .init_flow_api = netdev_dummy_offloads_init_flow_api,
