@@ -33,8 +33,8 @@
 # or func_output().
 #
 
-import StringIO
-import commands
+import io
+import subprocess
 import fcntl
 import getopt
 import hashlib
@@ -344,10 +344,10 @@ def collect_data():
     while True:
         process_lists = {}
 
-        for (k, v) in data.items():
+        for (k, v) in list(data.items()):
             cap = v['cap']
             if 'cmd_args' in v:
-                if 'output' not in v.keys():
+                if 'output' not in list(v.keys()):
                     v['output'] = StringIOmtime()
                 if v['repeat_count'] > 0:
                     if cap not in process_lists:
@@ -364,11 +364,11 @@ def collect_data():
                 time.sleep(command_delay)
             else:
                 first_run = False
-            run_procs(process_lists.values())
+            run_procs(list(process_lists.values()))
         else:
             break
 
-    for (k, v) in data.items():
+    for (k, v) in list(data.items()):
         cap = v['cap']
         if 'filename' in v and v['filename'].startswith('/proc/'):
             # proc files must be read into memory
@@ -454,7 +454,7 @@ Output options:
     except:
         pass
 
-    entries = [e for e in caps.keys() if caps[e][CHECKED]]
+    entries = [e for e in list(caps.keys()) if caps[e][CHECKED]]
 
     for (k, v) in options:
         if k == '--capabilities':
@@ -496,7 +496,7 @@ Output options:
             output_file = v
 
         elif k == '--all':
-            entries = caps.keys()
+            entries = list(caps.keys())
         elif k == '--unlimited':
             unlimited_data = True
         elif k == '--debug':
@@ -683,7 +683,7 @@ exclude those logs from the archive.
                          CAP_OPENVSWITCH_LOGS, CAP_NETWORK_CONFIG]
         ovs_info_list = ['process-tree']
         # We cannot use iteritems, since we modify 'data' as we pass through
-        for (k, v) in data.items():
+        for (k, v) in list(data.items()):
             cap = v['cap']
             if 'filename' in v:
                 info = k[0]
@@ -704,7 +704,7 @@ exclude those logs from the archive.
 
     # permit the user to filter out data
     # We cannot use iteritems, since we modify 'data' as we pass through
-    for (k, v) in sorted(data.items()):
+    for (k, v) in (data.items()):
         cap = v['cap']
         if 'filename' in v:
             key = k[0]
@@ -745,7 +745,7 @@ exclude those logs from the archive.
 
     if dbg:
         print("Category sizes (max, actual):\n", file=sys.stderr)
-        for c in caps.keys():
+        for c in list(caps.keys()):
             print("    %s (%d, %d)" % (c, caps[c][MAX_SIZE], cap_sizes[c]),
                   file=sys.stderr)
 
@@ -782,7 +782,7 @@ def dump_scsi_hosts(cap):
 
 
 def module_info(cap):
-    output = StringIO.StringIO()
+    output = io.StringIO()
     modules = open(PROC_MODULES, 'r')
     procs = []
 
@@ -806,7 +806,7 @@ def multipathd_topology(cap):
 
 
 def dp_list():
-    output = StringIO.StringIO()
+    output = io.StringIO()
     procs = [ProcOutput([OVS_DPCTL, 'dump-dps'],
              caps[CAP_NETWORK_STATUS][MAX_TIME], output)]
 
@@ -828,7 +828,7 @@ def collect_ovsdb():
             if os.path.isfile(OPENVSWITCH_COMPACT_DB):
                 os.unlink(OPENVSWITCH_COMPACT_DB)
 
-            output = StringIO.StringIO()
+            output = io.StringIO()
             max_time = 5
             procs = [ProcOutput(['ovsdb-tool', 'compact',
                                 OPENVSWITCH_CONF_DB, OPENVSWITCH_COMPACT_DB],
@@ -863,15 +863,14 @@ def fd_usage(cap):
                 fd_dict[num_fds].append(name.replace('\0', ' ').strip())
         finally:
             fh.close()
-    keys = fd_dict.keys()
-    keys.sort(lambda a, b: int(b) - int(a))
+    keys = list(fd_dict.keys())
     for k in keys:
         output += "%s: %s\n" % (k, str(fd_dict[k]))
     return output
 
 
 def dump_rdac_groups(cap):
-    output = StringIO.StringIO()
+    output = io.StringIO()
     procs = [ProcOutput([MPPUTIL, '-a'], caps[cap][MAX_TIME], output)]
 
     run_procs([procs])
@@ -957,11 +956,11 @@ def load_plugins(just_capabilities=False, filter=None):
                 if el.tagName == "files":
                     newest_first = getBoolAttr(el, 'newest_first')
                     if el.getAttribute("type") == "logs":
-                        for fn in getText(el.childNodes).split():
+                        for fn in getText(el.childNodes).decode("ASCII").split():
                             prefix_output(dir, fn, newest_first=newest_first,
                                           last_mod_time=log_last_mod_time)
                     else:
-                        file_output(dir, getText(el.childNodes).split(),
+                        file_output(dir, getText(el.childNodes).decode("ASCII").split(),
                                     newest_first=newest_first)
                 elif el.tagName == "directory":
                     pattern = el.getAttribute("pattern")
@@ -970,12 +969,12 @@ def load_plugins(just_capabilities=False, filter=None):
                     negate = getBoolAttr(el, 'negate')
                     newest_first = getBoolAttr(el, 'newest_first')
                     if el.getAttribute("type") == "logs":
-                        tree_output(dir, getText(el.childNodes),
+                        tree_output(dir, getText(el.childNodes).decode("ASCII"),
                                     pattern and re.compile(pattern) or None,
                                     negate=negate, newest_first=newest_first,
                                     last_mod_time=log_last_mod_time)
                     else:
-                        tree_output(dir, getText(el.childNodes),
+                        tree_output(dir, getText(el.childNodes).decode("ASCII"),
                                     pattern and re.compile(pattern) or None,
                                     negate=negate, newest_first=newest_first)
                 elif el.tagName == "command":
@@ -987,15 +986,15 @@ def load_plugins(just_capabilities=False, filter=None):
                         repeat_count = int(el.getAttribute("repeat"))
                         if repeat_count > 1:
                             cmd_output(dir,
-                                       DATE + ';' + getText(el.childNodes),
+                                       DATE + ';' + getText(el.childNodes).decode("ASCII"),
                                        label, binary=binary,
                                        repeat_count=repeat_count)
                         else:
-                            cmd_output(dir, getText(el.childNodes),
+                            cmd_output(dir, [getText(el.childNodes).decode("ASCII")],
                                        label, binary=binary,
                                        repeat_count=repeat_count)
                     except:
-                        cmd_output(dir, getText(el.childNodes), label,
+                        cmd_output(dir, [getText(el.childNodes).decode("ASCII")], label,
                                    binary=binary)
 
 
@@ -1020,7 +1019,7 @@ def make_tar(subdir, suffix, output_fd, output_file):
         tf = tarfile.open(None, 'w', os.fdopen(output_fd, 'a'))
 
     try:
-        for (k, v) in data.items():
+        for (k, v) in list(data.items()):
             try:
                 tar_filename = os.path.join(subdir, construct_filename(k, v))
                 ti = tarfile.TarInfo(tar_filename)
@@ -1061,7 +1060,7 @@ def make_zip(subdir, output_file):
     os.umask(old_umask)
 
     try:
-        for (k, v) in data.items():
+        for (k, v) in list(data.items()):
             try:
                 dest = os.path.join(subdir, construct_filename(k, v))
 
@@ -1095,11 +1094,11 @@ def make_inventory(inventory, subdir):
     s.setAttribute('date', time.strftime('%c'))
     s.setAttribute('hostname', platform.node())
     s.setAttribute('uname', ' '.join(platform.uname()))
-    s.setAttribute('uptime', commands.getoutput(UPTIME))
+    s.setAttribute('uptime', subprocess.getoutput(UPTIME))
     document.getElementsByTagName(INVENTORY_XML_ROOT)[0].appendChild(s)
 
-    map(lambda k_v: inventory_entry(document, subdir, k_v[0], k_v[1]),
-        inventory.items())
+    list(map(lambda k_v: inventory_entry(document, subdir, k_v[0], k_v[1]),
+        list(inventory.items())))
     return document.toprettyxml()
 
 
@@ -1190,8 +1189,8 @@ def size_of(f, pattern, negate):
 def print_capabilities():
     document = getDOMImplementation().createDocument(
         "ns", CAP_XML_ROOT, None)
-    map(lambda key: capability(document, key),
-        [k for k in caps.keys() if not caps[k][HIDDEN]])
+    list(map(lambda key: capability(document, key),
+        [k for k in list(caps.keys()) if not caps[k][HIDDEN]]))
     print(document.toprettyxml())
 
 
@@ -1210,12 +1209,12 @@ def capability(document, key):
 
 
 def prettyDict(d):
-    format = '%%-%ds: %%s' % max(map(len, [k for k, _ in d.items()]))
-    return '\n'.join([format % i for i in d.items()]) + '\n'
+    format = '%%-%ds: %%s' % max(list(map(len, [k for k, _ in list(d.items())])))
+    return '\n'.join([format % i for i in list(d.items())]) + '\n'
 
 
 def yes(prompt):
-    yn = input(prompt)
+    yn = eval(input(prompt))
 
     return len(yn) == 0 or yn.lower()[0] == 'y'
 
@@ -1391,13 +1390,13 @@ def get_free_disk_space(path):
     return s.f_frsize * s.f_bfree
 
 
-class StringIOmtime(StringIO.StringIO):
+class StringIOmtime(io.StringIO):
     def __init__(self, buf=''):
-        StringIO.StringIO.__init__(self, buf)
+        io.StringIO.__init__(self, buf)
         self.mtime = time.time()
 
     def write(self, s):
-        StringIO.StringIO.write(self, s)
+        io.StringIO.write(self, str(s))
         self.mtime = time.time()
 
 
