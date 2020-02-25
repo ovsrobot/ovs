@@ -69,8 +69,8 @@ struct pvector_entry {
 };
 
 struct pvector_impl {
-    size_t size;       /* Number of entries in the vector. */
-    size_t allocated;  /* Number of allocated entries. */
+    ATOMIC(size_t) size;  /* Number of entries in the vector. */
+    size_t allocated;     /* Number of allocated entries. */
     struct pvector_entry vector[];
 };
 
@@ -172,7 +172,7 @@ static inline void pvector_cursor_lookahead(const struct pvector_cursor *,
 #define PVECTOR_CURSOR_FOR_EACH_CONTINUE(PTR, CURSOR)                   \
     for (; ((PTR) = pvector_cursor_next(CURSOR, INT_MIN, 0, 0)) != NULL; )
 
-
+
 /* Inline implementations. */
 
 static inline struct pvector_cursor
@@ -181,12 +181,14 @@ pvector_cursor_init(const struct pvector *pvec,
 {
     const struct pvector_impl *impl;
     struct pvector_cursor cursor;
+    size_t size;
 
     impl = ovsrcu_get(struct pvector_impl *, &pvec->impl);
 
-    ovs_prefetch_range(impl->vector, impl->size * sizeof impl->vector[0]);
+    atomic_read_explicit(&impl->size, &size, memory_order_acquire);
+    ovs_prefetch_range(impl->vector, size * sizeof impl->vector[0]);
 
-    cursor.size = impl->size;
+    cursor.size = size;
     cursor.vector = impl->vector;
     cursor.entry_idx = -1;
 
