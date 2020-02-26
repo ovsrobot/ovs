@@ -643,6 +643,7 @@ err:
 	return err;
 }
 
+#ifdef HAVE_GENL_OPS_POLICY
 static const struct nla_policy packet_policy[OVS_PACKET_ATTR_MAX + 1] = {
 	[OVS_PACKET_ATTR_PACKET] = { .len = ETH_HLEN },
 	[OVS_PACKET_ATTR_KEY] = { .type = NLA_NESTED },
@@ -650,6 +651,7 @@ static const struct nla_policy packet_policy[OVS_PACKET_ATTR_MAX + 1] = {
 	[OVS_PACKET_ATTR_PROBE] = { .type = NLA_FLAG },
 	[OVS_PACKET_ATTR_MRU] = { .type = NLA_U16 },
 };
+#endif
 
 static struct genl_ops dp_packet_genl_ops[] = {
 	{ .cmd = OVS_PACKET_CMD_EXECUTE,
@@ -657,7 +659,9 @@ static struct genl_ops dp_packet_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = packet_policy,
+#endif
 	  .doit = ovs_packet_cmd_execute
 	}
 };
@@ -1449,7 +1453,9 @@ static const struct genl_ops dp_flow_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = flow_policy,
+#endif
 	  .doit = ovs_flow_cmd_new
 	},
 	{ .cmd = OVS_FLOW_CMD_DEL,
@@ -1457,7 +1463,9 @@ static const struct genl_ops dp_flow_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = flow_policy,
+#endif
 	  .doit = ovs_flow_cmd_del
 	},
 	{ .cmd = OVS_FLOW_CMD_GET,
@@ -1465,7 +1473,9 @@ static const struct genl_ops dp_flow_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = 0,		    /* OK for unprivileged users. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = flow_policy,
+#endif
 	  .doit = ovs_flow_cmd_get,
 	  .dumpit = ovs_flow_cmd_dump
 	},
@@ -1474,7 +1484,9 @@ static const struct genl_ops dp_flow_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = flow_policy,
+#endif
 	  .doit = ovs_flow_cmd_set,
 	},
 };
@@ -1841,11 +1853,13 @@ static int ovs_dp_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	return skb->len;
 }
 
+#ifdef HAVE_GENL_OPS_POLICY
 static const struct nla_policy datapath_policy[OVS_DP_ATTR_MAX + 1] = {
 	[OVS_DP_ATTR_NAME] = { .type = NLA_NUL_STRING, .len = IFNAMSIZ - 1 },
 	[OVS_DP_ATTR_UPCALL_PID] = { .type = NLA_U32 },
 	[OVS_DP_ATTR_USER_FEATURES] = { .type = NLA_U32 },
 };
+#endif
 
 static const struct genl_ops dp_datapath_genl_ops[] = {
 	{ .cmd = OVS_DP_CMD_NEW,
@@ -1853,7 +1867,9 @@ static const struct genl_ops dp_datapath_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = datapath_policy,
+#endif
 	  .doit = ovs_dp_cmd_new
 	},
 	{ .cmd = OVS_DP_CMD_DEL,
@@ -1861,7 +1877,9 @@ static const struct genl_ops dp_datapath_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = datapath_policy,
+#endif
 	  .doit = ovs_dp_cmd_del
 	},
 	{ .cmd = OVS_DP_CMD_GET,
@@ -1869,7 +1887,9 @@ static const struct genl_ops dp_datapath_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = 0,		    /* OK for unprivileged users. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = datapath_policy,
+#endif
 	  .doit = ovs_dp_cmd_get,
 	  .dumpit = ovs_dp_cmd_dump
 	},
@@ -1878,7 +1898,9 @@ static const struct genl_ops dp_datapath_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = datapath_policy,
+#endif
 	  .doit = ovs_dp_cmd_set,
 	},
 };
@@ -2293,6 +2315,7 @@ out:
 	return skb->len;
 }
 
+#ifdef HAVE_GENL_OPS_POLICY
 static const struct nla_policy vport_policy[OVS_VPORT_ATTR_MAX + 1] = {
 	[OVS_VPORT_ATTR_NAME] = { .type = NLA_NUL_STRING, .len = IFNAMSIZ - 1 },
 	[OVS_VPORT_ATTR_STATS] = { .len = sizeof(struct ovs_vport_stats) },
@@ -2303,6 +2326,7 @@ static const struct nla_policy vport_policy[OVS_VPORT_ATTR_MAX + 1] = {
 	[OVS_VPORT_ATTR_IFINDEX] = { .type = NLA_U32 },
 	[OVS_VPORT_ATTR_NETNSID] = { .type = NLA_S32 },
 };
+#endif
 
 static const struct genl_ops dp_vport_genl_ops[] = {
 	{ .cmd = OVS_VPORT_CMD_NEW,
@@ -2310,7 +2334,9 @@ static const struct genl_ops dp_vport_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = vport_policy,
+#endif
 	  .doit = ovs_vport_cmd_new
 	},
 	{ .cmd = OVS_VPORT_CMD_DEL,
@@ -2318,7 +2344,9 @@ static const struct genl_ops dp_vport_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = vport_policy,
+#endif
 	  .doit = ovs_vport_cmd_del
 	},
 	{ .cmd = OVS_VPORT_CMD_GET,
@@ -2326,7 +2354,9 @@ static const struct genl_ops dp_vport_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = 0,		    /* OK for unprivileged users. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = vport_policy,
+#endif
 	  .doit = ovs_vport_cmd_get,
 	  .dumpit = ovs_vport_cmd_dump
 	},
@@ -2335,7 +2365,9 @@ static const struct genl_ops dp_vport_genl_ops[] = {
 	  .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 	  .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 	  .policy = vport_policy,
+#endif
 	  .doit = ovs_vport_cmd_set,
 	},
 };

@@ -134,9 +134,11 @@ struct ovs_ct_limit_info {
 	struct nf_conncount_data *data;
 };
 
+#ifdef HAVE_GENL_OPS_POLICY
 static const struct nla_policy ct_limit_policy[OVS_CT_LIMIT_ATTR_MAX + 1] = {
 	[OVS_CT_LIMIT_ATTR_ZONE_LIMIT] = { .type = NLA_NESTED, },
 };
+#endif
 #endif
 
 static bool labels_nonzero(const struct ovs_key_ct_labels *labels);
@@ -2312,7 +2314,9 @@ static struct genl_ops ct_limit_genl_ops[] = {
 #endif
 		.flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN
 					   * privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = ct_limit_policy,
+#endif
 		.doit = ovs_ct_limit_cmd_set,
 	},
 	{ .cmd = OVS_CT_LIMIT_CMD_DEL,
@@ -2321,7 +2325,9 @@ static struct genl_ops ct_limit_genl_ops[] = {
 #endif
 		.flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN
 					   * privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = ct_limit_policy,
+#endif
 		.doit = ovs_ct_limit_cmd_del,
 	},
 	{ .cmd = OVS_CT_LIMIT_CMD_GET,
@@ -2329,7 +2335,9 @@ static struct genl_ops ct_limit_genl_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 #endif
 		.flags = 0,		  /* OK for unprivileged users. */
+#ifdef HAVE_GENL_OPS_POLICY
 		.policy = ct_limit_policy,
+#endif
 		.doit = ovs_ct_limit_cmd_get,
 	},
 };
