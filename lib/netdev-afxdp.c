@@ -169,6 +169,12 @@ struct netdev_afxdp_tx_lock {
     );
 };
 
+static int nonpmd_cnt;  /* Number of afxdp netdevs in non-pmd mode. */
+static bool
+netdev_is_afxdp_nonpmd(struct netdev *netdev) {
+    return netdev_get_class(netdev) == &netdev_afxdp_nonpmd_class;
+}
+
 #ifdef HAVE_XDP_NEED_WAKEUP
 static inline void
 xsk_rx_wakeup_if_needed(struct xsk_umem_info *umem,
@@ -1115,7 +1121,10 @@ netdev_afxdp_batch_send(struct netdev *netdev, int qid,
     struct netdev_linux *dev;
     int ret;
 
-    if (concurrent_txq) {
+    /* Lock is required when mixing afxdp pmd and nonpmd mode.
+     * ex: one device is created 'afxdp', the other is 'afxdp-nonpmd'.
+     */
+    if (concurrent_txq || (nonpmd_cnt != 0)) {
         dev = netdev_linux_cast(netdev);
         qid = qid % netdev_n_txq(netdev);
 
@@ -1159,6 +1168,7 @@ libbpf_print(enum libbpf_print_level level,
 int netdev_afxdp_init(void)
 {
     libbpf_set_print(libbpf_print);
+    nonpmd_cnt = 0;
     return 0;
 }
 
@@ -1188,6 +1198,10 @@ netdev_afxdp_construct(struct netdev *netdev)
     dev->tx_locks = NULL;
 
     netdev_request_reconfigure(netdev);
+
+    if (netdev_is_afxdp_nonpmd(netdev)) {
+        nonpmd_cnt++;
+    }
     return 0;
 }
 
@@ -1208,6 +1222,10 @@ netdev_afxdp_destruct(struct netdev *netdev)
 
     xsk_destroy_all(netdev);
     ovs_mutex_destroy(&dev->mutex);
+
+    if (netdev_is_afxdp_nonpmd(netdev)) {
+        nonpmd_cnt--;
+    }
 }
 
 int
