@@ -610,7 +610,11 @@ ovsdb_idl_db_clear(struct ovsdb_idl_db *db)
         struct ovsdb_idl_table *table = &db->tables[i];
         struct ovsdb_idl_row *row, *next_row;
 
-        table->cond_changed = false;
+        if (table->cond_changed) {
+            table->cond_changed = false;
+            ovsdb_idl_condition_clear(&table->condition);
+        }
+
         if (hmap_is_empty(&table->rows)) {
             continue;
         }
