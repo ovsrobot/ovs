@@ -287,6 +287,8 @@ Enforcement' during boot.  The following commands can be used:
 .. note::
 
   You may have to restart the machine for the settings to take effect.
+  The nointegritychecks cannot be set when secure boot is enabled and
+  the value is ignored by Windows 8.
 
 In the Virtual Switch Manager configuration you can enable the Open vSwitch
 Extension on an existing switch or create a new switch.  If you are using an
