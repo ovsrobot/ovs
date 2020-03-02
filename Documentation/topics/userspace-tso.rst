@@ -98,6 +98,10 @@ in Open vSwitch. Currently, if the NIC supports that, then the feature is
 enabled, otherwise TSO can still be enabled but SCTP packets sent to the NIC
 will be dropped.
 
+For enabling TSO on devices using AF_PACKET, minimum supported kernel version
+is 4.19.  This is due to a virtio GSO fix:
+9d2f67e43b73 ("net/packet: fix packet drop as of virtio gso")
+
 There is no software implementation of TSO, so all ports attached to the
 datapath must support TSO or packets using that feature will be dropped
 on ports without TSO support.  That also means guests using vhost-user
