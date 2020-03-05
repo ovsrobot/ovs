@@ -3917,6 +3917,38 @@ out:
     netdev_close(netdev);
 }
 
+static void
+netdev_dpdk_set_mac(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                    const char *argv[], void *aux OVS_UNUSED)
+{
+    struct netdev *netdev = NULL;
+    char *response = NULL;
+    struct eth_addr mac;
+    int error;
+
+    netdev = netdev_from_name(argv[1]);
+    if (!netdev || !is_dpdk_class(netdev->netdev_class)) {
+        unixctl_command_reply_error(conn, "Not a DPDK Interface");
+        return;
+    }
+
+    if (!argv[2] || !eth_addr_from_string(argv[2], &mac)) {
+        response = xasprintf("No MAC address to set.");
+        goto out;
+    }
+
+    error = netdev_dpdk_set_etheraddr(netdev, mac);
+    if (error) {
+        response = xasprintf("interface %s: setting MAC failed (%s)",
+                             argv[1], ovs_strerror(error));
+    }
+    response = xasprintf("set-mac done.");
+
+out:
+    unixctl_command_reply(conn, response);
+    netdev_close(netdev);
+}
+
 /*
  * Set virtqueue flags so that we do not receive interrupts.
  */
@@ -4255,6 +4287,10 @@ netdev_dpdk_class_init(void)
         unixctl_command_register("netdev-dpdk/get-mempool-info",
                                  "[netdev]", 0, 1,
                                  netdev_dpdk_get_mempool_info, NULL);
+
+        unixctl_command_register("netdev-dpdk/set-mac",
+                                 "[netdev] [mac]", 2, 2,
+                                 netdev_dpdk_set_mac, NULL);
 
         ret = rte_eth_dev_callback_register(RTE_ETH_ALL,
                                             RTE_ETH_EVENT_INTR_RESET,
