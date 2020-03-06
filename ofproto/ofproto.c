@@ -556,6 +556,10 @@ ofproto_create(const char *datapath_name, const char *datapath_type,
         ovs_mutex_unlock(&ofproto_mutex);
         ofproto_destroy__(ofproto);
         return error;
+    } else {
+        /* ofproto construct succeed, ref its self
+         * inorder to unref when call ofproto destroy*/
+        ofproto_ref(ofproto);
     }
 
     /* Check that hidden tables, if any, are at the end. */
@@ -1737,8 +1741,9 @@ ofproto_destroy(struct ofproto *p, bool del)
     p->connmgr = NULL;
     ovs_mutex_unlock(&ofproto_mutex);
 
-    /* Destroying rules is deferred, must have 'ofproto' around for them. */
-    ovsrcu_postpone(ofproto_destroy_defer__, p);
+    /* Inorder to keep the code logical as before, we ref for ofproto when ofproto create
+     * so, we should also unref ofproto here*/
+    ofproto_unref(p);
 }
 
 /* Destroys the datapath with the respective 'name' and 'type'.  With the Linux
@@ -2919,6 +2924,22 @@ update_mtu_ofproto(struct ofproto *p)
     }
 }
 
+void
+ofproto_ref(struct ofproto *ofproto)
+{
+    if (ofproto) {
+        ovs_refcount_ref(&ofproto->ref_count);
+    }
+}
+
+void
+ofproto_unref(struct ofproto *ofproto)
+{
+    if (ofproto && ovs_refcount_unref_relaxed(&ofproto->ref_count) == 1) {
+        ovsrcu_postpone(ofproto_destroy_defer__, ofproto);
+    }
+}
+
 static void
 ofproto_rule_destroy__(struct rule *rule)
     OVS_NO_THREAD_SAFETY_ANALYSIS
@@ -2927,6 +2948,7 @@ ofproto_rule_destroy__(struct rule *rule)
     rule_actions_destroy(rule_get_actions(rule));
     ovs_mutex_destroy(&rule->mutex);
     rule->ofproto->ofproto_class->rule_dealloc(rule);
+    ofproto_unref(rule->ofproto);
 }
 
 static void
@@ -3067,6 +3089,7 @@ group_destroy_cb(struct ofgroup *group)
     ofputil_bucket_list_destroy(CONST_CAST(struct ovs_list *,
                                            &group->buckets));
     group->ofproto->ofproto_class->group_dealloc(group);
+    ofproto_unref(group->ofproto);
 }
 
 void
@@ -5264,6 +5287,7 @@ ofproto_rule_create(struct ofproto *ofproto, struct cls_rule *cr,
 
     /* Initialize base state. */
     *CONST_CAST(struct ofproto **, &rule->ofproto) = ofproto;
+    ovs_refcount_ref(ofproto);
     cls_rule_move(CONST_CAST(struct cls_rule *, &rule->cr), cr);
     ovs_refcount_init(&rule->ref_count);
 
@@ -7361,6 +7385,9 @@ init_group(struct ofproto *ofproto, const struct ofputil_group_mod *gm,
         ofputil_bucket_list_destroy(CONST_CAST(struct ovs_list *,
                                                &(*ofgroup)->buckets));
         ofproto->ofproto_class->group_dealloc(*ofgroup);
+    } else {
+        /* group construct succeed, ref ofproto */
+        ofproto_ref(ofproto);
     }
     return error;
 }

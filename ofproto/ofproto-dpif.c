@@ -1635,6 +1635,7 @@ construct(struct ofproto *ofproto_)
     ofproto->ams_seq = seq_create();
     ofproto->ams_seqno = seq_read(ofproto->ams_seq);
 
+    ovs_refcount_init(&ofproto_->ref_count);
 
     SHASH_FOR_EACH_SAFE (node, next, &init_ofp_ports) {
         struct iface_hint *iface_hint = node->data;

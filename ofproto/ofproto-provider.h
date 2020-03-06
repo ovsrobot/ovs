@@ -139,6 +139,7 @@ struct ofproto {
     /* Variable length mf_field mapping. Stores all configured variable length
      * meta-flow fields (struct mf_field) in a switch. */
     struct vl_mff_map vl_mff_map;
+    struct ovs_refcount ref_count;
 };
 
 void ofproto_init_tables(struct ofproto *, int n_tables);
@@ -442,6 +443,8 @@ struct rule {
 void ofproto_rule_ref(struct rule *);
 bool ofproto_rule_try_ref(struct rule *);
 void ofproto_rule_unref(struct rule *);
+void ofproto_ref(struct ofproto *ofproto);
+void ofproto_unref(struct ofproto *ofproto);
 
 static inline const struct rule_actions * rule_get_actions(const struct rule *);
 static inline bool rule_is_table_miss(const struct rule *);
