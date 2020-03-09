@@ -281,6 +281,7 @@ struct ovsdb_idl_txn {
     char *error;
     bool dry_run;
     struct ds comment;
+    bool uuid_specified;
 
     /* Increments. */
     const char *inc_table;
@@ -3550,6 +3551,7 @@ ovsdb_idl_txn_create(struct ovsdb_idl *idl)
     txn->status = TXN_UNCOMMITTED;
     txn->error = NULL;
     txn->dry_run = false;
+    txn->uuid_specified = false;
     ds_init(&txn->comment);
 
     txn->inc_table = NULL;
@@ -3591,6 +3593,11 @@ ovsdb_idl_txn_set_dry_run(struct ovsdb_idl_txn *txn)
     txn->dry_run = true;
 }
 
+void
+ovsdb_idl_txn_set_uuid_specified(struct ovsdb_idl_txn *txn)
+{
+    txn->uuid_specified = true;
+}
 /* Causes 'txn', when committed, to increment the value of 'column' within
  * 'row' by 1.  'column' must have an integer type.  After 'txn' commits
  * successfully, the client may retrieve the final (incremented) value of
@@ -3689,7 +3696,9 @@ ovsdb_idl_txn_get_row(const struct ovsdb_idl_txn *txn, const struct uuid *uuid)
 static struct json *
 substitute_uuids(struct json *json, const struct ovsdb_idl_txn *txn)
 {
-    if (json->type == JSON_ARRAY) {
+     if (txn->uuid_specified) {
+         return json;
+     } else if (json->type == JSON_ARRAY) {
         struct uuid uuid;
         size_t i;
 
@@ -4153,9 +4162,16 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
 
                 any_updates = true;
 
-                json_object_put(op, "uuid-name",
-                                json_string_create_nocopy(
-                                    ovsdb_data_row_name(&row->uuid)));
+
+                if (txn->uuid_specified) {
+                    json_object_put(op, "uuid",
+                                    json_string_create_nocopy(
+                                        xasprintf(UUID_FMT, UUID_ARGS(&row->uuid))));
+                } else {
+                    json_object_put(op, "uuid-name",
+                                    json_string_create_nocopy(
+                                        ovsdb_data_row_name(&row->uuid)));
+                }
 
                 insert = xmalloc(sizeof *insert);
                 insert->dummy = row->uuid;
