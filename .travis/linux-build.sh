@@ -98,7 +98,7 @@ function install_dpdk()
     else
         if [ -f "${VERSION_FILE}" ]; then
             VER=$(cat ${VERSION_FILE})
-            if [ "${VER}" = "${DPDK_VER}" ]; then
+            if [ "${VER}" = "${DPDK_VER}-${TRAVIS_BRANCH}" ]; then
                 EXTRA_OPTS="${EXTRA_OPTS} --with-dpdk=$(pwd)/dpdk-dir/build"
                 echo "Found cached DPDK ${VER} build in $(pwd)/dpdk-dir"
                 return
@@ -128,7 +128,7 @@ function install_dpdk()
     EXTRA_OPTS="$EXTRA_OPTS --with-dpdk=$(pwd)/build"
     echo "Installed DPDK source in $(pwd)"
     popd
-    echo "${DPDK_VER}" > ${VERSION_FILE}
+    echo "${DPDK_VER}-${TRAVIS_BRANCH}" > ${VERSION_FILE}
 }
 
 function configure_ovs()
