@@ -505,6 +505,7 @@ unsigned int ofproto_aa_vlan_get_queue_size(struct ofproto *ofproto);
 
 int ofproto_set_flood_vlans(struct ofproto *, unsigned long *flood_vlans);
 bool ofproto_is_mirror_output_bundle(const struct ofproto *, void *aux);
+bool ofproto_is_lb_output_action_supported(const struct ofproto *ofproto);
 
 /* Configuration of OpenFlow tables. */
 struct ofproto_table_settings {
