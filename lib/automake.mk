@@ -238,6 +238,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/pcap-file.h \
 	lib/perf-counter.h \
 	lib/perf-counter.c \
+	lib/sda-table.h \
+	lib/sda-table.c \
 	lib/stopwatch.h \
 	lib/stopwatch.c \
 	lib/poll-loop.c \
