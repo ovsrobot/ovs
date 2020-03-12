@@ -455,7 +455,8 @@ tests_ovstest_SOURCES = \
 	tests/test-bitmap.c \
 	tests/test-vconn.c \
 	tests/test-aa.c \
-	tests/test-stopwatch.c
+	tests/test-stopwatch.c \
+	tests/test-sda-table.c
 
 if !WIN32
 tests_ovstest_SOURCES += \
