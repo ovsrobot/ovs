@@ -48,6 +48,7 @@
 #include "flow.h"
 #include "hmapx.h"
 #include "id-pool.h"
+#include "sda-table.h"
 #include "ipf.h"
 #include "netdev.h"
 #include "netdev-offload.h"
@@ -523,7 +524,8 @@ struct dp_netdev_flow {
     /* Hash table index by unmasked flow. */
     const struct cmap_node node; /* In owning dp_netdev_pmd_thread's */
                                  /* 'flow_table'. */
-    const struct cmap_node mark_node; /* In owning flow_mark's mark_to_flow */
+    const struct sda_table_node mark_node; /* In owning flow_mark's */
+                                 /* mark_to_flow */
     const ovs_u128 ufid;         /* Unique flow identifier. */
     const ovs_u128 mega_ufid;    /* Unique mega flow identifier. */
     const unsigned pmd_id;       /* The 'core_id' of pmd thread owning this */
@@ -2159,13 +2161,13 @@ struct megaflow_to_mark_data {
 
 struct flow_mark {
     struct cmap megaflow_to_mark;
-    struct cmap mark_to_flow;
+    struct sda_table mark_to_flow;
     struct id_pool *pool;
 };
 
 static struct flow_mark flow_mark = {
     .megaflow_to_mark = CMAP_INITIALIZER,
-    .mark_to_flow = CMAP_INITIALIZER,
+    .mark_to_flow = SDA_TABLE_INITIALIZER,
 };
 
 static uint32_t
@@ -2248,9 +2250,10 @@ mark_to_flow_associate(const uint32_t mark, struct dp_netdev_flow *flow)
 {
     dp_netdev_flow_ref(flow);
 
-    cmap_insert(&flow_mark.mark_to_flow,
-                CONST_CAST(struct cmap_node *, &flow->mark_node),
-                hash_int(mark, 0));
+    sda_table_insert_node(&flow_mark.mark_to_flow,
+                mark,
+                CONST_CAST(struct sda_table_node *, &flow->mark_node));
+
     flow->mark = mark;
 
     VLOG_DBG("Associated dp_netdev flow %p with mark %u\n", flow, mark);
@@ -2261,8 +2264,8 @@ flow_mark_has_no_ref(uint32_t mark)
 {
     struct dp_netdev_flow *flow;
 
-    CMAP_FOR_EACH_WITH_HASH (flow, mark_node, hash_int(mark, 0),
-                             &flow_mark.mark_to_flow) {
+    SDA_TABLE_FOR_EACH_WITH_ID (flow, mark_node, mark,
+                               &flow_mark.mark_to_flow) {
         if (flow->mark == mark) {
             return false;
         }
@@ -2277,10 +2280,11 @@ mark_to_flow_disassociate(struct dp_netdev_pmd_thread *pmd,
 {
     int ret = 0;
     uint32_t mark = flow->mark;
-    struct cmap_node *mark_node = CONST_CAST(struct cmap_node *,
+    struct sda_table_node *mark_node = CONST_CAST(struct sda_table_node *,
                                              &flow->mark_node);
 
-    cmap_remove(&flow_mark.mark_to_flow, mark_node, hash_int(mark, 0));
+    ovs_assert(sda_table_remove_node(&flow_mark.mark_to_flow,
+                                     mark, mark_node));
     flow->mark = INVALID_FLOW_MARK;
 
     /*
@@ -2316,7 +2320,7 @@ flow_mark_flush(struct dp_netdev_pmd_thread *pmd)
 {
     struct dp_netdev_flow *flow;
 
-    CMAP_FOR_EACH (flow, mark_node, &flow_mark.mark_to_flow) {
+    SDA_TABLE_FOR_EACH (flow, mark_node, &flow_mark.mark_to_flow) {
         if (flow->pmd_id == pmd->core_id) {
             queue_netdev_flow_del(pmd, flow);
         }
@@ -2329,8 +2333,8 @@ mark_to_flow_find(const struct dp_netdev_pmd_thread *pmd,
 {
     struct dp_netdev_flow *flow;
 
-    CMAP_FOR_EACH_WITH_HASH (flow, mark_node, hash_int(mark, 0),
-                             &flow_mark.mark_to_flow) {
+    SDA_TABLE_FOR_EACH_WITH_ID (flow, mark_node, mark,
+                                &flow_mark.mark_to_flow) {
         if (flow->mark == mark && flow->pmd_id == pmd->core_id &&
             flow->dead == false) {
             return flow;
