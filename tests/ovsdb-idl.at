@@ -1288,6 +1288,18 @@ OVSDB_CHECK_IDL_PY([partial-map idl],
 009: done
 ]])
 
+OVSDB_CHECK_IDL_PY([partial-map update set refmap idl],
+[['["idltest", {"op":"insert", "table":"simple3", "row":{"name":"myString1"}},
+               {"op":"insert", "table":"simple5", "row":{"name":"myString2"}}]']],
+['partialmapmutateirefmap'],
+[[000: name=myString1 uset=[]
+000: name=myString2 irefmap=[]
+001: commit, status=success
+002: name=myString1 uset=[]
+002: name=myString2 irefmap=[(1 <0>)]
+003: done
+]])
+
 m4_define([OVSDB_CHECK_IDL_PARTIAL_UPDATE_SET_COLUMN],
   [AT_SETUP([$1 - C])
    AT_KEYWORDS([ovsdb server idl partial update set column positive $5])
