@@ -103,6 +103,11 @@ enum { MAX_FLOWS = 65536 };     /* Maximum number of flows in flow table. */
 #define METER_ENTRY_MAX (1 << 19)
 /* Maximum number of bands / meter. */
 #define METER_BAND_MAX (8)
+/* A typical server system will have 32K L1d-cache per core.
+ * Set the number of meter cache entries to 8192. */
+#define METER_CACHE_SHIFT   (13)
+#define METER_CACHE_MAX     (1 << METER_CACHE_SHIFT)
+#define METER_CACHE_MASK    (METER_CACHE_MAX -1)
 
 COVERAGE_DEFINE(datapath_drop_meter);
 COVERAGE_DEFINE(datapath_drop_upcall_error);
@@ -284,6 +289,8 @@ struct dp_meter_band {
 struct dp_meter {
     struct cmap_node node;
     struct ovs_mutex lock;
+    struct ovs_refcount ref_cnt;
+    atomic_bool dead;
     uint32_t id;
     uint16_t flags;
     uint16_t n_bands;
@@ -298,6 +305,9 @@ struct dp_netdev_meter {
     struct cmap table OVS_GUARDED;
     struct ovs_mutex lock;  /* Used for meter table. */
     uint32_t hash_basis;
+
+    OVS_ALIGNED_VAR(CACHE_LINE_SIZE)
+        OVSRCU_TYPE(struct dp_meter *) cache[METER_CACHE_MAX];
 };
 
 struct pmd_auto_lb {
@@ -1526,6 +1536,84 @@ dp_meter_hash(uint32_t meter_id, uint32_t basis)
     return hash_bytes32(&meter_id, sizeof meter_id, basis);
 }
 
+static bool
+dp_meter_ref(struct dp_meter *meter)
+{
+    return ovs_refcount_try_ref_rcu(&meter->ref_cnt);
+}
+
+static void
+dp_meter_unref(struct dp_meter *meter)
+{
+    if (ovs_refcount_unref_relaxed(&meter->ref_cnt) == 1) {
+        ovsrcu_postpone(free, meter);
+    }
+}
+
+static void
+dp_meter_cache_init(struct dp_netdev_meter *dp_meter)
+{
+    int i;
+
+    for (i = 0; i < METER_CACHE_MAX; i++) {
+        ovsrcu_init(&dp_meter->cache[i], NULL);
+    }
+}
+
+static void
+dp_meter_cache_destroy(struct dp_netdev_meter *dp_meter)
+{
+    struct dp_meter *meter;
+    int i;
+
+    for (i = 0; i < METER_CACHE_MAX; i++) {
+        meter = ovsrcu_get(struct dp_meter *, &dp_meter->cache[i]);
+
+        if (meter) {
+            dp_meter_unref(meter);
+            ovsrcu_set(&dp_meter->cache[i], NULL);
+        }
+    }
+}
+
+static struct dp_meter *
+dp_meter_cache_lookup(struct dp_netdev_meter *dp_meter,
+                      uint32_t meter_id)
+{
+    uint32_t hash = meter_id % METER_CACHE_MASK;
+    struct dp_meter *meter;
+    bool dead;
+
+    meter = ovsrcu_get(struct dp_meter *, &dp_meter->cache[hash]);
+    if (likely(meter && meter->id == meter_id)) {
+        atomic_read_relaxed(&meter->dead, &dead);
+        if (dead) {
+            return NULL;
+        }
+
+        return meter;
+    }
+
+    return NULL;
+}
+
+static void
+dp_meter_cache_insert(struct dp_netdev_meter *dp_meter,
+                      struct dp_meter *meter)
+{
+    uint32_t hash = meter->id % METER_CACHE_MASK;
+    struct dp_meter *old;
+
+    old = ovsrcu_get(struct dp_meter *, &dp_meter->cache[hash]);
+    if (old) {
+        dp_meter_unref(old);
+    }
+
+    if (dp_meter_ref(meter)) {
+        ovsrcu_set(&dp_meter->cache[hash], meter);
+    }
+}
+
 static void
 dp_netdev_meter_init(struct dp_netdev *dp)
 {
@@ -1536,6 +1624,8 @@ dp_netdev_meter_init(struct dp_netdev *dp)
     cmap_init(&dp_meter->table);
     ovs_mutex_init(&dp_meter->lock);
     dp_meter->hash_basis = random_uint32();
+
+    dp_meter_cache_init(dp_meter);
 
     dp->meter = dp_meter;
 }
@@ -1558,6 +1648,7 @@ dp_netdev_meter_destroy(struct dp_netdev *dp)
     ovs_mutex_unlock(&dp_meter->lock);
 
     ovs_mutex_destroy(&dp_meter->lock);
+    dp_meter_cache_destroy(dp_meter);
     free(dp_meter);
 }
 
@@ -1586,6 +1677,8 @@ dp_meter_detach_free(struct dp_netdev_meter *dp_meter, uint32_t meter_id)
     if (meter) {
             cmap_remove(&dp_meter->table, &meter->node,
                         dp_meter_hash(meter_id, dp_meter->hash_basis));
+
+            atomic_store_relaxed(&meter->dead, true);
             ovsrcu_postpone(free, meter);
     }
 }
@@ -5791,10 +5884,16 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
         return;
     }
 
-    meter = dp_meter_lookup(dp->meter, meter_id);
-    if (!meter) {
-        return;
-    }
+    meter = dp_meter_cache_lookup(dp->meter, meter_id);
+    if (unlikely(!meter)) {
+        /* Missed in cache, lookup in slow path. */
+        meter = dp_meter_lookup(dp->meter, meter_id);
+        if (!meter) {
+            return;
+        }
+
+        dp_meter_cache_insert(dp->meter, meter);
+     }
 
     /* Initialize as negative values. */
     memset(exceeded_band, 0xff, cnt * sizeof *exceeded_band);
@@ -5961,6 +6060,7 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
     meter->used = time_usec();
     meter->id = mid;
     ovs_mutex_init(&meter->lock);
+    atomic_store_relaxed(&meter->dead, false);
 
     /* set up bands */
     for (i = 0; i < config->n_bands; ++i) {
