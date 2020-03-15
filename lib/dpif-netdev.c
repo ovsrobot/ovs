@@ -98,9 +98,11 @@ DEFINE_STATIC_PER_THREAD_DATA(uint32_t, recirc_depth, 0)
 
 /* Configuration parameters. */
 enum { MAX_FLOWS = 65536 };     /* Maximum number of flows in flow table. */
-enum { MAX_METERS = 65536 };    /* Maximum number of meters. */
-enum { MAX_BANDS = 8 };         /* Maximum number of bands / meter. */
-enum { N_METER_LOCKS = 64 };    /* Maximum number of meters. */
+
+/* Maximum number of meters in the table. */
+#define METER_ENTRY_MAX (1 << 19)
+/* Maximum number of bands / meter. */
+#define METER_BAND_MAX (8)
 
 COVERAGE_DEFINE(datapath_drop_meter);
 COVERAGE_DEFINE(datapath_drop_upcall_error);
@@ -280,6 +282,9 @@ struct dp_meter_band {
 };
 
 struct dp_meter {
+    struct cmap_node node;
+    struct ovs_mutex lock;
+    uint32_t id;
     uint16_t flags;
     uint16_t n_bands;
     uint32_t max_delta_t;
@@ -287,6 +292,12 @@ struct dp_meter {
     uint64_t packet_count;
     uint64_t byte_count;
     struct dp_meter_band bands[];
+};
+
+struct dp_netdev_meter {
+    struct cmap table OVS_GUARDED;
+    struct ovs_mutex lock;  /* Used for meter table. */
+    uint32_t hash_basis;
 };
 
 struct pmd_auto_lb {
@@ -329,8 +340,7 @@ struct dp_netdev {
     atomic_uint32_t tx_flush_interval;
 
     /* Meters. */
-    struct ovs_mutex meter_locks[N_METER_LOCKS];
-    struct dp_meter *meters[MAX_METERS]; /* Meter bands. */
+    struct dp_netdev_meter *meter;
 
     /* Probability of EMC insertions is a factor of 'emc_insert_min'.*/
     OVS_ALIGNED_VAR(CACHE_LINE_SIZE) atomic_uint32_t emc_insert_min;
@@ -377,19 +387,6 @@ struct dp_netdev {
     struct conntrack *conntrack;
     struct pmd_auto_lb pmd_alb;
 };
-
-static void meter_lock(const struct dp_netdev *dp, uint32_t meter_id)
-    OVS_ACQUIRES(dp->meter_locks[meter_id % N_METER_LOCKS])
-{
-    ovs_mutex_lock(&dp->meter_locks[meter_id % N_METER_LOCKS]);
-}
-
-static void meter_unlock(const struct dp_netdev *dp, uint32_t meter_id)
-    OVS_RELEASES(dp->meter_locks[meter_id % N_METER_LOCKS])
-{
-    ovs_mutex_unlock(&dp->meter_locks[meter_id % N_METER_LOCKS]);
-}
-
 
 static struct dp_netdev_port *dp_netdev_lookup_port(const struct dp_netdev *dp,
                                                     odp_port_t)
@@ -1523,6 +1520,84 @@ choose_port(struct dp_netdev *dp, const char *name)
     return ODPP_NONE;
 }
 
+static uint32_t
+dp_meter_hash(uint32_t meter_id, uint32_t basis)
+{
+    return hash_bytes32(&meter_id, sizeof meter_id, basis);
+}
+
+static void
+dp_netdev_meter_init(struct dp_netdev *dp)
+{
+    struct dp_netdev_meter *dp_meter;
+
+    dp_meter = xmalloc(sizeof *dp_meter);
+
+    cmap_init(&dp_meter->table);
+    ovs_mutex_init(&dp_meter->lock);
+    dp_meter->hash_basis = random_uint32();
+
+    dp->meter = dp_meter;
+}
+
+static void
+dp_netdev_meter_destroy(struct dp_netdev *dp)
+{
+    struct dp_netdev_meter *dp_meter = dp->meter;
+    struct dp_meter *meter;
+
+    ovs_mutex_lock(&dp_meter->lock);
+    CMAP_FOR_EACH (meter, node, &dp_meter->table) {
+            cmap_remove(&dp_meter->table, &meter->node,
+                        dp_meter_hash(meter->id, dp_meter->hash_basis));
+
+            ovsrcu_postpone(free, meter);
+    }
+
+    cmap_destroy(&dp_meter->table);
+    ovs_mutex_unlock(&dp_meter->lock);
+
+    ovs_mutex_destroy(&dp_meter->lock);
+    free(dp_meter);
+}
+
+static struct dp_meter*
+dp_meter_lookup(struct dp_netdev_meter *dp_meter, uint32_t meter_id)
+{
+    uint32_t hash = dp_meter_hash(meter_id, dp_meter->hash_basis);
+    struct dp_meter *meter;
+
+    CMAP_FOR_EACH_WITH_HASH (meter, node, hash, &dp_meter->table) {
+        if (meter->id == meter_id) {
+            return meter;
+        }
+    }
+
+    return NULL;
+}
+
+static void
+dp_meter_detach_free(struct dp_netdev_meter *dp_meter, uint32_t meter_id)
+                     OVS_REQUIRES(dp_meter->lock)
+{
+    struct dp_meter *meter;
+
+    meter = dp_meter_lookup(dp_meter, meter_id);
+    if (meter) {
+            cmap_remove(&dp_meter->table, &meter->node,
+                        dp_meter_hash(meter_id, dp_meter->hash_basis));
+            ovsrcu_postpone(free, meter);
+    }
+}
+
+static void
+dp_meter_attach(struct dp_netdev_meter *dp_meter, struct dp_meter *meter)
+                OVS_REQUIRES(dp_meter->lock)
+{
+    cmap_insert(&dp_meter->table, &meter->node,
+                dp_meter_hash(meter->id, dp_meter->hash_basis));
+}
+
 static int
 create_dp_netdev(const char *name, const struct dpif_class *class,
                  struct dp_netdev **dpp)
@@ -1556,9 +1631,8 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
     dp->reconfigure_seq = seq_create();
     dp->last_reconfigure_seq = seq_read(dp->reconfigure_seq);
 
-    for (int i = 0; i < N_METER_LOCKS; ++i) {
-        ovs_mutex_init_adaptive(&dp->meter_locks[i]);
-    }
+    /* Init meter resource. */
+    dp_netdev_meter_init(dp);
 
     /* Disable upcalls by default. */
     dp_netdev_disable_upcall(dp);
@@ -1647,16 +1721,6 @@ dp_netdev_destroy_upcall_lock(struct dp_netdev *dp)
     fat_rwlock_destroy(&dp->upcall_rwlock);
 }
 
-static void
-dp_delete_meter(struct dp_netdev *dp, uint32_t meter_id)
-    OVS_REQUIRES(dp->meter_locks[meter_id % N_METER_LOCKS])
-{
-    if (dp->meters[meter_id]) {
-        free(dp->meters[meter_id]);
-        dp->meters[meter_id] = NULL;
-    }
-}
-
 /* Requires dp_netdev_mutex so that we can't get a new reference to 'dp'
  * through the 'dp_netdevs' shash while freeing 'dp'. */
 static void
@@ -1694,16 +1758,7 @@ dp_netdev_free(struct dp_netdev *dp)
     /* Upcalls must be disabled at this point */
     dp_netdev_destroy_upcall_lock(dp);
 
-    int i;
-
-    for (i = 0; i < MAX_METERS; ++i) {
-        meter_lock(dp, i);
-        dp_delete_meter(dp, i);
-        meter_unlock(dp, i);
-    }
-    for (i = 0; i < N_METER_LOCKS; ++i) {
-        ovs_mutex_destroy(&dp->meter_locks[i]);
-    }
+    dp_netdev_meter_destroy(dp);
 
     free(dp->pmd_cmask);
     free(CONST_CAST(char *, dp->name));
@@ -5708,10 +5763,10 @@ static void
 dpif_netdev_meter_get_features(const struct dpif * dpif OVS_UNUSED,
                                struct ofputil_meter_features *features)
 {
-    features->max_meters = MAX_METERS;
+    features->max_meters = METER_ENTRY_MAX;
     features->band_types = DP_SUPPORTED_METER_BAND_TYPES;
     features->capabilities = DP_SUPPORTED_METER_FLAGS_MASK;
-    features->max_bands = MAX_BANDS;
+    features->max_bands = METER_BAND_MAX;
     features->max_color = 0;
 }
 
@@ -5732,14 +5787,13 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     uint32_t exceeded_rate[NETDEV_MAX_BURST];
     int exceeded_pkt = cnt; /* First packet that exceeded a band rate. */
 
-    if (meter_id >= MAX_METERS) {
+    if (meter_id >= METER_ENTRY_MAX) {
         return;
     }
 
-    meter_lock(dp, meter_id);
-    meter = dp->meters[meter_id];
+    meter = dp_meter_lookup(dp->meter, meter_id);
     if (!meter) {
-        goto out;
+        return;
     }
 
     /* Initialize as negative values. */
@@ -5747,6 +5801,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     /* Initialize as zeroes. */
     memset(exceeded_rate, 0, cnt * sizeof *exceeded_rate);
 
+    ovs_mutex_lock(&meter->lock);
     /* All packets will hit the meter at the same time. */
     long_delta_t = now / 1000 - meter->used / 1000; /* msec */
 
@@ -5860,8 +5915,8 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
             dp_packet_batch_refill(packets_, packet, j);
         }
     }
- out:
-    meter_unlock(dp, meter_id);
+
+    ovs_mutex_unlock(&meter->lock);
 }
 
 /* Meter set/get/del processing is still single-threaded. */
@@ -5870,11 +5925,12 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
                       struct ofputil_meter_config *config)
 {
     struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_meter *dp_meter = dp->meter;
     uint32_t mid = meter_id.uint32;
     struct dp_meter *meter;
     int i;
 
-    if (mid >= MAX_METERS) {
+    if (mid >= METER_ENTRY_MAX) {
         return EFBIG; /* Meter_id out of range. */
     }
 
@@ -5882,7 +5938,7 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
         return EBADF; /* Unsupported flags set */
     }
 
-    if (config->n_bands > MAX_BANDS) {
+    if (config->n_bands > METER_BAND_MAX) {
         return EINVAL;
     }
 
@@ -5903,6 +5959,8 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
     meter->n_bands = config->n_bands;
     meter->max_delta_t = 0;
     meter->used = time_usec();
+    meter->id = mid;
+    ovs_mutex_init(&meter->lock);
 
     /* set up bands */
     for (i = 0; i < config->n_bands; ++i) {
@@ -5928,10 +5986,12 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
         }
     }
 
-    meter_lock(dp, mid);
-    dp_delete_meter(dp, mid); /* Free existing meter, if any */
-    dp->meters[mid] = meter;
-    meter_unlock(dp, mid);
+    ovs_mutex_lock(&dp_meter->lock);
+
+    dp_meter_detach_free(dp_meter, mid); /* Free existing meter, if any */
+    dp_meter_attach(dp_meter, meter);
+
+    ovs_mutex_unlock(&dp_meter->lock);
 
     return 0;
 }
@@ -5941,22 +6001,23 @@ dpif_netdev_meter_get(const struct dpif *dpif,
                       ofproto_meter_id meter_id_,
                       struct ofputil_meter_stats *stats, uint16_t n_bands)
 {
-    const struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev *dp = get_dp_netdev(dpif);
     uint32_t meter_id = meter_id_.uint32;
-    int retval = 0;
+    const struct dp_meter *meter;
 
-    if (meter_id >= MAX_METERS) {
+    if (meter_id >= METER_ENTRY_MAX) {
         return EFBIG;
     }
 
-    meter_lock(dp, meter_id);
-    const struct dp_meter *meter = dp->meters[meter_id];
+    meter = dp_meter_lookup(dp->meter, meter_id);
     if (!meter) {
-        retval = ENOENT;
-        goto done;
+        return ENOENT;
     }
+
     if (stats) {
-        int i = 0;
+        int i;
+
+        ovs_mutex_lock(&meter->lock);
 
         stats->packet_in_count = meter->packet_count;
         stats->byte_in_count = meter->byte_count;
@@ -5966,12 +6027,11 @@ dpif_netdev_meter_get(const struct dpif *dpif,
             stats->bands[i].byte_count = meter->bands[i].byte_count;
         }
 
+        ovs_mutex_unlock(&meter->lock);
         stats->n_bands = i;
     }
 
-done:
-    meter_unlock(dp, meter_id);
-    return retval;
+    return 0;
 }
 
 static int
@@ -5980,15 +6040,16 @@ dpif_netdev_meter_del(struct dpif *dpif,
                       struct ofputil_meter_stats *stats, uint16_t n_bands)
 {
     struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_meter *dp_meter = dp->meter;
     int error;
 
     error = dpif_netdev_meter_get(dpif, meter_id_, stats, n_bands);
     if (!error) {
         uint32_t meter_id = meter_id_.uint32;
 
-        meter_lock(dp, meter_id);
-        dp_delete_meter(dp, meter_id);
-        meter_unlock(dp, meter_id);
+        ovs_mutex_lock(&dp_meter->lock);
+        dp_meter_detach_free(dp_meter, meter_id);
+        ovs_mutex_unlock(&dp_meter->lock);
     }
     return error;
 }
