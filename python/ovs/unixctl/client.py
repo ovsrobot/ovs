@@ -28,7 +28,7 @@ class UnixctlClient(object):
 
     def transact(self, command, argv):
         assert isinstance(command, str)
-        assert isinstance(argv, list)
+        assert isinstance(argv, (list, tuple))
         for arg in argv:
             assert isinstance(arg, str)
 
