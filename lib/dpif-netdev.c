@@ -3224,10 +3224,6 @@ dpif_netdev_flow_from_nlattrs(const struct nlattr *key, uint32_t key_len,
         return EINVAL;
     }
 
-    if (flow->ct_state & DP_NETDEV_CS_UNSUPPORTED_MASK) {
-        return EINVAL;
-    }
-
     return 0;
 }
 
