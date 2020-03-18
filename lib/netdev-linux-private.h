@@ -20,6 +20,7 @@
 #include <linux/filter.h>
 #include <linux/gen_stats.h>
 #include <linux/if_ether.h>
+#include <linux/if_packet.h>
 #include <linux/if_tun.h>
 #include <linux/types.h>
 #include <linux/ethtool.h>
@@ -40,6 +41,26 @@ struct netdev;
 
 /* The maximum packet length is 16 bits */
 #define LINUX_RXQ_TSO_MAX_LEN 65535
+
+#ifdef HAVE_TPACKET_V3
+#define TPACKET_MAX_FRAME_NUM 64
+struct tpacket_ring {
+    int sockfd;                  /* Raw socket fd */
+    struct iovec *rd;            /* Ring buffer descriptors */
+    uint8_t *mm_space;           /* Mmap base address */
+    size_t mm_len;               /* Total mmap length */
+    size_t rd_len;               /* Total ring buffer descriptors length */
+    int type;                    /* Ring type: rx or tx */
+    int rd_num;                  /* Number of ring buffer descriptor */
+    int flen;                    /* Block size */
+    struct tpacket_req3 req;     /* TPACKET_V3 req */
+    uint32_t block_num;          /* Current block number */
+    uint32_t frame_num;          /* Current frame number */
+    uint32_t frame_num_in_block; /* Frame number in current block */
+    void * ppd;                  /* Packet pointer in current block */
+    struct dp_packet *pkts;      /* Preallocated dp_packet pool */
+};
+#endif /* HAVE_TPACKET_V3 */
 
 struct netdev_rxq_linux {
     struct netdev_rxq up;
@@ -104,6 +125,11 @@ struct netdev_linux {
     bool is_lag_master;         /* True if the netdev is a LAG master. */
 
     int numa_id;                /* NUMA node id. */
+
+#ifdef HAVE_TPACKET_V3
+    struct tpacket_ring *tp_rx_ring;
+    struct tpacket_ring *tp_tx_ring;
+#endif
 
 #ifdef HAVE_AF_XDP
     /* AF_XDP information. */

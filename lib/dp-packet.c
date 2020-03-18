@@ -76,6 +76,21 @@ dp_packet_use_afxdp(struct dp_packet *b, void *data, size_t allocated,
 }
 #endif
 
+#if HAVE_TPACKET_V3
+/* Initialize 'b' as an dp_packet that contains tpacket data.
+ */
+void
+dp_packet_use_tpacket(struct dp_packet *b, void *data, size_t allocated,
+                      size_t headroom)
+{
+    dp_packet_set_base(b, (char *)data - headroom);
+    dp_packet_set_data(b, data);
+    dp_packet_set_size(b, 0);
+
+    dp_packet_init__(b, allocated, DPBUF_TPACKET_V3);
+}
+#endif
+
 /* Initializes 'b' as an empty dp_packet that contains the 'allocated' bytes of
  * memory starting at 'base'.  'base' should point to a buffer on the stack.
  * (Nothing actually relies on 'base' being allocated on the stack.  It could
@@ -269,6 +284,9 @@ dp_packet_resize(struct dp_packet *b, size_t new_headroom, size_t new_tailroom)
         OVS_NOT_REACHED();
 
     case DPBUF_AFXDP:
+        OVS_NOT_REACHED();
+
+    case DPBUF_TPACKET_V3:
         OVS_NOT_REACHED();
 
     case DPBUF_STUB:
