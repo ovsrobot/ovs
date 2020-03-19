@@ -86,7 +86,11 @@ OVS_NO_RETURN void ovs_assert_failure(const char *, const char *, const char *);
 #ifdef __GNUC__
 #define OVS_TYPEOF(OBJECT) typeof(OBJECT)
 #else
+#if defined (__cplusplus) && defined(_WIN32)
+#define OVS_TYPEOF(OBJECT) decltype(OBJECT)
+#else
 #define OVS_TYPEOF(OBJECT) void *
+#endif
 #endif
 
 /* Given OBJECT of type pointer-to-structure, expands to the offset of MEMBER
