@@ -316,6 +316,7 @@ struct ovsdb_idl_txn *ovsdb_idl_txn_create(struct ovsdb_idl *);
 void ovsdb_idl_txn_add_comment(struct ovsdb_idl_txn *, const char *, ...)
     OVS_PRINTF_FORMAT (2, 3);
 void ovsdb_idl_txn_set_dry_run(struct ovsdb_idl_txn *);
+void ovsdb_idl_txn_set_uuid_specified(struct ovsdb_idl_txn *);
 void ovsdb_idl_txn_increment(struct ovsdb_idl_txn *,
                              const struct ovsdb_idl_row *,
                              const struct ovsdb_idl_column *,

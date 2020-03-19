@@ -1349,6 +1349,56 @@ name                : br0
 OVS_VSCTL_CLEANUP
 AT_CLEANUP
 
+AT_SETUP([--row_uuid option on create, together with --id])
+AT_KEYWORDS([ovs-vsctl])
+OVS_VSCTL_SETUP
+AT_CHECK([RUN_OVS_VSCTL([add-br br0],
+                        [add-port br0 eth0],
+                        [add-port br0 eth1])])
+
+AT_CHECK([RUN_OVS_VSCTL([--no-wait  --oneline  -- --id=@eth0 get port eth0 -- --id=@eth1 get port eth1 -- --id=@m --row_uuid=ee07ca13-b85e-4b65-a0a2-e6f60d08dfbd create mirror name=mymirror select-dst-port=@eth0 select-src-port=@eth0 output-port=@eth1 -- set bridge br0 mirrors=@m])],
+ [0], [stdout])
+
+AT_CHECK(
+  [uuidfilt stdout], [0], [dnl
+
+
+<0>
+
+])
+AT_CHECK([cat stdout], [0], [
+
+ee07ca13-b85e-4b65-a0a2-e6f60d08dfbd
+
+])
+
+AT_CHECK(
+  [RUN_OVS_VSCTL(
+    [list port eth0 eth1],
+    [list mirror],
+    [list bridge br0])],
+  [0], [stdout])
+AT_CHECK(
+  [sed -n -e '/uuid/p' -e '/name/p' -e '/mirrors/p' -e '/select/p' -e '/output/p' < stdout | uuidfilt], [0], [dnl
+[_uuid               : <0>
+name                : eth0
+_uuid               : <1>
+name                : eth1
+_uuid               : <2>
+name                : mymirror
+output_port         : <1>
+output_vlan         : []
+select_all          : false
+select_dst_port     : [<0>]
+select_src_port     : [<0>]
+select_vlan         : []
+_uuid               : <3>
+mirrors             : [<2>]
+name                : br0
+]])
+OVS_VSCTL_CLEANUP
+AT_CLEANUP
+
 AT_SETUP([unreferenced record warnings])
 AT_KEYWORDS([ovs-vsctl])
 OVS_VSCTL_SETUP
