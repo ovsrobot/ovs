@@ -614,6 +614,7 @@ vlog_set_syslog_target(const char *target)
 
 int
 vlog_get_fd(void)
+    OVS_REQUIRES(log_file_mutex)
 {
     return log_fd;
 }

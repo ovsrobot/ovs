@@ -158,13 +158,43 @@ fatal_signal_add_hook(void (*hook_cb)(void *aux), void (*cancel_cb)(void *aux),
 }
 
 #ifdef HAVE_UNWIND
-/* Send the backtrace buffer to monitor thread.
+/* Write the backtrace to log file.
+ *
+ * Use OVS_NO_THREAD_SAFETY_ANALYSIS to skip acquiring the lock
+ * of 'vlog_get_fd()'.
+ */
+static inline void
+send_backtrace_to_logfd(struct unw_backtrace *unw_bt, const int dep)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
+{
+    char str[] = "SIGSEGV detected, backtrace:\n";
+
+    if (vlog_get_fd() < 0) {
+        return;
+    }
+
+    ignore(write(vlog_get_fd(), str, strlen(str)));
+
+    for (int i = 0; i < dep; i++) {
+        char line[64];
+
+        /* snprintf() is not async-signal-safe. */
+        snprintf(line, 64, "0x%016"PRIxPTR" <%s+0x%"PRIxPTR">\n",
+                 unw_bt[i].ip,
+                 unw_bt[i].func,
+                 unw_bt[i].offset);
+        ignore(write(vlog_get_fd(), line, strlen(line)));
+    }
+}
+
+/* Send the backtrace buffer to main or monitor thread.
  *
  * Note that this runs in the signal handling context, any system
  * library functions used here must be async-signal-safe.
  */
 static inline void
-send_backtrace_to_monitor(void) {
+send_backtrace_to_monitor(void)
+{
     /* volatile added to prevent a "clobbered" error on ppc64le with gcc */
     volatile int dep;
     struct unw_backtrace unw_bt[UNW_MAX_DEPTH];
@@ -192,26 +222,9 @@ send_backtrace_to_monitor(void) {
                      dep * sizeof(struct unw_backtrace)));
     } else {
         /* Since there is no monitor daemon running, write backtrace
-         * in current process.  This is not asyn-signal-safe due to
-         * use of snprintf().
+         * in current process.  This is not asyn-signal-safe.
          */
-        char str[] = "SIGSEGV detected, backtrace:\n";
-
-        if (vlog_get_fd() < 0) {
-            return;
-        }
-
-        ignore(write(vlog_get_fd(), str, strlen(str)));
-
-        for (int i = 0; i < dep; i++) {
-            char line[64];
-
-            snprintf(line, 64, "0x%016"PRIxPTR" <%s+0x%"PRIxPTR">\n",
-                     unw_bt[i].ip,
-                     unw_bt[i].func,
-                     unw_bt[i].offset);
-            ignore(write(vlog_get_fd(), line, strlen(line)));
-        }
+        send_backtrace_to_logfd(unw_bt, dep);
     }
 }
 #else
