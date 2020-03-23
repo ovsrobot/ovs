@@ -125,6 +125,7 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
+primary: <none>
 active slave mac: 00:00:00:00:00:00(none)
 
 slave p1: disabled

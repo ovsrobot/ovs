@@ -2016,6 +2016,14 @@
           key="bond-detect-mode"/> is <code>miimon</code>.
         </column>
 
+        <column name="other_config" key="bond-primary"
+                type='{"type": "string"}'>
+          If a slave interface with this name exists in the bond and
+          is up, it will be made active.  Relevant only when <ref
+          column="other_config" key="bond-mode"/> is
+          <code>active-backup</code>.
+        </column>
+
         <column name="bond_updelay">
           <p>
             The number of milliseconds for which the link must stay up on an
