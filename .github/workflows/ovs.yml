@@ -1,0 +1,26 @@
+name: OVS system-userspace Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: [ubuntu-18.04]
+    steps:
+    - uses: actions/checkout@v2
+    - name: build iproute2-5.0.0
+      run:  sudo apt install -y bison flex; git clone -b v5.0.0 git://git.kernel.org/pub/scm/linux/kernel/git/shemminger/iproute2.git; cd iproute2; ./configure && make -j2 && sudo make install
+    - name: configure
+      run: ./boot.sh; ./configure
+    - name: make
+      run: make -j2
+    - name: check-system-userspace
+      run: sudo make check-system-userspace RECHECK=yes
+    - name: Upload artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: system-userspace
+        path: tests/system-userspace-testsuite.log

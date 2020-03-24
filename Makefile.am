@@ -92,6 +92,7 @@ EXTRA_DIST = \
 	$(MAN_ROOTS) \
 	Vagrantfile \
 	Vagrantfile-FreeBSD \
+	.github/workflows/ovs.yml \
 	.mailmap
 bin_PROGRAMS =
 sbin_PROGRAMS =
