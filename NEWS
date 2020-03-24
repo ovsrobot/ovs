@@ -13,6 +13,10 @@ v2.11.2 - 03 Sep 2019
    - Bug fixes
    - DPDK
      * OVS validated with DPDK 18.11.2 which is recommended to be used.
+   - OVSDB
+     * Support to convert from cluster database to standalone database is now
+       available when clustered is down and cannot be revived using ovsdb-tool
+       . Check "Database Migration Commands" in ovsdb-tool man section.
 
 v2.11.1 - 30 Mar 2019
 ---------------------
