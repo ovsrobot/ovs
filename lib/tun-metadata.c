@@ -25,6 +25,7 @@
 #include "nx-match.h"
 #include "odp-netlink.h"
 #include "openvswitch/ofp-match.h"
+#include "ovs-atomic.h"
 #include "ovs-rcu.h"
 #include "packets.h"
 #include "tun-metadata.h"
@@ -40,6 +41,11 @@ struct tun_meta_entry {
 /* Maps from TLV option class+type to positions in a struct tun_metadata's
  * 'opts' array.  */
 struct tun_table {
+     /* Struct tun_table can be referenced by struct frozen_state for a long
+      * time. This ref_cnt protects tun_table from being freed if it is still
+      * being used somewhere. */
+    struct ovs_refcount ref_cnt;
+
     /* TUN_METADATA<i> is stored in element <i>. */
     struct tun_meta_entry entries[TUN_METADATA_NUM_OPTS];
 
@@ -79,6 +85,24 @@ tun_key_type(uint32_t key)
     return key & 0xff;
 }
 
+void
+tun_metadata_ref(const struct tun_table *tab)
+{
+    if (tab) {
+        ovs_refcount_ref(&CONST_CAST(struct tun_table *, tab)->ref_cnt);
+    }
+}
+
+unsigned int
+tun_metadata_unref(const struct tun_table *tab)
+{
+    if (tab) {
+        return ovs_refcount_unref_relaxed(
+                &CONST_CAST(struct tun_table *, tab)->ref_cnt);
+    }
+    return -1;
+}
+
 /* Returns a newly allocated tun_table.  If 'old_map' is nonnull then the new
  * tun_table is a deep copy of the old one. */
 struct tun_table *
@@ -111,6 +135,7 @@ tun_metadata_alloc(const struct tun_table *old_map)
         hmap_init(&new_map->key_hmap);
     }
 
+    ovs_refcount_init(&new_map->ref_cnt);
     return new_map;
 }
 
@@ -135,7 +160,9 @@ tun_metadata_free(struct tun_table *map)
 void
 tun_metadata_postpone_free(struct tun_table *tab)
 {
-    ovsrcu_postpone(tun_metadata_free, tab);
+    if (tun_metadata_unref(tab) == 1) {
+        ovsrcu_postpone(tun_metadata_free, tab);
+    }
 }
 
 enum ofperr

@@ -115,6 +115,7 @@ frozen_metadata_from_flow(struct frozen_metadata *md,
 {
     memset(md, 0, sizeof *md);
     md->tunnel = flow->tunnel;
+    tun_metadata_ref(flow->tunnel.metadata.tab);
     md->metadata = flow->metadata;
     memcpy(md->regs, flow->regs, sizeof md->regs);
     md->in_port = flow->in_port.ofp_port;
@@ -125,6 +126,7 @@ frozen_metadata_to_flow(const struct frozen_metadata *md,
                         struct flow *flow)
 {
     flow->tunnel = md->tunnel;
+    tun_metadata_ref(md->tunnel.metadata.tab);
     flow->metadata = md->metadata;
     memcpy(flow->regs, md->regs, sizeof flow->regs);
     flow->in_port.ofp_port = md->in_port;

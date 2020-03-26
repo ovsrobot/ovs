@@ -33,6 +33,8 @@ struct ofputil_tlv_table_mod;
 struct ofputil_tlv_table_reply;
 struct tun_table;
 
+void tun_metadata_ref(const struct tun_table *tab);
+unsigned int tun_metadata_unref(const struct tun_table *tab);
 struct tun_table *tun_metadata_alloc(const struct tun_table *old_map);
 void tun_metadata_free(struct tun_table *);
 void tun_metadata_postpone_free(struct tun_table *);

@@ -201,6 +201,7 @@ static void
 frozen_state_clone(struct frozen_state *new, const struct frozen_state *old)
 {
     *new = *old;
+    tun_metadata_ref(old->metadata.tunnel.metadata.tab);
     new->stack = (new->stack_size
                   ? xmemdup(new->stack, new->stack_size)
                   : NULL);
@@ -218,10 +219,17 @@ frozen_state_clone(struct frozen_state *new, const struct frozen_state *old)
 static void
 frozen_state_free(struct frozen_state *state)
 {
+    struct tun_table *tab;
+
     free(state->stack);
     free(state->ofpacts);
     free(state->action_set);
     free(state->userdata);
+
+    tab = CONST_CAST(struct tun_table *, state->metadata.tunnel.metadata.tab);
+    if (tun_metadata_unref(tab) == 1) {
+        tun_metadata_free(tab);
+    }
 }
 
 /* Allocate a unique recirculation id for the given set of flow metadata.
