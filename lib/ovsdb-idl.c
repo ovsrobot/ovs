@@ -324,7 +324,8 @@ static bool ovsdb_idl_process_update(struct ovsdb_idl_table *,
 static bool ovsdb_idl_process_update2(struct ovsdb_idl_table *,
                                       const struct uuid *,
                                       const char *operation,
-                                      const struct json *row);
+                                      const struct json *row,
+                                      bool *inconsistent);
 static void ovsdb_idl_insert_row(struct ovsdb_idl_row *, const struct json *);
 static void ovsdb_idl_delete_row(struct ovsdb_idl_row *);
 static bool ovsdb_idl_modify_row(struct ovsdb_idl_row *, const struct json *);
@@ -2320,9 +2321,25 @@ ovsdb_idl_db_parse_update__(struct ovsdb_idl_db *db,
                     row = shash_find_data(json_object(row_update), operation);
 
                     if (row)  {
+                        bool inconsistent = false;
+
                         if (ovsdb_idl_process_update2(table, &uuid, operation,
-                                                      row)) {
+                                                      row, &inconsistent)) {
                             db->change_seqno++;
+                        }
+
+                        /* If the db is in an inconsistent state, clear the
+                         * db->last_id and retry to retrieve the complete DB.
+                         */
+                        if (inconsistent) {
+                            memset(&db->last_id, 0, sizeof db->last_id);
+                            ovsdb_idl_retry(db->idl);
+                            return ovsdb_syntax_error(row_update, NULL,
+                                                      "<row_update2> "
+                                                      "for table \"%s\" "
+                                                      "cannot be processed: "
+                                                      "missed updates",
+                                                      table->class_->name);
                         }
                         break;
                     }
@@ -2447,16 +2464,26 @@ ovsdb_idl_process_update(struct ovsdb_idl_table *table,
 }
 
 /* Returns true if a column with mode OVSDB_IDL_MODE_RW changed, false
- * otherwise. */
+ * otherwise.
+ *
+ * NOTE: When processing the "modify" updates, the IDL can determine that
+ * previous updates were missed (e.g., due to bugs) and that rows that don't
+ * exist locally should be updated. This indicates that the
+ * IDL is in an inconsistent state and, unlike in ovsdb_idl_process_update(),
+ * the missing rows cannot be inserted. If this is the case, 'inconsistent'
+ * is set to true to indicate the catastrophic failure.
+ */
 static bool
 ovsdb_idl_process_update2(struct ovsdb_idl_table *table,
                           const struct uuid *uuid,
                           const char *operation,
-                          const struct json *json_row)
+                          const struct json *json_row,
+                          bool *inconsistent)
 {
     struct ovsdb_idl_row *row;
 
     row = ovsdb_idl_get_row(table, uuid);
+    *inconsistent = false;
     if (!strcmp(operation, "delete")) {
         /* Delete row. */
         if (row && !ovsdb_idl_row_is_orphan(row)) {
@@ -2488,11 +2515,13 @@ ovsdb_idl_process_update2(struct ovsdb_idl_table *table,
                 VLOG_WARN_RL(&semantic_rl, "cannot modify missing but "
                              "referenced row "UUID_FMT" in table %s",
                              UUID_ARGS(uuid), table->class_->name);
+                *inconsistent = true;
                 return false;
             }
         } else {
             VLOG_WARN_RL(&semantic_rl, "cannot modify missing row "UUID_FMT" "
                          "in table %s", UUID_ARGS(uuid), table->class_->name);
+            *inconsistent = true;
             return false;
         }
     } else {
