@@ -2621,9 +2621,8 @@ tc_add_matchall_policer(struct netdev *netdev, uint32_t kbits_rate,
     uint16_t eth_type = (OVS_FORCE uint16_t) htons(ETH_P_ALL);
     size_t basic_offset, action_offset, inner_offset;
     uint16_t prio = TC_RESERVED_PRIORITY_POLICE;
-    int ifindex, index, err = 0;
+    int ifindex, err = 0;
     struct tc_police pol_act;
-    uint32_t block_id = 0;
     struct ofpbuf request;
     struct ofpbuf *reply;
     struct tcmsg *tcmsg;
@@ -2634,10 +2633,9 @@ tc_add_matchall_policer(struct netdev *netdev, uint32_t kbits_rate,
         return err;
     }
 
-    index = block_id ? TCM_IFINDEX_MAGIC_BLOCK : ifindex;
-    tcmsg = tc_make_request(index, RTM_NEWTFILTER, NLM_F_CREATE | NLM_F_ECHO,
+    tcmsg = tc_make_request(ifindex, RTM_NEWTFILTER, NLM_F_CREATE | NLM_F_ECHO,
                             &request);
-    tcmsg->tcm_parent = block_id ? : TC_INGRESS_PARENT;
+    tcmsg->tcm_parent = TC_INGRESS_PARENT;
     tcmsg->tcm_info = tc_make_handle(prio, eth_type);
     tcmsg->tcm_handle = handle;
 
