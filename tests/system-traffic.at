@@ -3301,8 +3301,9 @@ udp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=
 AT_CHECK([ovs-appctl dpctl/flush-conntrack])
 
 dnl Shorten the udp_single and icmp_first timeout in zone 5
+dnl Userspace datapath uses udp_first, and kernel datapath uses udp_single
 VSCTL_ADD_DATAPATH_TABLE()
-AT_CHECK([ovs-vsctl add-zone-tp $DP_TYPE zone=5 udp_single=3 icmp_first=3])
+AT_CHECK([ovs-vsctl add-zone-tp $DP_TYPE zone=5 udp_first=3 udp_single=3 icmp_first=3])
 
 dnl Send ICMP and UDP traffic
 NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.2 | FORMAT_PING], [0], [dnl

@@ -118,6 +118,8 @@ struct conn {
     /* Immutable data. */
     bool alg_related; /* True if alg data connection. */
     enum ct_conn_type conn_type;
+
+    uint32_t tpid; /* Timeout policy ID. */
 };
 
 enum ct_update_res {
@@ -143,9 +145,9 @@ enum ct_update_res {
     CT_TIMEOUT(ICMP_FIRST, 60 * 1000) \
     CT_TIMEOUT(ICMP_REPLY, 30 * 1000)
 
-/* The smallest of the above values: it is used as an upper bound for the
- * interval between two rounds of cleanup of expired entries */
-#define CT_TM_MIN (30 * 1000)
+/* This is used as an upper bound for the interval between two
+ * rounds of cleanup of expired entries */
+#define CT_TM_MIN (1 * 1000)
 
 #define CT_TIMEOUT(NAME, VAL) BUILD_ASSERT_DECL(VAL >= CT_TM_MIN);
     CT_TIMEOUTS
@@ -163,6 +165,7 @@ struct conntrack {
     struct cmap conns OVS_GUARDED;
     struct ovs_list exp_lists[N_CT_TM] OVS_GUARDED;
     struct hmap zone_limits OVS_GUARDED;
+    struct hmap timeout_policies OVS_GUARDED;
     uint32_t hash_basis; /* Salt for hashing a connection key. */
     pthread_t clean_thread; /* Periodically cleans up connection tracker. */
     struct latch clean_thread_exit; /* To destroy the 'clean_thread'. */
@@ -212,16 +215,22 @@ extern long long ct_timeout_val[];
 /* ct_lock must be held. */
 static inline void
 conn_init_expiration(struct conntrack *ct, struct conn *conn,
-                     enum ct_timeout tm, long long now)
+                     enum ct_timeout tm, long long now,
+                     uint32_t tp_value, bool use_default)
 {
-    conn->expiration = now + ct_timeout_val[tm];
+    if (use_default) {
+        conn->expiration = now + ct_timeout_val[tm];
+    } else {
+        conn->expiration = now + tp_value * 1000;
+    }
     ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
 }
 
 /* The conn entry lock must be held on entry and exit. */
 static inline void
 conn_update_expiration(struct conntrack *ct, struct conn *conn,
-                       enum ct_timeout tm, long long now)
+                       enum ct_timeout tm, long long now,
+                       uint32_t tp_value, bool use_default)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     ovs_mutex_unlock(&conn->lock);
@@ -229,7 +238,11 @@ conn_update_expiration(struct conntrack *ct, struct conn *conn,
     ovs_mutex_lock(&ct->ct_lock);
     ovs_mutex_lock(&conn->lock);
     if (!conn->cleaned) {
-        conn->expiration = now + ct_timeout_val[tm];
+        if (use_default) {
+            conn->expiration = now + ct_timeout_val[tm];
+        } else {
+            conn->expiration = now + tp_value * 1000;
+        }
         ovs_list_remove(&conn->exp_node);
         ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
     }
