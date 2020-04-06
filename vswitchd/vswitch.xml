@@ -6138,8 +6138,7 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
 
         <column name="timeouts" key="icmp_reply">
           The timeout of the connection after an ICMP error is replied in
-          response to an ICMP packet.  This timeout is only supported by
-          the userspace datapath.
+          response to an ICMP packet.  This timeout is not supported.
         </column>
       </group>
     </group>
