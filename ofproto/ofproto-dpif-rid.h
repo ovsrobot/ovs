@@ -115,6 +115,13 @@ frozen_metadata_from_flow(struct frozen_metadata *md,
 {
     memset(md, 0, sizeof *md);
     md->tunnel = flow->tunnel;
+    /* It is unsafe for frozen_state to reference tun_table because
+     * tun_table is protected by RCU while the lifecycle of frozen_state
+     * can span several RCU quiesce states.
+     *
+     * The latest valid tun_table can be found by ofproto_get_tun_tab()
+     * efficiently. */
+    md->tunnel.metadata.tab = NULL;
     md->metadata = flow->metadata;
     memcpy(md->regs, flow->regs, sizeof md->regs);
     md->in_port = flow->in_port.ofp_port;

@@ -1535,6 +1535,8 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
             }
 
             frozen_metadata_to_flow(&state->metadata, &frozen_flow);
+            frozen_flow.tunnel.metadata.tab = ofproto_get_tun_tab(
+                &upcall->ofproto->up);
             flow_get_metadata(&frozen_flow, &am->pin.up.base.flow_metadata);
 
             ofproto_dpif_send_async_msg(upcall->ofproto, am);
