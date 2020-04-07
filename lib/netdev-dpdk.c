@@ -1817,7 +1817,11 @@ netdev_dpdk_process_devargs(struct netdev_dpdk *dev,
                     new_port_id = DPDK_ETH_PORT_ID_INVALID;
                 }
             }
-        }
+    } else if (!dev->attached) {  /* Device found in DPDK, check if
+                                   * attached and set if not
+                                   */
+               dev->attached = true;
+       }
     }
 
     if (new_port_id == DPDK_ETH_PORT_ID_INVALID) {
