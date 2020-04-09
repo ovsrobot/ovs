@@ -324,7 +324,8 @@ static bool ovsdb_idl_process_update(struct ovsdb_idl_table *,
 static bool ovsdb_idl_process_update2(struct ovsdb_idl_table *,
                                       const struct uuid *,
                                       const char *operation,
-                                      const struct json *row);
+                                      const struct json *row,
+                                      bool *inconsistent);
 static void ovsdb_idl_insert_row(struct ovsdb_idl_row *, const struct json *);
 static void ovsdb_idl_delete_row(struct ovsdb_idl_row *);
 static bool ovsdb_idl_modify_row(struct ovsdb_idl_row *, const struct json *);
@@ -655,6 +656,19 @@ ovsdb_idl_state_to_string(enum ovsdb_idl_state state)
 static void
 ovsdb_idl_retry_at(struct ovsdb_idl *idl, const char *where)
 {
+    /* If there's an outstanding request of type monitor_cond_change and
+     * we're in monitor_cond_since mode then we can't trust that all relevant
+     * updates from transaction idl->data.last_id have been received as we
+     * might have relaxed the monitor condition with our last request and
+     * might be missing previously not monitored records.
+     *
+     * Clear last_id to make sure that the next time monitor_cond_since is
+     * sent (i.e., after reconnect) we get the complete view of the database.
+     */
+    if (idl->request_id &&
+            idl->data.monitoring == OVSDB_IDL_MONITORING_COND_SINCE) {
+        memset(&idl->data.last_id, 0, sizeof idl->data.last_id);
+    }
     ovsdb_idl_force_reconnect(idl);
     ovsdb_idl_transition_at(idl, IDL_S_RETRY, where);
 }
@@ -1518,6 +1532,24 @@ ovsdb_idl_db_set_condition(struct ovsdb_idl_db *db,
         ovsdb_idl_condition_clone(&table->condition, condition);
         db->cond_changed = table->cond_changed = true;
         poll_immediate_wake();
+
+        /* If the change happens while the IDL is not in state
+         * IDL_S_MONITORING there's no guarantee that the updated
+         * condition doesn't match records that were inserted before the
+         * transaction id received with the most recent update3
+         * (i.e., db->last_id). If the new condition would match such a
+         * record, when the reconnect is successful and "monitor_cond_since"
+         * is be sent, the server will not include the updates that
+         * originally created the record.
+         *
+         * Clear last_id to make sure that the next time monitor_cond_since
+         * is sent (i.e., after reconnect) we get the complete view of the
+         * database.
+         */
+        if (ovsdb_idl_has_ever_connected(db->idl) &&
+                db->idl->state != IDL_S_MONITORING) {
+            memset(&db->last_id, 0, sizeof db->last_id);
+        }
         return seqno + 1;
     }
 
@@ -2318,9 +2350,25 @@ ovsdb_idl_db_parse_update__(struct ovsdb_idl_db *db,
                     row = shash_find_data(json_object(row_update), operation);
 
                     if (row)  {
+                        bool inconsistent = false;
+
                         if (ovsdb_idl_process_update2(table, &uuid, operation,
-                                                      row)) {
+                                                      row, &inconsistent)) {
                             db->change_seqno++;
+                        }
+
+                        /* If the db is in an inconsistent state, clear the
+                         * db->last_id and retry to get the complete view of
+                         * the database.
+                         */
+                        if (inconsistent) {
+                            memset(&db->last_id, 0, sizeof db->last_id);
+                            ovsdb_idl_retry(db->idl);
+                            return ovsdb_error(NULL,
+                                               "<row_update2> received for "
+                                               "inconsistent IDL: "
+                                               "reconnecting IDL with "
+                                               "fast resync disabled");
                         }
                         break;
                     }
@@ -2445,16 +2493,26 @@ ovsdb_idl_process_update(struct ovsdb_idl_table *table,
 }
 
 /* Returns true if a column with mode OVSDB_IDL_MODE_RW changed, false
- * otherwise. */
+ * otherwise.
+ *
+ * NOTE: When processing the "modify" updates, the IDL can determine that
+ * previous updates were missed (e.g., due to bugs) and that rows that don't
+ * exist locally should be updated. This indicates that the
+ * IDL is in an inconsistent state and, unlike in ovsdb_idl_process_update(),
+ * the missing rows cannot be inserted. If this is the case, 'inconsistent'
+ * is set to true to indicate the catastrophic failure.
+ */
 static bool
 ovsdb_idl_process_update2(struct ovsdb_idl_table *table,
                           const struct uuid *uuid,
                           const char *operation,
-                          const struct json *json_row)
+                          const struct json *json_row,
+                          bool *inconsistent)
 {
     struct ovsdb_idl_row *row;
 
     row = ovsdb_idl_get_row(table, uuid);
+    *inconsistent = false;
     if (!strcmp(operation, "delete")) {
         /* Delete row. */
         if (row && !ovsdb_idl_row_is_orphan(row)) {
@@ -2486,11 +2544,13 @@ ovsdb_idl_process_update2(struct ovsdb_idl_table *table,
                 VLOG_WARN_RL(&semantic_rl, "cannot modify missing but "
                              "referenced row "UUID_FMT" in table %s",
                              UUID_ARGS(uuid), table->class_->name);
+                *inconsistent = true;
                 return false;
             }
         } else {
             VLOG_WARN_RL(&semantic_rl, "cannot modify missing row "UUID_FMT" "
                          "in table %s", UUID_ARGS(uuid), table->class_->name);
+            *inconsistent = true;
             return false;
         }
     } else {
