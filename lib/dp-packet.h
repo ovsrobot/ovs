@@ -44,6 +44,7 @@ enum OVS_PACKED_ENUM dp_packet_source {
                                 * ref to dp_packet_init_dpdk() in dp-packet.c.
                                 */
     DPBUF_AFXDP,               /* Buffer data from XDP frame. */
+    DPBUF_TPACKET_V3           /* Buffer data from TPACKET_V3 rx ring */
 };
 
 #define DP_PACKET_CONTEXT_SIZE 64
@@ -139,6 +140,9 @@ void dp_packet_use_const(struct dp_packet *, const void *, size_t);
 #if HAVE_AF_XDP
 void dp_packet_use_afxdp(struct dp_packet *, void *, size_t, size_t);
 #endif
+#if HAVE_TPACKET_V3
+void dp_packet_use_tpacket(struct dp_packet *, void *, size_t, size_t);
+#endif
 void dp_packet_init_dpdk(struct dp_packet *);
 
 void dp_packet_init(struct dp_packet *, size_t);
@@ -204,6 +208,11 @@ dp_packet_delete(struct dp_packet *b)
 
         if (b->source == DPBUF_AFXDP) {
             free_afxdp_buf(b);
+            return;
+        }
+
+        if (b->source == DPBUF_TPACKET_V3) {
+            /* TPACKET_V3 buffer needn't free, it is recycled. */
             return;
         }
 

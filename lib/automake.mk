@@ -316,6 +316,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/unixctl.h \
 	lib/userspace-tso.c \
 	lib/userspace-tso.h \
+	lib/userspace-use-tpacket.c \
+	lib/userspace-use-tpacket.h \
 	lib/util.c \
 	lib/util.h \
 	lib/uuid.c \
