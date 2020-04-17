@@ -359,6 +359,10 @@ AC_DEFUN([OVS_CHECK_DPDK], [
       AC_DEFINE([VHOST_NUMA], [1], [NUMA Aware vHost support detected in DPDK.])
     ], [], [[#include <rte_config.h>]])
 
+    AC_CHECK_DECL([RTE_LIBRTE_PMD_PCAP], [
+      OVS_FIND_DEPENDENCY([pcap_dump], [pcap], [libpcap])
+    ], [], [[#include <rte_config.h>]])
+
     AC_CHECK_DECL([RTE_LIBRTE_MLX5_PMD], [dnl found
       OVS_FIND_DEPENDENCY([mnl_attr_put], [mnl], [libmnl])
       AC_CHECK_DECL([RTE_IBVERBS_LINK_DLOPEN], [], [dnl not found
