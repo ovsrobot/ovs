@@ -778,15 +778,15 @@ ct_dpif_format_zone_limits(uint32_t default_limit,
 }
 
 static const char *const ct_dpif_tp_attr_string[] = {
-#define CT_DPIF_TP_TCP_ATTR(ATTR) \
+#define CT_DPIF_TP_TCP_ATTR(ATTR, VAL) \
     [CT_DPIF_TP_ATTR_TCP_##ATTR] = "TCP_"#ATTR,
     CT_DPIF_TP_TCP_ATTRS
 #undef CT_DPIF_TP_TCP_ATTR
-#define CT_DPIF_TP_UDP_ATTR(ATTR) \
+#define CT_DPIF_TP_UDP_ATTR(ATTR, VAL) \
     [CT_DPIF_TP_ATTR_UDP_##ATTR] = "UDP_"#ATTR,
     CT_DPIF_TP_UDP_ATTRS
 #undef CT_DPIF_TP_UDP_ATTR
-#define CT_DPIF_TP_ICMP_ATTR(ATTR) \
+#define CT_DPIF_TP_ICMP_ATTR(ATTR, VAL) \
     [CT_DPIF_TP_ATTR_ICMP_##ATTR] = "ICMP_"#ATTR,
     CT_DPIF_TP_ICMP_ATTRS
 #undef CT_DPIF_TP_ICMP_ATTR

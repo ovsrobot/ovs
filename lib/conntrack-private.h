@@ -118,6 +118,8 @@ struct conn {
     /* Immutable data. */
     bool alg_related; /* True if alg data connection. */
     enum ct_conn_type conn_type;
+
+    uint32_t tp_id; /* Timeout policy ID. */
 };
 
 enum ct_update_res {
@@ -163,6 +165,7 @@ struct conntrack {
     struct cmap conns OVS_GUARDED;
     struct ovs_list exp_lists[N_CT_TM] OVS_GUARDED;
     struct hmap zone_limits OVS_GUARDED;
+    struct hmap timeout_policies OVS_GUARDED;
     uint32_t hash_basis; /* Salt for hashing a connection key. */
     pthread_t clean_thread; /* Periodically cleans up connection tracker. */
     struct latch clean_thread_exit; /* To destroy the 'clean_thread'. */
@@ -197,7 +200,7 @@ extern struct ct_l4_proto ct_proto_icmp6;
 
 struct ct_l4_proto {
     struct conn *(*new_conn)(struct conntrack *ct, struct dp_packet *pkt,
-                             long long now);
+                             long long now, uint32_t tp_id);
     bool (*valid_new)(struct dp_packet *pkt);
     enum ct_update_res (*conn_update)(struct conntrack *ct, struct conn *conn,
                                       struct dp_packet *pkt, bool reply,
@@ -205,39 +208,6 @@ struct ct_l4_proto {
     void (*conn_get_protoinfo)(const struct conn *,
                                struct ct_dpif_protoinfo *);
 };
-
-extern long long ct_timeout_val[];
-
-
-/* ct_lock must be held. */
-static inline void
-conn_init_expiration(struct conntrack *ct, struct conn *conn,
-                     enum ct_timeout tm, long long now)
-{
-    conn->expiration = now + ct_timeout_val[tm];
-    ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
-}
-
-/* The conn entry lock must be held on entry and exit. */
-static inline void
-conn_update_expiration(struct conntrack *ct, struct conn *conn,
-                       enum ct_timeout tm, long long now)
-    OVS_NO_THREAD_SAFETY_ANALYSIS
-{
-    ovs_mutex_unlock(&conn->lock);
-
-    ovs_mutex_lock(&ct->ct_lock);
-    ovs_mutex_lock(&conn->lock);
-    if (!conn->cleaned) {
-        conn->expiration = now + ct_timeout_val[tm];
-        ovs_list_remove(&conn->exp_node);
-        ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
-    }
-    ovs_mutex_unlock(&conn->lock);
-    ovs_mutex_unlock(&ct->ct_lock);
-
-    ovs_mutex_lock(&conn->lock);
-}
 
 static inline uint32_t
 tcp_payload_length(struct dp_packet *pkt)
