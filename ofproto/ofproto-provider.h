@@ -586,6 +586,7 @@ struct ofgroup {
     struct ofputil_group_props props;
 
     struct rule_collection rules OVS_GUARDED;   /* Referring rules. */
+    uint32_t rgroups OVS_GUARDED; /* Referring groups. */
 };
 
 struct pkt_stats {

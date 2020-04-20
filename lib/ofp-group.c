@@ -1375,6 +1375,10 @@ ofputil_pull_ofp11_buckets(struct ofpbuf *msg, size_t buckets_length,
 
         bucket->ofpacts = ofpbuf_steal_data(&ofpacts);
         bucket->ofpacts_len = ofpacts.size;
+        bucket->has_groups =
+            (ofpact_find_type_flattened(bucket->ofpacts, OFPACT_GROUP,
+                        ofpact_end(bucket->ofpacts, bucket->ofpacts_len))
+            != NULL);
         ovs_list_push_back(buckets, &bucket->list_node);
     }
 

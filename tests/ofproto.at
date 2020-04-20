@@ -6447,3 +6447,71 @@ verify_deleted
 
 OVS_VSWITCHD_STOP(["/<invalid/d"])
 AT_CLEANUP
+
+# Check the reference count of the groups using stats reply
+AT_SETUP([ofproto - flow ref_count])
+OVS_VSWITCHD_START
+AT_DATA([groups.txt], [dnl
+group_id=1233,type=all,bucket=output:10
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn add-groups br0 groups.txt])
+AT_DATA([flows.txt], [dnl
+tcp actions=group:1233
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn add-flows br0 flows.txt])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-flows br0 | ofctl_strip | sort],
+[0], [dnl
+ tcp actions=group:1233
+OFPST_FLOW reply (OF1.3):
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-group-stats br0], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sed 's/duration=[[0-9.]]*s/duration=?s/'], [0], [dnl
+OFPST_GROUP reply (OF1.3):
+ group_id=1233,duration=?s,ref_count=1,packet_count=0,byte_count=0,bucket0:packet_count=0,byte_count=0
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([ofproto - group ref_count])
+OVS_VSWITCHD_START
+AT_DATA([groups.txt], [dnl
+group_id=1233,type=indirect,bucket=output:10
+group_id=1234,type=all,bucket=group:1233
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn add-groups br0 groups.txt])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-group-stats br0], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sed 's/duration=[[0-9.]]*s/duration=?s/' | sort], [0], [dnl
+ group_id=1233,duration=?s,ref_count=1,packet_count=0,byte_count=0,bucket0:packet_count=0,byte_count=0
+ group_id=1234,duration=?s,ref_count=0,packet_count=0,byte_count=0,bucket0:packet_count=0,byte_count=0
+OFPST_GROUP reply (OF1.3):
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([ofproto - mixed ref_count])
+OVS_VSWITCHD_START
+AT_DATA([groups.txt], [dnl
+group_id=1233,type=indirect,bucket=output:10
+group_id=1234,type=all,bucket=group:1233
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn add-groups br0 groups.txt])
+AT_DATA([flows.txt], [dnl
+tcp actions=group:1233
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn add-flows br0 flows.txt])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-flows br0 | ofctl_strip | sort],
+[0], [dnl
+ tcp actions=group:1233
+OFPST_FLOW reply (OF1.3):
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-group-stats br0], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sed 's/duration=[[0-9.]]*s/duration=?s/' | sort], [0], [dnl
+ group_id=1233,duration=?s,ref_count=2,packet_count=0,byte_count=0,bucket0:packet_count=0,byte_count=0
+ group_id=1234,duration=?s,ref_count=0,packet_count=0,byte_count=0,bucket0:packet_count=0,byte_count=0
+OFPST_GROUP reply (OF1.3):
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP

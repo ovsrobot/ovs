@@ -299,9 +299,9 @@ AT_DATA([flows.txt], [dnl
 ])
 
 AT_DATA([groups.txt], [dnl
-    add group_id=100,type=indirect,bucket=actions=encap(nsh(md_type=1)),set_field:0x1234->nsh_spi,set_field:0x11223344->nsh_c1,group:200
-    add group_id=200,type=indirect,bucket=actions=encap(nsh(md_type=1)),set_field:0x5678->nsh_spi,set_field:0x55667788->nsh_c1,group:300
     add group_id=300,type=indirect,bucket=actions=encap(ethernet),set_field:11:22:33:44:55:66->dl_dst,3
+    add group_id=200,type=indirect,bucket=actions=encap(nsh(md_type=1)),set_field:0x5678->nsh_spi,set_field:0x55667788->nsh_c1,group:300
+    add group_id=100,type=indirect,bucket=actions=encap(nsh(md_type=1)),set_field:0x1234->nsh_spi,set_field:0x11223344->nsh_c1,group:200
 ])
 
 AT_CHECK([

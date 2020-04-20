@@ -3075,7 +3075,9 @@ ofproto_group_unref(struct ofgroup *group)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     if (group && ovs_refcount_unref_relaxed(&group->ref_count) == 1) {
+        /* There are no rules nor groups still referencing it. */
         ovs_assert(rule_collection_n(&group->rules) == 0);
+        ovs_assert(group->rgroups == 0);
         ovsrcu_postpone(group_destroy_cb, group);
     }
 }
@@ -7101,6 +7103,45 @@ group_remove_rule(struct ofgroup *group, struct rule *rule)
 }
 
 static void
+group_add_rgroup(struct ofgroup *group)
+{
+    group->rgroups++;
+}
+
+static void
+group_remove_rgroup(struct ofgroup *group)
+{
+    group->rgroups--;
+}
+
+/* Iterates over the buckets and updates the rgroups count
+ * in the referenced groups. */
+static void
+update_group_references(struct ofproto *ofproto, struct ofgroup *ogroup,
+                        bool add)
+{
+    struct ofputil_bucket *bucket;
+    LIST_FOR_EACH (bucket, list_node, &ogroup->buckets) {
+        if (bucket->has_groups) {
+            /* Iterate over the group actions and update the references */
+            const struct ofpact_group *a;
+            OFPACT_FOR_EACH_TYPE_FLATTENED (a, GROUP, bucket->ofpacts,
+                                            bucket->ofpacts_len) {
+                struct ofgroup *group;
+                group = ofproto_group_lookup(ofproto, a->group_id,
+                                             OVS_VERSION_MAX, false);
+                ovs_assert(group != NULL);
+                if (add) {
+                    group_add_rgroup(group);
+                } else {
+                    group_remove_rgroup(group);
+                }
+            }
+        }
+    }
+}
+
+static void
 append_group_stats(struct ofgroup *group, struct ovs_list *replies)
     OVS_REQUIRES(ofproto_mutex)
 {
@@ -7112,7 +7153,7 @@ append_group_stats(struct ofgroup *group, struct ovs_list *replies)
     ogs.bucket_stats = xmalloc(group->n_buckets * sizeof *ogs.bucket_stats);
 
     /* Provider sets the packet and byte counts, we do the rest. */
-    ogs.ref_count = rule_collection_n(&group->rules);
+    ogs.ref_count = rule_collection_n(&group->rules) + group->rgroups;
     ogs.n_buckets = group->n_buckets;
 
     error = (ofproto->ofproto_class->group_get_stats
@@ -7349,6 +7390,7 @@ init_group(struct ofproto *ofproto, const struct ofputil_group_mod *gm,
                                              &(*ofgroup)->props),
                                   &gm->props);
     rule_collection_init(&(*ofgroup)->rules);
+    *CONST_CAST(uint32_t *, &((*ofgroup)->rgroups)) = 0;
 
     /* Make group visible from 'version'. */
     (*ofgroup)->versions = VERSIONS_INITIALIZER(version,
@@ -7391,6 +7433,8 @@ add_group_start(struct ofproto *ofproto, struct ofproto_group_mod *ogm)
         cmap_insert(&ofproto->groups, &ogm->new_group->cmap_node,
                     hash_int(ogm->new_group->group_id, 0));
         ofproto->n_groups[ogm->new_group->type]++;
+        /* Update group references. */
+        update_group_references(ofproto, ogm->new_group, true);
     }
     return error;
 }
@@ -7551,6 +7595,11 @@ modify_group_start(struct ofproto *ofproto, struct ofproto_group_mod *ogm)
         goto out;
     }
 
+    /* Remove all the references from the groups. */
+    update_group_references(ofproto, old_group, false);
+    /* Add back all the references without making the diff. */
+    update_group_references(ofproto, new_group, true);
+
     /* The group creation time does not change during modification. */
     *CONST_CAST(long long int *, &(new_group->created)) = old_group->created;
     *CONST_CAST(long long int *, &(new_group->modified)) = time_msec();
@@ -7608,6 +7657,7 @@ delete_group_start(struct ofproto *ofproto, ovs_version_t version,
     group->being_deleted = true;
 
     /* Mark all the referring groups for deletion. */
+    /* Why is needed ? */
     delete_flows_start__(ofproto, version, &group->rules);
     group_collection_add(groups, group);
     versions_set_remove_version(&group->versions, version);
@@ -7633,6 +7683,14 @@ delete_groups_start(struct ofproto *ofproto, struct ofproto_group_mod *ogm)
     struct ofgroup *group;
 
     if (ogm->gm.group_id == OFPG_ALL) {
+        /* Unless there is a way to do things in order.
+         * To make sure there are no pending references. */
+        CMAP_FOR_EACH (group, cmap_node, &ofproto->groups) {
+            if (versions_visible_in_version(&group->versions, ogm->version)) {
+                /* Remove all the references for the other groups.*/
+                update_group_references(ofproto, group, false);
+            }
+        }
         CMAP_FOR_EACH (group, cmap_node, &ofproto->groups) {
             if (versions_visible_in_version(&group->versions, ogm->version)) {
                 delete_group_start(ofproto, ogm->version, &ogm->old_groups,
@@ -7640,8 +7698,11 @@ delete_groups_start(struct ofproto *ofproto, struct ofproto_group_mod *ogm)
             }
         }
     } else {
-        group = ofproto_group_lookup__(ofproto, ogm->gm.group_id, ogm->version);
+        group = ofproto_group_lookup__(ofproto, ogm->gm.group_id,
+                                       ogm->version);
         if (group) {
+            /* Remove all the references for the other groups.*/
+            update_group_references(ofproto, group, false);
             delete_group_start(ofproto, ogm->version, &ogm->old_groups, group);
         }
     }
@@ -7708,16 +7769,24 @@ ofproto_group_mod_revert(struct ofproto *ofproto,
             ovs_assert(group_collection_n(&ogm->old_groups) == 1);
             /* Transfer rules back. */
             rule_collection_move(&old_group->rules, &new_group->rules);
+            /* Remove the new references and restore the old ones. */
+            update_group_references(ofproto, new_group, false);
+            update_group_references(ofproto, old_group, true);
         } else {
             old_group->being_deleted = false;
             /* Revert rule deletion. */
             delete_flows_revert__(ofproto, &old_group->rules);
+            /* Restore the old references. */
+            update_group_references(ofproto, old_group, true);
         }
         /* Restore visibility. */
         versions_set_remove_version(&old_group->versions,
                                     OVS_VERSION_NOT_REMOVED);
     }
+    /* Revert new added groups. */
     if (new_group) {
+        /* Remove the new references. */
+        update_group_references(ofproto, new_group, false);
         /* Remove the new group immediately.  It was never visible to
          * lookups. */
         cmap_remove(&ofproto->groups, &new_group->cmap_node,

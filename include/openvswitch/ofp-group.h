@@ -58,6 +58,9 @@ struct ofputil_bucket {
     struct ofpact *ofpacts;     /* Series of "struct ofpact"s. */
     size_t ofpacts_len;         /* Length of ofpacts, in bytes. */
 
+    bool has_groups;            /* 'has_groups' is true if 'ofpacts' contains
+                                 * an OFPACT_GROUP action .*/
+
     struct bucket_counter stats;
 };
 
