@@ -109,7 +109,7 @@ else
     done
     if [ -x "/sbin/weak-modules" ]; then
         for m in openvswitch vport-gre vport-stt vport-geneve \
-                 vport-lisp vport-vxlan; do
+                 vport-lisp vport-vxlan vport-bareudp; do
             echo "/lib/modules/%{kernel}/extra/openvswitch/$m.ko"
         done | /sbin/weak-modules --add-modules
     fi

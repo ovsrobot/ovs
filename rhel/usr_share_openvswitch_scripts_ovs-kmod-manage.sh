@@ -196,7 +196,7 @@ if [ "$requested_kernel" != "$current_kernel" ]; then
         mkdir -p /lib/modules/$current_kernel/weak-updates/openvswitch
     fi
     for m in openvswitch vport-gre vport-stt vport-geneve \
-        vport-lisp vport-vxlan; do
+        vport-lisp vport-vxlan vport-bareudp; do
         ln -f -s /lib/modules/$requested_kernel/extra/openvswitch/$m.ko \
             /lib/modules/$current_kernel/weak-updates/openvswitch/$m.ko
     done

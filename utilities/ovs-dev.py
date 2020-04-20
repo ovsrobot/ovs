@@ -369,6 +369,7 @@ Basic Configuration:
     # If needed, manually load all required vport modules:
     sudo insmod %(ovs)s/datapath/linux/vport-vxlan.ko
     sudo insmod %(ovs)s/datapath/linux/vport-geneve.ko
+    sudo insmod %(ovs)s/datapath/linux/vport-bareudp.ko
     [...]
 
     # Run the switch.
