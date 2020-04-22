@@ -690,6 +690,25 @@ ovsdb_idl_send_request(struct ovsdb_idl *idl, struct jsonrpc_msg *request)
 static void
 ovsdb_idl_restart_fsm(struct ovsdb_idl *idl)
 {
+    /* If there's an outstanding request of type monitor_cond_change and
+     * we're in monitor_cond_since mode then we can't trust that all relevant
+     * updates from transaction idl->data.last_id have been received as we
+     * might have relaxed the monitor condition with our last request and
+     * might be missing previously not monitored records.
+     *
+     * Same reasoning applies for the case when a monitor condition has been
+     * changed locally but the monitor_cond_change request was not sent yet.
+     *
+     * In both cases, clear last_id to make sure that the next time
+     * monitor_cond_since is sent (i.e., after reconnect) we get the complete
+     * view of the database.
+     */
+    if (idl->data.cond_changed ||
+            (idl->request_id &&
+                idl->data.monitoring == OVSDB_IDL_MONITORING_COND_SINCE)) {
+        uuid_zero(&idl->data.last_id);
+    }
+
     ovsdb_idl_send_schema_request(idl, &idl->server);
     ovsdb_idl_transition(idl, IDL_S_SERVER_SCHEMA_REQUESTED);
     idl->data.monitoring = OVSDB_IDL_NOT_MONITORING;
