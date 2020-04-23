@@ -29,7 +29,137 @@ AT_CHECK([ovs-appctl revalidator/wait])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([ofproto-dpif - active-backup bonding])
+AT_SETUP([ofproto-dpif - active-backup bonding (with primary)])
+
+# Create br0 with interfaces p1, p2 and p7, creating bond0 with p1 and
+#    p2 (p1 as primary) and br1 with interfaces p3, p4 and p8.
+# toggle p1,p2 of bond0 up and down to test bonding in active-backup mode.
+# With p1 down and p2 up/active, bring p1 back up.  Since p1 is the primary,
+# it should become active.
+OVS_VSWITCHD_START(
+  [add-bond br0 bond0 p1 p2 bond_mode=active-backup \
+                other_config:bond-primary=p1 -- \
+   set interface p1 type=dummy options:pstream=punix:$OVS_RUNDIR/p1.sock ofport_request=1 -- \
+   set interface p2 type=dummy options:pstream=punix:$OVS_RUNDIR/p2.sock ofport_request=2 -- \
+   add-port br0 p7 -- set interface p7 ofport_request=7 type=dummy -- \
+   add-br br1 -- \
+   set bridge br1 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   set bridge br1 datapath-type=dummy other-config:datapath-id=1234 \
+                  fail-mode=secure -- \
+   add-port br1 p3 -- set interface p3 type=dummy options:stream=unix:$OVS_RUNDIR/p1.sock ofport_request=3 -- \
+   add-port br1 p4 -- set interface p4 type=dummy options:stream=unix:$OVS_RUNDIR/p2.sock ofport_request=4 -- \
+   add-port br1 p8 -- set interface p8 ofport_request=8 type=dummy --])
+WAIT_FOR_DUMMY_PORTS([p3], [p4])
+AT_CHECK([test -n "`ovs-appctl bond/show | grep 'primary: p1'`"])
+AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
+
+AT_CHECK([ovs-ofctl add-flow br0 action=normal])
+AT_CHECK([ovs-ofctl add-flow br1 action=normal])
+ovs-appctl netdev-dummy/set-admin-state up
+ovs-appctl time/warp 100
+ovs-appctl netdev-dummy/set-admin-state p2 down
+ovs-appctl time/stop
+ovs-appctl time/warp 100
+AT_CHECK([ovs-appctl netdev-dummy/receive p7 'in_port(7),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+AT_CHECK([ovs-appctl netdev-dummy/receive p7 'in_port(7),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(src=10.0.0.3,dst=10.0.0.4,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+ovs-appctl time/warp 100
+ovs-appctl netdev-dummy/set-admin-state p2 up
+ovs-appctl netdev-dummy/set-admin-state p1 down
+wovs-appctl time/warp 100
+AT_CHECK([ovs-appctl netdev-dummy/receive p7 'in_port(7),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0d),eth_type(0x0800),ipv4(src=10.0.0.5,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+AT_CHECK([ovs-appctl netdev-dummy/receive p7 'in_port(7),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0e),eth_type(0x0800),ipv4(src=10.0.0.6,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+ovs-appctl time/warp 200 100
+sleep 1
+AT_CHECK([grep 'in_port([[348]])' ovs-vswitchd.log | filter_flow_install | strip_xout], [0], [dnl
+recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(frag=no), actions: <del>
+recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(frag=no), actions: <del>
+recirc_id(0),in_port(4),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0d),eth_type(0x0800),ipv4(frag=no), actions: <del>
+recirc_id(0),in_port(4),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0e),eth_type(0x0800),ipv4(frag=no), actions: <del>
+recirc_id(0),in_port(4),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=ff:ff:ff:ff:ff:ff),eth_type(0x8035), actions: <del>
+recirc_id(0),in_port(4),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=ff:ff:ff:ff:ff:ff),eth_type(0x8035), actions: <del>
+])
+
+ovs-appctl netdev-dummy/set-admin-state p1 up
+AT_CHECK([ovs-appctl bond/show | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC], [0], [dnl
+---- bond0 ----
+bond_mode: active-backup
+bond may use recirculation: no, <del>
+bond-hash-basis: 0
+updelay: 0 ms
+downdelay: 0 ms
+lacp_status: off
+lacp_fallback_ab: false
+primary: p1
+<active slave mac del>
+
+slave p1: enabled
+  active slave
+  may_enable: true
+
+slave p2: enabled
+  may_enable: true
+
+])
+
+AT_CHECK([test -n "`ovs-appctl bond/show | grep 'primary: p1'`"])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([ofproto-dpif - active-backup bonding (primary validation)])
+# Make a switch with 3 ports in a bond, so that when we delete one of
+# the ports from the bond, there are still 2 ports left and the bond
+# remains functional.
+OVS_VSWITCHD_START(
+  [add-bond br0 bond0 p1 p2 p3 bond_mode=active-backup \
+                other_config:bond-primary=p1 -- \
+   set interface p1 type=dummy options:pstream=punix:$OVS_RUNDIR/p1.sock ofport_request=1 -- \
+   set interface p2 type=dummy options:pstream=punix:$OVS_RUNDIR/p2.sock ofport_request=2 -- \
+   set interface p3 type=dummy options:pstream=punix:$OVS_RUNDIR/p3.sock ofport_request=3 -- \
+   add-port br0 p7 -- set interface p7 ofport_request=7 type=dummy --])
+
+dnl Make sure the initial primary interface is set
+AT_CHECK([test -n "`ovs-appctl bond/show | grep 'primary: p1'`"])
+
+dnl Down the primary interface and verify that we switched.  Then
+dnl bring the primary back and verify that we switched back to the
+dnl primary.
+ovs-appctl netdev-dummy/set-admin-state p1 down
+AT_CHECK([test -n "`ovs-appctl bond/show | fgrep 'slave p1: disabled'`"])
+ovs-appctl netdev-dummy/set-admin-state p1 up
+AT_CHECK([ovs-appctl bond/show | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC], [0], [dnl
+---- bond0 ----
+bond_mode: active-backup
+bond may use recirculation: no, <del>
+bond-hash-basis: 0
+updelay: 0 ms
+downdelay: 0 ms
+lacp_status: off
+lacp_fallback_ab: false
+primary: p1
+<active slave mac del>
+
+slave p1: enabled
+  active slave
+  may_enable: true
+
+slave p2: enabled
+  may_enable: true
+
+slave p3: enabled
+  may_enable: true
+
+])
+
+dnl Now delete the primary and verify that the output shows that the
+dnl primary is no longer enslaved
+ovs-vsctl --id=@p1 get Interface p1 -- remove Port bond0 interfaces @p1
+AT_CHECK([test -n "`ovs-appctl bond/show | fgrep 'primary: p1 (no such slave)'`"])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([ofproto-dpif - active-backup bonding (without primary)])
 # Create br0 with interfaces p1, p2 and p7, creating bond0 with p1 and p2
 #    and br1 with interfaces p3, p4 and p8.
 # toggle p1,p2 of bond0 up and down to test bonding in active-backup mode.
@@ -46,6 +176,7 @@ OVS_VSWITCHD_START(
    add-port br1 p4 -- set interface p4 type=dummy options:stream=unix:$OVS_RUNDIR/p2.sock ofport_request=4 -- \
    add-port br1 p8 -- set interface p8 ofport_request=8 type=dummy --])
 WAIT_FOR_DUMMY_PORTS([p3], [p4])
+AT_CHECK([test -n "`ovs-appctl bond/show | grep 'primary: <none>'`"])
 AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
 
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
