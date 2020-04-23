@@ -2207,33 +2207,8 @@ netdev_linux_get_stats(const struct netdev *netdev_,
     } else if (netdev->vport_stats_error) {
         /* stats not available from OVS then use netdev stats. */
         *stats = dev_stats;
-    } else {
-        /* Use kernel netdev's packet and byte counts since vport's counters
-         * do not reflect packet counts on the wire when GSO, TSO or GRO are
-         * enabled. */
-        stats->rx_packets = dev_stats.rx_packets;
-        stats->rx_bytes = dev_stats.rx_bytes;
-        stats->tx_packets = dev_stats.tx_packets;
-        stats->tx_bytes = dev_stats.tx_bytes;
-
-        stats->rx_errors           += dev_stats.rx_errors;
-        stats->tx_errors           += dev_stats.tx_errors;
-        stats->rx_dropped          += dev_stats.rx_dropped;
-        stats->tx_dropped          += dev_stats.tx_dropped;
-        stats->multicast           += dev_stats.multicast;
-        stats->collisions          += dev_stats.collisions;
-        stats->rx_length_errors    += dev_stats.rx_length_errors;
-        stats->rx_over_errors      += dev_stats.rx_over_errors;
-        stats->rx_crc_errors       += dev_stats.rx_crc_errors;
-        stats->rx_frame_errors     += dev_stats.rx_frame_errors;
-        stats->rx_fifo_errors      += dev_stats.rx_fifo_errors;
-        stats->rx_missed_errors    += dev_stats.rx_missed_errors;
-        stats->tx_aborted_errors   += dev_stats.tx_aborted_errors;
-        stats->tx_carrier_errors   += dev_stats.tx_carrier_errors;
-        stats->tx_fifo_errors      += dev_stats.tx_fifo_errors;
-        stats->tx_heartbeat_errors += dev_stats.tx_heartbeat_errors;
-        stats->tx_window_errors    += dev_stats.tx_window_errors;
     }
+
     ovs_mutex_unlock(&netdev->mutex);
 
     return error;
