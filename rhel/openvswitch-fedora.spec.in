@@ -60,9 +60,15 @@ BuildRequires: autoconf automake libtool
 BuildRequires: systemd-units openssl openssl-devel
 BuildRequires: python3-devel
 BuildRequires: desktop-file-utils
-BuildRequires: groff graphviz
-BuildRequires: checkpolicy, selinux-policy-devel
+%if 0%{?rhel} >= 8
+BuildRequires: groff-base
+BuildRequires: python3-sphinx
+%else
+BuildRequires: groff
 BuildRequires: /usr/bin/sphinx-build-3
+%endif
+BuildRequires: graphviz
+BuildRequires: checkpolicy, selinux-policy-devel
 # make check dependencies
 BuildRequires: procps-ng
 %if %{with libcapng}

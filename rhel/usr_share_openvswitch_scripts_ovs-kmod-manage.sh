@@ -75,6 +75,11 @@ IFS='.\|-' read mainline_major mainline_minor mainline_patch major_rev \
 # echo mainline_major=$mainline_major mainline_minor=$mainline_minor \
 # mainline_patch=$mainline_patch major_rev=$major_rev minor_rev=$minor_rev
 
+if [ "$mainline_major" = "4" ]; then
+    # Skip this script on rhel8
+    exit 0
+fi
+
 expected_rhel_base_minor="el7"
 if [ "$mainline_major" = "3" ] && [ "$mainline_minor" = "10" ]; then
     if [ "$major_rev" = "327" ]; then
