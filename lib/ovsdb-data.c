@@ -1033,8 +1033,12 @@ free_data(enum ovsdb_atomic_type type,
 void
 ovsdb_datum_destroy(struct ovsdb_datum *datum, const struct ovsdb_type *type)
 {
-    free_data(type->key.type, datum->keys, datum->n);
-    free_data(type->value.type, datum->values, datum->n);
+    if (datum->keys) {
+        free_data(type->key.type, datum->keys, datum->n);
+    }
+    if (datum->values) {
+        free_data(type->value.type, datum->values, datum->n);
+    }
 }
 
 /* Swaps the contents of 'a' and 'b', which need not have the same type. */
