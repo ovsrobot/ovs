@@ -4563,6 +4563,11 @@ port_configure_bond(struct port *port, struct bond_settings *s)
                   port->name);
     }
 
+    s->primary = NULL;
+    if (s->balance == BM_AB) {
+        s->primary = smap_get(&port->cfg->other_config, "bond-primary");
+    }
+
     miimon_interval = smap_get_int(&port->cfg->other_config,
                                    "bond-miimon-interval", 0);
     if (miimon_interval <= 0) {
