@@ -93,6 +93,7 @@ struct bond_slave {
     /* Link status. */
     bool enabled;               /* May be chosen for flows? */
     bool may_enable;            /* Client considers this slave bondable. */
+    bool is_primary;            /* This slave is preferred over others. */
     long long delay_expires;    /* Time after which 'enabled' may change. */
 
     /* Rebalancing info.  Used only by bond_rebalance(). */
@@ -126,6 +127,7 @@ struct bond {
     enum lacp_status lacp_status; /* Status of LACP negotiations. */
     bool bond_revalidate;       /* True if flows need revalidation. */
     uint32_t basis;             /* Basis for flow hash function. */
+    char *primary;              /* Name of the primary slave interface. */
 
     /* SLB specific bonding info. */
     struct bond_entry *hash;     /* An array of BOND_BUCKETS elements. */
@@ -241,6 +243,7 @@ bond_create(const struct bond_settings *s, struct ofproto_dpif *ofproto)
 
     bond->active_slave_mac = eth_addr_zero;
     bond->active_slave_changed = false;
+    bond->primary = NULL;
 
     bond_reconfigure(bond, s);
     return bond;
@@ -290,6 +293,7 @@ bond_unref(struct bond *bond)
     update_recirc_rules__(bond);
 
     hmap_destroy(&bond->pr_rule_ops);
+    free(bond->primary);
     free(bond->name);
     free(bond);
 }
@@ -459,6 +463,31 @@ bond_reconfigure(struct bond *bond, const struct bond_settings *s)
         bond->bond_revalidate = false;
     }
 
+    /*
+     * If a primary interface is set on the new settings:
+     * 1. If the bond has no primary previously set, save it and
+     * revalidate.
+     * 2. If the bond has a different primary previously set, save the
+     * new one and revalidate.
+     * 3. If the bond has the same primary previously set, do nothing.
+     */
+    if (s->primary) {
+        bool changed = false;
+        if (bond->primary) {
+            if (strcmp(bond->primary, s->primary)) {
+                free(bond->primary);
+                changed = true;
+            }
+        } else {
+            changed = true;
+        }
+
+        if (changed) {
+            bond->primary = xstrdup(s->primary);
+            revalidate = true;
+        }
+    }
+
     if (bond->balance != BM_AB) {
         if (!bond->recirc_id) {
             bond->recirc_id = recirc_alloc_id(bond->ofproto);
@@ -548,6 +577,12 @@ bond_slave_register(struct bond *bond, void *slave_,
         slave->delay_expires = LLONG_MAX;
         slave->name = xstrdup(netdev_get_name(netdev));
         bond->bond_revalidate = true;
+
+        if (bond->primary && !strcmp(bond->primary, slave->name)) {
+            slave->is_primary = true;
+        } else {
+            slave->is_primary = false;
+        }
 
         slave->enabled = false;
         bond_enable_slave(slave, netdev_get_carrier(netdev));
@@ -644,6 +679,7 @@ bond_run(struct bond *bond, enum lacp_status lacp_status)
 {
     struct bond_slave *slave;
     bool revalidate;
+    struct bond_slave *primary;
 
     ovs_rwlock_wrlock(&rwlock);
     if (bond->lacp_status != lacp_status) {
@@ -659,11 +695,19 @@ bond_run(struct bond *bond, enum lacp_status lacp_status)
     }
 
     /* Enable slaves based on link status and LACP feedback. */
+    primary = NULL;
     HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
         bond_link_status_update(slave);
         slave->change_seq = seq_read(connectivity_seq_get());
+
+        /* Discover if there is an active slave marked "primary". */
+        if (bond->balance == BM_AB && slave->is_primary && slave->enabled) {
+            primary = slave;
+        }
     }
-    if (!bond->active_slave || !bond->active_slave->enabled) {
+
+    if (!bond->active_slave || !bond->active_slave->enabled ||
+        (primary && bond->active_slave != primary)) {
         bond_choose_active_slave(bond);
     }
 
@@ -1393,6 +1437,20 @@ bond_print_details(struct ds *ds, const struct bond *bond)
     ds_put_format(ds, "lacp_fallback_ab: %s\n",
                   bond->lacp_fallback_ab ? "true" : "false");
 
+    bool found_primary = false;
+    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
+        if (slave->is_primary) {
+            found_primary = true;
+        }
+    }
+
+    if (bond->balance == BM_AB) {
+        ds_put_format(ds, "primary: %s%s\n",
+                      bond->primary ? bond->primary : "<none>",
+                      (!found_primary && bond->primary) ?
+                      " (no such slave)" : "");
+    }
+
     ds_put_cstr(ds, "active slave mac: ");
     ds_put_format(ds, ETH_ADDR_FMT, ETH_ADDR_ARGS(bond->active_slave_mac));
     slave = bond_find_slave_by_mac(bond, bond->active_slave_mac);
@@ -1861,6 +1919,13 @@ static struct bond_slave *
 bond_choose_slave(const struct bond *bond)
 {
     struct bond_slave *slave, *best;
+
+    /* If there's a primary and it's active, return that. */
+    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
+        if (slave->is_primary && slave->enabled) {
+            return slave;
+        }
+    }
 
     /* Find the last active slave. */
     slave = bond_find_slave_by_mac(bond, bond->active_slave_mac);
