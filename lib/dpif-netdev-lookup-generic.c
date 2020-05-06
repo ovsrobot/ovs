@@ -18,6 +18,7 @@
 #include <config.h>
 #include "dpif-netdev.h"
 #include "dpif-netdev-private.h"
+#include "dpif-netdev-lookup.h"
 
 #include "bitmap.h"
 #include "cmap.h"
@@ -254,7 +255,7 @@ lookup_generic_impl(struct dpcls_subtable *subtable,
 }
 
 /* Generic lookup function that uses runtime provided mf bits for iterating. */
-uint32_t
+static uint32_t
 dpcls_subtable_lookup_generic(struct dpcls_subtable *subtable,
                               uint32_t keys_map,
                               const struct netdev_flow_key *keys[],
@@ -310,6 +311,10 @@ dpcls_subtable_generic_probe(uint32_t u0_bits, uint32_t u1_bits)
     if (f) {
         VLOG_DBG("Subtable using Generic Optimized for u0 %d, u1 %d\n",
                  u0_bits, u1_bits);
+    } else {
+        /* Always return the generic function */
+        f = dpcls_subtable_lookup_generic;
     }
+
     return f;
 }
