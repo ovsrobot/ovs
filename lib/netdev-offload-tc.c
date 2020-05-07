@@ -1939,6 +1939,7 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         ovsthread_once_done(&multi_mask_once);
     }
 
+    block_id = get_block_id_from_netdev(netdev);
     error = tc_add_del_qdisc(ifindex, true, block_id, hook);
 
     if (error && error != EEXIST) {
