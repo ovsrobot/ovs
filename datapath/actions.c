@@ -185,7 +185,7 @@ static void update_ethertype(struct sk_buff *skb, struct ethhdr *hdr,
 }
 
 static int push_mpls(struct sk_buff *skb, struct sw_flow_key *key,
-		     const struct ovs_action_push_mpls *mpls)
+		      __be32 mpls_lse, __be16 mpls_ethertype, __u16 mac_len)
 {
 	struct mpls_shim_hdr *new_mpls_lse;
 
@@ -197,26 +197,30 @@ static int push_mpls(struct sk_buff *skb, struct sw_flow_key *key,
 		return -ENOMEM;
 
 	if (!ovs_skb_get_inner_protocol(skb)) {
-		skb_set_inner_network_header(skb, skb->mac_len);
+		skb_set_inner_network_header(skb, skb_network_offset(skb));
 		ovs_skb_set_inner_protocol(skb, skb->protocol);
 	}
 
 	skb_push(skb, MPLS_HLEN);
 	memmove(skb_mac_header(skb) - MPLS_HLEN, skb_mac_header(skb),
-		skb->mac_len);
+		mac_len);
 	skb_reset_mac_header(skb);
 #ifdef MPLS_HEADER_IS_L3
-	skb_set_network_header(skb, skb->mac_len);
+	skb_set_network_header(skb, mac_len);
 #endif
+	skb_reset_mac_len(skb);
 
 	new_mpls_lse = mpls_hdr(skb);
-	new_mpls_lse->label_stack_entry = mpls->mpls_lse;
+	new_mpls_lse->label_stack_entry = mpls_lse;
 
 	skb_postpush_rcsum(skb, new_mpls_lse, MPLS_HLEN);
 
+	if (!mac_len)
+		key->mac_proto = MAC_PROTO_NONE;
+
 	if (ovs_key_mac_proto(key) == MAC_PROTO_ETHERNET)
-		update_ethertype(skb, eth_hdr(skb), mpls->mpls_ethertype);
-	skb->protocol = mpls->mpls_ethertype;
+		update_ethertype(skb, eth_hdr(skb), mpls_ethertype);
+	skb->protocol = mpls_ethertype;
 
 	invalidate_flow_key(key);
 	return 0;
@@ -251,6 +255,9 @@ static int pop_mpls(struct sk_buff *skb, struct sw_flow_key *key,
         }
 	if (eth_p_mpls(skb->protocol))
 		skb->protocol = ethertype;
+
+	if (ethertype == htons(ETH_P_TEB))
+		key->mac_proto = MAC_PROTO_ETHERNET;
 
 	invalidate_flow_key(key);
 	return 0;
@@ -1309,9 +1316,26 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			execute_hash(skb, key, a);
 			break;
 
-		case OVS_ACTION_ATTR_PUSH_MPLS:
-			err = push_mpls(skb, key, nla_data(a));
+		case OVS_ACTION_ATTR_PUSH_MPLS: {
+			struct ovs_action_push_mpls *mpls = nla_data(a);
+
+			err = push_mpls(skb, key, mpls->mpls_lse,
+					mpls->mpls_ethertype, skb->mac_len);
 			break;
+		}
+
+		case OVS_ACTION_ATTR_ADD_MPLS: {
+		       struct ovs_action_add_mpls *mpls = nla_data(a);
+		       __u16 mac_len = 0;
+
+		       if (mpls->tun_flags & OVS_MPLS_L3_TUNNEL_FLAG_MASK)
+			       mac_len = skb->mac_len;
+
+		       err = push_mpls(skb, key, mpls->mpls_lse,
+				       mpls->mpls_ethertype, mac_len);
+		       break;
+	       }
+
 
 		case OVS_ACTION_ATTR_POP_MPLS:
 			err = pop_mpls(skb, key, nla_get_be16(a));
