@@ -643,9 +643,10 @@ ofproto_set_datapath_id(struct ofproto *p, uint64_t datapath_id)
 }
 
 void
-ofproto_set_controllers(struct ofproto *p, struct shash *controllers)
+ofproto_set_controllers(struct ofproto *p, struct shash *controllers,
+                        bool flow_restore)
 {
-    connmgr_set_controllers(p->connmgr, controllers);
+    connmgr_set_controllers(p->connmgr, controllers, flow_restore);
 }
 
 void

@@ -74,7 +74,8 @@ void connmgr_retry(struct connmgr *);
 bool connmgr_has_controllers(const struct connmgr *);
 void connmgr_get_controller_info(struct connmgr *, struct shash *);
 void connmgr_free_controller_info(struct shash *);
-void connmgr_set_controllers(struct connmgr *, struct shash *);
+void connmgr_set_controllers(struct connmgr *, struct shash *,
+                             bool flow_restore);
 void connmgr_reconnect(const struct connmgr *);
 
 int connmgr_set_snoops(struct connmgr *, const struct sset *snoops);

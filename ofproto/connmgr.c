@@ -231,6 +231,8 @@ struct connmgr {
     size_t n_extra_remotes;
     int in_band_queue;
 
+    bool flow_restore;
+
     ATOMIC(int) want_packet_in_on_miss;   /* Sum of ofconns' values. */
 };
 
@@ -571,7 +573,8 @@ connmgr_free_controller_info(struct shash *info)
 /* Changes 'mgr''s set of controllers to the 'n_controllers' controllers in
  * 'controllers'. */
 void
-connmgr_set_controllers(struct connmgr *mgr, struct shash *controllers)
+connmgr_set_controllers(struct connmgr *mgr, struct shash *controllers,
+                        bool flow_restore)
     OVS_EXCLUDED(ofproto_mutex)
 {
     bool had_controllers = connmgr_has_controllers(mgr);
@@ -611,8 +614,17 @@ connmgr_set_controllers(struct connmgr *mgr, struct shash *controllers)
     update_in_band_remotes(mgr);
     update_fail_open(mgr);
     if (had_controllers != connmgr_has_controllers(mgr)) {
-        ofproto_flush_flows(mgr->ofproto);
+        if (had_controllers == false &&
+            mgr->flow_restore == true &&
+            flow_restore == false) {
+            goto out;
+        } else {
+            ofproto_flush_flows(mgr->ofproto);
+        }
     }
+
+out:
+    mgr->flow_restore = flow_restore;
 }
 
 /* Drops the connections between 'mgr' and all of its primary and secondary

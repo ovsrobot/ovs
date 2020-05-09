@@ -3867,6 +3867,8 @@ bridge_configure_remotes(struct bridge *br,
 
     enum ofproto_fail_mode fail_mode;
 
+    bool flow_restore;
+
     /* Check if we should disable in-band control on this bridge. */
     disable_in_band = smap_get_bool(&br->cfg->other_config, "disable-in-band",
                                     false);
@@ -3882,8 +3884,9 @@ bridge_configure_remotes(struct bridge *br,
         ofproto_set_extra_in_band_remotes(br->ofproto, managers, n_managers);
     }
 
-    n_controllers = (ofproto_get_flow_restore_wait() ? 0
-                     : bridge_get_controllers(br, &controllers));
+    flow_restore = ofproto_get_flow_restore_wait();
+    n_controllers = flow_restore ? 0
+                    : bridge_get_controllers(br, &controllers);
 
     /* The set of controllers to pass down to ofproto. */
     struct shash ocs = SHASH_INITIALIZER(&ocs);
@@ -3981,7 +3984,7 @@ bridge_configure_remotes(struct bridge *br,
         };
         shash_add(&ocs, c->target, oc);
     }
-    ofproto_set_controllers(br->ofproto, &ocs);
+    ofproto_set_controllers(br->ofproto, &ocs, flow_restore);
     shash_destroy_free_data(&ocs);
 
     /* Set the fail-mode. */
