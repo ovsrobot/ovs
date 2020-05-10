@@ -748,6 +748,9 @@ get_vport_type(const struct dpif_netlink_vport *vport)
     case OVS_VPORT_TYPE_GTPU:
         return "gtpu";
 
+    case OVS_VPORT_TYPE_BAREUDP:
+        return "bareudp";
+
     case OVS_VPORT_TYPE_UNSPEC:
     case __OVS_VPORT_TYPE_MAX:
         break;
@@ -783,6 +786,8 @@ netdev_to_ovs_vport_type(const char *type)
         return OVS_VPORT_TYPE_GRE;
     } else if (!strcmp(type, "gtpu")) {
         return OVS_VPORT_TYPE_GTPU;
+    } else if (!strcmp(type, "bareudp")) {
+        return OVS_VPORT_TYPE_BAREUDP;
     } else {
         return OVS_VPORT_TYPE_UNSPEC;
     }
@@ -907,6 +912,11 @@ dpif_netlink_port_add_compat(struct dpif_netlink *dpif, struct netdev *netdev,
             nl_msg_put_u16(&options, OVS_TUNNEL_ATTR_DST_PORT,
                            ntohs(tnl_cfg->dst_port));
         }
+        if (tnl_cfg->payload_ethertype) {
+            nl_msg_put_u16(&options, OVS_TUNNEL_ATTR_PAYLOAD_ETHERTYPE,
+                           ntohs(tnl_cfg->payload_ethertype));
+        }
+
         if (tnl_cfg->exts) {
             size_t ext_ofs;
             int i;
