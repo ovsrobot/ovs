@@ -8,6 +8,9 @@ OSS_FUZZ_TARGETS = \
 EXTRA_PROGRAMS += $(OSS_FUZZ_TARGETS)
 oss-fuzz-targets: $(OSS_FUZZ_TARGETS)
 
+CFLAGS_FUZZER:=$(CFLAGS:fuzzer-no-link=fuzzer)
+override CFLAGS=$(CFLAGS_FUZZER)
+
 tests_oss_fuzz_flow_extract_target_SOURCES = \
 	tests/oss-fuzz/flow_extract_target.c \
 	tests/oss-fuzz/fuzzer.h
