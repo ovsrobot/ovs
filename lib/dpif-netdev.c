@@ -6094,15 +6094,11 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
     for (i = 0; i < config->n_bands; ++i) {
         uint32_t band_max_delta_t;
 
-        /* Set burst size to a workable value if none specified. */
-        if (config->bands[i].burst_size == 0) {
-            config->bands[i].burst_size = config->bands[i].rate;
-        }
-
         meter->bands[i].up = config->bands[i];
         /* Convert burst size to the bucket units: */
         /* pkts => 1/1000 packets, kilobits => bits. */
-        meter->bands[i].up.burst_size *= 1000;
+        meter->bands[i].up.burst_size += config->bands[i].rate;
+        meter->bands[i].up.burst_size *= 1000ULL;
         /* Initialize bucket to empty. */
         meter->bands[i].bucket = 0;
 
