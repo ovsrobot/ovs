@@ -37,7 +37,7 @@ struct ofputil_meter_band {
     uint16_t type;
     uint8_t prec_level;         /* Non-zero if type == OFPMBT_DSCP_REMARK. */
     uint32_t rate;
-    uint32_t burst_size;
+    uint64_t burst_size;
 };
 
 void ofputil_format_meter_band(struct ds *, enum ofp13_meter_flags,
