@@ -3352,8 +3352,9 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
         if (unit) {
             ds_put_char(&extra_info, ',');
         }
-        ds_put_format(&extra_info, "%d",
-                      count_1bits(flow->cr.mask->mf.map.bits[unit]));
+        ds_put_format(&extra_info, "%d:0x%llx",
+                      count_1bits(flow->cr.mask->mf.map.bits[unit]),
+                      flow->cr.mask->mf.map.bits[unit]);
     }
     ds_put_char(&extra_info, ')');
     flow->dp_extra_info = ds_steal_cstr(&extra_info);
