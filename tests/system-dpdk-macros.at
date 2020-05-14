@@ -1,3 +1,16 @@
+# OVS_DPDK_HUGEPAGE_CLEANUP([file])
+#
+# Cleanup system for stale hugepages.
+#
+m4_define([OVS_DPDK_HUGEPAGE_CLEANUP],
+  [dnl Cleanup mapping files in hugetlbfs mount point
+   AT_CHECK([cat /proc/mounts | grep hugetlbfs], [], [stdout])
+   AT_CHECK([cut -d ' ' -f 2  stdout], [], [stdout])
+   AT_CHECK([rm -f $(cat stdout)/$1], [], [])
+
+])
+
+
 # OVS_DPDK_PRE_CHECK()
 #
 # Check prerequisites for DPDK tests. Following settings are checked:

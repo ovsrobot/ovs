@@ -16,6 +16,7 @@ OVS_VSWITCHD_STOP(["/Global register is changed during/d
 /EAL:   Invalid NUMA socket, default to 0/d
 /EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !/d
 /EAL: No free hugepages reported in hugepages-1048576kB/d"])
+OVS_DPDK_HUGEPAGE_CLEANUP([rtemap_*])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
 
@@ -43,6 +44,7 @@ OVS_VSWITCHD_STOP("/does not exist. The Open vSwitch kernel module is probably n
 /EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !/d
 /EAL: No free hugepages reported in hugepages-1048576kB/d
 ")
+OVS_DPDK_HUGEPAGE_CLEANUP([rtemap_*])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
 
@@ -75,6 +77,7 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@EAL:   Invalid NUMA socket, default to 0@d
 \@EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !@d
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
+OVS_DPDK_HUGEPAGE_CLEANUP([rtemap_*])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
 
@@ -154,6 +157,8 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@EAL:   Invalid NUMA socket, default to 0@d
 \@EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !@d
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
+OVS_DPDK_HUGEPAGE_CLEANUP([rtemap_*])
+OVS_DPDK_HUGEPAGE_CLEANUP([page0map_0])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
 
@@ -230,5 +235,7 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@EAL:   Invalid NUMA socket, default to 0@d
 \@EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !@d
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
+OVS_DPDK_HUGEPAGE_CLEANUP([rtemap_*])
+OVS_DPDK_HUGEPAGE_CLEANUP([page0map_0])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
