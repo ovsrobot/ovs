@@ -93,7 +93,7 @@ OVS_DPDK_START()
 
 dnl Find number of sockets
 AT_CHECK([lscpu], [], [stdout])
-AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "448,"}; print "448"}' > NUMA_NODE])
 
 dnl Add userspace bridge and attach it to OVS
 AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
@@ -118,7 +118,8 @@ ADD_VETH(tap1, ns2, br10, "172.31.110.12/24")
 
 dnl Execute testpmd in background
 on_exit "pkill -f -x -9 'tail -f /dev/null'"
-tail -f /dev/null | testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+tail -f /dev/null | testpmd --no-pci \
+           --socket-mem="$(cat NUMA_NODE)" --socket-limit="$(cat NUMA_NODE)" \
            --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostuser0" \
            --vdev="net_tap0,iface=tap0" --file-prefix page0 \
            --single-file-segments -- -a >$OVS_RUNDIR/testpmd-dpdkvhostuser0.log 2>&1 &
@@ -172,7 +173,7 @@ OVS_DPDK_START()
 
 dnl Find number of sockets
 AT_CHECK([lscpu], [], [stdout])
-AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "448,"}; print "448"}' > NUMA_NODE])
 
 dnl Add userspace bridge and attach it to OVS
 AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
@@ -196,7 +197,8 @@ ADD_VETH(tap1, ns2, br10, "172.31.110.12/24")
 
 dnl Execute testpmd in background
 on_exit "pkill -f -x -9 'tail -f /dev/null'"
-tail -f /dev/null | testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+tail -f /dev/null | testpmd --no-pci \
+           --socket-mem="$(cat NUMA_NODE)" --socket-limit="$(cat NUMA_NODE)" \
            --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1" \
            --vdev="net_tap0,iface=tap0" --file-prefix page0 \
            --single-file-segments -- -a >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
