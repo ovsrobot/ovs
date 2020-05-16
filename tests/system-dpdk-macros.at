@@ -1,3 +1,18 @@
+# OVS_DPDK_SET_SOCKET_MEM()
+#
+# Set optimum memory required for tests.
+#
+m4_define([OVS_DPDK_SET_SOCKET_MEM],
+  [
+   AT_CHECK([$DPDK_DIR/usertools/dpdk-devbind.py -s],[],[stdout])
+   AT_CHECK([sed -n '/DPDK/,/kernel/{//!p;}' stdout|sed '/^=/d'],[],[stdout])
+   AT_CHECK([egrep -c '^....:..:..\..' stdout],[ignore],[stdout])
+   AS_IF([test $(cat stdout) -eq 0],[echo 64 > SOCKET_MEM],
+         [echo $((64+512)) > SOCKET_MEM])
+
+])
+
+
 # OVS_DPDK_PRE_CHECK()
 #
 # Check prerequisites for DPDK tests. Following settings are checked:
@@ -57,6 +72,10 @@ m4_define([OVS_DPDK_START],
 
    dnl Enable DPDK functionality
    AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true])
+   OVS_DPDK_SET_SOCKET_MEM()
+   AT_CHECK([lscpu], [], [stdout])
+   AT_CHECK([cat stdout | grep "NUMA node(s)" | awk -v m=$(cat SOCKET_MEM) '{c=1; while (c++<$(3)) {printf m","}; print m}' > NUMA_NODE])
+   AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem=$(cat NUMA_NODE)])
 
    dnl Start ovs-vswitchd.
    AT_CHECK([ovs-vswitchd --detach --no-chdir --pidfile --log-file -vvconn -vofproto_dpif -vunixctl], [0], [stdout], [stderr])
