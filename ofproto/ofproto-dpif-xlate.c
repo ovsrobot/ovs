@@ -4088,7 +4088,17 @@ terminate_native_tunnel(struct xlate_ctx *ctx, struct flow *flow,
     /* XXX: Write better Filter for tunnel port. We can use in_port
      * in tunnel-port flow to avoid these checks completely. */
     if (ovs_native_tunneling_is_on(ctx->xbridge->ofproto)) {
-        *tnl_port = tnl_port_map_lookup(flow, wc);
+        /* Check if the wc contains source info, if not,
+         * erase all source info including smac and sip.
+         */
+        if (!WC_FIELD_MASKED(wc, nw_src)) {
+            *tnl_port = tnl_port_map_lookup(flow, wc);
+            if (*tnl_port != ODPP_NONE && !WC_FIELD_MASKED(wc, nw_src)) {
+                WC_UNMASK_FIELD(wc, dl_src);
+            }
+        } else {
+            *tnl_port = tnl_port_map_lookup(flow, wc);
+        }
 
         /* If no tunnel port was found and it's about an ARP or ICMPv6 packet,
          * do tunnel neighbor snooping. */
@@ -7634,6 +7644,10 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
                                          ctx.base_flow.in_port.ofp_port);
     if (in_port && !in_port->peer) {
         ctx.xin->xport_uuid = in_port->uuid;
+    }
+
+    if (in_port && in_port->is_tunnel) {
+        tnl_wc_init_by_port(in_port->ofport, ctx.wc);
     }
 
     if (flow->packet_type != htonl(PT_ETH) && in_port &&
