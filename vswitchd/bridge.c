@@ -4600,6 +4600,19 @@ port_configure_bond(struct port *port, struct bond_settings *s)
         /* OVSDB did not store the last active interface */
         s->active_slave_mac = eth_addr_zero;
     }
+
+    /* lb-output-action is disabled by default. */
+    s->use_lb_output_action = (s->balance == BM_TCP)
+                          && smap_get_bool(&port->cfg->other_config,
+                                         "lb-output-action", false);
+
+    /* Verify if datapath supports lb-output-action. */
+    if (s->use_lb_output_action
+        && !ofproto_is_lb_output_action_supported(port->bridge->ofproto)) {
+        VLOG_WARN("port %s: Unsupported lb-output-action in datapath, "
+                  "defaulting to false.", port->name);
+        s->use_lb_output_action = false;
+    }
 }
 
 /* Returns true if 'port' is synthetic, that is, if we constructed it locally

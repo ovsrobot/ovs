@@ -1905,6 +1905,9 @@ struct ofproto_class {
     /* Deletes the timeout policy associated with 'zone' in datapath type
      * 'dp_type'. */
     void (*ct_del_zone_timeout_policy)(const char *dp_type, uint16_t zone);
+
+    /* Return 'true' if datapath supports 'lb-output-action'. */
+    bool (*is_lb_output_action_supported)(const struct ofproto *);
 };
 
 extern const struct ofproto_class ofproto_dpif_class;
