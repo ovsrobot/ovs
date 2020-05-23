@@ -278,7 +278,7 @@ static bool dpcls_lookup(struct dpcls *cls,
 
 struct dp_meter_band {
     struct ofputil_meter_band up; /* type, prec_level, pad, rate, burst_size */
-    uint32_t bucket; /* In 1/1000 packets (for PKTPS), or in bits (for KBPS) */
+    uint64_t bucket; /* In 1/1000 packets (for PKTPS), or in bits (for KBPS) */
     uint64_t packet_count;
     uint64_t byte_count;
 };
@@ -5972,7 +5972,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
         band = &meter->bands[m];
 
         /* Update band's bucket. */
-        band->bucket += delta_t * band->up.rate;
+        band->bucket += (uint64_t)delta_t * band->up.rate;
         band->bucket += delta_in_us * band->up.rate / 1000;
         if (band->bucket > band->up.burst_size) {
             band->bucket = band->up.burst_size;

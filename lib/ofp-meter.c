@@ -72,7 +72,7 @@ ofputil_format_meter_band(struct ds *s, enum ofp13_meter_flags flags,
     ds_put_format(s, " rate=%"PRIu32, mb->rate);
 
     if (flags & OFPMF13_BURST) {
-        ds_put_format(s, " burst_size=%"PRIu32, mb->burst_size);
+        ds_put_format(s, " burst_size=%"PRIu64, mb->burst_size);
     }
     if (mb->type == OFPMBT13_DSCP_REMARK) {
         ds_put_format(s, " prec_level=%"PRIu8, mb->prec_level);
@@ -703,7 +703,7 @@ parse_ofp_meter_mod_str__(struct ofputil_meter_mod *mm, char *string,
                     return error;
                 }
             } else if (!strcmp(name, "burst_size")) {
-                char *error = str_to_u32(value, &band->burst_size);
+                char *error = str_to_u64(value, &band->burst_size);
                 if (error) {
                     return error;
                 }
