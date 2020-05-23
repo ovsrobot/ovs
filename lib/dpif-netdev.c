@@ -5904,7 +5904,6 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     struct dp_packet *packet;
     long long int long_delta_t; /* msec */
     uint32_t delta_t; /* msec */
-    uint32_t delta_in_us; /* usec */
     const size_t cnt = dp_packet_batch_size(packets_);
     uint32_t bytes, volume;
     int exceeded_band[NETDEV_MAX_BURST];
@@ -5935,9 +5934,6 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
            Assuming that all racing threads received packets at the same time
            to avoid overflow. */
         long_delta_t = 0;
-        delta_in_us  = 0;
-    } else {
-        delta_in_us  = (now - meter->used) % 1000;
     }
 
     /* Make sure delta_t will not be too large, so that bucket will not
@@ -5973,7 +5969,6 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
 
         /* Update band's bucket. */
         band->bucket += (uint64_t)delta_t * band->up.rate;
-        band->bucket += delta_in_us * band->up.rate / 1000;
         if (band->bucket > band->up.burst_size) {
             band->bucket = band->up.burst_size;
         }
