@@ -971,6 +971,33 @@ parse_set_actions(struct flow_actions *actions,
 }
 
 static int
+parse_vlan_push_action(struct flow_actions *actions,
+                       const struct ovs_action_push_vlan *vlan_push)
+{
+    struct rte_flow_action_of_push_vlan *rte_push_vlan;
+    struct rte_flow_action_of_set_vlan_pcp *rte_vlan_pcp;
+    struct rte_flow_action_of_set_vlan_vid *rte_vlan_vid;
+
+    rte_push_vlan = xzalloc(sizeof *rte_push_vlan);
+    rte_push_vlan->ethertype = vlan_push->vlan_tpid;
+    add_flow_action(actions, RTE_FLOW_ACTION_TYPE_OF_PUSH_VLAN,
+                    rte_push_vlan);
+
+    rte_vlan_pcp = xzalloc(sizeof *rte_vlan_pcp);
+    rte_vlan_pcp->vlan_pcp = vlan_tci_to_pcp(vlan_push->vlan_tci);
+    add_flow_action(actions, RTE_FLOW_ACTION_TYPE_OF_SET_VLAN_PCP,
+                    rte_vlan_pcp);
+
+    rte_vlan_vid = xzalloc(sizeof *rte_vlan_vid);
+    rte_vlan_vid->vlan_vid =
+        rte_cpu_to_be_16(vlan_tci_to_vid(vlan_push->vlan_tci));
+    add_flow_action(actions, RTE_FLOW_ACTION_TYPE_OF_SET_VLAN_VID,
+                    rte_vlan_vid);
+
+    return 0;
+}
+
+static int
 parse_flow_actions(struct netdev *netdev,
                    struct flow_actions *actions,
                    struct nlattr *nl_actions,
@@ -998,6 +1025,13 @@ parse_flow_actions(struct netdev *netdev,
                                   masked)) {
                 return -1;
             }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_PUSH_VLAN) {
+            const struct ovs_action_push_vlan *vlan = nl_attr_get(nla);
+            if (parse_vlan_push_action(actions, vlan)) {
+                return -1;
+            }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_POP_VLAN) {
+            add_flow_action(actions, RTE_FLOW_ACTION_TYPE_OF_POP_VLAN, NULL);
         } else {
             VLOG_DBG_RL(&rl, "Unsupported action type %d", nl_attr_type(nla));
             return -1;
