@@ -740,13 +740,16 @@ get_vport_type(const struct dpif_netlink_vport *vport)
         return "erspan";
 
     case OVS_VPORT_TYPE_IP6ERSPAN:
-        return "ip6erspan"; 
+        return "ip6erspan";
 
     case OVS_VPORT_TYPE_IP6GRE:
         return "ip6gre";
 
     case OVS_VPORT_TYPE_GTPU:
         return "gtpu";
+
+    case OVS_VPORT_TYPE_BAREUDP:
+        return "bareudp";
 
     case OVS_VPORT_TYPE_UNSPEC:
     case __OVS_VPORT_TYPE_MAX:
@@ -783,6 +786,8 @@ netdev_to_ovs_vport_type(const char *type)
         return OVS_VPORT_TYPE_GRE;
     } else if (!strcmp(type, "gtpu")) {
         return OVS_VPORT_TYPE_GTPU;
+    } else if (!strcmp(type, "bareudp")) {
+        return OVS_VPORT_TYPE_BAREUDP;
     } else {
         return OVS_VPORT_TYPE_UNSPEC;
     }

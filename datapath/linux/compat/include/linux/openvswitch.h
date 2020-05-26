@@ -240,6 +240,7 @@ enum ovs_vport_type {
 	OVS_VPORT_TYPE_GRE,      /* GRE tunnel. */
 	OVS_VPORT_TYPE_VXLAN,	 /* VXLAN tunnel. */
 	OVS_VPORT_TYPE_GENEVE,	 /* Geneve tunnel. */
+	OVS_VPORT_TYPE_BAREUDP,  /* Bareudp tunnel. */
 	OVS_VPORT_TYPE_LISP = 105,  /* LISP tunnel */
 	OVS_VPORT_TYPE_STT = 106, /* STT tunnel */
 	OVS_VPORT_TYPE_ERSPAN = 107, /* ERSPAN tunnel. */
@@ -307,6 +308,15 @@ enum {
 };
 
 #define OVS_VXLAN_EXT_MAX (__OVS_VXLAN_EXT_MAX - 1)
+
+enum {
+        OVS_BAREUDP_EXT_UNSPEC,
+        OVS_BAREUDP_EXT_MULTIPROTO_MODE,
+        /* place new values here to fill gap. */
+        __OVS_BAREUDP_EXT_MAX,
+};
+
+#define OVS_BAREUDP_EXT_MAX (__OVS_BAREUDP_EXT_MAX - 1)
 
 /* OVS_VPORT_ATTR_OPTIONS attributes for tunnels.
  */
