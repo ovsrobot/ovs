@@ -860,7 +860,8 @@ parse_flow_match(struct flow_patterns *patterns,
 
     /* Eth */
     if (!eth_addr_is_zero(match->wc.masks.dl_src) ||
-        !eth_addr_is_zero(match->wc.masks.dl_dst)) {
+        !eth_addr_is_zero(match->wc.masks.dl_dst) ||
+        match->wc.masks.dl_type) {
         struct rte_flow_item_eth *spec, *mask;
 
         spec = xzalloc(sizeof *spec);
@@ -876,6 +877,7 @@ parse_flow_match(struct flow_patterns *patterns,
 
         memset(&consumed_masks->dl_dst, 0, sizeof consumed_masks->dl_dst);
         memset(&consumed_masks->dl_src, 0, sizeof consumed_masks->dl_src);
+        consumed_masks->dl_type = 0;
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_ETH, spec, mask);
     } else {
@@ -888,7 +890,6 @@ parse_flow_match(struct flow_patterns *patterns,
          */
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_ETH, NULL, NULL);
     }
-    consumed_masks->dl_type = 0;
 
     /* VLAN */
     if (match->wc.masks.vlans[0].tci && match->flow.vlans[0].tci) {
