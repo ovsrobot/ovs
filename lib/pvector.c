@@ -67,10 +67,11 @@ pvector_init(struct pvector *pvec)
 void
 pvector_destroy(struct pvector *pvec)
 {
+    struct pvector_impl *old = pvector_impl_get(pvec);
     free(pvec->temp);
     pvec->temp = NULL;
-    ovsrcu_postpone(free, pvector_impl_get(pvec));
     ovsrcu_set(&pvec->impl, NULL); /* Poison. */
+    ovsrcu_postpone(free, old);
 }
 
 /* Iterators for callers that need the 'index' afterward. */
@@ -205,11 +206,11 @@ pvector_change_priority(struct pvector *pvec, void *ptr, int priority)
 /* Make the modified pvector available for iteration. */
 void pvector_publish__(struct pvector *pvec)
 {
-    struct pvector_impl *temp = pvec->temp;
-
+    struct pvector_impl *new = pvec->temp;
+    struct pvector_impl *old = ovsrcu_get_protected(struct pvector_impl *,
+                                                   &pvec->impl);
     pvec->temp = NULL;
-    pvector_impl_sort(temp); /* Also removes gaps. */
-    ovsrcu_postpone(free, ovsrcu_get_protected(struct pvector_impl *,
-                                               &pvec->impl));
-    ovsrcu_set(&pvec->impl, temp);
+    pvector_impl_sort(new); /* Also removes gaps. */
+    ovsrcu_set(&pvec->impl, new);
+    ovsrcu_postpone(free, old);
 }

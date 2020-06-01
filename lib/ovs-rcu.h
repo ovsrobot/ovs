@@ -119,9 +119,9 @@
  *     change_flow(struct flow *new_flow)
  *     {
  *         ovs_mutex_lock(&mutex);
+ *         ovsrcu_set(&flowp, new_flow);
  *         ovsrcu_postpone(free,
  *                         ovsrcu_get_protected(struct flow *, &flowp));
- *         ovsrcu_set(&flowp, new_flow);
  *         ovs_mutex_unlock(&mutex);
  *     }
  *

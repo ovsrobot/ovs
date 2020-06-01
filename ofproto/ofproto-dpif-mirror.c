@@ -276,9 +276,9 @@ mirror_set(struct mbridge *mbridge, void *aux, const char *name,
     hmapx_destroy(&dsts_map);
 
     if (vlans || src_vlans) {
+        unsigned long *new_vlans = vlan_bitmap_clone(src_vlans);
+        ovsrcu_set(&mirror->vlans, new_vlans);
         ovsrcu_postpone(free, vlans);
-        vlans = vlan_bitmap_clone(src_vlans);
-        ovsrcu_set(&mirror->vlans, vlans);
     }
 
     mirror->out = out;
