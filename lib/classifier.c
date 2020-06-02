@@ -249,11 +249,11 @@ cls_rule_set_conjunctions(struct cls_rule *cr,
     unsigned int old_n = old ? old->n : 0;
 
     if (old_n != n || (n && memcmp(old_conj, conj, n * sizeof *conj))) {
+        ovsrcu_set(&match->conj_set,
+                   cls_conjunction_set_alloc(match, conj, n));
         if (old) {
             ovsrcu_postpone(free, old);
         }
-        ovsrcu_set(&match->conj_set,
-                   cls_conjunction_set_alloc(match, conj, n));
     }
 }
 
