@@ -385,6 +385,8 @@ static void ovsdb_idl_send_cond_change(struct ovsdb_idl *idl);
 static void ovsdb_idl_destroy_indexes(struct ovsdb_idl_table *);
 static void ovsdb_idl_add_to_indexes(const struct ovsdb_idl_row *);
 static void ovsdb_idl_remove_from_indexes(const struct ovsdb_idl_row *);
+static enum ovsdb_idl_txn_status ovsdb_idl_try_commit_loop_txn(
+    struct ovsdb_idl_loop *loop);
 
 static void
 ovsdb_idl_db_init(struct ovsdb_idl_db *db, const struct ovsdb_idl_class *class,
@@ -5340,11 +5342,62 @@ struct ovsdb_idl_txn *
 ovsdb_idl_loop_run(struct ovsdb_idl_loop *loop)
 {
     ovsdb_idl_run(loop->idl);
+
+    /* See if we can commit the loop->committing_txn. */
+    if (loop->committing_txn) {
+        ovsdb_idl_try_commit_loop_txn(loop);
+    }
+
     loop->open_txn = (loop->committing_txn
                       || ovsdb_idl_get_seqno(loop->idl) == loop->skip_seqno
                       ? NULL
                       : ovsdb_idl_txn_create(loop->idl));
     return loop->open_txn;
+}
+
+/* Attempts to commit the current idl loop transaction and destroys the
+ * transaction if not TXN_INCOMPLETE. */
+static enum ovsdb_idl_txn_status
+ovsdb_idl_try_commit_loop_txn(struct ovsdb_idl_loop *loop)
+{
+    ovs_assert(loop->committing_txn);
+
+    struct ovsdb_idl_txn *txn = loop->committing_txn;
+    enum ovsdb_idl_txn_status status = ovsdb_idl_txn_commit(txn);
+    if (status != TXN_INCOMPLETE) {
+        switch (status) {
+        case TXN_TRY_AGAIN:
+            /* We want to re-evaluate the database when it's changed from
+             * the contents that it had when we started the commit.  (That
+             * might have already happened.) */
+            loop->skip_seqno = loop->precommit_seqno;
+            break;
+
+        case TXN_SUCCESS:
+            /* Possibly some work on the database was deferred because no
+             * further transaction could proceed. */
+            loop->cur_cfg = loop->next_cfg;
+            break;
+
+        case TXN_UNCHANGED:
+            loop->cur_cfg = loop->next_cfg;
+            break;
+
+        case TXN_ABORTED:
+        case TXN_NOT_LOCKED:
+        case TXN_ERROR:
+            break;
+
+        case TXN_UNCOMMITTED:
+        case TXN_INCOMPLETE:
+        default:
+            OVS_NOT_REACHED();
+        }
+        ovsdb_idl_txn_destroy(txn);
+        loop->committing_txn = NULL;
+    }
+
+    return status;
 }
 
 /* Attempts to commit the current transaction, if one is open, and sets up the
@@ -5377,57 +5430,46 @@ ovsdb_idl_loop_commit_and_wait(struct ovsdb_idl_loop *loop)
         loop->precommit_seqno = ovsdb_idl_get_seqno(loop->idl);
     }
 
-    struct ovsdb_idl_txn *txn = loop->committing_txn;
-    int retval;
-    if (txn) {
-        enum ovsdb_idl_txn_status status = ovsdb_idl_txn_commit(txn);
-        if (status != TXN_INCOMPLETE) {
-            switch (status) {
-            case TXN_TRY_AGAIN:
-                /* We want to re-evaluate the database when it's changed from
-                 * the contents that it had when we started the commit.  (That
-                 * might have already happened.) */
-                loop->skip_seqno = loop->precommit_seqno;
-                if (ovsdb_idl_get_seqno(loop->idl) != loop->skip_seqno) {
-                    poll_immediate_wake();
-                }
-                retval = 0;
-                break;
-
-            case TXN_SUCCESS:
-                /* Possibly some work on the database was deferred because no
-                 * further transaction could proceed.  Wake up again. */
-                retval = 1;
-                loop->cur_cfg = loop->next_cfg;
+    int retval = -1;
+    if (loop->committing_txn) {
+        enum ovsdb_idl_txn_status status = ovsdb_idl_try_commit_loop_txn(loop);
+        switch (status) {
+        case TXN_TRY_AGAIN:
+            /* We want to re-evaluate the database when it's changed from
+            * the contents that it had when we started the commit.  (That
+            * might have already happened.) */
+            if (ovsdb_idl_get_seqno(loop->idl) != loop->skip_seqno) {
                 poll_immediate_wake();
-                break;
-
-            case TXN_UNCHANGED:
-                retval = 1;
-                loop->cur_cfg = loop->next_cfg;
-                break;
-
-            case TXN_ABORTED:
-            case TXN_NOT_LOCKED:
-            case TXN_ERROR:
-                retval = 0;
-                break;
-
-            case TXN_UNCOMMITTED:
-            case TXN_INCOMPLETE:
-            default:
-                OVS_NOT_REACHED();
             }
-            ovsdb_idl_txn_destroy(txn);
-            loop->committing_txn = NULL;
-        } else {
-            retval = -1;
-        }
-    } else {
-        /* Not a meaningful return value: no transaction was in progress. */
-        retval = 1;
-    }
+            retval = 0;
+            break;
 
+        case TXN_SUCCESS:
+            /* Possibly some work on the database was deferred because no
+            * further transaction could proceed.  Wake up again. */
+            retval = 1;
+            poll_immediate_wake();
+            break;
+
+        case TXN_UNCHANGED:
+            retval = 1;
+            break;
+
+        case TXN_ABORTED:
+        case TXN_NOT_LOCKED:
+        case TXN_ERROR:
+            retval = 0;
+            break;
+
+        case TXN_INCOMPLETE:
+            retval = -1;
+            break;
+
+        case TXN_UNCOMMITTED:
+        default:
+            OVS_NOT_REACHED();
+        }
+    }
     ovsdb_idl_wait(loop->idl);
 
     return retval;
