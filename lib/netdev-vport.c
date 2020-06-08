@@ -112,7 +112,7 @@ netdev_vport_needs_dst_port(const struct netdev *dev)
     return (class->get_config == get_tunnel_config &&
             (!strcmp("geneve", type) || !strcmp("vxlan", type) ||
              !strcmp("lisp", type) || !strcmp("stt", type) ||
-             !strcmp("gtpu", type)));
+             !strcmp("gtpu", type) || !strcmp("bareudp",type)));
 }
 
 const char *
@@ -219,6 +219,8 @@ netdev_vport_construct(struct netdev *netdev_)
         dev->tnl_cfg.dst_port = port ? htons(port) : htons(STT_DST_PORT);
     } else if (!strcmp(type, "gtpu")) {
         dev->tnl_cfg.dst_port = port ? htons(port) : htons(GTPU_DST_PORT);
+    } else if (!strcmp(type, "bareudp")) {
+        dev->tnl_cfg.dst_port = htons(port);
     }
 
     dev->tnl_cfg.dont_fragment = true;
@@ -437,6 +439,8 @@ tunnel_supported_layers(const char *type,
                && tnl_cfg->exts & (1 << OVS_VXLAN_EXT_GPE)) {
         return TNL_L2 | TNL_L3;
     } else if (!strcmp(type, "gtpu")) {
+        return TNL_L3;
+    } else if (!strcmp(type, "bareudp")) {
         return TNL_L3;
     } else {
         return TNL_L2;
@@ -744,6 +748,16 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
                     err = EINVAL;
                     goto out;
                 }
+            }
+        } else if (!strcmp(node->key, "payload_type")) {
+            if (strcmp(node->key, "mpls")) {
+                 tnl_cfg.payload_ethertype = htons(ETH_TYPE_MPLS);
+                 tnl_cfg.exts |= (1 << OVS_BAREUDP_EXT_MULTIPROTO_MODE);
+            } else if ((strcmp(node->key, "ip"))) {
+                 tnl_cfg.payload_ethertype = htons(ETH_TYPE_IP);
+                 tnl_cfg.exts |= (1 << OVS_BAREUDP_EXT_MULTIPROTO_MODE);
+            } else {
+                 tnl_cfg.payload_ethertype = htons(atoi(node->value));
             }
         } else {
             ds_put_format(&errors, "%s: unknown %s argument '%s'\n", name,
@@ -1240,6 +1254,14 @@ netdev_vport_tunnel_register(void)
               .build_header = netdev_gtpu_build_header,
               .push_header = netdev_gtpu_push_header,
               .pop_header = netdev_gtpu_pop_header,
+          },
+          {{NULL, NULL, 0, 0}}
+        },
+        { "udp_sys",
+          {
+              TUNNEL_FUNCTIONS_COMMON,
+              .type = "bareudp",
+              .get_ifindex = NETDEV_VPORT_GET_IFINDEX,
           },
           {{NULL, NULL, 0, 0}}
         },

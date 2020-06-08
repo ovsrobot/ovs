@@ -21,6 +21,10 @@ Post-v2.13.0
      * Tunnel Romte endpoint address masked match are supported.
      * Tunnel Local endpoint ports masked match are supported.
      * Tunnel Romte endpoint ports masked match are supported.
+   - Bareudp Tunnel
+     * Bareudp device support is present in linux kernel from version 5.7
+     * Kernel bareudp device is not backported to ovs tree.
+     * Userspace datapath support is not added
 
 
 v2.13.0 - 14 Feb 2020
