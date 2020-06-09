@@ -2280,6 +2280,13 @@ mark_to_flow_disassociate(struct dp_netdev_pmd_thread *pmd,
     uint32_t mark = flow->mark;
     struct cmap_node *mark_node = CONST_CAST(struct cmap_node *,
                                              &flow->mark_node);
+    /* Check the mark if avoidable, INVALID_FLOW_MARK may
+     * mean that the flow has been disassociated or never
+     * associated.
+     */
+    if (OVS_UNLIKELY(mark == INVALID_FLOW_MARK)) {
+        return -1;
+    }
 
     cmap_remove(&flow_mark.mark_to_flow, mark_node, hash_int(mark, 0));
     flow->mark = INVALID_FLOW_MARK;
