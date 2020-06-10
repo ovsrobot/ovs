@@ -29,6 +29,17 @@ ovsdb_cluster_start_idltest () {
      ovsdb-server -vraft -vconsole:warn --detach --no-chdir --log-file=s$i.log --pidfile=s$i.pid --unixctl=s$i --remote=punix:s$i.ovsdb ${2:+--remote=$2} s$i.db || return $?
    done
    on_exit 'kill `cat s*.pid`'
+   for i in `seq $n`; do
+     for d in `seq 1 "$OVS_CTL_TIMEOUT"`; do
+       if ovs-appctl -t $(pwd)/s$i cluster/status ${schema_name} | grep -q 'Status: cluster member'; then
+         break
+       fi
+       sleep 1
+     done
+     if ! ovs-appctl -t $(pwd)/s$i cluster/status ${schema_name} | grep -q 'Status: cluster member'; then
+       return 1
+     fi
+   done
 }
 
 # ovsdb_cluster_leader [REMOTES] [DATABASE]
