@@ -5,9 +5,19 @@
 # notice and this notice are preserved.  This file is offered as-is,
 # without warranty of any kind.
 
+# libopenvswitch.la is the library to link against for binaries like vswitchd.
+# The code itself is built as two seperate static libraries;
+# - core: Core files, always compiled with distro provided CFLAGS
 lib_LTLIBRARIES += lib/libopenvswitch.la
+lib_LTLIBRARIES += lib/libopenvswitchcore.la
 
-lib_libopenvswitch_la_LIBADD = $(SSL_LIBS)
+# Dummy library to link against doesn't have any sources, but does
+# depend on libopenvswitchcore static library
+lib_libopenvswitch_la_SOURCES =
+lib_libopenvswitch_la_LIBADD = lib/libopenvswitchcore.la
+
+# Dummy library continues to depend on external libraries as before
+lib_libopenvswitch_la_LIBADD += $(SSL_LIBS)
 lib_libopenvswitch_la_LIBADD += $(CAPNG_LDADD)
 lib_libopenvswitch_la_LIBADD += $(LIBBPF_LDADD)
 
@@ -18,9 +28,11 @@ endif
 lib_libopenvswitch_la_LDFLAGS = \
         $(OVS_LTINFO) \
         -Wl,--version-script=$(top_builddir)/lib/libopenvswitch.sym \
+        $(lib_libopenvswitchcore_la_LIBS) \
         $(AM_LDFLAGS)
 
-lib_libopenvswitch_la_SOURCES = \
+# Build core vswitch libraries as before
+lib_libopenvswitchcore_la_SOURCES = \
 	lib/aes128.c \
 	lib/aes128.h \
 	lib/async-append.h \
@@ -344,7 +356,7 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/lldp/lldpd-structs.h
 
 if WIN32
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/daemon-windows.c \
 	lib/getopt_long.c \
 	lib/getrusage-windows.c \
@@ -354,7 +366,7 @@ lib_libopenvswitch_la_SOURCES += \
 	lib/stream-windows.c \
 	lib/strsep.c
 else
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/daemon-unix.c \
 	lib/latch-unix.c \
 	lib/signals.c \
@@ -367,13 +379,13 @@ EXTRA_DIST += \
 	lib/stdio.h.in \
 	lib/string.h.in
 
-nodist_lib_libopenvswitch_la_SOURCES = \
+nodist_lib_libopenvswitchcore_la_SOURCES = \
 	lib/dirs.c \
 	lib/ovsdb-server-idl.c \
 	lib/ovsdb-server-idl.h \
 	lib/vswitch-idl.c \
 	lib/vswitch-idl.h
-CLEANFILES += $(nodist_lib_libopenvswitch_la_SOURCES)
+CLEANFILES += $(nodist_lib_libopenvswitchcore_la_SOURCES)
 
 lib_LTLIBRARIES += lib/libsflow.la
 lib_libsflow_la_LDFLAGS = \
@@ -397,7 +409,7 @@ lib_libsflow_la_CFLAGS += -Wno-unused-parameter
 endif
 
 if LINUX
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/dpif-netlink.c \
 	lib/dpif-netlink.h \
 	lib/dpif-netlink-rtnl.c \
@@ -423,7 +435,7 @@ lib_libopenvswitch_la_SOURCES += \
 endif
 
 if HAVE_AF_XDP
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/netdev-afxdp-pool.c \
 	lib/netdev-afxdp-pool.h \
 	lib/netdev-afxdp.c \
@@ -431,17 +443,17 @@ lib_libopenvswitch_la_SOURCES += \
 endif
 
 if DPDK_NETDEV
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/dpdk.c \
 	lib/netdev-dpdk.c \
 	lib/netdev-offload-dpdk.c
 else
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/dpdk-stub.c
 endif
 
 if WIN32
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/dpif-netlink.c \
 	lib/dpif-netlink.h \
 	lib/dpif-netlink-rtnl.h \
@@ -458,13 +470,13 @@ lib_libopenvswitch_la_SOURCES += \
 endif
 
 if HAVE_POSIX_AIO
-lib_libopenvswitch_la_SOURCES += lib/async-append-aio.c
+lib_libopenvswitchcore_la_SOURCES += lib/async-append-aio.c
 else
-lib_libopenvswitch_la_SOURCES += lib/async-append-null.c
+lib_libopenvswitchcore_la_SOURCES += lib/async-append-null.c
 endif
 
 if HAVE_IF_DL
-lib_libopenvswitch_la_SOURCES += \
+lib_libopenvswitchcore_la_SOURCES += \
 	lib/if-notifier-bsd.c \
 	lib/netdev-bsd.c \
 	lib/rtbsd.c \
@@ -474,7 +486,7 @@ endif
 
 .PHONY: generate-dhparams-c
 if HAVE_OPENSSL
-lib_libopenvswitch_la_SOURCES += lib/stream-ssl.c lib/dhparams.c
+lib_libopenvswitchcore_la_SOURCES += lib/stream-ssl.c lib/dhparams.c
 
 # Manually regenerates lib/dhparams.c.  Not normally necessary since
 # lib/dhparams.c is part of the repository and doesn't normally need
@@ -484,14 +496,14 @@ generate-dhparams-c:
 	build-aux/generate-dhparams-c > lib/dhparams.c.tmp && \
 	mv lib/dhparams.c.tmp lib/dhparams.c
 else
-lib_libopenvswitch_la_SOURCES += lib/stream-nossl.c
+lib_libopenvswitchcore_la_SOURCES += lib/stream-nossl.c
 endif
 
-lib_libopenvswitch_la_SOURCES += lib/dns-resolve.h
+lib_libopenvswitchcore_la_SOURCES += lib/dns-resolve.h
 if HAVE_UNBOUND
-lib_libopenvswitch_la_SOURCES += lib/dns-resolve.c
+lib_libopenvswitchcore_la_SOURCES += lib/dns-resolve.c
 else
-lib_libopenvswitch_la_SOURCES += lib/dns-resolve-stub.c
+lib_libopenvswitchcore_la_SOURCES += lib/dns-resolve-stub.c
 endif
 
 pkgconfig_DATA += \
