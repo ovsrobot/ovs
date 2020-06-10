@@ -21,6 +21,9 @@
 #include "dpif-netdev.h"
 #include "dpif-netdev-private.h"
 
+/* Extreme debugging for developers only */
+#define DPIF_NETDEV_LOOKUP_DATAPATH_DEBUG 1
+
 /* Function to perform a probe for the subtable bit fingerprint.
  * Returns NULL if not valid, or a valid function pointer to call for this
  * subtable on success.
@@ -41,6 +44,10 @@ dpcls_subtable_autovalidator_probe(uint32_t u0_bit_count,
  */
 dpcls_subtable_lookup_func
 dpcls_subtable_generic_probe(uint32_t u0_bit_count, uint32_t u1_bit_count);
+
+/* Probe function for AVX-512 gather implementation */
+dpcls_subtable_lookup_func
+dpcls_subtable_avx512_gather_probe(uint32_t u0_bit_cnt, uint32_t u1_bit_cnt);
 
 
 /* Subtable registration and iteration helpers */

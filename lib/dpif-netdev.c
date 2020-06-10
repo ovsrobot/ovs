@@ -1292,6 +1292,10 @@ static void
 dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc,
                                 const char *argv[], void *aux OVS_UNUSED)
 {
+    /* TODO: If less than 2 parameters are provided return a list of
+     * known dpcls implementations compiled in?
+     */
+
     /* This function requires 2 parameters (argv[1] and argv[2]) to execute.
      *   argv[1] is subtable name
      *   argv[2] is priority

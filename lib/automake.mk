@@ -8,13 +8,16 @@
 # libopenvswitch.la is the library to link against for binaries like vswitchd.
 # The code itself is built as two seperate static libraries;
 # - core: Core files, always compiled with distro provided CFLAGS
+# - lookupavx512: ISA optimized routines that require CPUID checks at runtime
 lib_LTLIBRARIES += lib/libopenvswitch.la
 lib_LTLIBRARIES += lib/libopenvswitchcore.la
+lib_LTLIBRARIES += lib/libopenvswitchlookupavx512.la
 
 # Dummy library to link against doesn't have any sources, but does
 # depend on libopenvswitchcore static library
 lib_libopenvswitch_la_SOURCES =
 lib_libopenvswitch_la_LIBADD = lib/libopenvswitchcore.la
+lib_libopenvswitch_la_LIBADD += lib/libopenvswitchlookupavx512.la
 
 # Dummy library continues to depend on external libraries as before
 lib_libopenvswitch_la_LIBADD += $(SSL_LIBS)
@@ -30,6 +33,19 @@ lib_libopenvswitch_la_LDFLAGS = \
         -Wl,--version-script=$(top_builddir)/lib/libopenvswitch.sym \
         $(lib_libopenvswitchcore_la_LIBS) \
         $(AM_LDFLAGS)
+
+
+# Build lookupavx512 library with extra CFLAGS enabled. This allows the
+# compiler to use the ISA features required for the ISA optimized code-paths.
+lib_libopenvswitchlookupavx512_la_CFLAGS = \
+	-mavx512f \
+	-mavx512bw \
+	-mavx512dq \
+	-mbmi2 \
+	$(AM_CFLAGS)
+lib_libopenvswitchlookupavx512_la_SOURCES = \
+	lib/dpif-netdev-lookup-avx512-gather.c
+
 
 # Build core vswitch libraries as before
 lib_libopenvswitchcore_la_SOURCES = \
