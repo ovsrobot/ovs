@@ -593,6 +593,7 @@ netdev_ports_remove(odp_port_t port_no, const struct dpif_class *dpif_class)
     data = netdev_ports_lookup(port_no, dpif_class);
     if (data) {
         dpif_port_destroy(&data->dpif_port);
+        netdev_flow_flush(data->netdev); /* flush offloaded rules. */
         netdev_close(data->netdev); /* unref and possibly close */
         hmap_remove(&port_to_netdev, &data->portno_node);
         hmap_remove(&ifindex_to_port, &data->ifindex_node);
