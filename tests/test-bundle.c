@@ -25,28 +25,28 @@
 #include "util.h"
 
 #define N_FLOWS  50000
-#define MAX_SLAVES 8 /* Maximum supported by this test framework. */
+#define MAX_SUBS 8 /* Maximum supported by this test framework. */
 
-struct slave {
-    ofp_port_t slave_id;
+struct sub {
+    ofp_port_t sub_id;
 
     bool enabled;
     size_t flow_count;
 };
 
-struct slave_group {
-    size_t n_slaves;
-    struct slave slaves[MAX_SLAVES];
+struct sub_group {
+    size_t n_subs;
+    struct sub subs[MAX_SUBS];
 };
 
-static struct slave *
-slave_lookup(struct slave_group *sg, ofp_port_t slave_id)
+static struct sub *
+sub_lookup(struct sub_group *sg, ofp_port_t sub_id)
 {
     size_t i;
 
-    for (i = 0; i < sg->n_slaves; i++) {
-        if (sg->slaves[i].slave_id == slave_id) {
-            return &sg->slaves[i];
+    for (i = 0; i < sg->n_subs; i++) {
+        if (sg->subs[i].sub_id == sub_id) {
+            return &sg->subs[i];
         }
     }
 
@@ -54,12 +54,12 @@ slave_lookup(struct slave_group *sg, ofp_port_t slave_id)
 }
 
 static bool
-slave_enabled_cb(ofp_port_t slave_id, void *aux)
+sub_enabled_cb(ofp_port_t sub_id, void *aux)
 {
-    struct slave *slave;
+    struct sub *sub;
 
-    slave = slave_lookup(aux, slave_id);
-    return slave ? slave->enabled : false;
+    sub = sub_lookup(aux, sub_id);
+    return sub ? sub->enabled : false;
 }
 
 static struct ofpact_bundle *
@@ -80,8 +80,8 @@ parse_bundle_actions(char *actions)
     bundle = ofpact_get_BUNDLE(xmemdup(action, action->len));
     ofpbuf_uninit(&ofpacts);
 
-    if (bundle->n_slaves > MAX_SLAVES) {
-        ovs_fatal(0, "At most %u slaves are supported", MAX_SLAVES);
+    if (bundle->n_subs > MAX_SUBS) {
+        ovs_fatal(0, "At most %u subs are supported", MAX_SUBS);
     }
 
     return bundle;
@@ -109,7 +109,7 @@ test_bundle_main(int argc, char *argv[])
     struct ofpact_bundle *bundle;
     struct flow *flows;
     size_t i, n_permute, old_n_enabled;
-    struct slave_group sg;
+    struct sub_group sg;
     int old_active;
 
     set_program_name(argv[0]);
@@ -120,17 +120,17 @@ test_bundle_main(int argc, char *argv[])
 
     bundle = parse_bundle_actions(argv[1]);
 
-    /* Generate 'slaves' array. */
-    sg.n_slaves = 0;
-    for (i = 0; i < bundle->n_slaves; i++) {
-        ofp_port_t slave_id = bundle->slaves[i];
+    /* Generate 'subs' array. */
+    sg.n_subs = 0;
+    for (i = 0; i < bundle->n_subs; i++) {
+        ofp_port_t sub_id = bundle->subs[i];
 
-        if (slave_lookup(&sg, slave_id)) {
-            ovs_fatal(0, "Redundant slaves are not supported. ");
+        if (sub_lookup(&sg, sub_id)) {
+            ovs_fatal(0, "Redundant subs are not supported. ");
         }
 
-        sg.slaves[sg.n_slaves].slave_id = slave_id;
-        sg.n_slaves++;
+        sg.subs[sg.n_subs].sub_id = sub_id;
+        sg.n_subs++;
     }
 
     /* Generate flows. */
@@ -141,14 +141,14 @@ test_bundle_main(int argc, char *argv[])
     }
 
     /* Cycles through each possible liveness permutation for the given
-     * n_slaves.  The initial state is equivalent to all slaves down, so we
+     * n_subs.  The initial state is equivalent to all subs down, so we
      * skip it by starting at i = 1. We do one extra iteration to cover
      * transitioning from the final state back to the initial state. */
     old_n_enabled = 0;
     old_active = -1;
-    n_permute = 1 << sg.n_slaves;
+    n_permute = 1 << sg.n_subs;
     for (i = 1; i <= n_permute + 1; i++) {
-        struct slave *slave;
+        struct sub *sub;
         size_t j, n_enabled, changed;
         double disruption, perfect;
         uint8_t mask;
@@ -156,27 +156,27 @@ test_bundle_main(int argc, char *argv[])
 
         mask = i % n_permute;
 
-        /* Gray coding ensures that in each iteration exactly one slave
+        /* Gray coding ensures that in each iteration exactly one sub
          * changes its liveness.  This makes the expected disruption a bit
          * easier to calculate, and is likely similar to how failures will be
          * experienced in the wild. */
         mask = mask ^ (mask >> 1);
 
-        /* Initialize slaves. */
+        /* Initialize subs. */
         n_enabled = 0;
-        for (j = 0; j < sg.n_slaves; j++) {
-            slave = &sg.slaves[j];
-            slave->flow_count = 0;
-            slave->enabled = ((1 << j) & mask) != 0;
+        for (j = 0; j < sg.n_subs; j++) {
+            sub = &sg.subs[j];
+            sub->flow_count = 0;
+            sub->enabled = ((1 << j) & mask) != 0;
 
-            if (slave->enabled) {
+            if (sub->enabled) {
                 n_enabled++;
             }
         }
 
         active = -1;
-        for (j = 0; j < sg.n_slaves; j++) {
-            if (sg.slaves[j].enabled) {
+        for (j = 0; j < sg.n_subs; j++) {
+            if (sg.subs[j].enabled) {
                 active = j;
                 break;
             }
@@ -185,19 +185,19 @@ test_bundle_main(int argc, char *argv[])
         changed = 0;
         for (j = 0; j < N_FLOWS; j++) {
             struct flow *flow = &flows[j];
-            ofp_port_t old_slave_id, ofp_port;
+            ofp_port_t old_sub_id, ofp_port;
             struct flow_wildcards wc;
 
-            old_slave_id = u16_to_ofp(flow->regs[0]);
-            ofp_port = bundle_execute(bundle, flow, &wc, slave_enabled_cb,
+            old_sub_id = u16_to_ofp(flow->regs[0]);
+            ofp_port = bundle_execute(bundle, flow, &wc, sub_enabled_cb,
                                       &sg);
             flow->regs[0] = ofp_to_u16(ofp_port);
 
             if (ofp_port != OFPP_NONE) {
-                slave_lookup(&sg, ofp_port)->flow_count++;
+                sub_lookup(&sg, ofp_port)->flow_count++;
             }
 
-            if (old_slave_id != ofp_port) {
+            if (old_sub_id != ofp_port) {
                 changed++;
             }
         }
@@ -208,23 +208,23 @@ test_bundle_main(int argc, char *argv[])
             if (old_n_enabled || n_enabled) {
                 perfect = 1.0 / MAX(old_n_enabled, n_enabled);
             } else {
-                /* This will happen when 'sg.n_slaves' is 0. */
+                /* This will happen when 'sg.n_subs' is 0. */
                 perfect = 0;
             }
         }
 
         disruption = changed / (double)N_FLOWS;
         printf("%s: disruption=%.2f (perfect=%.2f)",
-               mask_str(mask, sg.n_slaves), disruption, perfect);
+               mask_str(mask, sg.n_subs), disruption, perfect);
 
-        for (j = 0 ; j < sg.n_slaves; j++) {
-            slave = &sg.slaves[j];
+        for (j = 0 ; j < sg.n_subs; j++) {
+            sub = &sg.subs[j];
             double flow_percent;
 
-            flow_percent = slave->flow_count / (double)N_FLOWS;
+            flow_percent = sub->flow_count / (double)N_FLOWS;
             printf( " %.2f", flow_percent);
 
-            if (slave->enabled) {
+            if (sub->enabled) {
                 double perfect_fp;
 
                 if (bundle->algorithm == NX_BD_ALG_ACTIVE_BACKUP) {
@@ -234,16 +234,16 @@ test_bundle_main(int argc, char *argv[])
                 }
 
                 if (fabs(flow_percent - perfect_fp) >= .01) {
-                    fprintf(stderr, "%s: slave %d: flow_percentage=%.5f for"
+                    fprintf(stderr, "%s: sub %d: flow_percentage=%.5f for"
                             " differs from perfect=%.5f by more than .01\n",
-                            mask_str(mask, sg.n_slaves), slave->slave_id,
+                            mask_str(mask, sg.n_subs), sub->sub_id,
                             flow_percent, perfect_fp);
                     ok = false;
                 }
-            } else if (slave->flow_count) {
-                fprintf(stderr, "%s: slave %d: disabled slave received"
-                        " flows.\n", mask_str(mask, sg.n_slaves),
-                        slave->slave_id);
+            } else if (sub->flow_count) {
+                fprintf(stderr, "%s: sub %d: disabled sub received"
+                        " flows.\n", mask_str(mask, sg.n_subs),
+                        sub->sub_id);
                 ok = false;
             }
         }
@@ -251,7 +251,7 @@ test_bundle_main(int argc, char *argv[])
 
         if (fabs(disruption - perfect) >= .01) {
             fprintf(stderr, "%s: disruption=%.5f differs from perfect=%.5f by"
-                    " more than .01\n", mask_str(mask, sg.n_slaves),
+                    " more than .01\n", mask_str(mask, sg.n_subs),
                     disruption, perfect);
             ok = false;
         }

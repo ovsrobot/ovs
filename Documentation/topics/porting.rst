@@ -42,8 +42,8 @@ concordance, indexed by the area of the source tree:
     datapath/       vport           ---
     vswitchd/       iface           port
     ofproto/        port            bundle
-    ofproto/bond.c  slave           bond
-    lib/lacp.c      slave           lacp
+    ofproto/bond.c  sub-interface   bond
+    lib/lacp.c      sub-interface   lacp
     lib/netdev.c    netdev          ---
     database        Interface       Port
 

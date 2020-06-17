@@ -388,7 +388,7 @@ bool ofproto_port_bfd_status_changed(struct ofproto *, ofp_port_t ofp_port);
 int ofproto_port_get_bfd_status(struct ofproto *, ofp_port_t ofp_port,
                                 struct smap *);
 int ofproto_port_is_lacp_current(struct ofproto *, ofp_port_t ofp_port);
-int ofproto_port_get_lacp_stats(const struct ofport *, struct lacp_slave_stats *);
+int ofproto_port_get_lacp_stats(const struct ofport *, struct lacp_sub_stats *);
 int ofproto_port_set_stp(struct ofproto *, ofp_port_t ofp_port,
                          const struct ofproto_port_stp_settings *);
 int ofproto_port_get_stp_status(struct ofproto *, ofp_port_t ofp_port,
@@ -441,8 +441,8 @@ enum port_priority_tags_mode {
 struct ofproto_bundle_settings {
     char *name;                 /* For use in log messages. */
 
-    ofp_port_t *slaves;         /* OpenFlow port numbers for slaves. */
-    size_t n_slaves;
+    ofp_port_t *subs;         /* OpenFlow port numbers for sub-interfaces. */
+    size_t n_subs;
 
     enum port_vlan_mode vlan_mode; /* Selects mode for vlan and trunks */
     uint16_t qinq_ethtype;
@@ -452,10 +452,10 @@ struct ofproto_bundle_settings {
     enum port_priority_tags_mode use_priority_tags;
                                 /* Use 802.1p tag for frames in VLAN 0? */
 
-    struct bond_settings *bond; /* Must be nonnull iff if n_slaves > 1. */
+    struct bond_settings *bond; /* Must be nonnull iff if n_subs > 1. */
 
     struct lacp_settings *lacp;              /* Nonnull to enable LACP. */
-    struct lacp_slave_settings *lacp_slaves; /* Array of n_slaves elements. */
+    struct lacp_sub_settings *lacp_subs;     /* Array of n_subs elements. */
 
     bool protected;             /* Protected port mode */
 };

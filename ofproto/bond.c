@@ -61,13 +61,13 @@ static struct hmap *const all_bonds OVS_GUARDED_BY(rwlock) = &all_bonds__;
 /* Priority for internal rules created to handle recirculation */
 #define RECIRC_RULE_PRIORITY 20
 
-/* A hash bucket for mapping a flow to a slave.
+/* A hash bucket for mapping a flow to a sub-interface.
  * "struct bond" has an array of BOND_BUCKETS of these. */
 struct bond_entry {
-    struct bond_slave *slave;   /* Assigned slave, NULL if unassigned. */
+    struct bond_sub *sub;       /* Assigned sub, NULL if unassigned. */
     uint64_t tx_bytes           /* Count of bytes recently transmitted. */
         OVS_GUARDED_BY(rwlock);
-    struct ovs_list list_node;  /* In bond_slave's 'entries' list. */
+    struct ovs_list list_node;  /* In bond_sub's 'entries' list. */
 
     /* Recirculation.
      *
@@ -78,12 +78,12 @@ struct bond_entry {
     uint64_t pr_tx_bytes OVS_GUARDED_BY(rwlock);
 };
 
-/* A bond slave, that is, one of the links comprising a bond. */
-struct bond_slave {
-    struct hmap_node hmap_node; /* In struct bond's slaves hmap. */
-    struct ovs_list list_node;  /* In struct bond's enabled_slaves list. */
-    struct bond *bond;          /* The bond that contains this slave. */
-    void *aux;                  /* Client-provided handle for this slave. */
+/* A bond sub-interface, that is, one of the links comprising a bond. */
+struct bond_sub {
+    struct hmap_node hmap_node; /* In struct bond's subs hmap. */
+    struct ovs_list list_node;  /* In struct bond's enabled_subs list. */
+    struct bond *bond;          /* The bond that contains this sub. */
+    void *aux;                  /* Client-provided handle for this sub. */
 
     struct netdev *netdev;      /* Network device, owned by the client. */
     uint64_t change_seq;        /* Tracks changes in 'netdev'. */
@@ -92,7 +92,7 @@ struct bond_slave {
 
     /* Link status. */
     bool enabled;               /* May be chosen for flows? */
-    bool may_enable;            /* Client considers this slave bondable. */
+    bool may_enable;            /* Client considers this sub bondable. */
     long long delay_expires;    /* Time after which 'enabled' may change. */
 
     /* Rebalancing info.  Used only by bond_rebalance(). */
@@ -108,21 +108,21 @@ struct bond {
     char *name;                 /* Name provided by client. */
     struct ofproto_dpif *ofproto; /* The bridge this bond belongs to. */
 
-    /* Slaves. */
-    struct hmap slaves;
+    /* Subs. */
+    struct hmap subs;
 
-    /* Enabled slaves.
+    /* Enabled subs.
      *
-     * Any reader or writer of 'enabled_slaves' must hold 'mutex'.
-     * (To prevent the bond_slave from disappearing they must also hold
+     * Any reader or writer of 'enabled_subs' must hold 'mutex'.
+     * (To prevent the bond_sub from disappearing they must also hold
      * 'rwlock'.) */
     struct ovs_mutex mutex OVS_ACQ_AFTER(rwlock);
-    struct ovs_list enabled_slaves OVS_GUARDED; /* Contains struct bond_slaves. */
+    struct ovs_list enabled_subs OVS_GUARDED; /* Contains struct bond_subs. */
 
     /* Bonding info. */
     enum bond_mode balance;     /* Balancing mode, one of BM_*. */
-    struct bond_slave *active_slave;
-    int updelay, downdelay;     /* Delay before slave goes up/down, in ms. */
+    struct bond_sub *active_sub;
+    int updelay, downdelay;     /* Delay before sub goes up/down, in ms. */
     enum lacp_status lacp_status; /* Status of LACP negotiations. */
     bool bond_revalidate;       /* True if flows need revalidation. */
     uint32_t basis;             /* Basis for flow hash function. */
@@ -135,15 +135,14 @@ struct bond {
     uint32_t recirc_id;          /* Non zero if recirculation can be used.*/
     struct hmap pr_rule_ops;     /* Helps to maintain post recirculation rules.*/
 
-    /* Store active slave to OVSDB. */
-    bool active_slave_changed; /* Set to true whenever the bond changes
-                                   active slave. It will be reset to false
-                                   after it is stored into OVSDB */
+    /* Store active sub to OVSDB. */
+    bool active_sub_changed; /* Set to true whenever the bond changes active
+                                sub-interface. It will be reset to false after
+                                it is stored into OVSDB */
 
     /* Interface name may not be persistent across an OS reboot, use
-     * MAC address for identifing the active slave */
-    struct eth_addr active_slave_mac;
-                               /* The MAC address of the active interface. */
+     * MAC address for identifing the active sub. */
+    struct eth_addr active_sub_mac; /* MAC address of the active interface. */
     /* Legacy compatibility. */
     bool lacp_fallback_ab; /* Fallback to active-backup on LACP failure. */
 
@@ -166,24 +165,24 @@ struct bond_pr_rule_op {
 };
 
 static void bond_entry_reset(struct bond *) OVS_REQ_WRLOCK(rwlock);
-static struct bond_slave *bond_slave_lookup(struct bond *, const void *slave_)
+static struct bond_sub *bond_sub_lookup(struct bond *, const void *sub_)
     OVS_REQ_RDLOCK(rwlock);
-static void bond_enable_slave(struct bond_slave *, bool enable)
+static void bond_enable_sub(struct bond_sub *, bool enable)
     OVS_REQ_WRLOCK(rwlock);
-static void bond_link_status_update(struct bond_slave *)
+static void bond_link_status_update(struct bond_sub *)
     OVS_REQ_WRLOCK(rwlock);
-static void bond_choose_active_slave(struct bond *)
+static void bond_choose_active_sub(struct bond *)
     OVS_REQ_WRLOCK(rwlock);
 static struct bond_entry *lookup_bond_entry(const struct bond *,
                                             const struct flow *,
                                             uint16_t vlan)
     OVS_REQ_RDLOCK(rwlock);
-static struct bond_slave *get_enabled_slave(struct bond *)
+static struct bond_sub *get_enabled_sub(struct bond *)
     OVS_REQ_RDLOCK(rwlock);
-static struct bond_slave *choose_output_slave(const struct bond *,
-                                              const struct flow *,
-                                              struct flow_wildcards *,
-                                              uint16_t vlan)
+static struct bond_sub *choose_output_sub(const struct bond *,
+                                          const struct flow *,
+                                          struct flow_wildcards *,
+                                          uint16_t vlan)
     OVS_REQ_RDLOCK(rwlock);
 static void update_recirc_rules__(struct bond *bond);
 static bool bond_is_falling_back_to_ab(const struct bond *);
@@ -224,8 +223,8 @@ bond_mode_to_string(enum bond_mode balance) {
 /* Creates and returns a new bond whose configuration is initially taken from
  * 's'.
  *
- * The caller should register each slave on the new bond by calling
- * bond_slave_register().  */
+ * The caller should register each sub-interface on the new bond by calling
+ * bond_sub_register().  */
 struct bond *
 bond_create(const struct bond_settings *s, struct ofproto_dpif *ofproto)
 {
@@ -233,14 +232,14 @@ bond_create(const struct bond_settings *s, struct ofproto_dpif *ofproto)
 
     bond = xzalloc(sizeof *bond);
     bond->ofproto = ofproto;
-    hmap_init(&bond->slaves);
-    ovs_list_init(&bond->enabled_slaves);
+    hmap_init(&bond->subs);
+    ovs_list_init(&bond->enabled_subs);
     ovs_mutex_init(&bond->mutex);
     ovs_refcount_init(&bond->ref_cnt);
     hmap_init(&bond->pr_rule_ops);
 
-    bond->active_slave_mac = eth_addr_zero;
-    bond->active_slave_changed = false;
+    bond->active_sub_mac = eth_addr_zero;
+    bond->active_sub_changed = false;
 
     bond_reconfigure(bond, s);
     return bond;
@@ -261,7 +260,7 @@ bond_ref(const struct bond *bond_)
 void
 bond_unref(struct bond *bond)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
     if (!bond || ovs_refcount_unref_relaxed(&bond->ref_cnt) != 1) {
         return;
@@ -271,12 +270,12 @@ bond_unref(struct bond *bond)
     hmap_remove(all_bonds, &bond->hmap_node);
     ovs_rwlock_unlock(&rwlock);
 
-    HMAP_FOR_EACH_POP (slave, hmap_node, &bond->slaves) {
-        /* Client owns 'slave->netdev'. */
-        free(slave->name);
-        free(slave);
+    HMAP_FOR_EACH_POP (sub, hmap_node, &bond->subs) {
+        /* Client owns 'sub->netdev'. */
+        free(sub->name);
+        free(sub);
     }
-    hmap_destroy(&bond->slaves);
+    hmap_destroy(&bond->subs);
 
     ovs_mutex_destroy(&bond->mutex);
 
@@ -344,14 +343,14 @@ update_recirc_rules__(struct bond *bond)
 
     if (bond->hash && bond->recirc_id) {
         for (i = 0; i < BOND_BUCKETS; i++) {
-            struct bond_slave *slave = bond->hash[i].slave;
+            struct bond_sub *sub = bond->hash[i].sub;
 
-            if (slave) {
+            if (sub) {
                 match_init_catchall(&match);
                 match_set_recirc_id(&match, bond->recirc_id);
                 match_set_dp_hash_masked(&match, i, BOND_MASK);
 
-                add_pr_rule(bond, &match, slave->ofp_port,
+                add_pr_rule(bond, &match, sub->ofp_port,
                             &bond->hash[i].pr_rule);
             }
         }
@@ -409,9 +408,9 @@ update_recirc_rules(struct bond *bond)
 
 /* Updates 'bond''s overall configuration to 's'.
  *
- * The caller should register each slave on 'bond' by calling
- * bond_slave_register().  This is optional if none of the slaves'
- * configuration has changed.  In any case it can't hurt.
+ * The caller should register each sub-interface on 'bond' by calling
+ * bond_sub_register().  This is optional if none of the subs' configuration
+ * has changed.  In any case it can't hurt.
  *
  * Returns true if the configuration has changed in such a way that requires
  * flow revalidation.
@@ -476,21 +475,21 @@ bond_reconfigure(struct bond *bond, const struct bond_settings *s)
     return revalidate;
 }
 
-static struct bond_slave *
-bond_find_slave_by_mac(const struct bond *bond, const struct eth_addr mac)
+static struct bond_sub *
+bond_find_sub_by_mac(const struct bond *bond, const struct eth_addr mac)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
-    /* Find the last active slave */
-    HMAP_FOR_EACH(slave, hmap_node, &bond->slaves) {
-        struct eth_addr slave_mac;
+    /* Find the last active sub */
+    HMAP_FOR_EACH(sub, hmap_node, &bond->subs) {
+        struct eth_addr sub_mac;
 
-        if (netdev_get_etheraddr(slave->netdev, &slave_mac)) {
+        if (netdev_get_etheraddr(sub->netdev, &sub_mac)) {
             continue;
         }
 
-        if (eth_addr_equals(slave_mac, mac)) {
-            return slave;
+        if (eth_addr_equals(sub_mac, mac)) {
+            return sub;
         }
     }
 
@@ -498,139 +497,139 @@ bond_find_slave_by_mac(const struct bond *bond, const struct eth_addr mac)
 }
 
 static void
-bond_active_slave_changed(struct bond *bond)
+bond_active_sub_changed(struct bond *bond)
 {
-    if (bond->active_slave) {
+    if (bond->active_sub) {
         struct eth_addr mac;
-        netdev_get_etheraddr(bond->active_slave->netdev, &mac);
-        bond->active_slave_mac = mac;
+        netdev_get_etheraddr(bond->active_sub->netdev, &mac);
+        bond->active_sub_mac = mac;
     } else {
-        bond->active_slave_mac = eth_addr_zero;
+        bond->active_sub_mac = eth_addr_zero;
     }
-    bond->active_slave_changed = true;
+    bond->active_sub_changed = true;
     seq_change(connectivity_seq_get());
 }
 
 static void
-bond_slave_set_netdev__(struct bond_slave *slave, struct netdev *netdev)
+bond_sub_set_netdev__(struct bond_sub *sub, struct netdev *netdev)
     OVS_REQ_WRLOCK(rwlock)
 {
-    if (slave->netdev != netdev) {
-        slave->netdev = netdev;
-        slave->change_seq = 0;
+    if (sub->netdev != netdev) {
+        sub->netdev = netdev;
+        sub->change_seq = 0;
     }
 }
 
-/* Registers 'slave_' as a slave of 'bond'.  The 'slave_' pointer is an
- * arbitrary client-provided pointer that uniquely identifies a slave within a
- * bond.  If 'slave_' already exists within 'bond' then this function
- * reconfigures the existing slave.
+/* Registers 'sub_' as a sub-interface of 'bond'.  The 'sub_' pointer is an
+ * arbitrary client-provided pointer that uniquely identifies a sub within a
+ * bond.  If 'sub_' already exists within 'bond' then this function
+ * reconfigures the existing sub.
  *
- * 'netdev' must be the network device that 'slave_' represents.  It is owned
+ * 'netdev' must be the network device that 'sub_' represents.  It is owned
  * by the client, so the client must not close it before either unregistering
- * 'slave_' or destroying 'bond'.
+ * 'sub_' or destroying 'bond'.
  */
 void
-bond_slave_register(struct bond *bond, void *slave_,
-                    ofp_port_t ofport, struct netdev *netdev)
+bond_sub_register(struct bond *bond, void *sub_,
+                  ofp_port_t ofport, struct netdev *netdev)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
     ovs_rwlock_wrlock(&rwlock);
-    slave = bond_slave_lookup(bond, slave_);
-    if (!slave) {
-        slave = xzalloc(sizeof *slave);
+    sub = bond_sub_lookup(bond, sub_);
+    if (!sub) {
+        sub = xzalloc(sizeof *sub);
 
-        hmap_insert(&bond->slaves, &slave->hmap_node, hash_pointer(slave_, 0));
-        slave->bond = bond;
-        slave->aux = slave_;
-        slave->ofp_port = ofport;
-        slave->delay_expires = LLONG_MAX;
-        slave->name = xstrdup(netdev_get_name(netdev));
+        hmap_insert(&bond->subs, &sub->hmap_node, hash_pointer(sub_, 0));
+        sub->bond = bond;
+        sub->aux = sub_;
+        sub->ofp_port = ofport;
+        sub->delay_expires = LLONG_MAX;
+        sub->name = xstrdup(netdev_get_name(netdev));
         bond->bond_revalidate = true;
 
-        slave->enabled = false;
-        bond_enable_slave(slave, netdev_get_carrier(netdev));
+        sub->enabled = false;
+        bond_enable_sub(sub, netdev_get_carrier(netdev));
     }
 
-    bond_slave_set_netdev__(slave, netdev);
+    bond_sub_set_netdev__(sub, netdev);
 
-    free(slave->name);
-    slave->name = xstrdup(netdev_get_name(netdev));
+    free(sub->name);
+    sub->name = xstrdup(netdev_get_name(netdev));
     ovs_rwlock_unlock(&rwlock);
 }
 
-/* Updates the network device to be used with 'slave_' to 'netdev'.
+/* Updates the network device to be used with 'sub_' to 'netdev'.
  *
  * This is useful if the caller closes and re-opens the network device
- * registered with bond_slave_register() but doesn't need to change anything
+ * registered with bond_sub_register() but doesn't need to change anything
  * else. */
 void
-bond_slave_set_netdev(struct bond *bond, void *slave_, struct netdev *netdev)
+bond_sub_set_netdev(struct bond *bond, void *sub_, struct netdev *netdev)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
     ovs_rwlock_wrlock(&rwlock);
-    slave = bond_slave_lookup(bond, slave_);
-    if (slave) {
-        bond_slave_set_netdev__(slave, netdev);
+    sub = bond_sub_lookup(bond, sub_);
+    if (sub) {
+        bond_sub_set_netdev__(sub, netdev);
     }
     ovs_rwlock_unlock(&rwlock);
 }
 
-/* Unregisters 'slave_' from 'bond'.  If 'bond' does not contain such a slave
- * then this function has no effect.
+/* Unregisters 'sub_' from 'bond'.  If 'bond' does not contain such a
+ * sub-interface then this function has no effect.
  *
- * Unregistering a slave invalidates all flows. */
+ * Unregistering a sub invalidates all flows. */
 void
-bond_slave_unregister(struct bond *bond, const void *slave_)
+bond_sub_unregister(struct bond *bond, const void *sub_)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     bool del_active;
 
     ovs_rwlock_wrlock(&rwlock);
-    slave = bond_slave_lookup(bond, slave_);
-    if (!slave) {
+    sub = bond_sub_lookup(bond, sub_);
+    if (!sub) {
         goto out;
     }
 
     bond->bond_revalidate = true;
-    bond_enable_slave(slave, false);
+    bond_enable_sub(sub, false);
 
-    del_active = bond->active_slave == slave;
+    del_active = bond->active_sub == sub;
     if (bond->hash) {
         struct bond_entry *e;
         for (e = bond->hash; e <= &bond->hash[BOND_MASK]; e++) {
-            if (e->slave == slave) {
-                e->slave = NULL;
+            if (e->sub == sub) {
+                e->sub = NULL;
             }
         }
     }
 
-    free(slave->name);
+    free(sub->name);
 
-    hmap_remove(&bond->slaves, &slave->hmap_node);
-    /* Client owns 'slave->netdev'. */
-    free(slave);
+    hmap_remove(&bond->subs, &sub->hmap_node);
+    /* Client owns 'sub->netdev'. */
+    free(sub);
 
     if (del_active) {
-        bond_choose_active_slave(bond);
+        bond_choose_active_sub(bond);
         bond->send_learning_packets = true;
     }
 out:
     ovs_rwlock_unlock(&rwlock);
 }
 
-/* Should be called on each slave in 'bond' before bond_run() to indicate
- * whether or not 'slave_' may be enabled. This function is intended to allow
+/* Should be called on each sub in 'bond' before bond_run() to indicate
+ * whether or not 'sub_' may be enabled. This function is intended to allow
  * other protocols to have some impact on bonding decisions.  For example LACP
- * or high level link monitoring protocols may decide that a given slave should
+ * or high level link monitoring protocols may decide that a given sub should
  * not be able to send traffic. */
 void
-bond_slave_set_may_enable(struct bond *bond, void *slave_, bool may_enable)
+bond_sub_set_may_enable(struct bond *bond, void *sub_, bool may_enable)
 {
     ovs_rwlock_wrlock(&rwlock);
-    bond_slave_lookup(bond, slave_)->may_enable = may_enable;
+    bond_sub_lookup(bond, sub_)->may_enable = may_enable;
     ovs_rwlock_unlock(&rwlock);
 }
 
@@ -642,7 +641,7 @@ bond_slave_set_may_enable(struct bond *bond, void *slave_, bool may_enable)
 bool
 bond_run(struct bond *bond, enum lacp_status lacp_status)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     bool revalidate;
 
     ovs_rwlock_wrlock(&rwlock);
@@ -658,13 +657,13 @@ bond_run(struct bond *bond, enum lacp_status lacp_status)
         }
     }
 
-    /* Enable slaves based on link status and LACP feedback. */
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        bond_link_status_update(slave);
-        slave->change_seq = seq_read(connectivity_seq_get());
+    /* Enable subs based on link status and LACP feedback. */
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        bond_link_status_update(sub);
+        sub->change_seq = seq_read(connectivity_seq_get());
     }
-    if (!bond->active_slave || !bond->active_slave->enabled) {
-        bond_choose_active_slave(bond);
+    if (!bond->active_sub || !bond->active_sub->enabled) {
+        bond_choose_active_sub(bond);
     }
 
     revalidate = bond->bond_revalidate;
@@ -678,15 +677,15 @@ bond_run(struct bond *bond, enum lacp_status lacp_status)
 void
 bond_wait(struct bond *bond)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
     ovs_rwlock_rdlock(&rwlock);
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        if (slave->delay_expires != LLONG_MAX) {
-            poll_timer_wait_until(slave->delay_expires);
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        if (sub->delay_expires != LLONG_MAX) {
+            poll_timer_wait_until(sub->delay_expires);
         }
 
-        seq_wait(connectivity_seq_get(), slave->change_seq);
+        seq_wait(connectivity_seq_get(), sub->change_seq);
     }
 
     if (bond->bond_revalidate) {
@@ -708,7 +707,7 @@ may_send_learning_packets(const struct bond *bond)
     return ((bond->lacp_status == LACP_DISABLED
         && (bond->balance == BM_SLB || bond->balance == BM_AB))
         || (bond->lacp_fallback_ab && bond->lacp_status == LACP_CONFIGURED))
-        && bond->active_slave;
+        && bond->active_sub;
 }
 
 /* Returns true if 'bond' needs the client to send out packets to assist with
@@ -743,7 +742,7 @@ struct dp_packet *
 bond_compose_learning_packet(struct bond *bond, const struct eth_addr eth_src,
                              uint16_t vlan, void **port_aux)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     struct dp_packet *packet;
     struct flow flow;
 
@@ -751,7 +750,7 @@ bond_compose_learning_packet(struct bond *bond, const struct eth_addr eth_src,
     ovs_assert(may_send_learning_packets(bond));
     memset(&flow, 0, sizeof flow);
     flow.dl_src = eth_src;
-    slave = choose_output_slave(bond, &flow, NULL, vlan);
+    sub = choose_output_sub(bond, &flow, NULL, vlan);
 
     packet = dp_packet_new(0);
     compose_rarp(packet, eth_src);
@@ -759,7 +758,7 @@ bond_compose_learning_packet(struct bond *bond, const struct eth_addr eth_src,
         eth_push_vlan(packet, htons(ETH_TYPE_VLAN), htons(vlan));
     }
 
-    *port_aux = slave->aux;
+    *port_aux = sub->aux;
     ovs_rwlock_unlock(&rwlock);
     return packet;
 }
@@ -773,7 +772,7 @@ bond_is_falling_back_to_ab(const struct bond *bond)
             && bond->lacp_status == LACP_CONFIGURED);
 }
 
-/* Checks whether a packet that arrived on 'slave_' within 'bond', with an
+/* Checks whether a packet that arrived on 'sub_' within 'bond', with an
  * Ethernet destination address of 'eth_dst', should be admitted.
  *
  * The return value is one of the following:
@@ -789,22 +788,22 @@ bond_is_falling_back_to_ab(const struct bond *bond)
  *      learning).
  */
 enum bond_verdict
-bond_check_admissibility(struct bond *bond, const void *slave_,
+bond_check_admissibility(struct bond *bond, const void *sub_,
                          const struct eth_addr eth_dst)
 {
     enum bond_verdict verdict = BV_DROP;
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
     ovs_rwlock_rdlock(&rwlock);
-    slave = bond_slave_lookup(bond, slave_);
-    if (!slave) {
+    sub = bond_sub_lookup(bond, sub_);
+    if (!sub) {
         goto out;
     }
 
     /* LACP bonds have very loose admissibility restrictions because we can
      * assume the remote switch is aware of the bond and will "do the right
-     * thing".  However, as a precaution we drop packets on disabled slaves
+     * thing".  However, as a precaution we drop packets on disabled subs
      * because no correctly implemented partner switch should be sending
      * packets to them.
      *
@@ -812,14 +811,15 @@ bond_check_admissibility(struct bond *bond, const void *slave_,
      * drop all incoming traffic except if lacp_fallback_ab is enabled. */
     switch (bond->lacp_status) {
     case LACP_NEGOTIATED:
-        /* To reduce packet-drops due to delay in enabling of slave (post
+        /* To reduce packet-drops due to delay in enabling of sub (post
          * LACP-SYNC), from main thread, check for may_enable as well.
          * When may_enable is TRUE, it means LACP is UP and waiting for the
-         * main thread to run LACP state machine and enable the slave. */
-        verdict = (slave->enabled || slave->may_enable) ? BV_ACCEPT : BV_DROP;
-        if (!slave->enabled && slave->may_enable) {
-            VLOG_DBG_RL(&rl, "bond %s: slave %s: main thread not yet enabled slave",
-                         bond->name, bond->active_slave->name);
+         * main thread to run LACP state machine and enable the sub. */
+        verdict = (sub->enabled || sub->may_enable) ? BV_ACCEPT : BV_DROP;
+        if (!sub->enabled && sub->may_enable) {
+            VLOG_DBG_RL(&rl, "bond %s: interface %s: "
+                        "main thread has not yet enabled interface",
+                         bond->name, bond->active_sub->name);
         }
         goto out;
     case LACP_CONFIGURED:
@@ -834,9 +834,9 @@ bond_check_admissibility(struct bond *bond, const void *slave_,
         break;
     }
 
-    /* Drop all multicast packets on inactive slaves. */
+    /* Drop all multicast packets on inactive subs. */
     if (eth_addr_is_multicast(eth_dst)) {
-        if (bond->active_slave != slave) {
+        if (bond->active_sub != sub) {
             goto out;
         }
     }
@@ -853,12 +853,12 @@ bond_check_admissibility(struct bond *bond, const void *slave_,
         /* fall through */
 
     case BM_AB:
-        /* Drop all packets which arrive on backup slaves.  This is similar to
+        /* Drop all packets which arrive on backup subs.  This is similar to
          * how Linux bonding handles active-backup bonds. */
-        if (bond->active_slave != slave) {
+        if (bond->active_sub != sub) {
             VLOG_DBG_RL(&rl, "active-backup bond received packet on backup"
-                        " slave (%s) destined for " ETH_ADDR_FMT,
-                        slave->name, ETH_ADDR_ARGS(eth_dst));
+                        " interface (%s) destined for " ETH_ADDR_FMT,
+                        sub->name, ETH_ADDR_ARGS(eth_dst));
             goto out;
         }
         verdict = BV_ACCEPT;
@@ -866,27 +866,28 @@ bond_check_admissibility(struct bond *bond, const void *slave_,
 
     case BM_SLB:
         /* Drop all packets for which we have learned a different input port,
-         * because we probably sent the packet on one slave and got it back on
+         * because we probably sent the packet on one sub and got it back on
          * the other.  Gratuitous ARP packets are an exception to this rule:
          * the host has moved to another switch.  The exception to the
          * exception is if we locked the learning table to avoid reflections on
-         * bond slaves. */
+         * bond subs. */
         verdict = BV_DROP_IF_MOVED;
         goto out;
     }
 
     OVS_NOT_REACHED();
 out:
-    if (slave && (verdict != BV_ACCEPT)) {
-        VLOG_DBG_RL(&rl, "slave (%s): Admissibility verdict is to drop pkt %s."
-                    "active slave: %s, may_enable: %s enable: %s "
+    if (sub && (verdict != BV_ACCEPT)) {
+        VLOG_DBG_RL(&rl, "interface (%s): "
+                    "Admissibility verdict is to drop pkt %s."
+                    "active interface: %s, may_enable: %s enable: %s "
                     "LACP status:%d",
-                    slave->name,
+                    sub->name,
                     (verdict == BV_DROP_IF_MOVED) ?
                         "as different port is learned" : "",
-                    (bond->active_slave == slave) ? "true" : "false",
-                    slave->may_enable ? "true" : "false",
-                    slave->enabled ? "true" : "false",
+                    (bond->active_sub == sub) ? "true" : "false",
+                    sub->may_enable ? "true" : "false",
+                    sub->enabled ? "true" : "false",
                     bond->lacp_status);
     }
 
@@ -895,9 +896,9 @@ out:
 
 }
 
-/* Returns the slave (registered on 'bond' by bond_slave_register()) to which
- * a packet with the given 'flow' and 'vlan' should be forwarded.  Returns
- * NULL if the packet should be dropped because no slaves are enabled.
+/* Returns the sub-interface (registered on 'bond' by bond_sub_register()) to
+ * which a packet with the given 'flow' and 'vlan' should be forwarded.
+ * Returns NULL if the packet should be dropped because no subs are enabled.
  *
  * 'vlan' is not necessarily the same as 'flow->vlan_tci'.  First, 'vlan'
  * should be a VID only (i.e. excluding the PCP bits).  Second,
@@ -910,15 +911,15 @@ out:
  * have been initialized (e.g., by flow_wildcards_init_catchall()).
  */
 void *
-bond_choose_output_slave(struct bond *bond, const struct flow *flow,
+bond_choose_output_sub(struct bond *bond, const struct flow *flow,
                          struct flow_wildcards *wc, uint16_t vlan)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     void *aux;
 
     ovs_rwlock_rdlock(&rwlock);
-    slave = choose_output_slave(bond, flow, wc, vlan);
-    aux = slave ? slave->aux : NULL;
+    sub = choose_output_sub(bond, flow, wc, vlan);
+    aux = sub ? sub->aux : NULL;
     ovs_rwlock_unlock(&rwlock);
 
     return aux;
@@ -929,7 +930,7 @@ static void
 bond_entry_account(struct bond_entry *entry, uint64_t rule_tx_bytes)
     OVS_REQ_WRLOCK(rwlock)
 {
-    if (entry->slave) {
+    if (entry->sub) {
         uint64_t delta;
 
         delta = rule_tx_bytes - entry->pr_tx_bytes;
@@ -976,12 +977,12 @@ bond_update_post_recirc_rules__(struct bond* bond, const bool force)
 
    /* Make sure all bond entries are populated */
    for (e = bond->hash; e <= &bond->hash[BOND_MASK]; e++) {
-       if (!e->slave || !e->slave->enabled) {
+       if (!e->sub || !e->sub->enabled) {
             update_rules = true;
-            e->slave = CONTAINER_OF(hmap_random_node(&bond->slaves),
-                                    struct bond_slave, hmap_node);
-            if (!e->slave->enabled) {
-                e->slave = bond->active_slave;
+            e->sub = CONTAINER_OF(hmap_random_node(&bond->subs),
+                                    struct bond_sub, hmap_node);
+            if (!e->sub->enabled) {
+                e->sub = bond->active_sub;
             }
         }
    }
@@ -1039,10 +1040,10 @@ bond_account(struct bond *bond, const struct flow *flow, uint16_t vlan,
     ovs_rwlock_unlock(&rwlock);
 }
 
-static struct bond_slave *
-bond_slave_from_bal_node(struct ovs_list *bal) OVS_REQ_RDLOCK(rwlock)
+static struct bond_sub *
+bond_sub_from_bal_node(struct ovs_list *bal) OVS_REQ_RDLOCK(rwlock)
 {
-    return CONTAINER_OF(bal, struct bond_slave, bal_node);
+    return CONTAINER_OF(bal, struct bond_sub, bal_node);
 }
 
 static void
@@ -1051,24 +1052,24 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
 {
     if (VLOG_IS_DBG_ENABLED()) {
         struct ds ds = DS_EMPTY_INITIALIZER;
-        const struct bond_slave *slave;
+        const struct bond_sub *sub;
 
-        LIST_FOR_EACH (slave, bal_node, bals) {
+        LIST_FOR_EACH (sub, bal_node, bals) {
             if (ds.length) {
                 ds_put_char(&ds, ',');
             }
             ds_put_format(&ds, " %s %"PRIu64"kB",
-                          slave->name, slave->tx_bytes / 1024);
+                          sub->name, sub->tx_bytes / 1024);
 
-            if (!slave->enabled) {
+            if (!sub->enabled) {
                 ds_put_cstr(&ds, " (disabled)");
             }
-            if (!ovs_list_is_empty(&slave->entries)) {
+            if (!ovs_list_is_empty(&sub->entries)) {
                 struct bond_entry *e;
 
                 ds_put_cstr(&ds, " (");
-                LIST_FOR_EACH (e, list_node, &slave->entries) {
-                    if (&e->list_node != ovs_list_front(&slave->entries)) {
+                LIST_FOR_EACH (e, list_node, &sub->entries) {
+                    if (&e->list_node != ovs_list_front(&sub->entries)) {
                         ds_put_cstr(&ds, " + ");
                     }
                     ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64"kB",
@@ -1082,12 +1083,12 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
     }
 }
 
-/* Shifts 'hash' from its current slave to 'to'. */
+/* Shifts 'hash' from its current sub to 'to'. */
 static void
-bond_shift_load(struct bond_entry *hash, struct bond_slave *to)
+bond_shift_load(struct bond_entry *hash, struct bond_sub *to)
     OVS_REQ_WRLOCK(rwlock)
 {
-    struct bond_slave *from = hash->slave;
+    struct bond_sub *from = hash->sub;
     struct bond *bond = from->bond;
     uint64_t delta = hash->tx_bytes;
 
@@ -1104,19 +1105,20 @@ bond_shift_load(struct bond_entry *hash, struct bond_slave *to)
     to->tx_bytes += delta;
 
     /* Arrange for flows to be revalidated. */
-    hash->slave = to;
+    hash->sub = to;
     bond->bond_revalidate = true;
 }
 
 /* Picks and returns a bond_entry to migrate from 'from' (the most heavily
- * loaded bond slave) to a bond slave that has 'to_tx_bytes' bytes of load,
- * given that doing so must decrease the ratio of the load on the two slaves by
- * at least 0.1.  Returns NULL if there is no appropriate entry.
+ * loaded bond sub-interface) to a bond sub-interface that has 'to_tx_bytes'
+ * bytes of load, given that doing so must decrease the ratio of the load on
+ * the two subs by at least 0.1.  Returns NULL if there is no appropriate
+ * entry.
  *
  * The list of entries isn't sorted.  I don't know of a reason to prefer to
  * shift away small hashes or large hashes. */
 static struct bond_entry *
-choose_entry_to_migrate(const struct bond_slave *from, uint64_t to_tx_bytes)
+choose_entry_to_migrate(const struct bond_sub *from, uint64_t to_tx_bytes)
     OVS_REQ_WRLOCK(rwlock)
 {
     struct bond_entry *e;
@@ -1153,28 +1155,28 @@ choose_entry_to_migrate(const struct bond_slave *from, uint64_t to_tx_bytes)
     return NULL;
 }
 
-/* Inserts 'slave' into 'bals' so that descending order of 'tx_bytes' is
+/* Inserts 'sub' into 'bals' so that descending order of 'tx_bytes' is
  * maintained. */
 static void
-insert_bal(struct ovs_list *bals, struct bond_slave *slave)
+insert_bal(struct ovs_list *bals, struct bond_sub *sub)
 {
-    struct bond_slave *pos;
+    struct bond_sub *pos;
 
     LIST_FOR_EACH (pos, bal_node, bals) {
-        if (slave->tx_bytes > pos->tx_bytes) {
+        if (sub->tx_bytes > pos->tx_bytes) {
             break;
         }
     }
-    ovs_list_insert(&pos->bal_node, &slave->bal_node);
+    ovs_list_insert(&pos->bal_node, &sub->bal_node);
 }
 
-/* Removes 'slave' from its current list and then inserts it into 'bals' so
+/* Removes 'sub' from its current list and then inserts it into 'bals' so
  * that descending order of 'tx_bytes' is maintained. */
 static void
-reinsert_bal(struct ovs_list *bals, struct bond_slave *slave)
+reinsert_bal(struct ovs_list *bals, struct bond_sub *sub)
 {
-    ovs_list_remove(&slave->bal_node);
-    insert_bal(bals, slave);
+    ovs_list_remove(&sub->bal_node);
+    insert_bal(bals, sub);
 }
 
 /* If 'bond' needs rebalancing, does so.
@@ -1186,7 +1188,7 @@ reinsert_bal(struct ovs_list *bals, struct bond_slave *slave)
 void
 bond_rebalance(struct bond *bond)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     struct bond_entry *e;
     struct ovs_list bals;
     bool rebalanced = false;
@@ -1205,41 +1207,41 @@ bond_rebalance(struct bond *bond)
         bond_recirculation_account(bond);
     }
 
-    /* Add each bond_entry to its slave's 'entries' list.
-     * Compute each slave's tx_bytes as the sum of its entries' tx_bytes. */
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        slave->tx_bytes = 0;
-        ovs_list_init(&slave->entries);
+    /* Add each bond_entry to its sub's 'entries' list.
+     * Compute each sub's tx_bytes as the sum of its entries' tx_bytes. */
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        sub->tx_bytes = 0;
+        ovs_list_init(&sub->entries);
     }
     for (e = &bond->hash[0]; e <= &bond->hash[BOND_MASK]; e++) {
-        if (e->slave && e->tx_bytes) {
-            e->slave->tx_bytes += e->tx_bytes;
-            ovs_list_push_back(&e->slave->entries, &e->list_node);
+        if (e->sub && e->tx_bytes) {
+            e->sub->tx_bytes += e->tx_bytes;
+            ovs_list_push_back(&e->sub->entries, &e->list_node);
         }
     }
 
-    /* Add enabled slaves to 'bals' in descending order of tx_bytes.
+    /* Add enabled subs to 'bals' in descending order of tx_bytes.
      *
-     * XXX This is O(n**2) in the number of slaves but it could be O(n lg n)
+     * XXX This is O(n**2) in the number of subs but it could be O(n lg n)
      * with a proper list sort algorithm. */
     ovs_list_init(&bals);
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        if (slave->enabled) {
-            insert_bal(&bals, slave);
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        if (sub->enabled) {
+            insert_bal(&bals, sub);
         }
     }
     log_bals(bond, &bals);
 
-    /* Shift load from the most-loaded slaves to the least-loaded slaves. */
+    /* Shift load from the most-loaded subs to the least-loaded subs. */
     while (!ovs_list_is_short(&bals)) {
-        struct bond_slave *from = bond_slave_from_bal_node(ovs_list_front(&bals));
-        struct bond_slave *to = bond_slave_from_bal_node(ovs_list_back(&bals));
+        struct bond_sub *from = bond_sub_from_bal_node(ovs_list_front(&bals));
+        struct bond_sub *to = bond_sub_from_bal_node(ovs_list_back(&bals));
         uint64_t overload;
 
         overload = from->tx_bytes - to->tx_bytes;
         if (overload < to->tx_bytes >> 5 || overload < 100000) {
-            /* The extra load on 'from' (and all less-loaded slaves), compared
-             * to that of 'to' (the least-loaded slave), is less than ~3%, or
+            /* The extra load on 'from' (and all less-loaded subs), compared
+             * to that of 'to' (the least-loaded sub), is less than ~3%, or
              * it is less than ~1Mbps.  No point in rebalancing. */
             break;
         }
@@ -1253,7 +1255,7 @@ bond_rebalance(struct bond *bond)
             /* Delete element from from->entries.
              *
              * We don't add the element to to->hashes.  That would only allow
-             * 'e' to be migrated to another slave in this rebalancing run, and
+             * 'e' to be migrated to another sub in this rebalancing run, and
              * there is no point in doing that. */
             ovs_list_remove(&e->list_node);
 
@@ -1299,14 +1301,14 @@ bond_find(const char *name) OVS_REQ_RDLOCK(rwlock)
     return NULL;
 }
 
-static struct bond_slave *
-bond_lookup_slave(struct bond *bond, const char *slave_name)
+static struct bond_sub *
+bond_lookup_sub(struct bond *bond, const char *sub_name)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        if (!strcmp(slave->name, slave_name)) {
-            return slave;
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        if (!strcmp(sub->name, sub_name)) {
+            return sub;
         }
     }
     return NULL;
@@ -1320,22 +1322,22 @@ bond_unixctl_list(struct unixctl_conn *conn,
     struct ds ds = DS_EMPTY_INITIALIZER;
     const struct bond *bond;
 
-    ds_put_cstr(&ds, "bond\ttype\trecircID\tslaves\n");
+    ds_put_cstr(&ds, "bond\ttype\trecircID\tinterfaces\n");
 
     ovs_rwlock_rdlock(&rwlock);
     HMAP_FOR_EACH (bond, hmap_node, all_bonds) {
-        const struct bond_slave *slave;
+        const struct bond_sub *sub;
         size_t i;
 
         ds_put_format(&ds, "%s\t%s\t%d\t", bond->name,
                       bond_mode_to_string(bond->balance), bond->recirc_id);
 
         i = 0;
-        HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
+        HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
             if (i++ > 0) {
                 ds_put_cstr(&ds, ", ");
             }
-            ds_put_cstr(&ds, slave->name);
+            ds_put_cstr(&ds, sub->name);
         }
         ds_put_char(&ds, '\n');
     }
@@ -1348,9 +1350,9 @@ static void
 bond_print_details(struct ds *ds, const struct bond *bond)
     OVS_REQ_RDLOCK(rwlock)
 {
-    struct shash slave_shash = SHASH_INITIALIZER(&slave_shash);
-    const struct shash_node **sorted_slaves = NULL;
-    const struct bond_slave *slave;
+    struct shash sub_shash = SHASH_INITIALIZER(&sub_shash);
+    const struct shash_node **sorted_subs = NULL;
+    const struct bond_sub *sub;
     bool may_recirc;
     uint32_t recirc_id;
     int i;
@@ -1393,35 +1395,35 @@ bond_print_details(struct ds *ds, const struct bond *bond)
     ds_put_format(ds, "lacp_fallback_ab: %s\n",
                   bond->lacp_fallback_ab ? "true" : "false");
 
-    ds_put_cstr(ds, "active slave mac: ");
-    ds_put_format(ds, ETH_ADDR_FMT, ETH_ADDR_ARGS(bond->active_slave_mac));
-    slave = bond_find_slave_by_mac(bond, bond->active_slave_mac);
-    ds_put_format(ds,"(%s)\n", slave ? slave->name : "none");
+    ds_put_cstr(ds, "active interface mac: ");
+    ds_put_format(ds, ETH_ADDR_FMT, ETH_ADDR_ARGS(bond->active_sub_mac));
+    sub = bond_find_sub_by_mac(bond, bond->active_sub_mac);
+    ds_put_format(ds,"(%s)\n", sub ? sub->name : "none");
 
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        shash_add(&slave_shash, slave->name, slave);
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        shash_add(&sub_shash, sub->name, sub);
     }
-    sorted_slaves = shash_sort(&slave_shash);
+    sorted_subs = shash_sort(&sub_shash);
 
-    for (i = 0; i < shash_count(&slave_shash); i++) {
+    for (i = 0; i < shash_count(&sub_shash); i++) {
         struct bond_entry *be;
 
-        slave = sorted_slaves[i]->data;
+        sub = sorted_subs[i]->data;
 
         /* Basic info. */
-        ds_put_format(ds, "\nslave %s: %s\n",
-                      slave->name, slave->enabled ? "enabled" : "disabled");
-        if (slave == bond->active_slave) {
-            ds_put_cstr(ds, "  active slave\n");
+        ds_put_format(ds, "\ninterface %s: %s\n",
+                      sub->name, sub->enabled ? "enabled" : "disabled");
+        if (sub == bond->active_sub) {
+            ds_put_cstr(ds, "  active interface\n");
         }
-        if (slave->delay_expires != LLONG_MAX) {
+        if (sub->delay_expires != LLONG_MAX) {
             ds_put_format(ds, "  %s expires in %lld ms\n",
-                          slave->enabled ? "downdelay" : "updelay",
-                          slave->delay_expires - time_msec());
+                          sub->enabled ? "downdelay" : "updelay",
+                          sub->delay_expires - time_msec());
         }
 
         ds_put_format(ds, "  may_enable: %s\n",
-                      slave->may_enable ? "true" : "false");
+                      sub->may_enable ? "true" : "false");
 
         if (!bond_is_balanced(bond)) {
             continue;
@@ -1432,7 +1434,7 @@ bond_print_details(struct ds *ds, const struct bond *bond)
             int hash = be - bond->hash;
             uint64_t be_tx_k;
 
-            if (be->slave != slave) {
+            if (be->sub != sub) {
                 continue;
             }
 
@@ -1445,8 +1447,8 @@ bond_print_details(struct ds *ds, const struct bond *bond)
             /* XXX How can we list the MACs assigned to hashes of SLB bonds? */
         }
     }
-    shash_destroy(&slave_shash);
-    free(sorted_slaves);
+    shash_destroy(&sub_shash);
+    free(sorted_subs);
     ds_put_cstr(ds, "\n");
 }
 
@@ -1488,9 +1490,9 @@ bond_unixctl_migrate(struct unixctl_conn *conn,
 {
     const char *bond_s = argv[1];
     const char *hash_s = argv[2];
-    const char *slave_s = argv[3];
+    const char *sub_s = argv[3];
     struct bond *bond;
-    struct bond_slave *slave;
+    struct bond_sub *sub;
     struct bond_entry *entry;
     int hash;
 
@@ -1513,20 +1515,21 @@ bond_unixctl_migrate(struct unixctl_conn *conn,
         goto out;
     }
 
-    slave = bond_lookup_slave(bond, slave_s);
-    if (!slave) {
-        unixctl_command_reply_error(conn, "no such slave");
+    sub = bond_lookup_sub(bond, sub_s);
+    if (!sub) {
+        unixctl_command_reply_error(conn, "no such interface");
         goto out;
     }
 
-    if (!slave->enabled) {
-        unixctl_command_reply_error(conn, "cannot migrate to disabled slave");
+    if (!sub->enabled) {
+        unixctl_command_reply_error(conn,
+                                    "cannot migrate to disabled interface");
         goto out;
     }
 
     entry = &bond->hash[hash];
     bond->bond_revalidate = true;
-    entry->slave = slave;
+    entry->sub = sub;
     unixctl_command_reply(conn, "migrated");
 
 out:
@@ -1534,14 +1537,14 @@ out:
 }
 
 static void
-bond_unixctl_set_active_slave(struct unixctl_conn *conn,
-                              int argc OVS_UNUSED, const char *argv[],
-                              void *aux OVS_UNUSED)
+bond_unixctl_set_active_sub(struct unixctl_conn *conn,
+                            int argc OVS_UNUSED, const char *argv[],
+                            void *aux OVS_UNUSED)
 {
     const char *bond_s = argv[1];
-    const char *slave_s = argv[2];
+    const char *sub_s = argv[2];
     struct bond *bond;
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
     ovs_rwlock_wrlock(&rwlock);
     bond = bond_find(bond_s);
@@ -1550,25 +1553,26 @@ bond_unixctl_set_active_slave(struct unixctl_conn *conn,
         goto out;
     }
 
-    slave = bond_lookup_slave(bond, slave_s);
-    if (!slave) {
-        unixctl_command_reply_error(conn, "no such slave");
+    sub = bond_lookup_sub(bond, sub_s);
+    if (!sub) {
+        unixctl_command_reply_error(conn, "no such interface");
         goto out;
     }
 
-    if (!slave->enabled) {
-        unixctl_command_reply_error(conn, "cannot make disabled slave active");
+    if (!sub->enabled) {
+        unixctl_command_reply_error(conn,
+                                    "cannot make disabled interface active");
         goto out;
     }
 
-    if (bond->active_slave != slave) {
+    if (bond->active_sub != sub) {
         bond->bond_revalidate = true;
-        bond->active_slave = slave;
+        bond->active_sub = sub;
         VLOG_INFO("bond %s: active interface is now %s",
-                  bond->name, slave->name);
+                  bond->name, sub->name);
         bond->send_learning_packets = true;
         unixctl_command_reply(conn, "done");
-        bond_active_slave_changed(bond);
+        bond_active_sub_changed(bond);
     } else {
         unixctl_command_reply(conn, "no change");
     }
@@ -1577,12 +1581,12 @@ out:
 }
 
 static void
-enable_slave(struct unixctl_conn *conn, const char *argv[], bool enable)
+enable_sub(struct unixctl_conn *conn, const char *argv[], bool enable)
 {
     const char *bond_s = argv[1];
-    const char *slave_s = argv[2];
+    const char *sub_s = argv[2];
     struct bond *bond;
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
     ovs_rwlock_wrlock(&rwlock);
     bond = bond_find(bond_s);
@@ -1591,13 +1595,13 @@ enable_slave(struct unixctl_conn *conn, const char *argv[], bool enable)
         goto out;
     }
 
-    slave = bond_lookup_slave(bond, slave_s);
-    if (!slave) {
-        unixctl_command_reply_error(conn, "no such slave");
+    sub = bond_lookup_sub(bond, sub_s);
+    if (!sub) {
+        unixctl_command_reply_error(conn, "no such interface");
         goto out;
     }
 
-    bond_enable_slave(slave, enable);
+    bond_enable_sub(sub, enable);
     unixctl_command_reply(conn, enable ? "enabled" : "disabled");
 
 out:
@@ -1605,19 +1609,19 @@ out:
 }
 
 static void
-bond_unixctl_enable_slave(struct unixctl_conn *conn,
-                          int argc OVS_UNUSED, const char *argv[],
-                          void *aux OVS_UNUSED)
+bond_unixctl_enable_sub(struct unixctl_conn *conn,
+                        int argc OVS_UNUSED, const char *argv[],
+                        void *aux OVS_UNUSED)
 {
-    enable_slave(conn, argv, true);
+    enable_sub(conn, argv, true);
 }
 
 static void
-bond_unixctl_disable_slave(struct unixctl_conn *conn,
+bond_unixctl_disable_sub(struct unixctl_conn *conn,
                            int argc OVS_UNUSED, const char *argv[],
                            void *aux OVS_UNUSED)
 {
-    enable_slave(conn, argv, false);
+    enable_sub(conn, argv, false);
 }
 
 static void
@@ -1668,16 +1672,24 @@ bond_init(void)
     unixctl_command_register("bond/list", "", 0, 0, bond_unixctl_list, NULL);
     unixctl_command_register("bond/show", "[port]", 0, 1, bond_unixctl_show,
                              NULL);
-    unixctl_command_register("bond/migrate", "port hash slave", 3, 3,
+    unixctl_command_register("bond/migrate", "port hash sub", 3, 3,
                              bond_unixctl_migrate, NULL);
-    unixctl_command_register("bond/set-active-slave", "port slave", 2, 2,
-                             bond_unixctl_set_active_slave, NULL);
-    unixctl_command_register("bond/enable-slave", "port slave", 2, 2,
-                             bond_unixctl_enable_slave, NULL);
-    unixctl_command_register("bond/disable-slave", "port slave", 2, 2,
-                             bond_unixctl_disable_slave, NULL);
+    unixctl_command_register("bond/set-active-sub", "port sub", 2, 2,
+                             bond_unixctl_set_active_sub, NULL);
+    unixctl_command_register("bond/enable-sub", "port sub", 2, 2,
+                             bond_unixctl_enable_sub, NULL);
+    unixctl_command_register("bond/disable-sub", "port sub", 2, 2,
+                             bond_unixctl_disable_sub, NULL);
     unixctl_command_register("bond/hash", "mac [vlan] [basis]", 1, 3,
                              bond_unixctl_hash, NULL);
+
+    /* Backward-compatibility command names. */
+    unixctl_command_register("bond/set-active-slave", NULL, 2, 2,
+                             bond_unixctl_set_active_sub, NULL);
+    unixctl_command_register("bond/enable-slave", NULL, 2, 2,
+                             bond_unixctl_enable_sub, NULL);
+    unixctl_command_register("bond/disable-slave", NULL, 2, 2,
+                             bond_unixctl_disable_sub, NULL);
 }
 
 static void
@@ -1700,15 +1712,15 @@ bond_entry_reset(struct bond *bond)
     }
 }
 
-static struct bond_slave *
-bond_slave_lookup(struct bond *bond, const void *slave_)
+static struct bond_sub *
+bond_sub_lookup(struct bond *bond, const void *sub_)
 {
-    struct bond_slave *slave;
+    struct bond_sub *sub;
 
-    HMAP_FOR_EACH_IN_BUCKET (slave, hmap_node, hash_pointer(slave_, 0),
-                             &bond->slaves) {
-        if (slave->aux == slave_) {
-            return slave;
+    HMAP_FOR_EACH_IN_BUCKET (sub, hmap_node, hash_pointer(sub_, 0),
+                             &bond->subs) {
+        if (sub->aux == sub_) {
+            return sub;
         }
     }
 
@@ -1716,51 +1728,51 @@ bond_slave_lookup(struct bond *bond, const void *slave_)
 }
 
 static void
-bond_enable_slave(struct bond_slave *slave, bool enable)
+bond_enable_sub(struct bond_sub *sub, bool enable)
 {
-    struct bond *bond = slave->bond;
+    struct bond *bond = sub->bond;
 
-    slave->delay_expires = LLONG_MAX;
-    if (enable != slave->enabled) {
-        slave->bond->bond_revalidate = true;
-        slave->enabled = enable;
+    sub->delay_expires = LLONG_MAX;
+    if (enable != sub->enabled) {
+        sub->bond->bond_revalidate = true;
+        sub->enabled = enable;
 
-        ovs_mutex_lock(&slave->bond->mutex);
+        ovs_mutex_lock(&sub->bond->mutex);
         if (enable) {
-            ovs_list_insert(&slave->bond->enabled_slaves, &slave->list_node);
+            ovs_list_insert(&sub->bond->enabled_subs, &sub->list_node);
         } else {
             bond->send_learning_packets = true;
-            ovs_list_remove(&slave->list_node);
+            ovs_list_remove(&sub->list_node);
         }
-        ovs_mutex_unlock(&slave->bond->mutex);
+        ovs_mutex_unlock(&sub->bond->mutex);
 
-        VLOG_INFO("interface %s: %s", slave->name,
-                  slave->enabled ? "enabled" : "disabled");
+        VLOG_INFO("interface %s: %s", sub->name,
+                  sub->enabled ? "enabled" : "disabled");
     }
 }
 
 static void
-bond_link_status_update(struct bond_slave *slave)
+bond_link_status_update(struct bond_sub *sub)
 {
-    struct bond *bond = slave->bond;
+    struct bond *bond = sub->bond;
     bool up;
 
-    up = netdev_get_carrier(slave->netdev) && slave->may_enable;
-    if ((up == slave->enabled) != (slave->delay_expires == LLONG_MAX)) {
+    up = netdev_get_carrier(sub->netdev) && sub->may_enable;
+    if ((up == sub->enabled) != (sub->delay_expires == LLONG_MAX)) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
         VLOG_INFO_RL(&rl, "interface %s: link state %s",
-                     slave->name, up ? "up" : "down");
-        if (up == slave->enabled) {
-            slave->delay_expires = LLONG_MAX;
+                     sub->name, up ? "up" : "down");
+        if (up == sub->enabled) {
+            sub->delay_expires = LLONG_MAX;
             VLOG_INFO_RL(&rl, "interface %s: will not be %s",
-                         slave->name, up ? "disabled" : "enabled");
+                         sub->name, up ? "disabled" : "enabled");
         } else {
             int delay = up ? bond->updelay : bond->downdelay;
-            slave->delay_expires = time_msec() + delay;
+            sub->delay_expires = time_msec() + delay;
             if (delay) {
                 VLOG_INFO_RL(&rl, "interface %s: will be %s if it stays %s "
                              "for %d ms",
-                             slave->name,
+                             sub->name,
                              up ? "enabled" : "disabled",
                              up ? "up" : "down",
                              delay);
@@ -1768,8 +1780,8 @@ bond_link_status_update(struct bond_slave *slave)
         }
     }
 
-    if (time_msec() >= slave->delay_expires) {
-        bond_enable_slave(slave, up);
+    if (time_msec() >= sub->delay_expires) {
+        bond_enable_sub(sub, up);
     }
 }
 
@@ -1790,29 +1802,29 @@ lookup_bond_entry(const struct bond *bond, const struct flow *flow,
     return &bond->hash[bond_hash(bond, flow, vlan) & BOND_MASK];
 }
 
-/* Selects and returns an enabled slave from the 'enabled_slaves' list
- * in a round-robin fashion.  If the 'enabled_slaves' list is empty,
+/* Selects and returns an enabled sub from the 'enabled_subs' list
+ * in a round-robin fashion.  If the 'enabled_subs' list is empty,
  * returns NULL. */
-static struct bond_slave *
-get_enabled_slave(struct bond *bond)
+static struct bond_sub *
+get_enabled_sub(struct bond *bond)
 {
     struct ovs_list *node;
 
     ovs_mutex_lock(&bond->mutex);
-    if (ovs_list_is_empty(&bond->enabled_slaves)) {
+    if (ovs_list_is_empty(&bond->enabled_subs)) {
         ovs_mutex_unlock(&bond->mutex);
         return NULL;
     }
 
-    node = ovs_list_pop_front(&bond->enabled_slaves);
-    ovs_list_push_back(&bond->enabled_slaves, node);
+    node = ovs_list_pop_front(&bond->enabled_subs);
+    ovs_list_push_back(&bond->enabled_subs, node);
     ovs_mutex_unlock(&bond->mutex);
 
-    return CONTAINER_OF(node, struct bond_slave, list_node);
+    return CONTAINER_OF(node, struct bond_sub, list_node);
 }
 
-static struct bond_slave *
-choose_output_slave(const struct bond *bond, const struct flow *flow,
+static struct bond_sub *
+choose_output_sub(const struct bond *bond, const struct flow *flow,
                     struct flow_wildcards *wc, uint16_t vlan)
 {
     struct bond_entry *e;
@@ -1831,7 +1843,7 @@ choose_output_slave(const struct bond *bond, const struct flow *flow,
 
     switch (balance) {
     case BM_AB:
-        return bond->active_slave;
+        return bond->active_sub;
 
     case BM_TCP:
         if (bond->lacp_status != LACP_NEGOTIATED) {
@@ -1847,83 +1859,83 @@ choose_output_slave(const struct bond *bond, const struct flow *flow,
             flow_mask_hash_fields(flow, wc, NX_HASH_FIELDS_ETH_SRC);
         }
         e = lookup_bond_entry(bond, flow, vlan);
-        if (!e->slave || !e->slave->enabled) {
-            e->slave = get_enabled_slave(CONST_CAST(struct bond*, bond));
+        if (!e->sub || !e->sub->enabled) {
+            e->sub = get_enabled_sub(CONST_CAST(struct bond*, bond));
         }
-        return e->slave;
+        return e->sub;
 
     default:
         OVS_NOT_REACHED();
     }
 }
 
-static struct bond_slave *
-bond_choose_slave(const struct bond *bond)
+static struct bond_sub *
+bond_choose_sub(const struct bond *bond)
 {
-    struct bond_slave *slave, *best;
+    struct bond_sub *sub, *best;
 
-    /* Find the last active slave. */
-    slave = bond_find_slave_by_mac(bond, bond->active_slave_mac);
-    if (slave && slave->enabled) {
-        return slave;
+    /* Find the last active sub. */
+    sub = bond_find_sub_by_mac(bond, bond->active_sub_mac);
+    if (sub && sub->enabled) {
+        return sub;
     }
 
-    /* Find an enabled slave. */
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        if (slave->enabled) {
-            return slave;
+    /* Find an enabled sub. */
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        if (sub->enabled) {
+            return sub;
         }
     }
 
     /* All interfaces are disabled.  Find an interface that will be enabled
      * after its updelay expires.  */
     best = NULL;
-    HMAP_FOR_EACH (slave, hmap_node, &bond->slaves) {
-        if (slave->delay_expires != LLONG_MAX
-            && slave->may_enable
-            && (!best || slave->delay_expires < best->delay_expires)) {
-            best = slave;
+    HMAP_FOR_EACH (sub, hmap_node, &bond->subs) {
+        if (sub->delay_expires != LLONG_MAX
+            && sub->may_enable
+            && (!best || sub->delay_expires < best->delay_expires)) {
+            best = sub;
         }
     }
     return best;
 }
 
 static void
-bond_choose_active_slave(struct bond *bond)
+bond_choose_active_sub(struct bond *bond)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
-    struct bond_slave *old_active_slave = bond->active_slave;
+    struct bond_sub *old_active_sub = bond->active_sub;
 
-    bond->active_slave = bond_choose_slave(bond);
-    if (bond->active_slave) {
-        if (bond->active_slave->enabled) {
+    bond->active_sub = bond_choose_sub(bond);
+    if (bond->active_sub) {
+        if (bond->active_sub->enabled) {
             VLOG_INFO_RL(&rl, "bond %s: active interface is now %s",
-                         bond->name, bond->active_slave->name);
+                         bond->name, bond->active_sub->name);
         } else {
             VLOG_INFO_RL(&rl, "bond %s: active interface is now %s, skipping "
                          "remaining %lld ms updelay (since no interface was "
-                         "enabled)", bond->name, bond->active_slave->name,
-                         bond->active_slave->delay_expires - time_msec());
-            bond_enable_slave(bond->active_slave, true);
+                         "enabled)", bond->name, bond->active_sub->name,
+                         bond->active_sub->delay_expires - time_msec());
+            bond_enable_sub(bond->active_sub, true);
         }
 
         bond->send_learning_packets = true;
 
-        if (bond->active_slave != old_active_slave) {
-            bond_active_slave_changed(bond);
+        if (bond->active_sub != old_active_sub) {
+            bond_active_sub_changed(bond);
         }
-    } else if (old_active_slave) {
-        bond_active_slave_changed(bond);
+    } else if (old_active_sub) {
+        bond_active_sub_changed(bond);
         VLOG_INFO_RL(&rl, "bond %s: all interfaces disabled", bond->name);
     }
 }
 
 /*
- * Return true if bond has unstored active slave change.
- * If return true, 'mac' will store the bond's current active slave's
+ * Return true if bond has unstored active sub change.
+ * If return true, 'mac' will store the bond's current active sub's
  * MAC address.  */
 bool
-bond_get_changed_active_slave(const char *name, struct eth_addr *mac,
+bond_get_changed_active_sub(const char *name, struct eth_addr *mac,
                               bool force)
 {
     struct bond *bond;
@@ -1931,9 +1943,9 @@ bond_get_changed_active_slave(const char *name, struct eth_addr *mac,
     ovs_rwlock_wrlock(&rwlock);
     bond = bond_find(name);
     if (bond) {
-        if (bond->active_slave_changed || force) {
-            *mac = bond->active_slave_mac;
-            bond->active_slave_changed = false;
+        if (bond->active_sub_changed || force) {
+            *mac = bond->active_sub_mac;
+            bond->active_sub_changed = false;
             ovs_rwlock_unlock(&rwlock);
             return true;
         }

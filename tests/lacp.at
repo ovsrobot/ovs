@@ -5,9 +5,9 @@ m4_define([STRIP_RECIRC_ID], [[sed '
     s/Recirc-ID.*$/<del>/
 ' ]])
 
-# Strips out active slave mac address since it may change over time.
-m4_define([STRIP_ACTIVE_SLAVE_MAC], [[sed '
-    s/active slave mac.*$/<active slave mac del>/
+# Strips out active interface mac address since it may change over time.
+m4_define([STRIP_ACTIVE_INTERFACE_MAC], [[sed '
+    s/active interface mac.*$/<active interface mac del>/
 ' ]])
 
 AT_SETUP([lacp - config])
@@ -27,7 +27,7 @@ AT_CHECK([ovs-appctl lacp/show], [0], [dnl
   aggregation key: 1
   lacp_time: slow
 
-slave: p1: expired attached
+interface: p1: expired attached
   port_id: 1
   port_priority: 65535
   may_enable: false
@@ -78,7 +78,7 @@ AT_CHECK([sed -e 's/aggregation key:.*/aggregation key: <omitted>/' < stdout], [
   aggregation key: <omitted>
   lacp_time: fast
 
-slave: p1: expired attached
+interface: p1: expired attached
   port_id: 11
   port_priority: 111
   may_enable: false
@@ -97,7 +97,7 @@ slave: p1: expired attached
   partner key: 0
   partner state: timeout
 
-slave: p2: expired attached
+interface: p2: expired attached
   port_id: 22
   port_priority: 222
   may_enable: false
@@ -125,12 +125,12 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-active slave mac: 00:00:00:00:00:00(none)
+active interface mac: 00:00:00:00:00:00(none)
 
-slave p1: disabled
+interface p1: disabled
   may_enable: false
 
-slave p2: disabled
+interface p2: disabled
   may_enable: false
 
 ])
@@ -191,9 +191,9 @@ done
 AT_CHECK(
   [ovs-appctl lacp/show bond0
 ovs-appctl lacp/show bond1
-ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC
-ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [stdout])
-AT_CHECK([sed '/active slave/d' stdout], [0], [dnl
+ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC
+ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC ], [0], [stdout])
+AT_CHECK([sed '/active interface/d' stdout], [0], [dnl
 ---- bond0 ----
   status: active negotiated
   sys_id: aa:55:aa:55:00:00
@@ -201,7 +201,7 @@ AT_CHECK([sed '/active slave/d' stdout], [0], [dnl
   aggregation key: 2
   lacp_time: fast
 
-slave: p0: current attached
+interface: p0: current attached
   port_id: 1
   port_priority: 65535
   may_enable: true
@@ -220,7 +220,7 @@ slave: p0: current attached
   partner key: 4
   partner state: activity timeout aggregation synchronized collecting distributing
 
-slave: p1: current attached
+interface: p1: current attached
   port_id: 2
   port_priority: 65535
   may_enable: true
@@ -245,7 +245,7 @@ slave: p1: current attached
   aggregation key: 4
   lacp_time: fast
 
-slave: p2: current attached
+interface: p2: current attached
   port_id: 3
   port_priority: 65535
   may_enable: true
@@ -264,7 +264,7 @@ slave: p2: current attached
   partner key: 2
   partner state: activity timeout aggregation synchronized collecting distributing
 
-slave: p3: current attached
+interface: p3: current attached
   port_id: 4
   port_priority: 65535
   may_enable: true
@@ -291,10 +291,10 @@ downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
 
-slave p0: enabled
+interface p0: enabled
   may_enable: true
 
-slave p1: enabled
+interface p1: enabled
   may_enable: true
 
 ---- bond1 ----
@@ -306,16 +306,16 @@ downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
 
-slave p2: enabled
+interface p2: enabled
   may_enable: true
 
-slave p3: enabled
+interface p3: enabled
   may_enable: true
 
 ])
-AT_CHECK([grep 'active slave$' stdout], [0], [dnl
-  active slave
-  active slave
+AT_CHECK([grep 'active interface$' stdout], [0], [dnl
+  active interface
+  active interface
 ])
 
 # Redirect the patch link between p0 and p2 so that no packets get
@@ -329,8 +329,8 @@ ovs-appctl time/warp 4100 100
 AT_CHECK(
   [ovs-appctl lacp/show bond0
 ovs-appctl lacp/show bond1
-ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC
-ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [dnl
+ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC
+ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC ], [0], [dnl
 ---- bond0 ----
   status: active negotiated
   sys_id: aa:55:aa:55:00:00
@@ -338,7 +338,7 @@ ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [d
   aggregation key: 2
   lacp_time: fast
 
-slave: p0: expired attached
+interface: p0: expired attached
   port_id: 1
   port_priority: 65535
   may_enable: false
@@ -357,7 +357,7 @@ slave: p0: expired attached
   partner key: 4
   partner state: activity timeout aggregation collecting distributing
 
-slave: p1: current attached
+interface: p1: current attached
   port_id: 2
   port_priority: 65535
   may_enable: true
@@ -382,7 +382,7 @@ slave: p1: current attached
   aggregation key: 4
   lacp_time: fast
 
-slave: p2: expired attached
+interface: p2: expired attached
   port_id: 3
   port_priority: 65535
   may_enable: false
@@ -401,7 +401,7 @@ slave: p2: expired attached
   partner key: 2
   partner state: activity timeout aggregation collecting distributing
 
-slave: p3: current attached
+interface: p3: current attached
   port_id: 4
   port_priority: 65535
   may_enable: true
@@ -427,13 +427,13 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-<active slave mac del>
+<active interface mac del>
 
-slave p0: disabled
+interface p0: disabled
   may_enable: false
 
-slave p1: enabled
-  active slave
+interface p1: enabled
+  active interface
   may_enable: true
 
 ---- bond1 ----
@@ -444,13 +444,13 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-<active slave mac del>
+<active interface mac del>
 
-slave p2: disabled
+interface p2: disabled
   may_enable: false
 
-slave p3: enabled
-  active slave
+interface p3: enabled
+  active interface
   may_enable: true
 
 ])
@@ -461,8 +461,8 @@ ovs-appctl time/warp 4100 100
 AT_CHECK(
   [ovs-appctl lacp/show bond0
 ovs-appctl lacp/show bond1
-ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC
-ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [dnl
+ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC
+ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC ], [0], [dnl
 ---- bond0 ----
   status: active negotiated
   sys_id: aa:55:aa:55:00:00
@@ -470,7 +470,7 @@ ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [d
   aggregation key: 2
   lacp_time: fast
 
-slave: p0: defaulted detached
+interface: p0: defaulted detached
   port_id: 1
   port_priority: 65535
   may_enable: false
@@ -489,7 +489,7 @@ slave: p0: defaulted detached
   partner key: 0
   partner state:
 
-slave: p1: current attached
+interface: p1: current attached
   port_id: 2
   port_priority: 65535
   may_enable: true
@@ -514,7 +514,7 @@ slave: p1: current attached
   aggregation key: 4
   lacp_time: fast
 
-slave: p2: defaulted detached
+interface: p2: defaulted detached
   port_id: 3
   port_priority: 65535
   may_enable: false
@@ -533,7 +533,7 @@ slave: p2: defaulted detached
   partner key: 0
   partner state:
 
-slave: p3: current attached
+interface: p3: current attached
   port_id: 4
   port_priority: 65535
   may_enable: true
@@ -559,13 +559,13 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-<active slave mac del>
+<active interface mac del>
 
-slave p0: disabled
+interface p0: disabled
   may_enable: false
 
-slave p1: enabled
-  active slave
+interface p1: enabled
+  active interface
   may_enable: true
 
 ---- bond1 ----
@@ -576,13 +576,13 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-<active slave mac del>
+<active interface mac del>
 
-slave p2: disabled
+interface p2: disabled
   may_enable: false
 
-slave p3: enabled
-  active slave
+interface p3: enabled
+  active interface
   may_enable: true
 
 ])
@@ -598,8 +598,8 @@ ovs-appctl time/warp 30100 100
 AT_CHECK(
   [ovs-appctl lacp/show bond0
 ovs-appctl lacp/show bond1
-ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC
-ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [dnl
+ovs-appctl bond/show bond0 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC
+ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_INTERFACE_MAC ], [0], [dnl
 ---- bond0 ----
   status: active negotiated
   sys_id: aa:55:aa:55:00:00
@@ -607,7 +607,7 @@ ovs-appctl bond/show bond1 | STRIP_RECIRC_ID | STRIP_ACTIVE_SLAVE_MAC ], [0], [d
   aggregation key: 2
   lacp_time: fast
 
-slave: p0: current attached
+interface: p0: current attached
   port_id: 1
   port_priority: 65535
   may_enable: true
@@ -626,7 +626,7 @@ slave: p0: current attached
   partner key: 4
   partner state: activity timeout aggregation synchronized collecting distributing
 
-slave: p1: current attached
+interface: p1: current attached
   port_id: 2
   port_priority: 65535
   may_enable: true
@@ -651,7 +651,7 @@ slave: p1: current attached
   aggregation key: 4
   lacp_time: fast
 
-slave: p2: current attached
+interface: p2: current attached
   port_id: 3
   port_priority: 65535
   may_enable: true
@@ -670,7 +670,7 @@ slave: p2: current attached
   partner key: 2
   partner state: activity timeout aggregation synchronized collecting distributing
 
-slave: p3: current attached
+interface: p3: current attached
   port_id: 4
   port_priority: 65535
   may_enable: true
@@ -696,13 +696,13 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-<active slave mac del>
+<active interface mac del>
 
-slave p0: enabled
+interface p0: enabled
   may_enable: true
 
-slave p1: enabled
-  active slave
+interface p1: enabled
+  active interface
   may_enable: true
 
 ---- bond1 ----
@@ -713,13 +713,13 @@ updelay: 0 ms
 downdelay: 0 ms
 lacp_status: negotiated
 lacp_fallback_ab: false
-<active slave mac del>
+<active interface mac del>
 
-slave p2: enabled
+interface p2: enabled
   may_enable: true
 
-slave p3: enabled
-  active slave
+interface p3: enabled
+  active interface
   may_enable: true
 
 ])
