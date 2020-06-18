@@ -45,6 +45,7 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
 
 #ifdef __x86_64__
 #if HAVE_AVX512F
+#if HAVE_LD_AVX512_GOOD
 #ifdef __SSE4_2__
     /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
     { .prio = 0,
@@ -56,6 +57,7 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
      * ISA for high performance hashing. Consider ./configure of OVS with
      * -msse42 (or newer) to enable CRC32 hashing and higher performance.
      */
+#endif
 #endif
 #endif
 #endif
