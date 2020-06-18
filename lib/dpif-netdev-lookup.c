@@ -42,6 +42,23 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
     { .prio = 1,
       .probe = dpcls_subtable_generic_probe,
       .name = "generic", },
+
+#ifdef __x86_64__
+#if HAVE_AVX512F
+#ifdef __SSE4_2__
+    /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
+    { .prio = 0,
+      .probe = dpcls_subtable_avx512_gather_probe,
+      .name = "avx512_gather", },
+#else
+    /* Disabling AVX512 at compile time, due to core OVS not using SSE42
+     * instruction set. The SSE42 instructions are required to use CRC32
+     * ISA for high performance hashing. Consider ./configure of OVS with
+     * -msse42 (or newer) to enable CRC32 hashing and higher performance.
+     */
+#endif
+#endif
+#endif
 };
 
 int32_t
