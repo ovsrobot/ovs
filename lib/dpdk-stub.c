@@ -79,6 +79,19 @@ print_dpdk_version(void)
 {
 }
 
+int
+dpdk_get_cpu_has_isa(const char *arch OVS_UNUSED,
+                     const char *feature OVS_UNUSED)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    if (ovsthread_once_start(&once)) {
+        VLOG_ERR("DPDK not supported in this version of Open vSwitch, "
+                 "cannot use CPU flag based optimizations");
+        ovsthread_once_done(&once);
+    }
+    return 0;
+}
+
 void
 dpdk_status(const struct ovsrec_open_vswitch *cfg)
 {
