@@ -1234,7 +1234,7 @@ def flows_script(args):
 
     if (args.flowFiles is None):
         logging.info("reading flows from stdin")
-        ihdl = os.fdopen(sys.stdin.fileno(), 'r', 0)
+        ihdl = os.fdopen(sys.stdin.fileno(), 'rb', 0)
         try:
             flow_db = flows_read(ihdl, flow_db)
         finally:
