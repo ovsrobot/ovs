@@ -480,6 +480,9 @@ OvsCtEntryDelete(POVS_CT_ENTRY entry, BOOLEAN forceDelete)
         RemoveEntryList(&entry->link);
         OVS_RELEASE_SPIN_LOCK(&(entry->lock), irql);
         NdisFreeSpinLock(&(entry->lock));
+        if (entry->helper_name) {
+            OvsFreeMemoryWithTag(entry->helper_name, OVS_CT_POOL_TAG);
+        }
         OvsFreeMemoryWithTag(entry, OVS_CT_POOL_TAG);
         NdisInterlockedDecrement((PLONG)&ctTotalEntries);
         return;
@@ -956,13 +959,22 @@ OvsCtExecute_(OvsForwardingContext *fwdCtx,
 
     if (OvsDetectFtpPacket(key)) {
         /* FTP parser will always be loaded */
-        UNREFERENCED_PARAMETER(helper);
-
         status = OvsCtHandleFtp(curNbl, key, layers, currentTime, entry,
                                 (ntohs(key->ipKey.l4.tpDst) == IPPORT_FTP));
         if (status != NDIS_STATUS_SUCCESS) {
             OVS_LOG_ERROR("Error while parsing the FTP packet");
         }
+    }
+
+    if (!entry->helper_name && helper) {
+        entry->helper_name = OvsAllocateMemoryWithTag(strlen(helper) + 1,
+                                                      OVS_CT_POOL_TAG);
+        if (!entry->helper_name) {
+            OVS_LOG_ERROR("Error while allocating memory");
+            return NDIS_STATUS_RESOURCES;
+        }
+
+        memcpy(entry->helper_name, helper, strlen(helper) + 1);
     }
 
     /* Add original tuple information to flow Key */
@@ -1039,8 +1051,8 @@ OvsExecuteConntrackAction(OvsForwardingContext *fwdCtx,
                 if (helper == NULL) {
                     return NDIS_STATUS_INVALID_PARAMETER;
                 }
-                if (strcmp("ftp", helper) != 0) {
-                    /* Only support FTP */
+                if (strcmp("ftp", helper) != 0 && strcmp("tftp", helper) != 0) {
+                    /* Only support FTP/TFTP */
                     return NDIS_STATUS_NOT_SUPPORTED;
                 }
                 break;
@@ -1677,6 +1689,26 @@ OvsCreateNlMsgFromCtEntry(POVS_CT_ENTRY entry,
         NlMsgEndNested(&nlBuf, offset);
         if (status != NDIS_STATUS_SUCCESS) {
             return STATUS_UNSUCCESSFUL;
+        }
+    }
+
+    if (entry->helper_name) {
+        UINT32 offset;
+        offset = NlMsgStartNested(&nlBuf, CTA_HELP);
+        if (!offset) {
+            return NDIS_STATUS_FAILURE;
+        }
+        if (!NlMsgPutTailString(&nlBuf, CTA_HELP_NAME, entry->helper_name)) {
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+        NlMsgEndNested(&nlBuf, offset);
+    }
+
+    if (entry->parent) {
+        status = MapCtKeyTupleToNl(&nlBuf, CTA_TUPLE_MASTER,
+                                   &((POVS_CT_ENTRY)entry->parent)->key);
+        if (status != NDIS_STATUS_SUCCESS) {
+           return STATUS_UNSUCCESSFUL;
         }
     }
 

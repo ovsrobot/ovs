@@ -48,7 +48,6 @@ OvsCtRelatedKeyAreSame(OVS_CT_KEY incomingKey, OVS_CT_KEY entryKey)
 
     /* FTP ACTIVE - Server initiates the connection */
     if ((incomingKey.src.addr.ipv4 == entryKey.src.addr.ipv4) &&
-        (incomingKey.src.port == entryKey.src.port) &&
         (incomingKey.dst.addr.ipv4 == entryKey.dst.addr.ipv4) &&
         (incomingKey.dst.port == entryKey.dst.port) &&
         (incomingKey.dl_type == entryKey.dl_type) &&
