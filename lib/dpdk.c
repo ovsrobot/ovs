@@ -36,6 +36,7 @@
 #include "ovs-numa.h"
 #include "smap.h"
 #include "svec.h"
+#include "unixctl.h"
 #include "util.h"
 #include "vswitch-idl.h"
 
@@ -261,6 +262,102 @@ static cookie_io_functions_t dpdk_log_func = {
     .write = dpdk_log_write,
 };
 
+static void
+dpdk_unixctl_log_list(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                      const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    char *response = NULL;
+    FILE *stream;
+    size_t size;
+
+    stream = open_memstream(&response, &size);
+    if (!stream) {
+        response = xasprintf("Unable to open memstream: %s.",
+                             ovs_strerror(errno));
+        unixctl_command_reply_error(conn, response);
+        goto out;
+    }
+
+    rte_log_dump(stream);
+    fclose(stream);
+    unixctl_command_reply(conn, response);
+out:
+    free(response);
+}
+
+static int
+dpdk_parse_log_level(const char *s)
+{
+    static const char * const levels[] = {
+        [RTE_LOG_EMERG]   = "emergency",
+        [RTE_LOG_ALERT]   = "alert",
+        [RTE_LOG_CRIT]    = "critical",
+        [RTE_LOG_ERR]     = "error",
+        [RTE_LOG_WARNING] = "warning",
+        [RTE_LOG_NOTICE]  = "notice",
+        [RTE_LOG_INFO]    = "info",
+        [RTE_LOG_DEBUG]   = "debug",
+    };
+    int i;
+
+    for (i = 1; i < ARRAY_SIZE(levels); ++i) {
+        if (!strcmp(s, levels[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void
+dpdk_unixctl_log_set(struct unixctl_conn *conn, int argc, const char *argv[],
+                     void *aux OVS_UNUSED)
+{
+    int i;
+
+    /* With no argument, set all logtypes level to "debug". */
+    if (argc == 1) {
+        rte_log_set_level_pattern("*", RTE_LOG_DEBUG);
+    }
+    for (i = 1; i < argc; i++) {
+        char *level_string;
+        char *pattern;
+        char *s;
+        int level;
+
+        s = xstrdup(argv[i]);
+        level_string = strchr(s, ':');
+        if (level_string == NULL) {
+            pattern = "*";
+            level_string = s;
+        } else {
+            pattern = s;
+            level_string[0] = '\0';
+            level_string++;
+        }
+
+        level = dpdk_parse_log_level(level_string);
+        if (level == -1) {
+            char *msg = xstrdup("invalid level");
+
+            unixctl_command_reply_error(conn, msg);
+            free(s);
+            free(msg);
+            return;
+        }
+
+        if (rte_log_set_level_pattern(pattern, level) < 0) {
+            char *msg = xasprintf("cannot set log level for %s", argv[i]);
+
+            unixctl_command_reply_error(conn, msg);
+            free(s);
+            free(msg);
+            return;
+        }
+        free(s);
+    }
+    unixctl_command_reply(conn, NULL);
+}
+
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
 {
@@ -423,7 +520,23 @@ dpdk_init__(const struct smap *ovs_other_config)
             VLOG_DBG("Could not dump memzone. Unable to open memstream: %s.",
                      ovs_strerror(errno));
         }
+
+        stream = open_memstream(&response, &size);
+        if (stream) {
+            rte_log_dump(stream);
+            fclose(stream);
+            VLOG_DBG("rte_log_dump:\n%s", response);
+            free(response);
+        } else {
+            VLOG_DBG("Could not dump log levels. "
+                     "Unable to open memstream: %s.", ovs_strerror(errno));
+        }
     }
+
+    unixctl_command_register("dpdk/log-list", "", 0, 0,
+                             dpdk_unixctl_log_list, NULL);
+    unixctl_command_register("dpdk/log-set", "pattern:level", 0, INT_MAX,
+                             dpdk_unixctl_log_set, NULL);
 
     /* We are called from the main thread here */
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
