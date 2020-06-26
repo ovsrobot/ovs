@@ -504,7 +504,14 @@ dpdk_set_lcore_id(unsigned cpu)
 {
     /* NON_PMD_CORE_ID is reserved for use by non pmd threads. */
     ovs_assert(cpu != NON_PMD_CORE_ID);
+    if (cpu >= RTE_MAX_LCORE) {
+        cpu = LCORE_ID_ANY;
+    }
     RTE_PER_LCORE(_lcore_id) = cpu;
+    if (rte_lcore_id() == LCORE_ID_ANY) {
+        ovs_abort(0, "PMD thread init failed, trying to use more cores than "
+                  "DPDK supports (RTE_MAX_LCORE %u).", RTE_MAX_LCORE);
+    }
 }
 
 void
