@@ -818,7 +818,8 @@ netdev_offload_dpdk_mark_rss(struct flow_patterns *patterns,
         .group = 0,
         .priority = 0,
         .ingress = 1,
-        .egress = 0
+        .egress = 0,
+        .transfer = 0
     };
     struct rte_flow_error error;
     struct rte_flow *flow;
