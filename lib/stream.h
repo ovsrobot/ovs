@@ -105,6 +105,12 @@ enum stream_replay_state {
 
 void stream_replay_set_state(enum stream_replay_state);
 enum stream_replay_state stream_replay_get_state(void);
+static inline bool
+stream_replay_is_active(void)
+{
+    return stream_replay_get_state() != STREAM_REPLAY_NONE;
+}
+
 void stream_replay_open_wfd(struct stream *);
 void pstream_replay_open_wfd(struct pstream *);
 void stream_replay_close_wfd(struct stream *);
