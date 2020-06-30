@@ -850,7 +850,7 @@ jsonrpc_session_open_multiple(const struct svec *remotes, bool retry)
         reconnect_set_backoff(s->reconnect, INT_MAX, INT_MAX);
     }
 
-    if (!stream_or_pstream_needs_probes(name)) {
+    if (!stream_or_pstream_needs_probes(name) || stream_replay_is_active()) {
         reconnect_set_probe_interval(s->reconnect, 0);
     }
 
@@ -875,6 +875,11 @@ jsonrpc_session_open_unreliably(struct jsonrpc *jsonrpc, uint8_t dscp)
     reconnect_set_quiet(s->reconnect, true);
     reconnect_set_name(s->reconnect, jsonrpc_get_name(jsonrpc));
     reconnect_set_max_tries(s->reconnect, 0);
+
+    if (stream_replay_is_active()) {
+        reconnect_set_probe_interval(s->reconnect, 0);
+    }
+
     reconnect_connected(s->reconnect, time_msec());
     s->dscp = dscp;
     s->rpc = jsonrpc;
@@ -1233,6 +1238,9 @@ void
 jsonrpc_session_set_probe_interval(struct jsonrpc_session *s,
                                    int probe_interval)
 {
+    if (stream_replay_is_active()) {
+        return;
+    }
     reconnect_set_probe_interval(s->reconnect, probe_interval);
 }
 
