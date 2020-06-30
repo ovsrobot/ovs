@@ -1716,6 +1716,7 @@ parse_options(int argc, char *argv[],
         VLOG_OPTION_ENUMS,
         DAEMON_OPTION_ENUMS,
         SSL_OPTION_ENUMS,
+        STREAM_REPLAY_OPTION_ENUMS,
     };
 
     static const struct option long_options[] = {
@@ -1731,6 +1732,7 @@ parse_options(int argc, char *argv[],
         {"bootstrap-ca-cert", required_argument, NULL, OPT_BOOTSTRAP_CA_CERT},
         {"peer-ca-cert", required_argument, NULL, OPT_PEER_CA_CERT},
         STREAM_SSL_LONG_OPTIONS,
+        STREAM_REPLAY_LONG_OPTIONS,
         {"sync-from",   required_argument, NULL, OPT_SYNC_FROM},
         {"sync-exclude-tables", required_argument, NULL, OPT_SYNC_EXCLUDE},
         {"active", no_argument, NULL, OPT_ACTIVE},
@@ -1807,6 +1809,8 @@ parse_options(int argc, char *argv[],
             stream_ssl_set_peer_ca_cert_file(optarg);
             break;
 
+        STREAM_REPLAY_OPTION_HANDLERS
+
         case OPT_SYNC_FROM:
             *sync_from = xstrdup(optarg);
             break;
@@ -1868,7 +1872,7 @@ usage(void)
            program_name, program_name, ovs_dbdir());
     printf("\nJSON-RPC options (may be specified any number of times):\n"
            "  --remote=REMOTE         connect or listen to REMOTE\n");
-    stream_usage("JSON-RPC", true, true, true, false);
+    stream_usage("JSON-RPC", true, true, true, true);
     daemon_usage();
     vlog_usage();
     replication_usage();
