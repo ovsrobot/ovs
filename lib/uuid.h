@@ -73,6 +73,7 @@ uuid_prefix(const struct uuid *uuid, int digits)
     return (uuid->parts[0] >> (32 - 4 * digits));
 }
 
+void uuid_set_non_random_seed(uint32_t seed);
 void uuid_init(void);
 void uuid_generate(struct uuid *);
 struct uuid uuid_random(void);

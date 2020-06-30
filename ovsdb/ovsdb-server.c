@@ -1712,6 +1712,7 @@ parse_options(int argc, char *argv[],
         OPT_SYNC_EXCLUDE,
         OPT_ACTIVE,
         OPT_NO_DBS,
+        OPT_PREDICTABLE_UUIDS,
         VLOG_OPTION_ENUMS,
         DAEMON_OPTION_ENUMS,
         SSL_OPTION_ENUMS,
@@ -1734,6 +1735,8 @@ parse_options(int argc, char *argv[],
         {"sync-exclude-tables", required_argument, NULL, OPT_SYNC_EXCLUDE},
         {"active", no_argument, NULL, OPT_ACTIVE},
         {"no-dbs", no_argument, NULL, OPT_NO_DBS},
+        {"predictable-uuids-with-seed", required_argument, NULL,
+                                        OPT_PREDICTABLE_UUIDS},
         {NULL, 0, NULL, 0},
     };
     char *short_options = ovs_cmdl_long_options_to_short_options(long_options);
@@ -1824,6 +1827,17 @@ parse_options(int argc, char *argv[],
             add_default_db = false;
             break;
 
+        case OPT_PREDICTABLE_UUIDS: {
+            unsigned int seed;
+
+            if (str_to_uint(optarg, 10, &seed)) {
+                uuid_set_non_random_seed(seed);
+                uuid_init();
+            } else {
+                ovs_fatal(0, "Failed to parse non-random seed.");
+            }
+            break;
+        }
         case '?':
             exit(EXIT_FAILURE);
 
