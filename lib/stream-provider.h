@@ -29,6 +29,7 @@ struct stream {
     const struct stream_class *class;
     int state;
     int error;
+    FILE *replay_wfd;
     char *name;
     char *peer_id;
 };
@@ -133,6 +134,7 @@ struct pstream {
     const struct pstream_class *class;
     char *name;
     ovs_be16 bound_port;
+    FILE *replay_wfd;
 };
 
 void pstream_init(struct pstream *, const struct pstream_class *, char *name);
@@ -200,5 +202,7 @@ extern const struct pstream_class pwindows_pstream_class;
 extern const struct stream_class ssl_stream_class;
 extern const struct pstream_class pssl_pstream_class;
 #endif
+extern const struct stream_class replay_stream_class;
+extern const struct pstream_class preplay_pstream_class;
 
 #endif /* stream-provider.h */

@@ -29,7 +29,8 @@ struct pstream;
 struct stream;
 struct vlog_module;
 
-void stream_usage(const char *name, bool active, bool passive, bool bootstrap);
+void stream_usage(const char *name, bool active, bool passive,
+                  bool bootstrap, bool replay);
 
 /* Bidirectional byte streams. */
 int stream_verify_name(const char *name);
@@ -93,5 +94,42 @@ enum stream_content_type {
 
 void stream_report_content(const void *, ssize_t, enum stream_content_type,
                            struct vlog_module *, const char *stream_name);
+
+
+/* Replay state. */
+enum stream_replay_state {
+    STREAM_REPLAY_NONE,
+    STREAM_REPLAY_WRITE,
+    STREAM_REPLAY_READ,
+};
+
+void stream_replay_set_state(enum stream_replay_state);
+enum stream_replay_state stream_replay_get_state(void);
+void stream_replay_open_wfd(struct stream *);
+void pstream_replay_open_wfd(struct pstream *);
+void stream_replay_close_wfd(struct stream *);
+void pstream_replay_close_wfd(struct pstream *);
+void stream_replay_write(struct stream *, const void *, int, bool is_read);
+void pstream_replay_write_accept(struct pstream *, const struct stream *);
+
+#define STREAM_REPLAY_OPTION_ENUMS  \
+        OPT_STREAM_REPLAY_REC,      \
+        OPT_STREAM_REPLAY
+
+#define STREAM_REPLAY_LONG_OPTIONS                                           \
+        {"stream-replay-record", no_argument, NULL, OPT_STREAM_REPLAY_REC},  \
+        {"stream-replay",        no_argument, NULL, OPT_STREAM_REPLAY}
+
+#define STREAM_REPLAY_OPTION_HANDLERS                       \
+        case OPT_STREAM_REPLAY_REC:                         \
+            stream_replay_set_state(STREAM_REPLAY_WRITE);   \
+            break;                                          \
+                                                            \
+        case OPT_STREAM_REPLAY:                             \
+            stream_replay_set_state(STREAM_REPLAY_READ);    \
+            break;
+
+#define STREAM_REPLAY_CASES \
+        case OPT_STREAM_REPLAY_REC: case OPT_STREAM_REPLAY:
 
 #endif /* stream.h */

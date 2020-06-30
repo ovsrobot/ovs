@@ -462,7 +462,7 @@ usage(void)
            "\nThe default SERVER is unix:%s/db.sock.\n"
            "The default DATABASE is Open_vSwitch.\n",
            program_name, program_name, ovs_rundir());
-    stream_usage("SERVER", true, true, true);
+    stream_usage("SERVER", true, true, true, false);
     table_usage();
     printf("  --timestamp                 timestamp \"monitor\" output");
     daemon_usage();

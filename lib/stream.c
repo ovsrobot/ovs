@@ -117,7 +117,7 @@ check_stream_classes(void)
  * connection methods supported by the stream. */
 void
 stream_usage(const char *name, bool active, bool passive,
-             bool bootstrap OVS_UNUSED)
+             bool bootstrap OVS_UNUSED, bool replay)
 {
     /* Really this should be implemented via callbacks into the stream
      * providers, but that seems too heavy-weight to bother with at the
@@ -161,6 +161,11 @@ stream_usage(const char *name, bool active, bool passive,
            "  --ssl-protocols=PROTOS  list of SSL protocols to enable\n"
            "  --ssl-ciphers=CIPHERS   list of SSL ciphers to enable\n");
 #endif
+    if (replay) {
+        printf("Replay options:\n"
+               "  --stream-replay-record turn on writing replay files\n"
+               "  --stream-replay        run connections from replay files\n");
+    }
 }
 
 /* Given 'name', a stream name in the form "TYPE:ARGS", stores the class
@@ -185,6 +190,9 @@ stream_lookup_class(const char *name, const struct stream_class **classp)
         if (strlen(class->name) == prefix_len
             && !memcmp(class->name, name, prefix_len)) {
             *classp = class;
+            if (stream_replay_get_state() == STREAM_REPLAY_READ) {
+                *classp = &replay_stream_class;
+            }
             return 0;
         }
     }
@@ -295,6 +303,7 @@ stream_close(struct stream *stream)
     if (stream != NULL) {
         char *name = stream->name;
         char *peer_id = stream->peer_id;
+        stream_replay_close_wfd(stream);
         (stream->class->close)(stream);
         free(name);
         free(peer_id);
@@ -367,9 +376,13 @@ int
 stream_recv(struct stream *stream, void *buffer, size_t n)
 {
     int retval = stream_connect(stream);
-    return (retval ? -retval
-            : n == 0 ? 0
-            : (stream->class->recv)(stream, buffer, n));
+
+    retval = retval ? -retval
+             : n == 0 ? 0
+             : (stream->class->recv)(stream, buffer, n);
+
+    stream_replay_write(stream, buffer, retval, true);
+    return retval;
 }
 
 /* Tries to send up to 'n' bytes of 'buffer' on 'stream', and returns:
@@ -385,9 +398,12 @@ int
 stream_send(struct stream *stream, const void *buffer, size_t n)
 {
     int retval = stream_connect(stream);
-    return (retval ? -retval
-            : n == 0 ? 0
-            : (stream->class->send)(stream, buffer, n));
+    retval = retval ? -retval
+             : n == 0 ? 0
+             : (stream->class->send)(stream, buffer, n);
+
+    stream_replay_write(stream, buffer, retval, false);
+    return retval;
 }
 
 /* Allows 'stream' to perform maintenance activities, such as flushing
@@ -483,6 +499,9 @@ pstream_lookup_class(const char *name, const struct pstream_class **classp)
         if (strlen(class->name) == prefix_len
             && !memcmp(class->name, name, prefix_len)) {
             *classp = class;
+            if (stream_replay_get_state() == STREAM_REPLAY_READ) {
+                *classp = &preplay_pstream_class;
+            }
             return 0;
         }
     }
@@ -548,6 +567,8 @@ pstream_open(const char *name, struct pstream **pstreamp, uint8_t dscp)
         goto error;
     }
 
+    pstream_replay_open_wfd(pstream);
+
     /* Success. */
     *pstreamp = pstream;
     return 0;
@@ -571,6 +592,7 @@ pstream_close(struct pstream *pstream)
 {
     if (pstream != NULL) {
         char *name = pstream->name;
+        pstream_replay_close_wfd(pstream);
         (pstream->class->close)(pstream);
         free(name);
     }
@@ -591,6 +613,8 @@ pstream_accept(struct pstream *pstream, struct stream **new_stream)
     } else {
         ovs_assert((*new_stream)->state != SCS_CONNECTING
                    || (*new_stream)->class->connect);
+        pstream_replay_write_accept(pstream, *new_stream);
+        stream_replay_open_wfd(*new_stream);
     }
     return retval;
 }

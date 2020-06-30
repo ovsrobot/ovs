@@ -1868,7 +1868,7 @@ usage(void)
            program_name, program_name, ovs_dbdir());
     printf("\nJSON-RPC options (may be specified any number of times):\n"
            "  --remote=REMOTE         connect or listen to REMOTE\n");
-    stream_usage("JSON-RPC", true, true, true);
+    stream_usage("JSON-RPC", true, true, true, false);
     daemon_usage();
     vlog_usage();
     replication_usage();

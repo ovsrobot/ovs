@@ -109,7 +109,7 @@ usage(void)
            "  request REMOTE METHOD PARAMS   send request, print reply\n"
            "  notify REMOTE METHOD PARAMS  send notification and exit\n",
            program_name, program_name);
-    stream_usage("JSON-RPC", true, true, true);
+    stream_usage("JSON-RPC", true, true, true, false);
     daemon_usage();
     vlog_usage();
     printf("\nOther options:\n"

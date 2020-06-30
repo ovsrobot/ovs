@@ -458,7 +458,7 @@ Options:\n\
     vlog_usage();
     printf("\
   --no-syslog             equivalent to --verbose=vsctl:syslog:warn\n");
-    stream_usage("database", true, true, true);
+    stream_usage("database", true, true, true, false);
     printf("\n\
 Other options:\n\
   -h, --help                  display this help message\n\

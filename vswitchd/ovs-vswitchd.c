@@ -276,7 +276,7 @@ usage(void)
            "where DATABASE is a socket on which ovsdb-server is listening\n"
            "      (default: \"unix:%s/db.sock\").\n",
            program_name, program_name, ovs_rundir());
-    stream_usage("DATABASE", true, false, true);
+    stream_usage("DATABASE", true, false, true, false);
     daemon_usage();
     vlog_usage();
     printf("\nDPDK options:\n"
