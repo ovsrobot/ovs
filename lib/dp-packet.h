@@ -575,7 +575,9 @@ dp_packet_set_size(struct dp_packet *b, uint32_t v)
      * (and thus 'v') will always be <= UINT16_MAX; this means that there is no
      * loss of accuracy in assigning 'v' to 'data_len'.
      */
-    b->mbuf.data_len = (uint16_t)v;  /* Current seg length. */
+    if (b->mbuf.nb_segs <= 1) {
+        b->mbuf.data_len = (uint16_t)v;  /* Current seg length. */
+    }
     b->mbuf.pkt_len = v;             /* Total length of all segments linked to
                                       * this segment. */
 }
