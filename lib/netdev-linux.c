@@ -6558,6 +6558,16 @@ netdev_linux_parse_l2(struct dp_packet *b, uint16_t *l4proto)
 
         l4_len = TCP_OFFSET(tcp_hdr->tcp_ctl) * 4;
         dp_packet_hwol_set_l4_len(b, l4_len);
+    } else if (*l4proto == IPPROTO_UDP) {
+        struct udp_header *udp_hdr =  dp_packet_at(b, l2_len + l3_len,
+                                          sizeof(struct udp_header));
+
+        if (!udp_hdr) {
+            return -EINVAL;
+        }
+
+        l4_len = sizeof(struct udp_header);
+        dp_packet_hwol_set_l4_len(b, l4_len);
     }
 
     return 0;
@@ -6573,9 +6583,9 @@ netdev_linux_parse_vnet_hdr(struct dp_packet *b)
         return -EINVAL;
     }
 
-    if (vnet->flags == 0 && vnet->gso_type == VIRTIO_NET_HDR_GSO_NONE) {
+    /*if (vnet->flags == 0 && vnet->gso_type == VIRTIO_NET_HDR_GSO_NONE) {
         return 0;
-    }
+    }*/
 
     if (netdev_linux_parse_l2(b, &l4proto)) {
         return -EINVAL;
@@ -6600,6 +6610,9 @@ netdev_linux_parse_vnet_hdr(struct dp_packet *b)
         if (type == VIRTIO_NET_HDR_GSO_TCPV4
             || type == VIRTIO_NET_HDR_GSO_TCPV6) {
             dp_packet_hwol_set_tcp_seg(b);
+        }
+        if (type == VIRTIO_NET_HDR_GSO_UDP) {
+            dp_packet_hwol_set_udp_seg(b);
         }
     }
 

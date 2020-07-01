@@ -81,6 +81,8 @@ enum dp_packet_offload_mask {
     DEF_OL_FLAG(DP_PACKET_OL_TX_UDP_CKSUM, PKT_TX_UDP_CKSUM, 0x400),
     /* Offload SCTP checksum. */
     DEF_OL_FLAG(DP_PACKET_OL_TX_SCTP_CKSUM, PKT_TX_SCTP_CKSUM, 0x800),
+    /* UDP Segmentation Offload. */
+    DEF_OL_FLAG(DP_PACKET_OL_TX_UDP_SEG, PKT_TX_UDP_SEG, 0x1000),
     /* Adding new field requires adding to DP_PACKET_OL_SUPPORTED_MASK. */
 };
 
@@ -95,7 +97,8 @@ enum dp_packet_offload_mask {
                                      DP_PACKET_OL_TX_IPV6          | \
                                      DP_PACKET_OL_TX_TCP_CKSUM     | \
                                      DP_PACKET_OL_TX_UDP_CKSUM     | \
-                                     DP_PACKET_OL_TX_SCTP_CKSUM)
+                                     DP_PACKET_OL_TX_SCTP_CKSUM    | \
+                                     DP_PACKET_OL_TX_UDP_SEG)
 
 #define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CKSUM | \
                                  DP_PACKET_OL_TX_UDP_CKSUM | \
@@ -956,6 +959,13 @@ dp_packet_hwol_is_tso(const struct dp_packet *b)
     return !!(*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_TCP_SEG);
 }
 
+/* Returns 'true' if packet 'b' is marked for UDP segmentation offloading. */
+static inline bool
+dp_packet_hwol_is_uso(const struct dp_packet *b)
+{
+    return !!(*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_UDP_SEG);
+}
+
 /* Returns 'true' if packet 'b' is marked for IPv4 checksum offloading. */
 static inline bool
 dp_packet_hwol_is_ipv4(const struct dp_packet *b)
@@ -1032,6 +1042,15 @@ static inline void
 dp_packet_hwol_set_tcp_seg(struct dp_packet *b)
 {
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TCP_SEG;
+}
+
+/* Mark packet 'b' for UDP segmentation offloading.  It implies that
+ * either the packet 'b' is marked for IPv4 or IPv6 checksum offloading
+ * and also for UDP checksum offloading. */
+static inline void
+dp_packet_hwol_set_udp_seg(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_UDP_SEG;
 }
 
 #ifdef DPDK_NETDEV

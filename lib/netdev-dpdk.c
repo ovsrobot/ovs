@@ -38,13 +38,15 @@
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_flow.h>
+#include <rte_gso.h>
+#include <rte_ip.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_meter.h>
 #include <rte_pci.h>
 #include <rte_version.h>
 #include <rte_vhost.h>
-#include <rte_ip.h>
+#include <rte_ip_frag.h>
 
 #include "cmap.h"
 #include "coverage.h"
@@ -162,6 +164,7 @@ typedef uint16_t dpdk_port_t;
                                    | DEV_TX_OFFLOAD_UDP_CKSUM    \
                                    | DEV_TX_OFFLOAD_IPV4_CKSUM)
 
+#define MAX_GSO_MBUFS 64
 
 static const struct rte_eth_conf port_conf = {
     .rxmode = {
@@ -2144,6 +2147,16 @@ netdev_dpdk_rxq_dealloc(struct netdev_rxq *rxq)
     rte_free(rx);
 }
 
+static uint16_t
+get_udptcp_checksum(void *l3_hdr, void *l4_hdr, uint16_t ethertype)
+{
+        if (ethertype == htons(RTE_ETHER_TYPE_IPV4)) {
+                return rte_ipv4_udptcp_cksum(l3_hdr, l4_hdr);
+        } else { /* assume ethertype == RTE_ETHER_TYPE_IPV6 */
+                return rte_ipv6_udptcp_cksum(l3_hdr, l4_hdr);
+        }
+}
+
 /* Prepare the packet for HWOL.
  * Return True if the packet is OK to continue. */
 static bool
@@ -2216,6 +2229,10 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
         mbuf->outer_l3_len = 0;
     }
 
+    if ((l4_proto != IPPROTO_UDP) && (l4_proto != IPPROTO_TCP)) {
+        return true;
+    }
+
     if ((mbuf->ol_flags & PKT_TX_L4_MASK) == PKT_TX_UDP_CKSUM) {
         if (l4_proto != IPPROTO_UDP) {
             VLOG_WARN_RL(&rl, "%s: UDP packet without L4 header"
@@ -2227,7 +2244,8 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
                mbuf->ol_flags & PKT_TX_TCP_CKSUM) {
         if (l4_proto != IPPROTO_TCP) {
             VLOG_WARN_RL(&rl, "%s: TCP Segmentation without L4 header"
-                         " pkt len: %"PRIu32"", dev->up.name, mbuf->pkt_len);
+                         " pkt len: %"PRIu32" l4_proto = %d",
+                         dev->up.name, mbuf->pkt_len, l4_proto);
             return false;
         }
 
@@ -2242,6 +2260,50 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
             mbuf->tso_segsz = 0;
         }
     }
+
+    /* UDP GSO if necessary */
+    if (l4_proto == IPPROTO_UDP) {
+        /* VXLAN GSO can be done here */
+        if ((mbuf->ol_flags & PKT_TX_UDP_SEG) ||
+            (mbuf->pkt_len > (1450 + mbuf->outer_l2_len + mbuf->outer_l3_len +
+                             mbuf->l2_len))) {
+            dp_packet_hwol_set_udp_seg(pkt);
+
+            /* For UDP GSO, udp checksum must be calculated by software */
+            if ((mbuf->ol_flags & PKT_TX_L4_MASK) == PKT_TX_UDP_CKSUM) {
+                void *l3_hdr, *l4_hdr;
+                struct rte_udp_hdr *udp_hdr;
+
+                /* PKT_TX_UDP_CKSUM must be cleaned for GSO because
+                 * udp checksum only can be caculated by software for
+                 * GSO case.
+                 */
+                mbuf->ol_flags &= ~PKT_TX_UDP_CKSUM;
+
+                eth_hdr = (struct rte_ether_hdr *)
+                    ((uint8_t *)eth_hdr + mbuf->outer_l2_len +
+                               mbuf->outer_l3_len +
+                               sizeof(struct udp_header) +
+                               sizeof(struct vxlanhdr));
+                l3_hdr = (uint8_t *)eth_hdr + mbuf->l2_len -
+                         sizeof(struct udp_header) -
+                         sizeof(struct vxlanhdr);
+                l4_hdr = (uint8_t *)l3_hdr + mbuf->l3_len;
+                udp_hdr = (struct rte_udp_hdr *)l4_hdr;
+                udp_hdr->dgram_cksum = 0;
+                udp_hdr->dgram_cksum =
+                    get_udptcp_checksum(l3_hdr, l4_hdr, eth_hdr->ether_type);
+            }
+
+            /* FOR GSO, gso_size includes l2_len + l3_len */
+            mbuf->tso_segsz = 1450 + mbuf->outer_l2_len + mbuf->outer_l3_len +
+                              mbuf->l2_len;
+            if (mbuf->tso_segsz > dev->mtu) {
+                mbuf->tso_segsz = dev->mtu;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -2272,24 +2334,19 @@ netdev_dpdk_prep_hwol_batch(struct netdev_dpdk *dev, struct rte_mbuf **pkts,
     return cnt;
 }
 
-/* Tries to transmit 'pkts' to txq 'qid' of device 'dev'.  Takes ownership of
- * 'pkts', even in case of failure.
- *
- * Returns the number of packets that weren't transmitted. */
 static inline int
-netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
-                         struct rte_mbuf **pkts, int cnt)
+__netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
+                           struct rte_mbuf **pkts, int cnt)
 {
     uint32_t nb_tx = 0;
-    uint16_t nb_tx_prep = cnt;
+    uint32_t nb_tx_prep;
 
-    if (userspace_tso_enabled()) {
-        nb_tx_prep = rte_eth_tx_prepare(dev->port_id, qid, pkts, cnt);
-        if (nb_tx_prep != cnt) {
-            VLOG_WARN_RL(&rl, "%s: Output batch contains invalid packets. "
-                         "Only %u/%u are valid: %s", dev->up.name, nb_tx_prep,
-                         cnt, rte_strerror(rte_errno));
-        }
+    nb_tx_prep = rte_eth_tx_prepare(dev->port_id, qid, pkts, cnt);
+    if (nb_tx_prep != cnt) {
+        VLOG_WARN_RL(&rl, "%s: Output batch contains invalid packets. "
+                          "Only %u/%u are valid: %s",
+                     dev->up.name, nb_tx_prep,
+                     cnt, rte_strerror(rte_errno));
     }
 
     while (nb_tx != nb_tx_prep) {
@@ -2315,6 +2372,88 @@ netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
     }
 
     return cnt - nb_tx;
+}
+
+/* Tries to transmit 'pkts' to txq 'qid' of device 'dev'.  Takes ownership of
+ * 'pkts', even in case of failure.
+ *
+ * Returns the number of packets that weren't transmitted. */
+static inline int
+netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
+                         struct rte_mbuf **pkts, int cnt)
+{
+    uint32_t nb_tx = 0;
+    int i;
+    int ret;
+    int failures = 0;
+
+    if (userspace_tso_enabled()) {
+        /* The best point to do gso */
+        struct rte_gso_ctx gso_ctx;
+        struct rte_mbuf *gso_mbufs[MAX_GSO_MBUFS];
+        int tx_start = -1;
+
+        /* Setup gso context */
+        gso_ctx.direct_pool = dev->dpdk_mp->mp;
+        gso_ctx.indirect_pool = dev->dpdk_mp->mp;
+        gso_ctx.gso_types = 0;
+        gso_ctx.gso_size = 0;
+        gso_ctx.flag = 0;
+
+        /* Do GSO if needed */
+        for (i = 0; i < cnt; i++) {
+            if (pkts[i]->ol_flags & PKT_TX_UDP_SEG) {
+                /* Send non GSO packets before pkts[i] */
+                if (tx_start != -1) {
+                    failures += __netdev_dpdk_eth_tx_burst(
+                                    dev, qid,
+                                    pkts + tx_start,
+                                    i - tx_start);
+                }
+                tx_start = -1;
+
+                if (pkts[i]->ol_flags & PKT_TX_TUNNEL_VXLAN) {
+                    gso_ctx.gso_types = DEV_TX_OFFLOAD_VXLAN_TNL_TSO |
+                                        DEV_TX_OFFLOAD_UDP_TSO;
+                } else {
+                    gso_ctx.gso_types = DEV_TX_OFFLOAD_UDP_TSO;
+                }
+                gso_ctx.gso_size = pkts[i]->tso_segsz;
+                ret = rte_gso_segment(pkts[i], /* packet to segment */
+                                      &gso_ctx, /* gso context */
+                                      /* gso output mbufs */
+                                      (struct rte_mbuf **)&gso_mbufs,
+                                      MAX_GSO_MBUFS);
+                if (ret < 0) {
+                    rte_pktmbuf_free(pkts[i]);
+                } else {
+                    int j, k;
+                    struct rte_mbuf * next_part;
+                    nb_tx = ret;
+                    for (j = 0; j < nb_tx; j++) {
+                        next_part = gso_mbufs[j];
+                        for (k = 0; k < gso_mbufs[j]->nb_segs; k++) {
+                            next_part = next_part->next;
+                        }
+                    }
+                    __netdev_dpdk_eth_tx_burst(dev, qid, gso_mbufs, nb_tx);
+                }
+                continue;
+            }
+            if (tx_start == -1) {
+                tx_start = i;
+            }
+        }
+
+        if (tx_start != -1) {
+            /* Send non GSO packets before pkts[i] */
+            failures += __netdev_dpdk_eth_tx_burst(dev, qid, pkts + tx_start,
+                                       i - tx_start);
+        }
+        return failures;
+    }
+
+    return __netdev_dpdk_eth_tx_burst(dev, qid, pkts, cnt);
 }
 
 static inline bool
@@ -2446,7 +2585,7 @@ netdev_dpdk_vhost_update_rx_counters(struct netdev_dpdk *dev,
 }
 
 static void
-netdev_linux_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto)
+netdev_dpdk_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto, int *is_frag)
 {
     struct rte_mbuf *mbuf = (struct rte_mbuf *)pkt;
     struct rte_ether_hdr *eth_hdr =
@@ -2456,6 +2595,7 @@ netdev_linux_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto)
     int l3_len = 0;
     int l4_len = 0;
 
+    *is_frag = 0;
     l2_len = ETH_HEADER_LEN;
     eth_type = (OVS_FORCE ovs_be16) eth_hdr->ether_type;
     if (eth_type_vlan(eth_type)) {
@@ -2475,9 +2615,11 @@ netdev_linux_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto)
         l3_len = IP_HEADER_LEN;
         dp_packet_hwol_set_tx_ipv4(pkt);
         *l4_proto = ipv4_hdr->next_proto_id;
+        *is_frag = rte_ipv4_frag_pkt_is_fragmented(ipv4_hdr);
     } else if (eth_type == htons(RTE_ETHER_TYPE_IPV6)) {
         struct rte_ipv6_hdr *ipv6_hdr = (struct rte_ipv6_hdr *)
             ((char *)eth_hdr + l2_len);
+
         l3_len = IPV6_HEADER_LEN;
         dp_packet_hwol_set_tx_ipv6(pkt);
         *l4_proto = ipv6_hdr->proto;
@@ -2491,6 +2633,12 @@ netdev_linux_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto)
 
         l4_len = (tcp_hdr->data_off & 0xf0) >> 2;
         dp_packet_hwol_set_l4_len(pkt, l4_len);
+    } else if (*l4_proto == IPPROTO_UDP) {
+        struct rte_udp_hdr *udp_hdr = (struct rte_udp_hdr *)
+            ((char *)eth_hdr + l2_len + l3_len);
+
+        l4_len = sizeof(*udp_hdr);
+        dp_packet_hwol_set_l4_len(pkt, l4_len);
     }
 }
 
@@ -2498,13 +2646,16 @@ static void
 netdev_dpdk_parse_hdr(struct dp_packet *b)
 {
     uint16_t l4_proto = 0;
+    int is_frag = 0;
 
-    netdev_linux_parse_l2(b, &l4_proto);
+    netdev_dpdk_parse_l2(b, &l4_proto, &is_frag);
 
     if (l4_proto == IPPROTO_TCP) {
         dp_packet_hwol_set_csum_tcp(b);
     } else if (l4_proto == IPPROTO_UDP) {
-        dp_packet_hwol_set_csum_udp(b);
+        if (is_frag == 0) {
+            dp_packet_hwol_set_csum_udp(b);
+        }
     } else if (l4_proto == IPPROTO_SCTP) {
         dp_packet_hwol_set_csum_sctp(b);
     }
@@ -5195,6 +5346,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
     int err;
     uint64_t vhost_flags = 0;
     uint64_t vhost_unsup_flags;
+    uint64_t vhost_supported_flags;
     bool zc_enabled;
 
     ovs_mutex_lock(&dev->mutex);
@@ -5279,6 +5431,16 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
                      "vhost user client port: %s\n", dev->up.name);
             goto unlock;
         }
+
+        err = rte_vhost_driver_get_features(dev->vhost_id,
+                                            &vhost_supported_flags);
+        if (err) {
+            VLOG_ERR("rte_vhost_driver_get_features failed for "
+                     "vhost user client port: %s\n", dev->up.name);
+            goto unlock;
+        }
+        VLOG_INFO("vhostuserclient port %s features: 0x%016lx",
+                  dev->up.name, vhost_supported_flags);
 
         err = rte_vhost_driver_start(dev->vhost_id);
         if (err) {
