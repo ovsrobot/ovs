@@ -25,6 +25,7 @@
 #include <linux/virtio_net.h>
 #include <sys/socket.h>
 #include <linux/if.h>
+#include <linux/unistd.h>
 
 /* Include rte_compat.h first to allow experimental API's needed for the
  * rte_meter.h rfc4115 functions. Once they are no longer marked as
@@ -47,6 +48,7 @@
 #include <rte_version.h>
 #include <rte_vhost.h>
 #include <rte_ip_frag.h>
+#include <rte_gro.h>
 
 #include "cmap.h"
 #include "coverage.h"
@@ -2157,6 +2159,8 @@ get_udptcp_checksum(void *l3_hdr, void *l4_hdr, uint16_t ethertype)
         }
 }
 
+#define UDP_VXLAN_ETH_HDR_SIZE 30
+
 /* Prepare the packet for HWOL.
  * Return True if the packet is OK to continue. */
 static bool
@@ -2168,6 +2172,42 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
         rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
     struct rte_ipv4_hdr *ip_hdr;
     struct rte_ipv6_hdr *ip6_hdr;
+
+    /* ol_flags is cleaned after vxlan pop, so need reset for those packets.
+     * Such packets are only for local VMs or namespaces, so need to return
+     * after ol_flags, l2_len, l3_len and tso_segsz are set.
+     */
+    if (((mbuf->ol_flags & PKT_TX_TUNNEL_VXLAN) == 0) &&
+        (mbuf->l2_len == UDP_VXLAN_ETH_HDR_SIZE) &&
+        (mbuf->pkt_len > 1464)) {
+        mbuf->ol_flags = 0;
+        mbuf->l2_len -= sizeof(struct udp_header)
+                        + sizeof(struct vxlanhdr);
+        if (mbuf->l3_len == IP_HEADER_LEN) {
+            mbuf->ol_flags |= PKT_TX_IPV4;
+            ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
+            l4_proto = ip_hdr->next_proto_id;
+        } else if (mbuf->l3_len == IPV6_HEADER_LEN) {
+            mbuf->ol_flags |= PKT_TX_IPV6;
+            ip6_hdr = (struct rte_ipv6_hdr *)(eth_hdr + 1);
+            l4_proto = ip6_hdr->proto;
+        }
+
+        mbuf->ol_flags |= PKT_TX_IP_CKSUM;
+        if (l4_proto == IPPROTO_TCP) {
+            mbuf->ol_flags |= PKT_TX_TCP_SEG;
+            mbuf->ol_flags |= PKT_TX_TCP_CKSUM;
+        } else if (l4_proto == IPPROTO_UDP) {
+            mbuf->ol_flags |= PKT_TX_UDP_SEG;
+            mbuf->ol_flags |= PKT_TX_UDP_CKSUM;
+        }
+        mbuf->tso_segsz = 1450;
+        if (mbuf->tso_segsz > dev->mtu) {
+            mbuf->tso_segsz = dev->mtu;
+        }
+
+        return true;
+    }
 
     if (mbuf->ol_flags & PKT_TX_TUNNEL_VXLAN) {
         /* Handle VXLAN TSO */
@@ -2584,18 +2624,26 @@ netdev_dpdk_vhost_update_rx_counters(struct netdev_dpdk *dev,
     }
 }
 
+#define VXLAN_DST_PORT 4789
+
 static void
-netdev_dpdk_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto, int *is_frag)
+__netdev_dpdk_parse_hdr(struct dp_packet *pkt, int offset,
+                     uint16_t *l4_proto, int *is_frag)
 {
     struct rte_mbuf *mbuf = (struct rte_mbuf *)pkt;
     struct rte_ether_hdr *eth_hdr =
-                rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
+        rte_pktmbuf_mtod_offset(mbuf, struct rte_ether_hdr *, offset);
     ovs_be16 eth_type;
     int l2_len;
     int l3_len = 0;
     int l4_len = 0;
+    uint16_t inner_l4_proto = 0;
+    int inner_is_frag = 0;
 
-    *is_frag = 0;
+    if (offset == 0) {
+        *is_frag = 0;
+    }
+    mbuf->packet_type = 0;
     l2_len = ETH_HEADER_LEN;
     eth_type = (OVS_FORCE ovs_be16) eth_hdr->ether_type;
     if (eth_type_vlan(eth_type)) {
@@ -2616,6 +2664,7 @@ netdev_dpdk_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto, int *is_frag)
         dp_packet_hwol_set_tx_ipv4(pkt);
         *l4_proto = ipv4_hdr->next_proto_id;
         *is_frag = rte_ipv4_frag_pkt_is_fragmented(ipv4_hdr);
+        mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
     } else if (eth_type == htons(RTE_ETHER_TYPE_IPV6)) {
         struct rte_ipv6_hdr *ipv6_hdr = (struct rte_ipv6_hdr *)
             ((char *)eth_hdr + l2_len);
@@ -2626,6 +2675,8 @@ netdev_dpdk_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto, int *is_frag)
     }
 
     dp_packet_hwol_set_l3_len(pkt, l3_len);
+    dp_packet_hwol_set_outer_l2_len(pkt, 0);
+    dp_packet_hwol_set_outer_l3_len(pkt, 0);
 
     if (*l4_proto == IPPROTO_TCP) {
         struct rte_tcp_hdr *tcp_hdr = (struct rte_tcp_hdr *)
@@ -2633,12 +2684,38 @@ netdev_dpdk_parse_l2(struct dp_packet *pkt, uint16_t *l4_proto, int *is_frag)
 
         l4_len = (tcp_hdr->data_off & 0xf0) >> 2;
         dp_packet_hwol_set_l4_len(pkt, l4_len);
+        mbuf->packet_type |= RTE_PTYPE_L4_TCP;
     } else if (*l4_proto == IPPROTO_UDP) {
         struct rte_udp_hdr *udp_hdr = (struct rte_udp_hdr *)
             ((char *)eth_hdr + l2_len + l3_len);
 
-        l4_len = sizeof(*udp_hdr);
+        l4_len = sizeof(struct rte_udp_hdr);
         dp_packet_hwol_set_l4_len(pkt, l4_len);
+        mbuf->packet_type |= RTE_PTYPE_L4_UDP;
+
+        /* Need to parse inner packet if needed */
+        if (ntohs(udp_hdr->dst_port) == VXLAN_DST_PORT) {
+           __netdev_dpdk_parse_hdr(pkt,
+                                l2_len + l3_len + l4_len
+                                    + sizeof(struct vxlanhdr),
+                                &inner_l4_proto,
+                                &inner_is_frag);
+           mbuf->l2_len += sizeof(struct rte_udp_hdr)
+                               + sizeof(struct vxlanhdr);
+           dp_packet_hwol_set_outer_l2_len(pkt, l2_len);
+           dp_packet_hwol_set_outer_l3_len(pkt, l3_len);
+
+           /* Set packet_type, it is necessary for GRO */
+           mbuf->packet_type |= RTE_PTYPE_TUNNEL_VXLAN;
+           if (mbuf->l3_len == IP_HEADER_LEN) {
+               mbuf->packet_type |= RTE_PTYPE_INNER_L3_IPV4;
+           }
+           if (inner_l4_proto == IPPROTO_TCP) {
+               mbuf->packet_type |= RTE_PTYPE_INNER_L4_TCP;
+           } else if (inner_l4_proto == IPPROTO_UDP) {
+               mbuf->packet_type |= RTE_PTYPE_INNER_L4_UDP;
+           }
+        }
     }
 }
 
@@ -2648,7 +2725,7 @@ netdev_dpdk_parse_hdr(struct dp_packet *b)
     uint16_t l4_proto = 0;
     int is_frag = 0;
 
-    netdev_dpdk_parse_l2(b, &l4_proto, &is_frag);
+    __netdev_dpdk_parse_hdr(b, 0, &l4_proto, &is_frag);
 
     if (l4_proto == IPPROTO_TCP) {
         dp_packet_hwol_set_csum_tcp(b);
@@ -2733,6 +2810,8 @@ netdev_dpdk_vhost_rxq_enabled(struct netdev_rxq *rxq)
     return dev->vhost_rxq_enabled[rxq->queue_id];
 }
 
+static RTE_DEFINE_PER_LCORE(void *, _gro_ctx);
+
 static int
 netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
                      int *qfill)
@@ -2742,6 +2821,36 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
     struct ingress_policer *policer = netdev_dpdk_get_ingress_policer(dev);
     int nb_rx;
     int dropped = 0;
+    struct rte_gro_param gro_param;
+    struct dp_packet *packet;
+    struct dp_packet *udp_pkts[NETDEV_MAX_BURST];
+    struct dp_packet *other_pkts[NETDEV_MAX_BURST];
+
+    int nb_udp_rx = 0;
+    int nb_other_rx = 0;
+
+    /* Initialize GRO parameters */
+    gro_param.gro_types = RTE_GRO_TCP_IPV4 |
+                          RTE_GRO_UDP_IPV4 |
+                          RTE_GRO_IPV4_VXLAN_TCP_IPV4 |
+                          RTE_GRO_IPV4_VXLAN_UDP_IPV4;
+    gro_param.max_flow_num = 1024;
+    /* There are 46 fragments for a 64K big packet */
+    gro_param.max_item_per_flow = NETDEV_MAX_BURST * 2;
+
+    /* Initialize GRO context */
+    if (RTE_PER_LCORE(_gro_ctx) == NULL) {
+        uint32_t cpu, node;
+        int ret;
+
+        ret = syscall(__NR_getcpu, &cpu, &node, NULL);
+        if (ret == 0) {
+            gro_param.socket_id = node;
+        } else {
+            gro_param.socket_id = 0;
+        }
+        RTE_PER_LCORE(_gro_ctx) = rte_gro_ctx_create(&gro_param);
+    }
 
     if (OVS_UNLIKELY(!(dev->flags & NETDEV_UP))) {
         return EAGAIN;
@@ -2770,7 +2879,58 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
         rte_spinlock_unlock(&dev->stats_lock);
     }
 
+    /* Need to parse packet header and set necessary fields in mbuf for GRO */
     batch->count = nb_rx;
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        uint16_t l4_proto = 0;
+        int is_frag = 0;
+
+        __netdev_dpdk_parse_hdr(packet, 0, &l4_proto, &is_frag);
+        if (packet->mbuf.packet_type & RTE_PTYPE_TUNNEL_VXLAN) {
+            if (packet->mbuf.packet_type & RTE_PTYPE_INNER_L4_UDP) {
+                udp_pkts[nb_udp_rx++] = packet;
+            } else {
+                other_pkts[nb_other_rx++] = packet;
+            }
+        } else {
+            if (packet->mbuf.packet_type & RTE_PTYPE_L4_UDP) {
+                udp_pkts[nb_udp_rx++] = packet;
+            } else {
+                other_pkts[nb_other_rx++] = packet;
+            }
+        }
+    }
+
+    /* Do GRO here if needed, note: IP fragment can be out of order */
+    if (nb_udp_rx) {
+        /* UDP packet must use heavy rte_gro_reassemble */
+        nb_udp_rx = rte_gro_reassemble((struct rte_mbuf **) udp_pkts,
+                                       nb_udp_rx, RTE_PER_LCORE(_gro_ctx));
+        nb_udp_rx += rte_gro_timeout_flush(RTE_PER_LCORE(_gro_ctx), 10000,
+                          RTE_GRO_UDP_IPV4
+                              | RTE_GRO_IPV4_VXLAN_UDP_IPV4,
+                          (struct rte_mbuf **)&udp_pkts[nb_udp_rx],
+                          NETDEV_MAX_BURST - nb_udp_rx);
+    }
+
+    if (nb_other_rx) {
+        /* TCP packet is better for lightweigh rte_gro_reassemble_burst */
+        nb_other_rx = rte_gro_reassemble_burst((struct rte_mbuf **) other_pkts,
+                                         nb_other_rx,
+                                         &gro_param);
+    }
+
+    batch->count = nb_udp_rx + nb_other_rx;
+    if (nb_udp_rx) {
+        memcpy(batch->packets, udp_pkts,
+               nb_udp_rx * sizeof(struct dp_packet *));
+    }
+
+    if (nb_other_rx) {
+        memcpy(&batch->packets[nb_udp_rx], other_pkts,
+               nb_other_rx * sizeof(struct dp_packet *));
+    }
+
     dp_packet_batch_init_packet_fields(batch);
 
     if (qfill) {
@@ -2811,10 +2971,11 @@ netdev_dpdk_filter_packet_len(struct netdev_dpdk *dev, struct rte_mbuf **pkts,
     for (i = 0; i < pkt_cnt; i++) {
         pkt = pkts[i];
         if (OVS_UNLIKELY((pkt->pkt_len > dev->max_packet_len)
-            && !(pkt->ol_flags & PKT_TX_TCP_SEG))) {
+            && !(pkt->ol_flags & (PKT_TX_TCP_SEG | PKT_TX_UDP_SEG)))) {
             VLOG_WARN_RL(&rl, "%s: Too big size %" PRIu32 " "
-                         "max_packet_len %d", dev->up.name, pkt->pkt_len,
-                         dev->max_packet_len);
+                         "max_packet_len %d ol_flags 0x%016lx",
+                         dev->up.name, pkt->pkt_len,
+                         dev->max_packet_len, pkt->ol_flags);
             rte_pktmbuf_free(pkt);
             continue;
         }
@@ -3144,7 +3305,6 @@ netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
                        struct dp_packet_batch *batch,
                        bool concurrent_txq OVS_UNUSED)
 {
-
     if (OVS_UNLIKELY(batch->packets[0]->source != DPBUF_DPDK)) {
         dpdk_do_tx_copy(netdev, qid, batch);
         dp_packet_delete_batch(batch, true);

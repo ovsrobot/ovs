@@ -1085,6 +1085,20 @@ dp_packet_hwol_set_l4_len(struct dp_packet *b, int l4_len)
 {
     b->mbuf.l4_len = l4_len;
 }
+
+/* Set outer_l2_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l2_len(struct dp_packet *b, int outer_l2_len)
+{
+    b->mbuf.outer_l2_len = outer_l2_len;
+}
+
+/* Set outer_l3_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l3_len(struct dp_packet *b, int outer_l3_len)
+{
+    b->mbuf.outer_l3_len = outer_l3_len;
+}
 #else
 /* Mark packet 'b' for VXLAN TCP segmentation offloading. */
 static inline void
@@ -1110,6 +1124,18 @@ dp_packet_hwol_set_l3_len(struct dp_packet *b OVS_UNUSED,
 static inline void
 dp_packet_hwol_set_l4_len(struct dp_packet *b OVS_UNUSED,
                           int l4_len OVS_UNUSED)
+{
+}
+
+/* Set outer_l2_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l2_len(struct dp_packet *b, int outer_l2_len)
+{
+}
+
+/* Set outer_l3_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l3_len(struct dp_packet *b, int outer_l3_len)
 {
 }
 #endif /* DPDK_NETDEV */
