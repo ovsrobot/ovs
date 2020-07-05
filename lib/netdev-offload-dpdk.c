@@ -596,7 +596,6 @@ static int
 parse_flow_match(struct flow_patterns *patterns,
                  const struct match *match)
 {
-    uint8_t *next_proto_mask = NULL;
     uint8_t proto = 0;
 
     /* Eth */
@@ -667,7 +666,6 @@ parse_flow_match(struct flow_patterns *patterns,
         /* Save proto for L4 protocol setup. */
         proto = spec->hdr.next_proto_id &
                 mask->hdr.next_proto_id;
-        next_proto_mask = &mask->hdr.next_proto_id;
     }
 
     if (proto != IPPROTO_ICMP && proto != IPPROTO_UDP  &&
@@ -701,11 +699,6 @@ parse_flow_match(struct flow_patterns *patterns,
         mask->hdr.tcp_flags = ntohs(match->wc.masks.tcp_flags) & 0xff;
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_TCP, spec, mask);
-
-        /* proto == TCP and ITEM_TYPE_TCP, thus no need for proto match. */
-        if (next_proto_mask) {
-            *next_proto_mask = 0;
-        }
     } else if (proto == IPPROTO_UDP) {
         struct rte_flow_item_udp *spec, *mask;
 
@@ -719,11 +712,6 @@ parse_flow_match(struct flow_patterns *patterns,
         mask->hdr.dst_port = match->wc.masks.tp_dst;
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_UDP, spec, mask);
-
-        /* proto == UDP and ITEM_TYPE_UDP, thus no need for proto match. */
-        if (next_proto_mask) {
-            *next_proto_mask = 0;
-        }
     } else if (proto == IPPROTO_SCTP) {
         struct rte_flow_item_sctp *spec, *mask;
 
@@ -737,11 +725,6 @@ parse_flow_match(struct flow_patterns *patterns,
         mask->hdr.dst_port = match->wc.masks.tp_dst;
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_SCTP, spec, mask);
-
-        /* proto == SCTP and ITEM_TYPE_SCTP, thus no need for proto match. */
-        if (next_proto_mask) {
-            *next_proto_mask = 0;
-        }
     } else if (proto == IPPROTO_ICMP) {
         struct rte_flow_item_icmp *spec, *mask;
 
@@ -755,11 +738,6 @@ parse_flow_match(struct flow_patterns *patterns,
         mask->hdr.icmp_code = (uint8_t) ntohs(match->wc.masks.tp_dst);
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_ICMP, spec, mask);
-
-        /* proto == ICMP and ITEM_TYPE_ICMP, thus no need for proto match. */
-        if (next_proto_mask) {
-            *next_proto_mask = 0;
-        }
     }
 
     add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_END, NULL, NULL);
