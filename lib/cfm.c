@@ -780,7 +780,7 @@ cfm_process_heartbeat(struct cfm *cfm, const struct dp_packet *p)
      *
      * Faults can cause a controller or Open vSwitch to make potentially
      * expensive changes to the network topology.  It seems prudent to trigger
-     * them judiciously, especially when CFM is used to check slave status of
+     * them judiciously, especially when CFM is used to check sub status of
      * bonds. Furthermore, faults can be maliciously triggered by crafting
      * unexpected CCMs. */
     if (memcmp(ccm->maid, cfm->maid, sizeof ccm->maid)) {

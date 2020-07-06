@@ -23,6 +23,9 @@ Post-v2.13.0
    - Tunnels: TC Flower offload
      * Tunnel Local endpoint address masked match are supported.
      * Tunnel Romte endpoint address masked match are supported.
+   - Terminology:
+     * The term "slave" has been replaced by "sub-interface", "sub" for short,
+       in the contexts of bonds, LACP, and OpenFlow bundle actions.
 
 
 v2.13.0 - 14 Feb 2020
@@ -799,7 +802,7 @@ v2.4.0 - 20 Aug 2015
      The implementation has been tested successfully against the Ixia Automated
      Network Validation Library (ANVL).
    - Stats are no longer updated on fake bond interface.
-   - Keep active bond slave selection across OVS restart.
+   - Keep active bond interface selection across OVS restart.
    - A simple wrapper script, 'ovs-docker', to integrate OVS with Docker
      containers. If and when there is a native integration of Open vSwitch
      with Docker, the wrapper script will be retired.
