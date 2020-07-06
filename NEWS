@@ -23,7 +23,10 @@ Post-v2.13.0
    - Tunnels: TC Flower offload
      * Tunnel Local endpoint address masked match are supported.
      * Tunnel Romte endpoint address masked match are supported.
-
+   - DPDK:
+     * OVS validated with DPDK 19.11.2, due to the inclusion of fixes for
+       CVE-2020-10722, CVE-2020-10723, CVE-2020-10724, CVE-2020-10725 and
+       CVE-2020-10726, this DPDK version is strongly recommended to be used.
 
 v2.13.0 - 14 Feb 2020
 ---------------------
