@@ -379,6 +379,18 @@ an eth device whose mac address is ``00:11:22:33:44:55``::
     $ ovs-vsctl add-port br0 dpdk-mac -- set Interface dpdk-mac type=dpdk \
        options:dpdk-devargs="class=eth,mac=00:11:22:33:44:55"
 
+Representor specific configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In some topologies, a VF must be configured before being assigned to a
+guest (VM) machine.  This configuration is done through VF-specific fields
+in the ``options`` column of the Interface table.
+
+- Configure the VF MAC address::
+
+    $ ovs-vsctl add-port br0 dpdk-rep0 -- set Interface dpdk-rep0 type=dpdk \
+       options:dpdk-vf-mac=00:11:22:33:44:55
+
 Jumbo Frames
 ------------
 
