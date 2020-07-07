@@ -1962,7 +1962,7 @@ cookie=0xd dl_src=60:66:66:66:00:02 actions=pop_mpls:0x0800,load:0xa000001->OXM_
 cookie=0xd dl_src=60:66:66:66:00:03 actions=pop_mpls:0x0800,move:OXM_OF_IPV4_DST[[]]->OXM_OF_IPV4_SRC[[]],controller
 cookie=0xd dl_src=60:66:66:66:00:04 actions=pop_mpls:0x0800,push:OXM_OF_IPV4_DST[[]],pop:OXM_OF_IPV4_SRC[[]],controller
 cookie=0xd dl_src=60:66:66:66:00:05 actions=pop_mpls:0x0800,multipath(eth_src,50,modulo_n,1,0,OXM_OF_IPV4_SRC[[0..7]]),controller
-cookie=0xd dl_src=60:66:66:66:00:06 actions=pop_mpls:0x0800,bundle_load(eth_src,50,hrw,ofport,OXM_OF_IPV4_SRC[[0..15]],slaves:1,2),controller
+cookie=0xd dl_src=60:66:66:66:00:06 actions=pop_mpls:0x0800,bundle_load(eth_src,50,hrw,ofport,OXM_OF_IPV4_SRC[[0..15]],subs:1,2),controller
 cookie=0xd dl_src=60:66:66:66:00:07 actions=pop_mpls:0x0800,learn(table=1,hard_timeout=60,eth_type=0x800,nw_proto=6,OXM_OF_IPV4_SRC[[]]=OXM_OF_IPV4_DST[[]]),controller
 
 cookie=0xd dl_src=60:66:66:66:00:08 actions=pop_mpls:0x0806,resubmit(1,1)
@@ -2960,7 +2960,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
  cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:03 actions=pop_mpls:0x0800,move:NXM_OF_IP_DST[[]]->NXM_OF_IP_SRC[[]],CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:04 actions=pop_mpls:0x0800,push:NXM_OF_IP_DST[[]],pop:NXM_OF_IP_SRC[[]],CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:05 actions=pop_mpls:0x0800,multipath(eth_src,50,modulo_n,1,0,NXM_OF_IP_SRC[[0..7]]),CONTROLLER:65535
- cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:06 actions=pop_mpls:0x0800,bundle_load(eth_src,50,hrw,ofport,NXM_OF_IP_SRC[[0..15]],slaves:1,2),CONTROLLER:65535
+ cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:06 actions=pop_mpls:0x0800,bundle_load(eth_src,50,hrw,ofport,NXM_OF_IP_SRC[[0..15]],subs:1,2),CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:07 actions=pop_mpls:0x0800,learn(table=1,hard_timeout=60,eth_type=0x800,nw_proto=6,NXM_OF_IP_SRC[[]]=NXM_OF_IP_DST[[]]),CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:09 actions=resubmit(,2),CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=186, dl_src=60:66:66:66:00:0a actions=pop_mpls:0x0800,mod_nw_dst:10.0.0.1,CONTROLLER:65535
@@ -8777,7 +8777,7 @@ AT_CHECK([ovs-appctl bfd/show | sed -n '/^.*Session State:.*/p'], [0], [dnl
   Local Session State: up
   Remote Session State: up
 ])
-# bond/show should show 'may-enable: true' for all slaves.
+# bond/show should show 'may-enable: true' for all interfaces.
 AT_CHECK([ovs-appctl bond/show | sed -n '/^.*may_enable:.*/p'], [0], [dnl
   may_enable: true
   may_enable: true

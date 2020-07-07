@@ -1990,10 +1990,10 @@ dpif_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
 }
 
 int
-dpif_bond_add(struct dpif *dpif, uint32_t bond_id, odp_port_t *slave_map)
+dpif_bond_add(struct dpif *dpif, uint32_t bond_id, odp_port_t *sub_map)
 {
     return dpif->dpif_class->bond_del
-           ? dpif->dpif_class->bond_add(dpif, bond_id, slave_map)
+           ? dpif->dpif_class->bond_add(dpif, bond_id, sub_map)
            : EOPNOTSUPP;
 }
 

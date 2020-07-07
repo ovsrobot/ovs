@@ -46,32 +46,32 @@ struct lacp *lacp_ref(const struct lacp *);
 void lacp_configure(struct lacp *, const struct lacp_settings *);
 bool lacp_is_active(const struct lacp *);
 
-bool lacp_process_packet(struct lacp *, const void *slave,
+bool lacp_process_packet(struct lacp *, const void *sub,
                          const struct dp_packet *packet);
 enum lacp_status lacp_status(const struct lacp *);
 
-struct lacp_slave_settings {
+struct lacp_sub_settings {
     char *name;                       /* Name (for debugging). */
     uint16_t id;                      /* Port ID. */
     uint16_t priority;                /* Port priority. */
     uint16_t key;                     /* Aggregation key. */
 };
 
-void lacp_slave_register(struct lacp *, void *slave_,
-                         const struct lacp_slave_settings *);
-void lacp_slave_unregister(struct lacp *, const void *slave);
-void lacp_slave_carrier_changed(const struct lacp *, const void *slave,
+void lacp_sub_register(struct lacp *, void *sub_,
+                         const struct lacp_sub_settings *);
+void lacp_sub_unregister(struct lacp *, const void *sub);
+void lacp_sub_carrier_changed(const struct lacp *, const void *sub,
                                 bool carrier_up);
-bool lacp_slave_may_enable(const struct lacp *, const void *slave);
-bool lacp_slave_is_current(const struct lacp *, const void *slave_);
+bool lacp_sub_may_enable(const struct lacp *, const void *sub);
+bool lacp_sub_is_current(const struct lacp *, const void *sub_);
 
 /* Callback function for lacp_run() for sending a LACP PDU. */
-typedef void lacp_send_pdu(void *slave, const void *pdu, size_t pdu_size);
+typedef void lacp_send_pdu(void *sub, const void *pdu, size_t pdu_size);
 
 void lacp_run(struct lacp *, lacp_send_pdu *);
 void lacp_wait(struct lacp *);
 
-struct lacp_slave_stats {
+struct lacp_sub_stats {
     /* id */
     struct eth_addr dot3adAggPortActorSystemID;
     struct eth_addr dot3adAggPortPartnerOperSystemID;
@@ -92,6 +92,7 @@ struct lacp_slave_stats {
     /* uint32_t dot3adAggPortStatsMarkerResponsePDUsTx; */
 };
 
-bool lacp_get_slave_stats(const struct lacp *, const void *slave_, struct lacp_slave_stats *);
+bool lacp_get_sub_stats(const struct lacp *, const void *sub_,
+                        struct lacp_sub_stats *);
 
 #endif /* lacp.h */

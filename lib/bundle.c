@@ -39,14 +39,14 @@ VLOG_DEFINE_THIS_MODULE(bundle);
 
 static ofp_port_t
 execute_ab(const struct ofpact_bundle *bundle,
-           bool (*slave_enabled)(ofp_port_t ofp_port, void *aux), void *aux)
+           bool (*sub_enabled)(ofp_port_t ofp_port, void *aux), void *aux)
 {
     size_t i;
 
-    for (i = 0; i < bundle->n_slaves; i++) {
-        ofp_port_t slave = bundle->slaves[i];
-        if (slave_enabled(slave, aux)) {
-            return slave;
+    for (i = 0; i < bundle->n_subs; i++) {
+        ofp_port_t sub = bundle->subs[i];
+        if (sub_enabled(sub, aux)) {
+            return sub;
         }
     }
 
@@ -56,12 +56,12 @@ execute_ab(const struct ofpact_bundle *bundle,
 static ofp_port_t
 execute_hrw(const struct ofpact_bundle *bundle,
             const struct flow *flow, struct flow_wildcards *wc,
-            bool (*slave_enabled)(ofp_port_t ofp_port, void *aux), void *aux)
+            bool (*sub_enabled)(ofp_port_t ofp_port, void *aux), void *aux)
 {
     uint32_t flow_hash, best_hash;
     int best, i;
 
-    if (bundle->n_slaves > 1) {
+    if (bundle->n_subs > 1) {
         flow_mask_hash_fields(flow, wc, bundle->fields);
     }
 
@@ -69,8 +69,8 @@ execute_hrw(const struct ofpact_bundle *bundle,
     best = -1;
     best_hash = 0;
 
-    for (i = 0; i < bundle->n_slaves; i++) {
-        if (slave_enabled(bundle->slaves[i], aux)) {
+    for (i = 0; i < bundle->n_subs; i++) {
+        if (sub_enabled(bundle->subs[i], aux)) {
             uint32_t hash = hash_2words(i, flow_hash);
 
             if (best < 0 || hash > best_hash) {
@@ -80,25 +80,25 @@ execute_hrw(const struct ofpact_bundle *bundle,
         }
     }
 
-    return best >= 0 ? bundle->slaves[best] : OFPP_NONE;
+    return best >= 0 ? bundle->subs[best] : OFPP_NONE;
 }
 
 /* Executes 'bundle' on 'flow'.  Sets fields in 'wc' that were used to
- * calculate the result.  Uses 'slave_enabled' to determine if the slave
- * designated by 'ofp_port' is up.  Returns the chosen slave, or
- * OFPP_NONE if none of the slaves are acceptable. */
+ * calculate the result.  Uses 'sub_enabled' to determine if the sub
+ * designated by 'ofp_port' is up.  Returns the chosen sub, or
+ * OFPP_NONE if none of the subs are acceptable. */
 ofp_port_t
 bundle_execute(const struct ofpact_bundle *bundle,
                const struct flow *flow, struct flow_wildcards *wc,
-               bool (*slave_enabled)(ofp_port_t ofp_port, void *aux),
+               bool (*sub_enabled)(ofp_port_t ofp_port, void *aux),
                void *aux)
 {
     switch (bundle->algorithm) {
     case NX_BD_ALG_HRW:
-        return execute_hrw(bundle, flow, wc, slave_enabled, aux);
+        return execute_hrw(bundle, flow, wc, sub_enabled, aux);
 
     case NX_BD_ALG_ACTIVE_BACKUP:
-        return execute_ab(bundle, slave_enabled, aux);
+        return execute_ab(bundle, sub_enabled, aux);
 
     default:
         OVS_NOT_REACHED();
@@ -119,21 +119,21 @@ bundle_check(const struct ofpact_bundle *bundle, ofp_port_t max_ports,
         }
     }
 
-    for (i = 0; i < bundle->n_slaves; i++) {
-        ofp_port_t ofp_port = bundle->slaves[i];
+    for (i = 0; i < bundle->n_subs; i++) {
+        ofp_port_t ofp_port = bundle->subs[i];
 
         if (ofp_port != OFPP_NONE) {
             enum ofperr error = ofpact_check_output_port(ofp_port, max_ports);
             if (error) {
-                VLOG_WARN_RL(&rl, "invalid slave %"PRIu32, ofp_port);
+                VLOG_WARN_RL(&rl, "invalid sub %"PRIu32, ofp_port);
                 return error;
             }
         }
-        /* Controller slaves are unsupported due to the lack of a max_len
+        /* Controller subs are unsupported due to the lack of a max_len
          * argument. This may or may not change in the future.  There doesn't
          * seem to be a real-world use-case for supporting it. */
         if (ofp_port == OFPP_CONTROLLER) {
-            VLOG_WARN_RL(&rl, "unsupported controller slave");
+            VLOG_WARN_RL(&rl, "unsupported controller sub");
             return OFPERR_OFPBAC_BAD_OUT_PORT;
         }
     }
@@ -150,38 +150,38 @@ static char * OVS_WARN_UNUSED_RESULT
 bundle_parse__(const char *s, const struct ofputil_port_map *port_map,
                char **save_ptr,
                const char *fields, const char *basis, const char *algorithm,
-               const char *slave_type, const char *dst,
-               const char *slave_delim, struct ofpbuf *ofpacts)
+               const char *sub_type, const char *dst,
+               const char *sub_delim, struct ofpbuf *ofpacts)
 {
     struct ofpact_bundle *bundle;
 
-    if (!slave_delim) {
+    if (!sub_delim) {
         return xasprintf("%s: not enough arguments to bundle action", s);
     }
 
-    if (strcasecmp(slave_delim, "slaves")) {
-        return xasprintf("%s: missing slave delimiter, expected `slaves' "
-                         "got `%s'", s, slave_delim);
+    if (strcasecmp(sub_delim, "subs") && strcasecmp(sub_delim, "slaves")) {
+        return xasprintf("%s: missing sub delimiter, expected `subs', "
+                         "got `%s'", s, sub_delim);
     }
 
     bundle = ofpact_put_BUNDLE(ofpacts);
 
     for (;;) {
-        ofp_port_t slave_port;
-        char *slave;
+        ofp_port_t sub_port;
+        char *sub;
 
-        slave = strtok_r(NULL, ", []", save_ptr);
-        if (!slave || bundle->n_slaves >= BUNDLE_MAX_SLAVES) {
+        sub = strtok_r(NULL, ", []", save_ptr);
+        if (!sub || bundle->n_subs >= BUNDLE_MAX_SUBS) {
             break;
         }
 
-        if (!ofputil_port_from_string(slave, port_map, &slave_port)) {
-            return xasprintf("%s: bad port number", slave);
+        if (!ofputil_port_from_string(sub, port_map, &sub_port)) {
+            return xasprintf("%s: bad port number", sub);
         }
-        ofpbuf_put(ofpacts, &slave_port, sizeof slave_port);
+        ofpbuf_put(ofpacts, &sub_port, sizeof sub_port);
 
         bundle = ofpacts->header;
-        bundle->n_slaves++;
+        bundle->n_subs++;
     }
 
     if (ofpbuf_oversized(ofpacts)) {
@@ -217,8 +217,8 @@ bundle_parse__(const char *s, const struct ofputil_port_map *port_map,
         return xasprintf("%s: unknown algorithm `%s'", s, algorithm);
     }
 
-    if (strcasecmp(slave_type, "ofport")) {
-        return xasprintf("%s: unknown slave_type `%s'", s, slave_type);
+    if (strcasecmp(sub_type, "ofport")) {
+        return xasprintf("%s: unknown sub_type `%s'", s, sub_type);
     }
 
     if (dst) {
@@ -245,7 +245,7 @@ char * OVS_WARN_UNUSED_RESULT
 bundle_parse(const char *s, const struct ofputil_port_map *port_map,
              struct ofpbuf *ofpacts)
 {
-    char *fields, *basis, *algorithm, *slave_type, *slave_delim;
+    char *fields, *basis, *algorithm, *sub_type, *sub_delim;
     char *tokstr, *save_ptr;
     char *error;
 
@@ -254,12 +254,12 @@ bundle_parse(const char *s, const struct ofputil_port_map *port_map,
     fields = strtok_r(tokstr, ", ", &save_ptr);
     basis = strtok_r(NULL, ", ", &save_ptr);
     algorithm = strtok_r(NULL, ", ", &save_ptr);
-    slave_type = strtok_r(NULL, ", ", &save_ptr);
-    slave_delim = strtok_r(NULL, ": ", &save_ptr);
+    sub_type = strtok_r(NULL, ", ", &save_ptr);
+    sub_delim = strtok_r(NULL, ": ", &save_ptr);
 
     error = bundle_parse__(s, port_map,
-                           &save_ptr, fields, basis, algorithm, slave_type,
-                           NULL, slave_delim, ofpacts);
+                           &save_ptr, fields, basis, algorithm, sub_type,
+                           NULL, sub_delim, ofpacts);
     free(tokstr);
 
     return error;
@@ -274,7 +274,7 @@ char * OVS_WARN_UNUSED_RESULT
 bundle_parse_load(const char *s, const struct ofputil_port_map *port_map,
                   struct ofpbuf *ofpacts)
 {
-    char *fields, *basis, *algorithm, *slave_type, *dst, *slave_delim;
+    char *fields, *basis, *algorithm, *sub_type, *dst, *sub_delim;
     char *tokstr, *save_ptr;
     char *error;
 
@@ -283,13 +283,13 @@ bundle_parse_load(const char *s, const struct ofputil_port_map *port_map,
     fields = strtok_r(tokstr, ", ", &save_ptr);
     basis = strtok_r(NULL, ", ", &save_ptr);
     algorithm = strtok_r(NULL, ", ", &save_ptr);
-    slave_type = strtok_r(NULL, ", ", &save_ptr);
+    sub_type = strtok_r(NULL, ", ", &save_ptr);
     dst = strtok_r(NULL, ", ", &save_ptr);
-    slave_delim = strtok_r(NULL, ": ", &save_ptr);
+    sub_delim = strtok_r(NULL, ": ", &save_ptr);
 
     error = bundle_parse__(s, port_map,
-                           &save_ptr, fields, basis, algorithm, slave_type,
-                           dst, slave_delim, ofpacts);
+                           &save_ptr, fields, basis, algorithm, sub_type,
+                           dst, sub_delim, ofpacts);
 
     free(tokstr);
 
@@ -328,13 +328,13 @@ bundle_format(const struct ofpact_bundle *bundle,
         ds_put_char(s, ',');
     }
 
-    ds_put_format(s, "%sslaves:%s", colors.param, colors.end);
-    for (i = 0; i < bundle->n_slaves; i++) {
+    ds_put_format(s, "%ssubs:%s", colors.param, colors.end);
+    for (i = 0; i < bundle->n_subs; i++) {
         if (i) {
             ds_put_char(s, ',');
         }
 
-        ofputil_format_port(bundle->slaves[i], port_map, s);
+        ofputil_format_port(bundle->subs[i], port_map, s);
     }
 
     ds_put_format(s, "%s)%s", colors.paren, colors.end);

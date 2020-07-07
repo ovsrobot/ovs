@@ -616,9 +616,9 @@ struct tx_port {
     struct dp_netdev_rxq *output_pkts_rxqs[NETDEV_MAX_BURST];
 };
 
-/* Contained by struct tx_bond 'slave_buckets'. */
-struct slave_entry {
-    odp_port_t slave_id;
+/* Contained by struct tx_bond 'sub_buckets'. */
+struct sub_entry {
+    odp_port_t sub_id;
     atomic_ullong n_packets;
     atomic_ullong n_bytes;
 };
@@ -627,7 +627,7 @@ struct slave_entry {
 struct tx_bond {
     struct cmap_node node;
     uint32_t bond_id;
-    struct slave_entry slave_buckets[BOND_BUCKETS];
+    struct sub_entry sub_buckets[BOND_BUCKETS];
 };
 
 /* A set of properties for the current processing loop that is not directly
@@ -1457,17 +1457,17 @@ dpif_netdev_bond_show(struct unixctl_conn *conn, int argc,
 
     if (cmap_count(&dp->tx_bonds) > 0) {
         struct tx_bond *dp_bond_entry;
-        uint32_t slave_id;
+        uint32_t sub_id;
 
         ds_put_cstr(&reply, "Bonds:\n");
         CMAP_FOR_EACH (dp_bond_entry, node, &dp->tx_bonds) {
             ds_put_format(&reply, "  bond-id %"PRIu32":\n",
                           dp_bond_entry->bond_id);
             for (int bucket = 0; bucket < BOND_BUCKETS; bucket++) {
-                slave_id =
-                    odp_to_u32(dp_bond_entry->slave_buckets[bucket].slave_id);
-                ds_put_format(&reply, "    bucket %d - slave %"PRIu32"\n",
-                              bucket, slave_id);
+                sub_id = odp_to_u32(dp_bond_entry->sub_buckets[bucket].sub_id);
+                ds_put_format(&reply,
+                              "    bucket %d - sub-interface %"PRIu32"\n",
+                              bucket, sub_id);
             }
         }
     }
@@ -6490,10 +6490,10 @@ dp_netdev_add_bond_tx_to_pmd(struct dp_netdev_pmd_thread *pmd,
         for (int i = 0; i < BOND_BUCKETS; i++) {
             uint64_t n_packets, n_bytes;
 
-            atomic_read_relaxed(&tx->slave_buckets[i].n_packets, &n_packets);
-            atomic_read_relaxed(&tx->slave_buckets[i].n_bytes, &n_bytes);
-            atomic_init(&new_tx->slave_buckets[i].n_packets, n_packets);
-            atomic_init(&new_tx->slave_buckets[i].n_bytes, n_bytes);
+            atomic_read_relaxed(&tx->sub_buckets[i].n_packets, &n_packets);
+            atomic_read_relaxed(&tx->sub_buckets[i].n_bytes, &n_bytes);
+            atomic_init(&new_tx->sub_buckets[i].n_packets, n_packets);
+            atomic_init(&new_tx->sub_buckets[i].n_bytes, n_bytes);
         }
         cmap_replace(&pmd->tx_bonds, &tx->node, &new_tx->node,
                      hash_bond_id(bond->bond_id));
@@ -7419,18 +7419,18 @@ dp_execute_lb_output_action(struct dp_netdev_pmd_thread *pmd,
 
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
         /*
-         * Lookup the bond-hash table using hash to get the slave.
+         * Lookup the bond-hash table using hash to get the sub-interface.
          */
         uint32_t hash = dp_packet_get_rss_hash(packet);
-        struct slave_entry *s_entry = &p_bond->slave_buckets[hash & BOND_MASK];
-        odp_port_t bond_member = s_entry->slave_id;
+        struct sub_entry *s_entry = &p_bond->sub_buckets[hash & BOND_MASK];
+        odp_port_t bond_member = s_entry->sub_id;
         uint32_t size = dp_packet_size(packet);
         struct dp_packet_batch output_pkt;
 
         dp_packet_batch_init_packet(&output_pkt, packet);
         if (OVS_LIKELY(dp_execute_output_action(pmd, &output_pkt, true,
                                                 bond_member))) {
-            /* Update slave stats. */
+            /* Update sub stats. */
             non_atomic_ullong_add(&s_entry->n_packets, 1);
             non_atomic_ullong_add(&s_entry->n_bytes, size);
         }
@@ -8073,7 +8073,7 @@ dpif_netdev_ipf_dump_done(struct dpif *dpif OVS_UNUSED, void *ipf_dump_ctx)
 
 static int
 dpif_netdev_bond_add(struct dpif *dpif, uint32_t bond_id,
-                     odp_port_t *slave_map)
+                     odp_port_t *sub_map)
 {
     struct tx_bond *new_tx = xzalloc(sizeof *new_tx);
     struct dp_netdev *dp = get_dp_netdev(dpif);
@@ -8082,7 +8082,7 @@ dpif_netdev_bond_add(struct dpif *dpif, uint32_t bond_id,
     /* Prepare new bond mapping. */
     new_tx->bond_id = bond_id;
     for (int bucket = 0; bucket < BOND_BUCKETS; bucket++) {
-        new_tx->slave_buckets[bucket].slave_id = slave_map[bucket];
+        new_tx->sub_buckets[bucket].sub_id = sub_map[bucket];
     }
 
     ovs_mutex_lock(&dp->bond_mutex);
@@ -8155,7 +8155,7 @@ dpif_netdev_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
         for (int i = 0; i < BOND_BUCKETS; i++) {
             uint64_t pmd_n_bytes;
 
-            atomic_read_relaxed(&pmd_bond_entry->slave_buckets[i].n_bytes,
+            atomic_read_relaxed(&pmd_bond_entry->sub_buckets[i].n_bytes,
                                 &pmd_n_bytes);
             n_bytes[i] += pmd_n_bytes;
         }
