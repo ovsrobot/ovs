@@ -1886,6 +1886,42 @@ dpdk_process_queue_size(struct netdev *netdev, const struct smap *args,
 }
 
 static int
+netdev_dpdk_set_etheraddr__(struct netdev_dpdk *dev, const struct eth_addr mac)
+    OVS_REQUIRES(dev->mutex)
+{
+    int err = 0;
+
+    if (!eth_addr_equals(dev->hwaddr, mac)) {
+        if (dev->type == DPDK_DEV_ETH) {
+            struct rte_ether_addr ea;
+
+            memcpy(ea.addr_bytes, mac.ea, ETH_ADDR_LEN);
+            err = -rte_eth_dev_default_mac_addr_set(dev->port_id, &ea);
+        }
+        if (!err) {
+            dev->hwaddr = mac;
+            netdev_change_seq_changed(&dev->up);
+        } else {
+            VLOG_WARN("%s: Failed to set requested mac("ETH_ADDR_FMT"): %s",
+                      netdev_get_name(&dev->up), ETH_ADDR_ARGS(mac),
+                      rte_strerror(err));
+        }
+    }
+
+    return err;
+}
+
+static bool
+dpdk_port_is_representor(struct netdev_dpdk *dev)
+    OVS_REQUIRES(dev->mutex)
+{
+    struct rte_eth_dev_info dev_info;
+
+    rte_eth_dev_info_get(dev->port_id, &dev_info);
+    return (*dev_info.dev_flags) & RTE_ETH_DEV_REPRESENTOR;
+}
+
+static int
 netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
                        char **errp)
 {
@@ -1898,6 +1934,7 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
         {RTE_FC_RX_PAUSE, RTE_FC_FULL    }
     };
     const char *new_devargs;
+    const char *vf_mac;
     int err = 0;
 
     ovs_mutex_lock(&dpdk_mutex);
@@ -1966,6 +2003,43 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
 
     if (err) {
         goto out;
+    }
+
+    vf_mac = smap_get(args, "dpdk-vf-mac");
+    if (vf_mac) {
+        struct eth_addr mac;
+
+        err = EINVAL;
+
+        if (!dpdk_port_is_representor(dev)) {
+            VLOG_ERR_BUF(errp, "'%s' is trying to set the VF MAC '%s' "
+                         "but 'options:dpdk-vf-mac' is only supported for "
+                         "VF representors.",
+                         netdev_get_name(netdev), vf_mac);
+            goto out;
+        }
+        if (!eth_addr_from_string(vf_mac, &mac)) {
+            VLOG_ERR_BUF(errp, "interface '%s': cannot parse MAC '%s'",
+                         netdev_get_name(netdev), vf_mac);
+            goto out;
+        }
+        if (eth_addr_is_multicast(mac)) {
+            VLOG_ERR_BUF(errp,
+                         "interface '%s': cannot set MAC to multicast address",
+                         netdev_get_name(netdev));
+            goto out;
+        }
+        if (eth_addr_is_zero(mac)) {
+            VLOG_ERR_BUF(errp,
+                         "interface '%s': cannot set MAC to all zero address",
+                         netdev_get_name(netdev));
+            goto out;
+        }
+
+        err = netdev_dpdk_set_etheraddr__(dev, mac);
+        if (err) {
+            goto out;
+        }
     }
 
     lsc_interrupt_mode = smap_get_bool(args, "dpdk-lsc-interrupt", false);
@@ -2916,25 +2990,10 @@ netdev_dpdk_set_etheraddr(struct netdev *netdev, const struct eth_addr mac)
     int err = 0;
 
     ovs_mutex_lock(&dev->mutex);
-    if (!eth_addr_equals(dev->hwaddr, mac)) {
-        if (dev->type == DPDK_DEV_ETH) {
-            struct rte_ether_addr ea;
-
-            memcpy(ea.addr_bytes, mac.ea, ETH_ADDR_LEN);
-            err = rte_eth_dev_default_mac_addr_set(dev->port_id, &ea);
-        }
-        if (!err) {
-            dev->hwaddr = mac;
-            netdev_change_seq_changed(netdev);
-        } else {
-            VLOG_WARN("%s: Failed to set requested mac("ETH_ADDR_FMT"): %s",
-                      netdev_get_name(netdev), ETH_ADDR_ARGS(mac),
-                      rte_strerror(-err));
-        }
-    }
+    err = netdev_dpdk_set_etheraddr__(dev, mac);
     ovs_mutex_unlock(&dev->mutex);
 
-    return -err;
+    return err;
 }
 
 static int

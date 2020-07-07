@@ -3272,6 +3272,12 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
           descriptors will be used by default.
         </p>
       </column>
+
+      <column name="options" key="dpdk-vf-mac">
+        <p>Ethernet address to set for this VF interface.  If unset then the
+        default <ref table="Interface" column="mac"/> address is used.</p>
+        <p>This option may only be used with dpdk VF representors.</p>
+      </column>
     </group>
 
     <group title="EMC (Exact Match Cache) Configuration">
