@@ -1114,6 +1114,118 @@ parse_put_flow_ct_action(struct tc_flower *flower,
 }
 
 static int
+parse_put_tnl_header(struct tc_flower *flower OVS_UNUSED,
+                     struct tc_action *action,
+                     const struct ovs_action_push_tnl *data)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+    const struct eth_header *eth;
+    const struct udp_header *udp;
+    const void *l3;
+    const void *l4;
+    struct ds ds;
+
+    ds_init(&ds);
+    eth = (const struct eth_header *)data->header;
+    l3 = eth + 1;
+
+    if (eth->eth_type == htons(ETH_TYPE_IP)) {
+        const struct ip_header *ip = l3;
+        action->encap.ipv4.ipv4_src = get_16aligned_be32(&ip->ip_src);
+        action->encap.ipv4.ipv4_dst = get_16aligned_be32(&ip->ip_dst);
+        action->encap.ttl = ip->ip_ttl;
+        l4 = (ip + 1);
+    } else {
+        const struct ovs_16aligned_ip6_hdr *ip6 = l3;
+        memcpy(&action->encap.ipv6.ipv6_src, &ip6->ip6_src,
+               sizeof ip6->ip6_src);
+        memcpy(&action->encap.ipv6.ipv6_dst, &ip6->ip6_dst,
+               sizeof ip6->ip6_dst);
+        l4 = (ip6 + 1);
+    }
+
+    udp = (const struct udp_header *) l4;
+
+    if (data->tnl_type == OVS_VPORT_TYPE_VXLAN) {
+        const struct vxlanhdr *vxh;
+
+        vxh = (const struct vxlanhdr *)(udp + 1);
+        action->encap.tp_src = udp->udp_src;
+        action->encap.tp_dst = udp->udp_dst;
+        action->encap.id_present = true;
+        action->encap.no_csum = true;
+        action->encap.id = be32_to_be64(get_16aligned_be32(&vxh->vx_vni) >> 8);
+
+        ds_put_format(&ds, "vxlan(flags=0x%"PRIx32",vni=0x%"PRIx32")",
+                      ntohl(get_16aligned_be32(&vxh->vx_flags)),
+                      ntohl(get_16aligned_be32(&vxh->vx_vni)) >> 8);
+        VLOG_DBG_RL(&rl, "%s", ds_cstr(&ds));
+    } else {
+        VLOG_DBG_RL(&rl, "unsupported tunnel type: %d", data->tnl_type);
+        return EOPNOTSUPP;
+    }
+
+    ds_destroy(&ds);
+    return 0;
+}
+
+static int
+parse_put_flow_clone_action(struct tc_flower *flower,
+                            const struct netdev *netdev,
+                            const struct nlattr *clone,
+                            size_t clone_len)
+{
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+        struct tc_action *action;
+        const struct nlattr *ca;
+        size_t ca_left;
+        int err;
+
+        NL_ATTR_FOR_EACH_UNSAFE (ca, ca_left, clone, clone_len) {
+            action = &flower->actions[flower->action_count];
+            switch (nl_attr_type(ca)) {
+            case OVS_ACTION_ATTR_TUNNEL_PUSH: {
+                const struct ovs_action_push_tnl *tnl_push = nl_attr_get(ca);
+
+                err = parse_put_tnl_header(flower, action, tnl_push);
+                if (err) {
+                    return err;
+                }
+                action->type = TC_ACT_ENCAP;
+                flower->action_count++;
+            }
+            break;
+            case OVS_ACTION_ATTR_OUTPUT: {
+                struct netdev *outdev;
+                const char *outdev_type;
+
+                odp_port_t port = nl_attr_get_odp_port(ca);
+                outdev = netdev_ports_get(port, netdev_get_dpif_type(netdev));
+                if (!outdev) {
+                    VLOG_DBG_RL(&rl, "Can't find netdev for output port "
+                                     "%d inside clone().", port);
+                    return ENODEV;
+                }
+                outdev_type = netdev_get_type(outdev);
+                action->out.ifindex_out = netdev_get_ifindex(outdev);
+                action->out.ingress = is_internal_port(outdev_type);
+                netdev_close(outdev);
+
+                action->type = TC_ACT_OUTPUT;
+                flower->action_count++;
+            }
+            break;
+            default:
+                VLOG_WARN_RL(&rl, "unsupported action %d inside clone()",
+                             nl_attr_type(ca));
+                return EOPNOTSUPP;
+            break;
+        }
+    }
+    return 0;
+}
+
+static int
 parse_put_flow_set_masked_action(struct tc_flower *flower,
                                  struct tc_action *action,
                                  const struct nlattr *set,
@@ -1789,6 +1901,15 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             action->chain = nl_attr_get_u32(nla);
             flower.action_count++;
             recirc_act = true;
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CLONE) {
+            const struct nlattr *clone = nl_attr_get(nla);
+            const size_t clone_len = nl_attr_get_size(nla);
+
+            err = parse_put_flow_clone_action(&flower, netdev, clone,
+                                              clone_len);
+            if (err) {
+                return err;
+            }
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_DROP) {
             action->type = TC_ACT_GOTO;
             action->chain = 0;  /* 0 is reserved and not used by recirc. */
