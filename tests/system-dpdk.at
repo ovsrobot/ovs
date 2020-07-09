@@ -15,6 +15,7 @@ AT_CHECK([grep "DPDK Enabled - initialized" ovs-vswitchd.log], [], [stdout])
 OVS_VSWITCHD_STOP(["/Global register is changed during/d
 /EAL:   Invalid NUMA socket, default to 0/d
 /EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !/d
+/EAL: No available hugepages reported in hugepages-1048576kB/d
 /EAL: No free hugepages reported in hugepages-1048576kB/d"])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
@@ -41,6 +42,7 @@ OVS_VSWITCHD_STOP("/does not exist. The Open vSwitch kernel module is probably n
 /Failed to enable flow control/d
 /Global register is changed during/d
 /EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !/d
+/EAL: No available hugepages reported in hugepages-1048576kB/d
 /EAL: No free hugepages reported in hugepages-1048576kB/d
 ")
 AT_CLEANUP
@@ -74,6 +76,7 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@Global register is changed during@d
 \@EAL:   Invalid NUMA socket, default to 0@d
 \@EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !@d
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
@@ -153,6 +156,7 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@failed to enumerate system datapaths: No such file or directory@d
 \@EAL:   Invalid NUMA socket, default to 0@d
 \@EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !@d
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
@@ -229,6 +233,7 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@failed to enumerate system datapaths: No such file or directory@d
 \@EAL:   Invalid NUMA socket, default to 0@d
 \@EAL: WARNING: cpu flags constant_tsc=yes nonstop_tsc=no -> using unreliable clock cycles !@d
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
