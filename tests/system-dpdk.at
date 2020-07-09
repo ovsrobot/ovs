@@ -245,3 +245,283 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl validate negotiation when both ovs and testpmd have tso on
+AT_SETUP([OVS-DPDK - validate negotiation when both ovs and testpmd have tso on])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which testpmd >/dev/null 2>/dev/null])
+OVS_DB_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:userspace-tso-enable=true])
+OVS_DPDK_START()
+AT_CHECK([grep -c 'Userspace TCP Segmentation Offloading support enabled' \
+          ovs-vswitchd.log],[ignore],[dnl
+1
+])
+dnl Find number of sockets
+SET_NUMA_NODE([512])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+
+dnl Add vhostuser port (client mode)
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface \
+          dpdkvhostuserclient0 \
+          type=dpdkvhostuserclient \
+          options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [],
+         [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+AT_CHECK([echo "show device info all" > CMDFILE])
+AT_CHECK([echo "stop" >> CMDFILE])
+AT_CHECK([echo "port stop 0" >> CMDFILE])
+AT_CHECK([echo "tso set 1500 0" >> CMDFILE])
+AT_CHECK([echo "csum set tcp hw 0" >> CMDFILE])
+AT_CHECK([echo "port start 0" >> CMDFILE])
+AT_CHECK([echo "start" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload capabilities" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload configuration" >> CMDFILE])
+tail -f /dev/null | testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1" \
+           --vdev="net_tap0,iface=tap0" --file-prefix page0 \
+           --single-file-segments -- --cmdline-file=CMDFILE \
+           -a >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+dnl Give settling time to the testpmd processes - NOTE: this is bad form.
+sleep 10
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+sleep 1
+
+dnl Check whether TSO is turned on (host side)
+AT_CHECK([awk '/negotiated Virtio features/ {a=$NF} END{print a}' \
+           $OVS_RUNDIR/ovs-vswitchd.log],[],[stdout])
+AT_CHECK([printf "%X" $(( $(cat stdout) & ((1<<0)|(1<<11)|(1<<12)) ))],[],[1801])
+
+dnl Check whether TSO is turned on (guest side)
+AT_CHECK([awk 'BEGIN{n=0} /Port :/ && /TCP_CKSUM/ && /TCP_TSO/ {n++} END{printf n}' \
+           $OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log],[0],[1])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d
+"])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl validate negotiation when ovs alone has tso on
+AT_SETUP([OVS-DPDK - validate negotiation when ovs alone has tso on])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which testpmd >/dev/null 2>/dev/null])
+OVS_DB_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:userspace-tso-enable=true])
+OVS_DPDK_START()
+AT_CHECK([grep -c 'Userspace TCP Segmentation Offloading support enabled' \
+          ovs-vswitchd.log],[ignore],[dnl
+1
+])
+dnl Find number of sockets
+SET_NUMA_NODE([512])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+
+dnl Add vhostuser port (client mode)
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface \
+          dpdkvhostuserclient0 \
+          type=dpdkvhostuserclient \
+          options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [],
+         [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+AT_CHECK([echo "show device info all" > CMDFILE])
+AT_CHECK([echo "stop" >> CMDFILE])
+AT_CHECK([echo "port stop 0" >> CMDFILE])
+AT_CHECK([echo "port start 0" >> CMDFILE])
+AT_CHECK([echo "start" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload capabilities" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload configuration" >> CMDFILE])
+tail -f /dev/null | testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1" \
+           --vdev="net_tap0,iface=tap0" --file-prefix page0 \
+           --single-file-segments -- --cmdline-file=CMDFILE \
+           -a >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+dnl Give settling time to the testpmd processes - NOTE: this is bad form.
+sleep 10
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+sleep 1
+
+dnl Check whether TSO is turned off (host side)
+AT_CHECK([awk '/negotiated Virtio features/ {a=$NF} END{print a}' \
+           $OVS_RUNDIR/ovs-vswitchd.log],[],[stdout])
+AT_CHECK([printf "%X" $(( $(cat stdout) & ((1<<0)|(1<<11)|(1<<12)) ))],[],[0])
+
+dnl Check whether TSO is turned off (guest side)
+AT_CHECK([awk 'BEGIN{n=0} /Port :/ && /TCP_CKSUM/ && /TCP_TSO/ {n++} END{printf n}' \
+           $OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log],[0],[0])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d
+"])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl validate negotiation when ovs alone has tso off
+AT_SETUP([OVS-DPDK - validate negotiation when ovs alone has tso off])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which testpmd >/dev/null 2>/dev/null])
+OVS_DB_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:userspace-tso-enable=false])
+OVS_DPDK_START()
+AT_CHECK([grep -c 'Userspace TCP Segmentation Offloading support enabled' \
+          ovs-vswitchd.log],[ignore],[dnl
+0
+])
+dnl Find number of sockets
+SET_NUMA_NODE([512])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+
+dnl Add vhostuser port (client mode)
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface \
+          dpdkvhostuserclient0 \
+          type=dpdkvhostuserclient \
+          options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [],
+         [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+AT_CHECK([echo "show device info all" > CMDFILE])
+AT_CHECK([echo "stop" >> CMDFILE])
+AT_CHECK([echo "port stop 0" >> CMDFILE])
+AT_CHECK([echo "tso set 1500 0" >> CMDFILE])
+AT_CHECK([echo "csum set tcp hw 0" >> CMDFILE])
+AT_CHECK([echo "port start 0" >> CMDFILE])
+AT_CHECK([echo "start" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload capabilities" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload configuration" >> CMDFILE])
+tail -f /dev/null | testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1" \
+           --vdev="net_tap0,iface=tap0" --file-prefix page0 \
+           --single-file-segments -- --cmdline-file=CMDFILE \
+           -a >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+dnl Give settling time to the testpmd processes - NOTE: this is bad form.
+sleep 10
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+sleep 1
+
+dnl Check whether TSO is turned off (host side)
+AT_CHECK([awk '/negotiated Virtio features/ {a=$NF} END{print a}' \
+           $OVS_RUNDIR/ovs-vswitchd.log],[],[stdout])
+AT_CHECK([printf "%X" $(( $(cat stdout) & ((1<<0)|(1<<11)|(1<<12)) ))],[],[0])
+
+dnl Check whether TSO is turned off (guest side)
+dnl KNOWN BUG in dpdk/testpmd:
+dnl Once TSO is turned on in testpmd, at the same time TSO was off in OVS,
+dnl testpmd should not allow turning on TSO flag in driver. Testpmd needs to be
+dnl fixed.
+AT_SKIP_IF([awk 'BEGIN{n=0} /Port :/ && /TCP_CKSUM/ && /TCP_TSO/ {n++} END{printf n}' \
+           $OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log],[0],[0])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d
+"])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl validate negotiation when both ovs and testpmd have tso off
+AT_SETUP([OVS-DPDK - validate negotiation when both ovs and testpmd have tso off])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which testpmd >/dev/null 2>/dev/null])
+OVS_DB_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:userspace-tso-enable=false])
+OVS_DPDK_START()
+AT_CHECK([grep -c 'Userspace TCP Segmentation Offloading support enabled' \
+          ovs-vswitchd.log],[ignore],[dnl
+0
+])
+dnl Find number of sockets
+SET_NUMA_NODE([512])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+
+dnl Add vhostuser port (client mode)
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface \
+          dpdkvhostuserclient0 \
+          type=dpdkvhostuserclient \
+          options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [],
+         [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+AT_CHECK([echo "show device info all" > CMDFILE])
+AT_CHECK([echo "stop" >> CMDFILE])
+AT_CHECK([echo "port stop 0" >> CMDFILE])
+AT_CHECK([echo "port start 0" >> CMDFILE])
+AT_CHECK([echo "start" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload capabilities" >> CMDFILE])
+AT_CHECK([echo "show port 0 tx_offload configuration" >> CMDFILE])
+tail -f /dev/null | testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1" \
+           --vdev="net_tap0,iface=tap0" --file-prefix page0 \
+           --single-file-segments -- --cmdline-file=CMDFILE \
+           -a >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+dnl Give settling time to the testpmd processes - NOTE: this is bad form.
+sleep 10
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+sleep 1
+
+dnl Check whether TSO is turned off (host side)
+AT_CHECK([awk '/negotiated Virtio features/ {a=$NF} END{print a}' \
+           $OVS_RUNDIR/ovs-vswitchd.log],[],[stdout])
+AT_CHECK([printf "%X" $(( $(cat stdout) & ((1<<0)|(1<<11)|(1<<12)) ))],[],[0])
+
+dnl Check whether TSO is turned off (guest side)
+AT_CHECK([awk 'BEGIN{n=0} /Port :/ && /TCP_CKSUM/ && /TCP_TSO/ {n++} END{printf n}' \
+           $OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log],[0],[0])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d
+"])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
