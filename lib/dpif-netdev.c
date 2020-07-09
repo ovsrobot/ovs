@@ -113,6 +113,7 @@ COVERAGE_DEFINE(datapath_drop_invalid_port);
 COVERAGE_DEFINE(datapath_drop_invalid_bond);
 COVERAGE_DEFINE(datapath_drop_invalid_tnl_port);
 COVERAGE_DEFINE(datapath_drop_rx_invalid_packet);
+COVERAGE_DEFINE(datapath_skip_tunnel_push);
 
 /* Protects against changes to 'dp_netdevs'. */
 static struct ovs_mutex dp_netdev_mutex = OVS_MUTEX_INITIALIZER;
@@ -547,6 +548,16 @@ struct dp_netdev_flow {
     bool dead;
     uint32_t mark;               /* Unique flow mark assigned to a flow */
 
+    /* The next two members are used to support partial offloading of
+     * actions. The boolean flag tells if this flow has its actions partially
+     * offloaded. The egress port# tells if the action should be offloaded
+     * on the egress (output) port instead of the in-port for the flow. Note
+     * that we support flows with a single egress port action.
+     * (see MAX_ACTION_ATTRS for related comments).
+     */
+    bool partial_actions_offloaded;
+    odp_port_t  egress_offload_port;
+
     /* Statistics. */
     struct dp_netdev_flow_stats stats;
 
@@ -822,7 +833,8 @@ static void dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
                                       bool should_steal,
                                       const struct flow *flow,
                                       const struct nlattr *actions,
-                                      size_t actions_len);
+                                      size_t actions_len,
+                                      const struct dp_netdev_flow *dp_flow);
 static void dp_netdev_input(struct dp_netdev_pmd_thread *,
                             struct dp_packet_batch *, odp_port_t port_no);
 static void dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
@@ -3960,7 +3972,7 @@ dpif_netdev_execute(struct dpif *dpif, struct dpif_execute *execute)
     dp_packet_batch_init_packet(&pp, execute->packet);
     pp.do_not_steal = true;
     dp_netdev_execute_actions(pmd, &pp, false, execute->flow,
-                              execute->actions, execute->actions_len);
+                              execute->actions, execute->actions_len, NULL);
     dp_netdev_pmd_flush_output_packets(pmd, true);
 
     if (pmd->core_id == NON_PMD_CORE_ID) {
@@ -6694,7 +6706,7 @@ packet_batch_per_flow_execute(struct packet_batch_per_flow *batch,
     actions = dp_netdev_flow_get_actions(flow);
 
     dp_netdev_execute_actions(pmd, &batch->array, true, &flow->flow,
-                              actions->actions, actions->size);
+                              actions->actions, actions->size, flow);
 }
 
 static inline void
@@ -6989,7 +7001,7 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
      * we'll send the packet up twice. */
     dp_packet_batch_init_packet(&b, packet);
     dp_netdev_execute_actions(pmd, &b, true, &match.flow,
-                              actions->data, actions->size);
+                              actions->data, actions->size, NULL);
 
     add_actions = put_actions->size ? put_actions : actions;
     if (OVS_LIKELY(error != ENOSPC)) {
@@ -7224,6 +7236,7 @@ dp_netdev_recirculate(struct dp_netdev_pmd_thread *pmd,
 struct dp_netdev_execute_aux {
     struct dp_netdev_pmd_thread *pmd;
     const struct flow *flow;
+    const struct dp_netdev_flow *dp_flow;    /* for partial action offload */
 };
 
 static void
@@ -7368,7 +7381,7 @@ dp_execute_userspace_action(struct dp_netdev_pmd_thread *pmd,
     if (!error || error == ENOSPC) {
         dp_packet_batch_init_packet(&b, packet);
         dp_netdev_execute_actions(pmd, &b, should_steal, flow,
-                                  actions->data, actions->size);
+                                  actions->data, actions->size, NULL);
     } else if (should_steal) {
         dp_packet_delete(packet);
         COVERAGE_INC(datapath_drop_userspace_action_error);
@@ -7477,6 +7490,7 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     int type = nl_attr_type(a);
     struct tx_port *p;
     uint32_t packet_count, packets_dropped;
+    struct dp_netdev_flow *dp_flow = aux->dp_flow;
 
     switch ((enum ovs_action_attr)type) {
     case OVS_ACTION_ATTR_OUTPUT:
@@ -7499,9 +7513,20 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
         }
         dp_packet_batch_apply_cutlen(packets_);
         packet_count = dp_packet_batch_size(packets_);
-        if (push_tnl_action(pmd, a, packets_)) {
-            COVERAGE_ADD(datapath_drop_tunnel_push_error,
-                         packet_count);
+        /* Execute tnl_push action in SW, if it is not offloaded as a partial
+         * action in HW. Otherwise, HW pushes the tunnel header during output
+         * processing. There's a small window here in which the offload thread
+         * offloads the flow, but the partial_actions_offloaded flag is still
+         * not set. In this case, as the packet is already encapsulated, it
+         * wouldn't match the offloaded flow and the action won't be executed
+         * in HW.
+         */
+        if (!dp_flow || !dp_flow->partial_actions_offloaded) {
+            if (push_tnl_action(pmd, a, packets_)) {
+                COVERAGE_ADD(datapath_drop_tunnel_push_error, packet_count);
+            }
+        } else {
+            COVERAGE_ADD(datapath_skip_tunnel_push, packet_count);
         }
         return;
 
@@ -7793,9 +7818,10 @@ static void
 dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
                           struct dp_packet_batch *packets,
                           bool should_steal, const struct flow *flow,
-                          const struct nlattr *actions, size_t actions_len)
+                          const struct nlattr *actions, size_t actions_len,
+                          const struct dp_netdev_flow *dp_flow)
 {
-    struct dp_netdev_execute_aux aux = { pmd, flow };
+    struct dp_netdev_execute_aux aux = { pmd, flow, dp_flow };
 
     odp_execute_actions(&aux, packets, should_steal, actions,
                         actions_len, dp_execute_cb);
