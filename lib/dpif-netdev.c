@@ -2493,6 +2493,43 @@ dp_netdev_flow_offload_del(struct dp_flow_offload_item *offload)
     return mark_to_flow_disassociate(offload->pmd, offload->flow);
 }
 
+static int
+dp_netdev_alloc_flow_mark(struct dp_netdev_flow *flow, bool modification,
+                          uint32_t *markp)
+{
+    uint32_t mark;
+
+    if (modification) {
+        mark = flow->mark;
+        ovs_assert(mark != INVALID_FLOW_MARK);
+        *markp = mark;
+        return 0;
+    }
+
+    /*
+     * If a mega flow has already been offloaded (from other PMD
+     * instances), do not offload it again.
+     */
+    mark = megaflow_to_mark_find(&flow->mega_ufid);
+    if (mark != INVALID_FLOW_MARK) {
+        VLOG_DBG("Flow has already been offloaded with mark %u\n", mark);
+        if (flow->mark != INVALID_FLOW_MARK) {
+            ovs_assert(flow->mark == mark);
+        } else {
+            mark_to_flow_associate(mark, flow);
+        }
+        return 1;
+    }
+
+    mark = flow_mark_alloc();
+    if (mark == INVALID_FLOW_MARK) {
+        VLOG_ERR("Failed to allocate flow mark!\n");
+    }
+
+    *markp = mark;
+    return 0;
+}
+
 /*
  * There are two flow offload operations here: addition and modification.
  *
@@ -2521,37 +2558,18 @@ dp_netdev_flow_offload_put(struct dp_flow_offload_item *offload)
         return -1;
     }
 
-    if (modification) {
-        mark = flow->mark;
-        ovs_assert(mark != INVALID_FLOW_MARK);
-    } else {
-        /*
-         * If a mega flow has already been offloaded (from other PMD
-         * instances), do not offload it again.
-         */
-        mark = megaflow_to_mark_find(&flow->mega_ufid);
-        if (mark != INVALID_FLOW_MARK) {
-            VLOG_DBG("Flow has already been offloaded with mark %u\n", mark);
-            if (flow->mark != INVALID_FLOW_MARK) {
-                ovs_assert(flow->mark == mark);
-            } else {
-                mark_to_flow_associate(mark, flow);
-            }
-            return 0;
-        }
+    port = netdev_ports_get(in_port, dpif_type_str);
+    if (!port) {
+        return -1;
+    }
 
-        mark = flow_mark_alloc();
-        if (mark == INVALID_FLOW_MARK) {
-            VLOG_ERR("Failed to allocate flow mark!\n");
-        }
+    if (dp_netdev_alloc_flow_mark(flow, modification, &mark)) {
+            /* flow already offloaded */
+            netdev_close(port);
+            return 0;
     }
     info.flow_mark = mark;
 
-    port = netdev_ports_get(in_port, dpif_type_str);
-    if (!port || netdev_vport_is_vport_class(port->netdev_class)) {
-        netdev_close(port);
-        goto err_free;
-    }
     /* Taking a global 'port_mutex' to fulfill thread safety restrictions for
      * the netdev-offload-dpdk module. */
     ovs_mutex_lock(&pmd->dp->port_mutex);
