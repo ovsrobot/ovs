@@ -1,6 +1,11 @@
 m4_define([CONFIGURE_VETH_OFFLOADS],
    [AT_CHECK([ethtool -K $1 tx off], [0], [ignore], [ignore])])
 
+m4_define([SET_NUMA_NODE],
+   [
+    AT_CHECK([lscpu | awk '/NUMA node\(s\)/ {c=1; while (c++<$(3)) {printf "$1,"}; print "$1"}' > NUMA_NODE])
+])
+
 AT_BANNER([OVS-DPDK unit tests])
 
 dnl --------------------------------------------------------------------------
@@ -96,8 +101,7 @@ OVS_DB_START()
 OVS_DPDK_START()
 
 dnl Find number of sockets
-AT_CHECK([lscpu], [], [stdout])
-AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+SET_NUMA_NODE([512])
 
 dnl Add userspace bridge and attach it to OVS
 AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
@@ -175,8 +179,7 @@ OVS_DB_START()
 OVS_DPDK_START()
 
 dnl Find number of sockets
-AT_CHECK([lscpu], [], [stdout])
-AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+SET_NUMA_NODE([512])
 
 dnl Add userspace bridge and attach it to OVS
 AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
