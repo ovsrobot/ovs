@@ -92,7 +92,10 @@ main(int argc, char *argv[])
 
     if (want_mlockall) {
 #ifdef HAVE_MLOCKALL
-        if (mlockall(MCL_CURRENT | MCL_FUTURE)) {
+#ifndef MCL_ONFAULT
+#define MCL_ONFAULT 0
+#endif
+        if (mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)) {
             VLOG_ERR("mlockall failed: %s", ovs_strerror(errno));
         } else {
             set_memory_locked();
