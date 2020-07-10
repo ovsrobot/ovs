@@ -770,6 +770,10 @@ ovsdb_idl_process_response(struct ovsdb_idl *idl, struct jsonrpc_msg *msg)
                                              OVSDB_IDL_MM_MONITOR_COND);
             if (ovsdb_idl_check_server_db(idl)) {
                 ovsdb_idl_send_db_change_aware(idl);
+                ovsdb_idl_send_monitor_request(
+                    idl, &idl->data, OVSDB_IDL_MM_MONITOR_COND_SINCE);
+                ovsdb_idl_transition(
+                    idl, IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED);
             }
         } else {
             ovsdb_idl_send_schema_request(idl, &idl->data);
@@ -2057,9 +2061,6 @@ ovsdb_idl_check_server_db(struct ovsdb_idl *idl)
     if (idl->state == IDL_S_SERVER_MONITOR_COND_REQUESTED) {
         json_destroy(idl->data.schema);
         idl->data.schema = json_from_string(database->schema);
-        ovsdb_idl_send_monitor_request(idl, &idl->data,
-                                       OVSDB_IDL_MM_MONITOR_COND_SINCE);
-        ovsdb_idl_transition(idl, IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED);
     }
     return true;
 }
