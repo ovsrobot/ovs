@@ -3197,8 +3197,14 @@ dpif_netdev_get_flow_offload_status(const struct dp_netdev *dp,
         return false;
     }
 
-    netdev = netdev_ports_get(netdev_flow->flow.in_port.odp_port,
-                              dpif_normalize_type(dp->class->type));
+    if (netdev_flow->partial_actions_offloaded &&
+        netdev_flow->egress_offload_port != ODPP_NONE) {
+            netdev = netdev_ports_get(netdev_flow->egress_offload_port,
+                                      dpif_normalize_type(dp->class->type));
+    } else {
+        netdev = netdev_ports_get(netdev_flow->flow.in_port.odp_port,
+                                  dpif_normalize_type(dp->class->type));
+    }
     if (!netdev) {
         return false;
     }
