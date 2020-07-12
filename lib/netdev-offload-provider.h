@@ -86,6 +86,13 @@ struct netdev_flow_api {
     /* Initializies the netdev flow api.
      * Return 0 if successful, otherwise returns a positive errno value. */
     int (*init_flow_api)(struct netdev *);
+
+    /* Determine if the flow should be offloaded to the egress
+     * device and if yes return true; otherwise return false.
+     */
+    bool (*flow_offload_egress_partial)(struct netdev *, struct match *,
+                                        struct nlattr *, size_t,
+                                        struct netdev **, odp_port_t *);
 };
 
 int netdev_register_flow_api_provider(const struct netdev_flow_api *);

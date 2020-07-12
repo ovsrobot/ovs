@@ -67,6 +67,8 @@ struct offload_info {
 
     bool recirc_id_shared_with_tc;  /* Indicates whever tc chains will be in
                                      * sync with datapath recirc ids. */
+    uint8_t attr_egress;      /* Egress direction offload */
+    uint8_t partial_actions;  /* Partial action offload; no forward action */
 
     /*
      * The flow mark id assigened to the flow. If any pkts hit the flow,
@@ -124,7 +126,11 @@ int netdev_ports_flow_get(const char *dpif_type, struct match *match,
                           struct dpif_flow_stats *stats,
                           struct dpif_flow_attrs *attrs,
                           struct ofpbuf *buf);
-
+bool netdev_partial_offload_egress(struct netdev *netdev,
+                                   const char *dpif_type, struct match *match,
+                                   struct nlattr *actions, size_t act_len,
+                                   struct netdev **egress_netdev,
+                                   odp_port_t *egress_port);
 #ifdef  __cplusplus
 }
 #endif

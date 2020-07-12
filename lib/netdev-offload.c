@@ -666,3 +666,70 @@ netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
         }
     }
 }
+
+bool
+netdev_partial_offload_egress(struct netdev *netdev, const char *dpif_type,
+                              struct match *match, struct nlattr *actions,
+                              size_t act_len, struct netdev **egress_netdev,
+                              odp_port_t *egress_port)
+{
+    struct netdev *flow_api_netdev;
+    struct port_to_netdev_data *data;
+    struct netdev_flow_api *flow_api =
+        ovsrcu_get(const struct netdev_flow_api *, &netdev->flow_api);
+
+    /* Ingress netdev is offload capable; don't need egress offload */
+    if (flow_api) {
+        return false;
+    }
+
+    /* Ingress netdev must belong to the datapath specified */
+    if (netdev_get_dpif_type(netdev) != dpif_type) {
+        return false;
+    }
+
+    /* Walk the list of netdevs of the given dpif_type, looking for any
+     * netdev that supports flow_api (flow_api_netdev). And if that flow_api
+     * supports partial_offload_egress api, invoke it but using the ingress
+     * netdev that doesn't support flow_api. Note that we are using the
+     * flow_api_netdev as just an api conduit and it is not the actual
+     * netdev for which the api (should_offload_egress) is being invoked.
+     */
+    ovs_rwlock_rdlock(&netdev_hmap_rwlock);
+    HMAP_FOR_EACH (data, portno_node, &port_to_netdev) {
+        flow_api_netdev = data->netdev;
+        if (netdev_get_dpif_type(flow_api_netdev) != dpif_type) {
+            continue;
+        }
+        flow_api = ovsrcu_get(const struct netdev_flow_api *,
+                              &flow_api_netdev->flow_api);
+        if (!flow_api) {
+            continue;
+        }
+        netdev_ref(flow_api_netdev);
+        break;
+    }
+    ovs_rwlock_unlock(&netdev_hmap_rwlock);
+
+    /* Couldn't find any netdev in the given dp that supports flow_api */
+    if (!flow_api) {
+        return false;
+    }
+
+    /* flow_api does not support egress offload */
+    if (!flow_api->flow_offload_egress_partial) {
+        netdev_close(flow_api_netdev);
+        return false;
+    }
+
+    /* Given ingress netdev, can the flow be offloaded to an egress dev ? */
+    if (!flow_api->flow_offload_egress_partial(netdev, match, actions, act_len,
+                                               egress_netdev, egress_port)) {
+        netdev_close(flow_api_netdev);
+        return false;
+    }
+
+    /* Success: flow can be offloaded to the egress netdev' */
+    netdev_close(flow_api_netdev);
+    return true;
+}

@@ -2506,9 +2506,48 @@ dp_netdev_append_flow_offload(struct dp_flow_offload_item *offload)
 }
 
 static int
+partial_offload_egress_flow_del(struct dp_flow_offload_item *offload)
+{
+    struct dp_netdev_pmd_thread *pmd = offload->pmd;
+    struct dp_netdev_flow *flow = offload->flow;
+    const char *dpif_type_str = dpif_normalize_type(pmd->dp->class->type);
+    struct netdev *port;
+    int ret;
+
+    port = netdev_ports_get(flow->egress_offload_port, dpif_type_str);
+    if (!port) {
+        return -1;
+    }
+
+    /* Taking a global 'port_mutex' to fulfill thread safety
+     * restrictions for the netdev-offload-dpdk module. */
+    ovs_mutex_lock(&pmd->dp->port_mutex);
+    ret = netdev_flow_del(port, &flow->mega_ufid, NULL);
+    ovs_mutex_unlock(&pmd->dp->port_mutex);
+    netdev_close(port);
+
+    if (ret) {
+        return ret;
+    }
+
+    flow->egress_offload_port = NULL;
+    flow->partial_actions_offloaded = false;
+
+    VLOG_DBG_RL("%s: flow: %p mega_ufid: "UUID_FMT" pmd_id: %d\n", __func__,
+                flow, UUID_ARGS((struct uuid *)&flow->mega_ufid),
+                offload->flow->pmd_id);
+    return ret;
+}
+
+static int
 dp_netdev_flow_offload_del(struct dp_flow_offload_item *offload)
 {
-    return mark_to_flow_disassociate(offload->pmd, offload->flow);
+    if (unlikely(offload->flow->partial_actions_offloaded &&
+        offload->flow->egress_offload_port != ODPP_NONE)) {
+        return partial_offload_egress_flow_del(offload);
+    } else {
+        return mark_to_flow_disassociate(offload->pmd, offload->flow);
+    }
 }
 
 static int
@@ -2568,51 +2607,82 @@ dp_netdev_flow_offload_put(struct dp_flow_offload_item *offload)
     const char *dpif_type_str = dpif_normalize_type(pmd->dp->class->type);
     bool modification = offload->op == DP_NETDEV_FLOW_OFFLOAD_OP_MOD;
     struct offload_info info;
-    struct netdev *port;
-    uint32_t mark;
+    struct netdev *netdev;
+    odp_port_t egress_port = ODPP_NONE;
+    struct netdev *egress_netdev = NULL;
+    bool alloc_mark = true;
+    uint32_t mark = INVALID_FLOW_MARK;
     int ret;
 
     if (flow->dead) {
         return -1;
     }
 
-    port = netdev_ports_get(in_port, dpif_type_str);
-    if (!port) {
+    netdev = netdev_ports_get(in_port, dpif_type_str);
+    if (!netdev) {
         return -1;
     }
 
-    if (dp_netdev_alloc_flow_mark(flow, modification, &mark)) {
-            /* flow already offloaded */
-            netdev_close(port);
-            return 0;
+    info.attr_egress = 0;
+    info.partial_actions = 0;
+
+    if (unlikely(netdev_partial_offload_egress(netdev, dpif_type_str,
+                                               &offload->match,
+                                               CONST_CAST(struct nlattr *,
+                                               offload->actions),
+                                               offload->actions_len,
+                                               &egress_netdev,
+                                               &egress_port))) {
+        if (egress_netdev) {
+            netdev_close(netdev);
+            netdev = egress_netdev;
+            flow->egress_offload_port = egress_port;
+            info.attr_egress = 1;
+            alloc_mark = false;
+        }
+        info.partial_actions = 1;
     }
+
+    if (alloc_mark && dp_netdev_alloc_flow_mark(flow, modification, &mark)) {
+            /* flow already offloaded */
+        netdev_close(netdev);
+        return 0;
+    }
+
     info.flow_mark = mark;
 
     /* Taking a global 'port_mutex' to fulfill thread safety restrictions for
      * the netdev-offload-dpdk module. */
     ovs_mutex_lock(&pmd->dp->port_mutex);
-    ret = netdev_flow_put(port, &offload->match,
+    ret = netdev_flow_put(netdev, &offload->match,
                           CONST_CAST(struct nlattr *, offload->actions),
                           offload->actions_len, &flow->mega_ufid, &info,
                           NULL);
     ovs_mutex_unlock(&pmd->dp->port_mutex);
-    netdev_close(port);
+    netdev_close(netdev);
 
     if (ret) {
         goto err_free;
     }
 
-    if (!modification) {
+    if (unlikely(info.partial_actions && egress_netdev)) {
+        VLOG_DBG_RL("%s: flow: %p mega_ufid: "UUID_FMT" pmd_id: %d\n",
+                    __func__, flow, UUID_ARGS((struct uuid *)&flow->mega_ufid),
+                    flow->pmd_id);
+        flow->partial_actions_offloaded = true;
+    } else if (!modification) {
         megaflow_to_mark_associate(&flow->mega_ufid, mark);
         mark_to_flow_associate(mark, flow);
     }
     return 0;
 
 err_free:
-    if (!modification) {
-        flow_mark_free(mark);
-    } else {
-        mark_to_flow_disassociate(pmd, flow);
+    if (mark != INVALID_FLOW_MARK) {
+        if (!modification) {
+            flow_mark_free(mark);
+        } else {
+            mark_to_flow_disassociate(pmd, flow);
+        }
     }
     return -1;
 }
@@ -2728,7 +2798,8 @@ dp_netdev_pmd_remove_flow(struct dp_netdev_pmd_thread *pmd,
     ovs_assert(cls != NULL);
     dpcls_remove(cls, &flow->cr);
     cmap_remove(&pmd->flow_table, node, dp_netdev_flow_hash(&flow->ufid));
-    if (flow->mark != INVALID_FLOW_MARK) {
+    if (flow->mark != INVALID_FLOW_MARK || (flow->partial_actions_offloaded
+        && flow->egress_offload_port != ODPP_NONE)) {
         queue_netdev_flow_del(pmd, flow);
     }
     flow->dead = true;
@@ -3486,6 +3557,8 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
     flow->dead = false;
     flow->batch = NULL;
     flow->mark = INVALID_FLOW_MARK;
+    flow->partial_actions_offloaded = false;
+    flow->egress_offload_port = ODPP_NONE;
     *CONST_CAST(unsigned *, &flow->pmd_id) = pmd->core_id;
     *CONST_CAST(struct flow *, &flow->flow) = match->flow;
     *CONST_CAST(ovs_u128 *, &flow->ufid) = *ufid;

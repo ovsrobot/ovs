@@ -28,6 +28,7 @@
 #include "openvswitch/vlog.h"
 #include "packets.h"
 #include "uuid.h"
+#include "odp-util.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_offload_dpdk);
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(100, 5);
@@ -57,6 +58,7 @@ static struct cmap ufid_to_rte_flow = CMAP_INITIALIZER;
 struct ufid_to_rte_flow_data {
     struct cmap_node node;
     ovs_u128 ufid;
+    uint32_t refcnt;
     struct rte_flow *rte_flow;
     bool actions_offloaded;
     struct dpif_flow_stats stats;
@@ -97,6 +99,7 @@ ufid_to_rte_flow_associate(const ovs_u128 *ufid,
         ovs_assert(data_prev->rte_flow == NULL);
     }
 
+    data->refcnt = 1;
     data->ufid = *ufid;
     data->rte_flow = rte_flow;
     data->actions_offloaded = actions_offloaded;
@@ -1287,7 +1290,8 @@ static int
 parse_clone_actions(struct netdev *netdev,
                     struct flow_actions *actions,
                     const struct nlattr *clone_actions,
-                    const size_t clone_actions_len)
+                    const size_t clone_actions_len,
+                    struct offload_info *info)
 {
     const struct nlattr *ca;
     unsigned int cleft;
@@ -1312,8 +1316,11 @@ parse_clone_actions(struct netdev *netdev,
             add_flow_action(actions, RTE_FLOW_ACTION_TYPE_RAW_ENCAP,
                             raw_encap);
         } else if (clone_type == OVS_ACTION_ATTR_OUTPUT) {
-            if (add_output_action(netdev, actions, ca)) {
-                return -1;
+            /* add output action only if full-offload */
+            if (!info->partial_actions) {
+                if (add_output_action(netdev, actions, ca)) {
+                    return -1;
+                }
             }
         } else {
             VLOG_DBG_RL(&rl,
@@ -1329,12 +1336,15 @@ static int
 parse_flow_actions(struct netdev *netdev,
                    struct flow_actions *actions,
                    struct nlattr *nl_actions,
-                   size_t nl_actions_len)
+                   size_t nl_actions_len,
+                   struct offload_info *info)
 {
     struct nlattr *nla;
     size_t left;
 
-    add_count_action(actions);
+    if (!info->partial_actions) {
+        add_count_action(actions);
+    }
     NL_ATTR_FOR_EACH_UNSAFE (nla, left, nl_actions, nl_actions_len) {
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
             if (add_output_action(netdev, actions, nla)) {
@@ -1366,7 +1376,7 @@ parse_flow_actions(struct netdev *netdev,
             size_t clone_actions_len = nl_attr_get_size(nla);
 
             if (parse_clone_actions(netdev, actions, clone_actions,
-                                    clone_actions_len)) {
+                                    clone_actions_len, info)) {
                 return -1;
             }
         } else {
@@ -1388,15 +1398,22 @@ static struct rte_flow *
 netdev_offload_dpdk_actions(struct netdev *netdev,
                             struct flow_patterns *patterns,
                             struct nlattr *nl_actions,
-                            size_t actions_len)
+                            size_t actions_len,
+                            struct offload_info *info)
 {
-    const struct rte_flow_attr flow_attr = { .ingress = 1, .transfer = 1 };
+    struct rte_flow_attr flow_attr = { .ingress = 1, .transfer = 1 };
     struct flow_actions actions = { .actions = NULL, .cnt = 0 };
     struct rte_flow *flow = NULL;
     struct rte_flow_error error;
     int ret;
 
-    ret = parse_flow_actions(netdev, &actions, nl_actions, actions_len);
+    if (info->attr_egress) {
+        flow_attr.ingress = 0;
+        flow_attr.egress = 1;
+        flow_attr.transfer = 0;
+    }
+
+    ret = parse_flow_actions(netdev, &actions, nl_actions, actions_len,info);
     if (ret) {
         goto out;
     }
@@ -1428,8 +1445,15 @@ netdev_offload_dpdk_add_flow(struct netdev *netdev,
     }
 
     flow = netdev_offload_dpdk_actions(netdev, &patterns, nl_actions,
-                                       actions_len);
-    if (!flow) {
+                                       actions_len, info);
+    if (flow) {
+        if (info->partial_actions && info->attr_egress) {
+            /* actions_offloaded should be set to false with partial actions,
+             * since it is still considered as partial-offload and not
+             * full-offload. */
+            actions_offloaded = false;
+        }
+    } else if (!(info->partial_actions && info->attr_egress)) {
         /* If we failed to offload the rule actions fallback to MARK+RSS
          * actions.
          */
@@ -1482,18 +1506,29 @@ netdev_offload_dpdk_flow_put(struct netdev *netdev, struct match *match,
                              struct dpif_flow_stats *stats)
 {
     struct ufid_to_rte_flow_data *rte_flow_data;
-    int ret;
+    int ret = 0;
 
-    /*
-     * If an old rte_flow exists, it means it's a flow modification.
-     * Here destroy the old rte flow first before adding a new one.
-     */
     rte_flow_data = ufid_to_rte_flow_data_find(ufid);
     if (rte_flow_data && rte_flow_data->rte_flow) {
-        ret = netdev_offload_dpdk_destroy_flow(netdev, ufid,
-                                               rte_flow_data->rte_flow);
-        if (ret < 0) {
+        if (unlikely(info->partial_actions && info->attr_egress)) {
+            /* In the case of partial action offload, the same mega-flow
+             * could be offloaded by multiple PMD threads. Avoid creating
+             * multiple rte_flows and just update the refcnt.
+             */
+            VLOG_DBG_RL("%s: mega_ufid: "UUID_FMT" refcnt: %d\n", __func__,
+                        UUID_ARGS((struct uuid *)ufid), rte_flow_data->refcnt);
+            rte_flow_data->refcnt++;
             return ret;
+        } else {
+            /*
+             * If an old rte_flow exists, it means it's a flow modification.
+             * Here destroy the old rte flow first before adding a new one.
+             */
+            ret = netdev_offload_dpdk_destroy_flow(netdev, ufid,
+                                                   rte_flow_data->rte_flow);
+            if (ret < 0) {
+                return ret;
+            }
         }
     }
 
@@ -1513,6 +1548,12 @@ netdev_offload_dpdk_flow_del(struct netdev *netdev, const ovs_u128 *ufid,
     rte_flow_data = ufid_to_rte_flow_data_find(ufid);
     if (!rte_flow_data || !rte_flow_data->rte_flow) {
         return -1;
+    }
+
+    VLOG_DBG_RL("%s: mega_ufid: "UUID_FMT" refcnt: %d\n", __func__,
+                UUID_ARGS((struct uuid *)ufid), rte_flow_data->refcnt);
+    if (rte_flow_data->refcnt-- > 1) {
+        return 0;
     }
 
     if (stats) {
@@ -1574,10 +1615,135 @@ out:
     return ret;
 }
 
+/* Structure to hold a nl_parsed OVS action */
+struct action_attr {
+    int type;                /* OVS action type */
+    struct nlattr *action;   /* action attribute */
+};
+
+/*
+ * Maxium number of actions to be parsed while selecting a flow for partial
+ * action offload. This number is currently based on the minimum number of
+ * attributes seen with the tunnel encap action (clone, tunnel_push, output).
+ * This number includes output action to a single egress device (uplink) and
+ * supports neither multiple clone() actions nor multiple output actions.
+ * This number could change if and when we support other actions or
+ * combinations of actions for partial offload.
+ */
+#define MAX_ACTION_ATTRS    3 /* Max # action attributes supported */
+
+/*
+ * This function parses the list of OVS "actions" of length "actions_len",
+ * and returns them in an array of action "attrs", of size "max_attrs".
+ * The parsed number of actions is returned in "num_attrs". If the number
+ * of actions exceeds "max_attrs", parsing is stopped and E2BIG is returned.
+ * Otherwise, returns success (0).
+ */
+static int
+parse_nlattr_actions(struct nlattr *actions, size_t actions_len,
+                     struct action_attr *attrs, int max_attrs, int *num_attrs)
+{
+    const struct nlattr *a;
+    unsigned int left;
+    int num_actions = 0;
+    int n_attrs = 0;
+    int rc = 0;
+    int type;
+
+    *num_attrs = 0;
+
+    NL_ATTR_FOR_EACH (a, left, actions, actions_len) {
+        type = nl_attr_type(a);
+
+        if (num_actions >= max_attrs) {
+            *num_attrs = num_actions;
+            return E2BIG;
+        }
+
+        attrs[num_actions].type = type;
+        attrs[num_actions].action = a;
+        num_actions++;
+        if (type == OVS_ACTION_ATTR_CLONE) {
+            rc = parse_nlattr_actions(nl_attr_get(a), nl_attr_get_size(a),
+                                      &attrs[num_actions],
+                                      (max_attrs - num_actions), &n_attrs);
+            num_actions += n_attrs;
+            if (rc == E2BIG) {
+                *num_attrs = num_actions;
+                return rc;
+            }
+        }
+    }
+
+    *num_attrs = num_actions;
+    return 0;
+}
+
+/* This function determines if the given flow should be partially offloaded
+ * on the egress device, when the in-port is not offload-capable like a
+ * vhost-user port. The function currently supports offloading of only
+ * tunnel encap action.
+ */
+bool
+netdev_offload_dpdk_egress_partial(struct netdev *netdev, struct match *match,
+                                   struct nlattr *actions, size_t actions_len,
+                                   struct netdev **egress_netdev,
+                                   odp_port_t *egress_port)
+{
+    struct action_attr attrs[MAX_ACTION_ATTRS];
+    odp_port_t out_port = ODPP_NONE;
+    struct netdev *out_netdev;
+    int num_attrs = 0;
+    int type;
+    int rc;
+
+    /* Support egress partial-offload only when in-port is vhost-user. */
+    if (!is_dpdk_vhost_netdev(netdev)) {
+        return false;
+    }
+
+    rc = parse_nlattr_actions(actions, actions_len, attrs, MAX_ACTION_ATTRS,
+                              &num_attrs);
+    if (rc == E2BIG) {
+        /* Action list too big; decline partial offload */
+        return false;
+    }
+
+    /* Number of attrs expected with tunnel encap action */
+    if (num_attrs < MAX_ACTION_ATTRS) {
+        return false;
+    }
+
+    /* Only support clone sub-actions for now, tnl-push specifically. */
+    if (attrs[0].type != OVS_ACTION_ATTR_CLONE ||
+        attrs[1].type != OVS_ACTION_ATTR_TUNNEL_PUSH ||
+        attrs[2].type != OVS_ACTION_ATTR_OUTPUT) {
+        return false;
+    }
+
+    /* Egress partial-offload needs an output action at the end. */
+    out_port = nl_attr_get_odp_port(attrs[2].action);
+    if (out_port == ODPP_NONE) {
+        return false;
+    }
+
+    /* Support egress partial-offload only when out-port is offload capable. */
+    out_netdev = netdev_ports_get(out_port, netdev->dpif_type);
+    if (!out_netdev || !netdev_dpdk_flow_api_supported(out_netdev)) {
+        return false;
+    }
+
+    /* Flow can be egress partial-offloaded. */
+    *egress_netdev = out_netdev;
+    *egress_port = out_port;
+    return true;
+}
+
 const struct netdev_flow_api netdev_offload_dpdk = {
     .type = "dpdk_flow_api",
     .flow_put = netdev_offload_dpdk_flow_put,
     .flow_del = netdev_offload_dpdk_flow_del,
     .init_flow_api = netdev_offload_dpdk_init_flow_api,
     .flow_get = netdev_offload_dpdk_flow_get,
+    .flow_offload_egress_partial = netdev_offload_dpdk_egress_partial,
 };
