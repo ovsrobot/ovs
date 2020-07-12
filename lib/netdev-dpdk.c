@@ -558,6 +558,11 @@ is_dpdk_class(const struct netdev_class *class)
            || class->destruct == netdev_dpdk_vhost_destruct;
 }
 
+bool is_dpdk_vhost_netdev(struct netdev *netdev)
+{
+    return netdev->netdev_class->destruct == netdev_dpdk_vhost_destruct;
+}
+
 /* DPDK NIC drivers allocate RX buffers at a particular granularity, typically
  * aligned at 1k or less. If a declared mbuf size is not a multiple of this
  * value, insufficient buffers are allocated to accomodate the packet in its

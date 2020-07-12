@@ -37,6 +37,7 @@ void netdev_dpdk_register(void);
 void free_dpdk_buf(struct dp_packet *);
 
 bool netdev_dpdk_flow_api_supported(struct netdev *);
+bool is_dpdk_vhost_netdev(struct netdev *);
 
 int
 netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
