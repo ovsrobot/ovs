@@ -457,6 +457,7 @@ fi
 %{_bindir}/ovs-pki
 %{_bindir}/vtep-ctl
 %{_libdir}/lib*.so.*
+%{_libdir}/libopenvswitchavx512.a
 %{_sbindir}/ovs-bugtool
 %{_sbindir}/ovs-vswitchd
 %{_sbindir}/ovsdb-server
