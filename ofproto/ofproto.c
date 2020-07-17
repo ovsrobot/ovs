@@ -474,6 +474,24 @@ ofproto_bump_tables_version(struct ofproto *ofproto)
                                                ofproto->tables_version);
 }
 
+void
+ofproto_ref(struct ofproto *ofproto)
+{
+    ovs_refcount_ref(&ofproto->refcount);
+}
+
+bool
+ofproto_try_ref(struct ofproto *ofproto)
+{
+    return ovs_refcount_try_ref_rcu(&ofproto->refcount);
+}
+
+void
+ofproto_unref(struct ofproto *ofproto)
+{
+    ovs_refcount_unref(&ofproto->refcount);
+}
+
 int
 ofproto_create(const char *datapath_name, const char *datapath_type,
                struct ofproto **ofprotop)
@@ -545,6 +563,7 @@ ofproto_create(const char *datapath_name, const char *datapath_type,
 
     ovs_mutex_init(&ofproto->vl_mff_map.mutex);
     cmap_init(&ofproto->vl_mff_map.cmap);
+    ovs_refcount_init(&ofproto->refcount);
 
     error = ofproto->ofproto_class->construct(ofproto);
     if (error) {
@@ -1696,14 +1715,26 @@ ofproto_destroy__(struct ofproto *ofproto)
     ofproto->ofproto_class->dealloc(ofproto);
 }
 
-/* Destroying rules is doubly deferred, must have 'ofproto' around for them.
- * - 1st we defer the removal of the rules from the classifier
- * - 2nd we defer the actual destruction of the rules. */
+/* destroying a rule may have to wait multiple grace periods:
+ * remove_rules_postponed (one grace period)
+ *       -> remove_rule_rcu
+ *           -> remove_rule_rcu__
+ *               -> ofproto_rule_unref -> ref count != 1
+ *                   -> ... more grace periods.
+ *                   -> rule_destroy_cb (> 2 grace periods)
+ *                       -> free
+ *
+ * So we have to check the refcount for sure all the rules
+ * have been destoryed.
+ */
 static void
 ofproto_destroy_defer__(struct ofproto *ofproto)
     OVS_EXCLUDED(ofproto_mutex)
 {
-    ovsrcu_postpone(ofproto_destroy__, ofproto);
+    if (ovs_refcount_read(&ofproto->refcount) != 1)
+        ovsrcu_postpone(ofproto_destroy_defer__, ofproto);
+    else
+        ovsrcu_postpone(ofproto_destroy__, ofproto);
 }
 
 void
@@ -2927,6 +2958,7 @@ ofproto_rule_destroy__(struct rule *rule)
     cls_rule_destroy(CONST_CAST(struct cls_rule *, &rule->cr));
     rule_actions_destroy(rule_get_actions(rule));
     ovs_mutex_destroy(&rule->mutex);
+    ofproto_unref(rule->ofproto);
     rule->ofproto->ofproto_class->rule_dealloc(rule);
 }
 
@@ -5265,6 +5297,7 @@ ofproto_rule_create(struct ofproto *ofproto, struct cls_rule *cr,
 
     /* Initialize base state. */
     *CONST_CAST(struct ofproto **, &rule->ofproto) = ofproto;
+    ofproto_ref(ofproto);
     cls_rule_move(CONST_CAST(struct cls_rule *, &rule->cr), cr);
     ovs_refcount_init(&rule->ref_count);
 
