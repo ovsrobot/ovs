@@ -149,7 +149,8 @@ OVSDB_CLUSTER_TESTSUITE_AT = \
 SYSTEM_KMOD_TESTSUITE_AT = \
 	tests/system-common-macros.at \
 	tests/system-kmod-testsuite.at \
-	tests/system-kmod-macros.at
+	tests/system-kmod-macros.at \
+	tests/system-route.at
 
 SYSTEM_USERSPACE_TESTSUITE_AT = \
 	tests/system-userspace-testsuite.at \
