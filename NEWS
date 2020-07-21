@@ -43,7 +43,10 @@ v2.14.0 - xx xxx xxxx
    - Tunnels: TC Flower offload
      * Tunnel Local endpoint address masked match are supported.
      * Tunnel Romte endpoint address masked match are supported.
-
+   - Bareudp Tunnel
+     * Bareudp device support is present in linux kernel from version 5.7
+     * Kernel bareudp device is not backported to ovs tree.
+     * Userspace datapath support is not added
 
 v2.13.0 - 14 Feb 2020
 ---------------------
