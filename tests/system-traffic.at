@@ -6289,3 +6289,45 @@ OVS_WAIT_UNTIL([cat p2.pcap | egrep "0x0050: *0000 *0000 *5002 *2000 *b85e *0000
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([bfd - BFD overlay])
+OVS_CHECK_GENEVE()
+
+OVS_TRAFFIC_VSWITCHD_START()
+
+AT_CHECK([ovs-vsctl -- set bridge br0 other-config:hwaddr=\"f2:ff:00:00:00:01\"])
+ADD_BR([br-underlay], [set bridge br-underlay other-config:hwaddr=\"ee:09:e0:4d:bf:31\"])
+
+AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
+AT_CHECK([ovs-ofctl add-flow br-underlay "actions=normal"])
+
+ADD_NAMESPACES(at_ns0)
+
+dnl Set up underlay link from host into the namespace using veth pair.
+ADD_VETH(p0, at_ns0, br-underlay, "172.16.180.105/24", 4e:12:5d:6c:74:3d)
+AT_CHECK([ip addr add dev br-underlay "172.16.180.106/24"])
+AT_CHECK([ip link set dev br-underlay up])
+
+dnl Set up tunnel endpoints on OVS outside the namespace.
+ADD_OVS_TUNNEL([geneve], [br0], [at_gnv0], [172.16.180.105], [192.168.10.100/24],
+                [options:packet_type=ptap])
+
+dnl Certain Linux distributions, like CentOS, have default iptable rules
+dnl to reject input traffic from br-underlay. Here we add a rule to walk
+dnl around it.
+iptables -I INPUT 1 -i br-underlay -j ACCEPT
+on_exit 'iptables -D INPUT 1'
+
+dnl Firstly, test normal BFD packet.
+ovs-ofctl -O OpenFlow13 packet-out br-underlay "in_port=1 packet=ee09e04dbf314e125d6c743d080045c0006624d94000401153f9ac10b469ac10b46a739f17c1005247f900806558000000000023200000016a0f5a9ed376080045c0003400000000ff11fa03ac10b469ac10b46ac0070ec80020000021c003187b3c96ebbc96b962000186a0000f424000000000 actions=NORMAL"
+dnl Next we test overlay BFD packet.
+ovs-ofctl -O OpenFlow13 packet-out br-underlay "in_port=1 packet=ee09e04dbf314e125d6c743d08004500005b2558400040115445ac10b469ac10b46a6b1017c1004722c1024065580000000001048001001803005254009d0b6d5254000c89840800450000210e22400040119688c0a80a68c0a80a6995cd0ec8000dd342746573740a actions=NORMAL"
+
+ovs-dpctl dump-flows > datapath-flows.txt
+dnl BFD packet was handled by BFD flow.
+AT_FAIL_IF([cat datapath-flows.txt | egrep "tunnel\(.*,src=172.16.180.105,dst=172.16.180.106,.*,eth\(\),eth_type\(0x0800\),ipv4\(proto=17,.*\),udp\(dst=3784\), .*, actions:userspace\(pid=.*,slow_path\(bfd\)\)" 2>&1 1>/dev/null])
+dnl Overlay BFD packet was handled by non-BFD flows.
+AT_FAIL_IF([cat datapath-flows.txt | egrep "tunnel\(.*,src=172.16.180.105,dst=172.16.180.106,.*,eth\(.*\),eth_type\(0x0800\),ipv4\(src=192.168.10.104,dst=192.168.10.105,proto=17,.*\),udp\(.*,dst=3784\), .*, actions:drop" 2>&1 1>/dev/null])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
