@@ -88,7 +88,7 @@ oftrace_add_recirc_node(struct ovs_list *recirc_queue,
                         enum oftrace_recirc_type type, const struct flow *flow,
                         const struct ofpact_nat *ofn,
                         const struct dp_packet *packet, uint32_t recirc_id,
-                        const uint16_t zone)
+                        const uint16_t zone, struct ovs_action_hash *hash_act)
 {
     if (!recirc_id_node_find_and_ref(recirc_id)) {
         return false;
@@ -99,6 +99,7 @@ oftrace_add_recirc_node(struct ovs_list *recirc_queue,
 
     node->type = type;
     node->recirc_id = recirc_id;
+    node->act_hash = hash_act;
     node->flow = *flow;
     node->flow.recirc_id = recirc_id;
     node->flow.ct_zone = zone;
@@ -682,6 +683,22 @@ ofproto_trace_recirc_node(struct oftrace_recirc_node *node,
             ds_destroy(&s);
         }
         node->flow.ct_state = ct_state;
+    } else if (node->type == OFT_RECIRC_DP_HASH) {
+         const struct ovs_action_hash *hash_act = node->act_hash;
+         uint32_t hash = 0;
+         switch (hash_act->hash_alg) {
+         case OVS_HASH_ALG_SYM_L4:
+             hash = flow_hash_symmetric_l3l4(&node->flow,
+                                             hash_act->hash_basis,
+                                             false);
+             break;
+         case OVS_HASH_ALG_L4:
+         default:
+             hash = flow_hash_5tuple(&node->flow,
+                                     hash_act->hash_basis);
+             break;
+         }
+         node->flow.dp_hash = hash;
     }
     ds_put_char(output, '\n');
 

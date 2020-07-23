@@ -54,6 +54,7 @@ enum oftrace_recirc_type {
     OFT_RECIRC_CONNTRACK,
     OFT_RECIRC_MPLS,
     OFT_RECIRC_BOND,
+    OFT_RECIRC_DP_HASH,
 };
 
 /* A node within a trace. */
@@ -74,6 +75,7 @@ struct oftrace_recirc_node {
     struct flow flow;
     struct dp_packet *packet;
     const struct ofpact_nat *nat_act;
+    struct ovs_action_hash *act_hash;
 };
 
 /* A node within a next_ct_states list. */
@@ -94,6 +96,7 @@ bool oftrace_add_recirc_node(struct ovs_list *recirc_queue,
                              enum oftrace_recirc_type, const struct flow *,
                              const struct ofpact_nat *,
                              const struct dp_packet *, uint32_t recirc_id,
-                             const uint16_t zone);
+                             const uint16_t zone,
+                             struct ovs_action_hash *hash_act);
 
 #endif /* ofproto-dpif-trace.h */

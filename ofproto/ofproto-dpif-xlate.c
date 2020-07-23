@@ -4977,6 +4977,20 @@ finish_freezing__(struct xlate_ctx *ctx, uint8_t table)
                                                 sizeof *act_hash);
             act_hash->hash_alg = ctx->dp_hash_alg;
             act_hash->hash_basis = ctx->dp_hash_basis;
+
+            if (OVS_UNLIKELY(ctx->xin->trace) && recirc_id) {
+                if (oftrace_add_recirc_node(ctx->xin->recirc_queue,
+                                  OFT_RECIRC_DP_HASH, &ctx->xin->flow, NULL,
+                                  ctx->xin->packet, recirc_id, 0, act_hash)) {
+                    xlate_report(ctx, OFT_DETAIL, "A clone of the packet is "
+                            "forked to recirculate. The forked pipeline will "
+                            "be resumed at table %u.", table);
+                } else {
+                    xlate_report(ctx, OFT_DETAIL, "Failed to trace the "
+                            "DP hash forked pipeline with recirc_id = %d.",
+                            recirc_id);
+                }
+            }
         }
         nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_RECIRC, recirc_id);
     }
@@ -5010,7 +5024,7 @@ compose_recirculate_and_fork(struct xlate_ctx *ctx, uint8_t table,
         if (oftrace_add_recirc_node(ctx->xin->recirc_queue,
                                     OFT_RECIRC_CONNTRACK, &ctx->xin->flow,
                                     ctx->ct_nat_action, ctx->xin->packet,
-                                    recirc_id, zone)) {
+                                    recirc_id, zone, NULL)) {
             xlate_report(ctx, OFT_DETAIL, "A clone of the packet is forked to "
                          "recirculate. The forked pipeline will be resumed at "
                          "table %u.", table);
