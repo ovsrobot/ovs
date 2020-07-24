@@ -979,6 +979,7 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
     struct dpif_flow_dump_thread *flow_dump_thread;
     struct dpif_flow_dump *flow_dump;
     struct dpif_flow f;
+    int pmd_id_filter = PMD_ID_NULL;
     int pmd_id = PMD_ID_NULL;
     int lastargc = 0;
     int error;
@@ -996,6 +997,12 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
                 goto out_free;
             }
             types_list = xstrdup(argv[--argc] + 5);
+        } else if (pmd_id_filter == PMD_ID_NULL &&
+                   !strncmp(argv[argc - 1], "pmd=", 4)) {
+            if (!ovs_scan(argv[--argc], "pmd=%"SCNu32, &pmd_id_filter)) {
+                error = EINVAL;
+                goto out_free;
+            }
         }
     }
 
@@ -1044,7 +1051,13 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
     ds_init(&ds);
     memset(&f, 0, sizeof f);
     flow_dump = dpif_flow_dump_create(dpif, false, &dpif_dump_types);
+    flow_dump->pmd_id = pmd_id_filter;
     flow_dump_thread = dpif_flow_dump_thread_create(flow_dump);
+    if (!flow_dump_thread) {
+        error = ENOENT;
+        goto out_dump_destroy;
+    }
+
     while (dpif_flow_dump_next(flow_dump_thread, &f, 1)) {
         if (filter) {
             struct flow flow;
@@ -1085,11 +1098,16 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
         }
     }
     dpif_flow_dump_thread_destroy(flow_dump_thread);
-    error = dpif_flow_dump_destroy(flow_dump);
 
-    if (error) {
-        dpctl_error(dpctl_p, error, "Failed to dump flows from datapath");
+out_dump_destroy:
+    {
+        int ret = dpif_flow_dump_destroy(flow_dump);
+        if (ret) {
+            dpctl_error(dpctl_p, ret, "Failed to dump flows from datapath");
+            error = ret;
+        }
     }
+
     ds_destroy(&ds);
 
 out_dpifclose:
@@ -2503,8 +2521,8 @@ static const struct dpctl_command all_commands[] = {
     { "set-if", "dp iface...", 2, INT_MAX, dpctl_set_if, DP_RW },
     { "dump-dps", "", 0, 0, dpctl_dump_dps, DP_RO },
     { "show", "[dp...]", 0, INT_MAX, dpctl_show, DP_RO },
-    { "dump-flows", "[dp] [filter=..] [type=..]",
-      0, 3, dpctl_dump_flows, DP_RO },
+    { "dump-flows", "[dp] [filter=..] [type=..] [pmd=..]",
+      0, 4, dpctl_dump_flows, DP_RO },
     { "add-flow", "[dp] flow actions", 2, 3, dpctl_add_flow, DP_RW },
     { "mod-flow", "[dp] flow actions", 2, 3, dpctl_mod_flow, DP_RW },
     { "get-flow", "[dp] ufid", 1, 2, dpctl_get_flow, DP_RO },
