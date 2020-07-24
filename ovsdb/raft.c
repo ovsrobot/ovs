@@ -4410,6 +4410,45 @@ raft_put_sid(const char *title, const struct uuid *sid,
 }
 
 static void
+raft_unixctl_role(struct unixctl_conn *conn,
+                  int argc OVS_UNUSED, const char *argv[],
+                  void *aux OVS_UNUSED)
+{
+    struct raft *raft = raft_lookup_by_name(argv[1]);
+    if (!raft) {
+        unixctl_command_reply_error(conn, "unknown cluster");
+        return;
+    }
+
+    struct ds s = DS_EMPTY_INITIALIZER;
+    ds_put_format(&s, "%s\n",
+                  raft->role == RAFT_LEADER ? "leader"
+                  : raft->role == RAFT_CANDIDATE ? "candidate"
+                  : raft->role == RAFT_FOLLOWER ? "follower"
+                  : "<error>");
+    unixctl_command_reply(conn, ds_cstr(&s));
+    ds_destroy(&s);
+}
+
+static void
+raft_unixctl_connected(struct unixctl_conn *conn,
+                       int argc OVS_UNUSED, const char *argv[],
+                       void *aux OVS_UNUSED)
+{
+    struct raft *raft = raft_lookup_by_name(argv[1]);
+    if (!raft) {
+        unixctl_command_reply_error(conn, "unknown cluster");
+        return;
+    }
+
+    struct ds s = DS_EMPTY_INITIALIZER;
+    bool connected = raft_is_connected(raft);
+    ds_put_format(&s, "%s\n", connected ? "connected" : "unconnected");
+    unixctl_command_reply(conn, ds_cstr(&s));
+    ds_destroy(&s);
+}
+
+static void
 raft_unixctl_status(struct unixctl_conn *conn,
                     int argc OVS_UNUSED, const char *argv[],
                     void *aux OVS_UNUSED)
@@ -4763,6 +4802,10 @@ raft_init(void)
                              raft_unixctl_cid, NULL);
     unixctl_command_register("cluster/sid", "DB", 1, 1,
                              raft_unixctl_sid, NULL);
+    unixctl_command_register("cluster/role", "DB", 1, 1,
+                             raft_unixctl_role, NULL);
+    unixctl_command_register("cluster/connected", "DB", 1, 1,
+                             raft_unixctl_connected, NULL);
     unixctl_command_register("cluster/status", "DB", 1, 1,
                              raft_unixctl_status, NULL);
     unixctl_command_register("cluster/leave", "DB", 1, 1,
