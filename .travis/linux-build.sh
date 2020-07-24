@@ -71,8 +71,16 @@ function install_kernel()
         # The Linux kernel defines __always_inline in stddef.h (283d7573), and
         # sys/cdefs.h tries to re-define it.  Older libc-dev package in xenial
         # doesn't have a fix for this issue.  Applying it manually.
-        sudo sed -i '/^# define __always_inline .*/i # undef __always_inline' \
-                    /usr/include/x86_64-linux-gnu/sys/cdefs.h || true
+        if [ "$TRAVIS_ARCH" == "aarch64" ]; then
+            sudo sed -i \
+                 '/^# define __always_inline .*/i # undef __always_inline' \
+                 /usr/include/aarch64-linux-gnu/sys/cdefs.h || true
+            CFLAGS_FOR_OVS="$CFLAGS_FOR_OVS -L/usr/local/lib64"
+        else
+            sudo sed -i \
+                '/^# define __always_inline .*/i # undef __always_inline' \
+                         /usr/include/x86_64-linux-gnu/sys/cdefs.h || true
+        fi
         EXTRA_OPTS="${EXTRA_OPTS} --enable-afxdp"
     else
         EXTRA_OPTS="${EXTRA_OPTS} --with-linux=$(pwd)"
