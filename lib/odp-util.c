@@ -7736,8 +7736,9 @@ static bool
 commit(enum ovs_key_attr attr, bool use_masked_set,
        const void *key, void *base, void *mask, size_t size,
        struct offsetof_sizeof *offsetof_sizeof_arr,
-       struct ofpbuf *odp_actions)
+       struct ofpbuf *odp_actions, bool *mask_expanded)
 {
+    *mask_expanded = false;
     if (keycmp_mask(key, base, offsetof_sizeof_arr, mask)) {
         bool fully_masked = odp_mask_is_exact(attr, mask, size);
 
@@ -7746,6 +7747,7 @@ commit(enum ovs_key_attr attr, bool use_masked_set,
         } else {
             if (!fully_masked) {
                 memset(mask, 0xff, size);
+                *mask_expanded = true;
             }
             commit_set_action(odp_actions, attr, key, size);
         }
@@ -7782,6 +7784,8 @@ commit_set_ether_action(const struct flow *flow, struct flow *base_flow,
     struct ovs_key_ethernet key, base, mask;
     struct offsetof_sizeof ovs_key_ethernet_offsetof_sizeof_arr[] =
         OVS_KEY_ETHERNET_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
+
     if (flow->packet_type != htonl(PT_ETH)) {
         return;
     }
@@ -7792,9 +7796,12 @@ commit_set_ether_action(const struct flow *flow, struct flow *base_flow,
 
     if (commit(OVS_KEY_ATTR_ETHERNET, use_masked,
                &key, &base, &mask, sizeof key,
-               ovs_key_ethernet_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_ethernet_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_ethernet_key(&base, base_flow);
-        put_ethernet_key(&mask, &wc->masks);
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            put_ethernet_key(&mask, &wc->masks);
+        }
     }
 }
 
@@ -7920,6 +7927,7 @@ commit_set_ipv4_action(const struct flow *flow, struct flow *base_flow,
     struct ovs_key_ipv4 key, mask, base;
     struct offsetof_sizeof ovs_key_ipv4_offsetof_sizeof_arr[] =
         OVS_KEY_IPV4_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
 
     /* Check that nw_proto and nw_frag remain unchanged. */
     ovs_assert(flow->nw_proto == base_flow->nw_proto &&
@@ -7937,9 +7945,10 @@ commit_set_ipv4_action(const struct flow *flow, struct flow *base_flow,
     }
 
     if (commit(OVS_KEY_ATTR_IPV4, use_masked, &key, &base, &mask, sizeof key,
-               ovs_key_ipv4_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_ipv4_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_ipv4_key(&base, base_flow, false);
-        if (mask.ipv4_proto != 0) { /* Mask was changed by commit(). */
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
             put_ipv4_key(&mask, &wc->masks, true);
         }
    }
@@ -7977,6 +7986,7 @@ commit_set_ipv6_action(const struct flow *flow, struct flow *base_flow,
     struct ovs_key_ipv6 key, mask, base;
     struct offsetof_sizeof ovs_key_ipv6_offsetof_sizeof_arr[] =
         OVS_KEY_IPV6_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
 
     /* Check that nw_proto and nw_frag remain unchanged. */
     ovs_assert(flow->nw_proto == base_flow->nw_proto &&
@@ -7995,9 +8005,10 @@ commit_set_ipv6_action(const struct flow *flow, struct flow *base_flow,
     }
 
     if (commit(OVS_KEY_ATTR_IPV6, use_masked, &key, &base, &mask, sizeof key,
-               ovs_key_ipv6_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_ipv6_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_ipv6_key(&base, base_flow, false);
-        if (mask.ipv6_proto != 0) { /* Mask was changed by commit(). */
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
             put_ipv6_key(&mask, &wc->masks, true);
         }
     }
@@ -8034,15 +8045,19 @@ commit_set_arp_action(const struct flow *flow, struct flow *base_flow,
     struct ovs_key_arp key, mask, base;
     struct offsetof_sizeof ovs_key_arp_offsetof_sizeof_arr[] =
         OVS_KEY_ARP_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
 
     get_arp_key(flow, &key);
     get_arp_key(base_flow, &base);
     get_arp_key(&wc->masks, &mask);
 
     if (commit(OVS_KEY_ATTR_ARP, true, &key, &base, &mask, sizeof key,
-               ovs_key_arp_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_arp_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_arp_key(&base, base_flow);
-        put_arp_key(&mask, &wc->masks);
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            put_arp_key(&mask, &wc->masks);
+        }
         return SLOW_ACTION;
     }
     return 0;
@@ -8072,6 +8087,7 @@ commit_set_icmp_action(const struct flow *flow, struct flow *base_flow,
     struct offsetof_sizeof ovs_key_icmp_offsetof_sizeof_arr[] =
         OVS_KEY_ICMP_OFFSETOF_SIZEOF_ARR;
     enum ovs_key_attr attr;
+    bool expanded;
 
     if (is_icmpv4(flow, NULL)) {
         attr = OVS_KEY_ATTR_ICMP;
@@ -8086,9 +8102,12 @@ commit_set_icmp_action(const struct flow *flow, struct flow *base_flow,
     get_icmp_key(&wc->masks, &mask);
 
     if (commit(attr, false, &key, &base, &mask, sizeof key,
-               ovs_key_icmp_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_icmp_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_icmp_key(&base, base_flow);
-        put_icmp_key(&mask, &wc->masks);
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            put_icmp_key(&mask, &wc->masks);
+        }
         return SLOW_ACTION;
     }
     return 0;
@@ -8138,15 +8157,19 @@ commit_set_nd_action(const struct flow *flow, struct flow *base_flow,
     struct ovs_key_nd key, mask, base;
     struct offsetof_sizeof ovs_key_nd_offsetof_sizeof_arr[] =
         OVS_KEY_ND_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
 
     get_nd_key(flow, &key);
     get_nd_key(base_flow, &base);
     get_nd_key(&wc->masks, &mask);
 
     if (commit(OVS_KEY_ATTR_ND, use_masked, &key, &base, &mask, sizeof key,
-               ovs_key_nd_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_nd_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_nd_key(&base, base_flow);
-        put_nd_key(&mask, &wc->masks);
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            put_nd_key(&mask, &wc->masks);
+        }
         return SLOW_ACTION;
     }
 
@@ -8162,6 +8185,7 @@ commit_set_nd_extensions_action(const struct flow *flow,
     struct ovs_key_nd_extensions key, mask, base;
     struct offsetof_sizeof ovs_key_nd_extensions_offsetof_sizeof_arr[] =
         OVS_KEY_ND_EXTENSIONS_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
 
     get_nd_extensions_key(flow, &key);
     get_nd_extensions_key(base_flow, &base);
@@ -8169,9 +8193,12 @@ commit_set_nd_extensions_action(const struct flow *flow,
 
     if (commit(OVS_KEY_ATTR_ND_EXTENSIONS, use_masked, &key, &base, &mask,
                sizeof key, ovs_key_nd_extensions_offsetof_sizeof_arr,
-               odp_actions)) {
+               odp_actions, &expanded)) {
         put_nd_extensions_key(&base, base_flow);
-        put_nd_extensions_key(&mask, &wc->masks);
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            put_nd_extensions_key(&mask, &wc->masks);
+        }
         return SLOW_ACTION;
     }
     return 0;
@@ -8388,6 +8415,7 @@ commit_set_port_action(const struct flow *flow, struct flow *base_flow,
     union ovs_key_tp key, mask, base;
     struct offsetof_sizeof ovs_key_tp_offsetof_sizeof_arr[] =
         OVS_KEY_TCP_OFFSETOF_SIZEOF_ARR;
+    bool expanded;
 
     /* Check if 'flow' really has an L3 header. */
     if (!flow->nw_proto) {
@@ -8413,9 +8441,12 @@ commit_set_port_action(const struct flow *flow, struct flow *base_flow,
     get_tp_key(&wc->masks, &mask);
 
     if (commit(key_type, use_masked, &key, &base, &mask, sizeof key,
-               ovs_key_tp_offsetof_sizeof_arr, odp_actions)) {
+               ovs_key_tp_offsetof_sizeof_arr, odp_actions, &expanded)) {
         put_tp_key(&base, base_flow);
-        put_tp_key(&mask, &wc->masks);
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            put_tp_key(&mask, &wc->masks);
+        }
     }
 }
 
@@ -8430,15 +8461,20 @@ commit_set_priority_action(const struct flow *flow, struct flow *base_flow,
         {0, sizeof(uint32_t)},
         {0, 0}
     };
+    bool expanded;
 
     key = flow->skb_priority;
     base = base_flow->skb_priority;
     mask = wc->masks.skb_priority;
 
     if (commit(OVS_KEY_ATTR_PRIORITY, use_masked, &key, &base, &mask,
-               sizeof key, ovs_key_prio_offsetof_sizeof_arr, odp_actions)) {
+               sizeof key, ovs_key_prio_offsetof_sizeof_arr,
+               odp_actions, &expanded)) {
         base_flow->skb_priority = base;
-        wc->masks.skb_priority = mask;
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            wc->masks.skb_priority = mask;
+        }
     }
 }
 
@@ -8453,6 +8489,7 @@ commit_set_pkt_mark_action(const struct flow *flow, struct flow *base_flow,
         {0, sizeof(uint32_t)},
         {0, 0}
     };
+    bool expanded;
 
     key = flow->pkt_mark;
     base = base_flow->pkt_mark;
@@ -8460,9 +8497,12 @@ commit_set_pkt_mark_action(const struct flow *flow, struct flow *base_flow,
 
     if (commit(OVS_KEY_ATTR_SKB_MARK, use_masked, &key, &base, &mask,
                sizeof key, ovs_key_pkt_mark_offsetof_sizeof_arr,
-               odp_actions)) {
+               odp_actions, &expanded)) {
         base_flow->pkt_mark = base;
-        wc->masks.pkt_mark = mask;
+        if (expanded) {
+            /* Mask expanded by commit(), need to match new fields. */
+            wc->masks.pkt_mark = mask;
+        }
     }
 }
 
