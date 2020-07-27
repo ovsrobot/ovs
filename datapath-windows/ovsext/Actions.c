@@ -1259,6 +1259,7 @@ OvsActionMplsPush(OvsForwardingContext *ovsFwdCtx,
  */
 static __inline NDIS_STATUS
 OvsUpdateEthHeader(OvsForwardingContext *ovsFwdCtx,
+                   OvsFlowKey *key,
                    const struct ovs_key_ethernet *ethAttr)
 {
     PNET_BUFFER curNb;
@@ -1285,9 +1286,11 @@ OvsUpdateEthHeader(OvsForwardingContext *ovsFwdCtx,
     }
     ethHdr = (EthHdr *)(bufferStart + NET_BUFFER_CURRENT_MDL_OFFSET(curNb));
 
-    RtlCopyMemory(ethHdr->Destination, ethAttr->eth_dst,
-                   sizeof ethHdr->Destination);
-    RtlCopyMemory(ethHdr->Source, ethAttr->eth_src, sizeof ethHdr->Source);
+    RtlCopyMemory(ethHdr->Destination, ethAttr->eth_dst, ETH_ADDR_LENGTH);
+    RtlCopyMemory(ethHdr->Source, ethAttr->eth_src, ETH_ADDR_LENGTH);
+    /* Update l2 flow key */
+    RtlCopyMemory(key->l2.dlDst, ethAttr->eth_dst, ETH_ADDR_LENGTH);
+    RtlCopyMemory(key->l2.dlSrc, ethAttr->eth_src, ETH_ADDR_LENGTH);
 
     return NDIS_STATUS_SUCCESS;
 }
@@ -1376,6 +1379,7 @@ PUINT8 OvsGetHeaderBySize(OvsForwardingContext *ovsFwdCtx,
  */
 NDIS_STATUS
 OvsUpdateUdpPorts(OvsForwardingContext *ovsFwdCtx,
+                  OvsFlowKey *key,
                   const struct ovs_key_udp *udpAttr)
 {
     PUINT8 bufferStart;
@@ -1399,16 +1403,16 @@ OvsUpdateUdpPorts(OvsForwardingContext *ovsFwdCtx,
         if (udpHdr->source != udpAttr->udp_src) {
             udpHdr->check = ChecksumUpdate16(udpHdr->check, udpHdr->source,
                                              udpAttr->udp_src);
-            udpHdr->source = udpAttr->udp_src;
+            key->ipKey.l4.tpSrc = udpHdr->source = udpAttr->udp_src;
         }
         if (udpHdr->dest != udpAttr->udp_dst) {
             udpHdr->check = ChecksumUpdate16(udpHdr->check, udpHdr->dest,
                                              udpAttr->udp_dst);
-            udpHdr->dest = udpAttr->udp_dst;
+            key->ipKey.l4.tpDst = udpHdr->dest = udpAttr->udp_dst;
         }
     } else {
-        udpHdr->source = udpAttr->udp_src;
-        udpHdr->dest = udpAttr->udp_dst;
+        key->ipKey.l4.tpSrc = udpHdr->source = udpAttr->udp_src;
+        key->ipKey.l4.tpDst = udpHdr->dest = udpAttr->udp_dst;
     }
 
     return NDIS_STATUS_SUCCESS;
@@ -1423,6 +1427,7 @@ OvsUpdateUdpPorts(OvsForwardingContext *ovsFwdCtx,
  */
 NDIS_STATUS
 OvsUpdateTcpPorts(OvsForwardingContext *ovsFwdCtx,
+                  OvsFlowKey *key,
                   const struct ovs_key_tcp *tcpAttr)
 {
     PUINT8 bufferStart;
@@ -1446,12 +1451,12 @@ OvsUpdateTcpPorts(OvsForwardingContext *ovsFwdCtx,
     if (tcpHdr->source != tcpAttr->tcp_src) {
         tcpHdr->check = ChecksumUpdate16(tcpHdr->check, tcpHdr->source,
                                          tcpAttr->tcp_src);
-        tcpHdr->source = tcpAttr->tcp_src;
+        key->ipKey.l4.tpSrc = tcpHdr->source = tcpAttr->tcp_src;
     }
     if (tcpHdr->dest != tcpAttr->tcp_dst) {
         tcpHdr->check = ChecksumUpdate16(tcpHdr->check, tcpHdr->dest,
                                          tcpAttr->tcp_dst);
-        tcpHdr->dest = tcpAttr->tcp_dst;
+        key->ipKey.l4.tpDst = tcpHdr->dest = tcpAttr->tcp_dst;
     }
 
     return NDIS_STATUS_SUCCESS;
@@ -1579,6 +1584,7 @@ OvsUpdateAddressAndPort(OvsForwardingContext *ovsFwdCtx,
  */
 NDIS_STATUS
 OvsUpdateIPv4Header(OvsForwardingContext *ovsFwdCtx,
+                    OvsFlowKey *key,
                     const struct ovs_key_ipv4 *ipAttr)
 {
     PUINT8 bufferStart;
@@ -1631,7 +1637,7 @@ OvsUpdateIPv4Header(OvsForwardingContext *ovsFwdCtx,
             ipHdr->check = ChecksumUpdate32(ipHdr->check, ipHdr->saddr,
                                             ipAttr->ipv4_src);
         }
-        ipHdr->saddr = ipAttr->ipv4_src;
+        key->ipKey.nwSrc = ipHdr->saddr = ipAttr->ipv4_src;
     }
     if (ipHdr->daddr != ipAttr->ipv4_dst) {
         if (tcpHdr) {
@@ -1646,7 +1652,7 @@ OvsUpdateIPv4Header(OvsForwardingContext *ovsFwdCtx,
             ipHdr->check = ChecksumUpdate32(ipHdr->check, ipHdr->daddr,
                                             ipAttr->ipv4_dst);
         }
-        ipHdr->daddr = ipAttr->ipv4_dst;
+        key->ipKey.nwDst = ipHdr->daddr = ipAttr->ipv4_dst;
     }
     if (ipHdr->protocol != ipAttr->ipv4_proto) {
         UINT16 oldProto = (ipHdr->protocol << 16) & 0xff00;
@@ -1660,7 +1666,7 @@ OvsUpdateIPv4Header(OvsForwardingContext *ovsFwdCtx,
         if (ipHdr->check != 0) {
             ipHdr->check = ChecksumUpdate16(ipHdr->check, oldProto, newProto);
         }
-        ipHdr->protocol = ipAttr->ipv4_proto;
+        key->ipKey.nwProto = ipHdr->protocol = ipAttr->ipv4_proto;
     }
     if (ipHdr->ttl != ipAttr->ipv4_ttl) {
         UINT16 oldTtl = (ipHdr->ttl) & 0xff;
@@ -1668,7 +1674,7 @@ OvsUpdateIPv4Header(OvsForwardingContext *ovsFwdCtx,
         if (ipHdr->check != 0) {
             ipHdr->check = ChecksumUpdate16(ipHdr->check, oldTtl, newTtl);
         }
-        ipHdr->ttl = ipAttr->ipv4_ttl;
+        key->ipKey.nwTtl = ipHdr->ttl = ipAttr->ipv4_ttl;
     }
 
     return NDIS_STATUS_SUCCESS;
@@ -1691,12 +1697,12 @@ OvsExecuteSetAction(OvsForwardingContext *ovsFwdCtx,
 
     switch (type) {
     case OVS_KEY_ATTR_ETHERNET:
-        status = OvsUpdateEthHeader(ovsFwdCtx,
+        status = OvsUpdateEthHeader(ovsFwdCtx, key,
             NlAttrGetUnspec(a, sizeof(struct ovs_key_ethernet)));
         break;
 
     case OVS_KEY_ATTR_IPV4:
-        status = OvsUpdateIPv4Header(ovsFwdCtx,
+        status = OvsUpdateIPv4Header(ovsFwdCtx, key,
             NlAttrGetUnspec(a, sizeof(struct ovs_key_ipv4)));
         break;
 
@@ -1709,16 +1715,17 @@ OvsExecuteSetAction(OvsForwardingContext *ovsFwdCtx,
         status = SUCCEEDED(convertStatus) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_FAILURE;
         ASSERT(status == NDIS_STATUS_SUCCESS);
         RtlCopyMemory(&ovsFwdCtx->tunKey, &tunKey, sizeof ovsFwdCtx->tunKey);
+        RtlCopyMemory(&key->tunKey, &tunKey, sizeof key->tunKey);
         break;
     }
 
     case OVS_KEY_ATTR_UDP:
-        status = OvsUpdateUdpPorts(ovsFwdCtx,
+        status = OvsUpdateUdpPorts(ovsFwdCtx, key,
             NlAttrGetUnspec(a, sizeof(struct ovs_key_udp)));
         break;
 
     case OVS_KEY_ATTR_TCP:
-        status = OvsUpdateTcpPorts(ovsFwdCtx,
+        status = OvsUpdateTcpPorts(ovsFwdCtx, key,
             NlAttrGetUnspec(a, sizeof(struct ovs_key_tcp)));
         break;
 
