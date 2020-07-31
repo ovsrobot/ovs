@@ -68,27 +68,53 @@ shash_moved(struct shash *sh)
 void
 shash_clear(struct shash *sh)
 {
-    struct shash_node *node, *next;
+    struct shash_node *node;
+    struct hmap_node *hn;
 
-    SHASH_FOR_EACH_SAFE (node, next, sh) {
-        hmap_remove(&sh->map, &node->node);
-        free(node->name);
-        free(node);
+    int i;
+
+    if (sh->map.n == 0) {
+        return;
     }
+
+    for (i = 0; i <= sh->map.mask; i++) {
+        hn = sh->map.buckets[i];
+        while (hn != NULL) {
+            node = CONTAINER_OF(hn, struct shash_node, node);
+            hn = hn->next;
+            free(node->name);
+            free(node);
+        }
+        sh->map.buckets[i] = NULL;
+    }
+    sh->map.n = 0;
 }
 
 /* Like shash_clear(), but also free() each node's 'data'. */
 void
 shash_clear_free_data(struct shash *sh)
 {
-    struct shash_node *node, *next;
+    struct shash_node *node;
+    struct hmap_node *hn;
 
-    SHASH_FOR_EACH_SAFE (node, next, sh) {
-        hmap_remove(&sh->map, &node->node);
-        free(node->data);
-        free(node->name);
-        free(node);
+    int i;
+
+    if (sh->map.n == 0) {
+        return;
     }
+
+    for (i = 0; i <= sh->map.mask; i++) {
+        hn = sh->map.buckets[i];
+        while (hn != NULL) {
+            node = CONTAINER_OF(hn, struct shash_node, node);
+            hn = hn->next;
+            free(node->data);
+            free(node->name);
+            free(node);
+        }
+        sh->map.buckets[i] = NULL;
+    }
+    sh->map.n = 0;
 }
 
 bool
