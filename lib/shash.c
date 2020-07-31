@@ -276,14 +276,38 @@ shash_find_data(const struct shash *sh, const char *name)
 void *
 shash_find_and_delete(struct shash *sh, const char *name)
 {
-    struct shash_node *node = shash_find(sh, name);
-    if (node) {
-        void *data = node->data;
-        shash_delete(sh, node);
-        return data;
-    } else {
+    struct shash_node *node;
+
+    /* unroll shash_find and hmap_find */
+
+    struct hmap_node
+        **bucket = &sh->map.buckets[hash_name(name) & sh->map.mask];
+    ssize_t name_len = strlen(name);
+
+    while (*bucket != NULL) {
+        node = CONTAINER_OF(*bucket, struct shash_node, node);
+        if (!strncmp(node->name, name, name_len) && !node->name[name_len]) {
+            break;
+        }
+        bucket = &(*bucket)->next;
+    }
+
+    if (*bucket == NULL) {
         return NULL;
     }
+
+    void *data = node->data;
+
+    /* use the underlying hmap node to do a direct hmap remove */
+
+    *bucket = node->node.next;
+    sh->map.n--;
+
+    /* unroll smap_steal and smap_delete */
+
+    free(node->name);
+    free(node);
+    return data;
 }
 
 void *
