@@ -158,8 +158,9 @@ shash_add(struct shash *sh, const char *name, const void *data)
 bool
 shash_add_once(struct shash *sh, const char *name, const void *data)
 {
-    if (!shash_find(sh, name)) {
-        shash_add(sh, name, data);
+    size_t hash = hash_name(name);
+    if (!shash_find__(sh, name, strlen(name), hash)) {
+        shash_add_nocopy__(sh, xstrdup(name), data, hash);
         return true;
     } else {
         return false;
@@ -343,7 +344,7 @@ shash_equal_keys(const struct shash *a, const struct shash *b)
         return false;
     }
     SHASH_FOR_EACH (node, a) {
-        if (!shash_find(b, node->name)) {
+        if (!shash_find__(b, node->name, strlen(node->name), node->node.hash)) {
             return false;
         }
     }
