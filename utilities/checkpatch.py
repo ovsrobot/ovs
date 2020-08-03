@@ -156,6 +156,8 @@ __regex_leading_with_whitespace_at_all = re.compile(r'^\s+')
 __regex_leading_with_spaces = re.compile(r'^ +[\S]+')
 __regex_trailing_whitespace = re.compile(r'[^\S]+$')
 __regex_single_line_feed = re.compile(r'^\f$')
+__regex_hash_define_for_each = re.compile(
+    r'#define [_A-Z]+FOR_*EACH[_A-Z0-9]*\(')
 __regex_for_if_missing_whitespace = re.compile(r' +(%s)[\(]'
                                                % __parenthesized_constructs)
 __regex_for_if_too_much_whitespace = re.compile(r' +(%s)  +[\(]'
@@ -245,6 +247,10 @@ def if_and_for_whitespace_checks(line):
     """
     if skip_block_whitespace_check:
         return True
+
+    if (__regex_hash_define_for_each.search(line) is not None):
+        return True
+
     if (__regex_for_if_missing_whitespace.search(line) is not None or
             __regex_for_if_too_much_whitespace.search(line) is not None or
             __regex_for_if_parens_whitespace.search(line)):
