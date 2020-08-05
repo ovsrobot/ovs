@@ -412,7 +412,7 @@ flake8-check: $(FLAKE8_PYFILES)
 endif
 CLEANFILES += flake8-check
 
-include $(srcdir)/manpages.mk
+-include $(srcdir)/manpages.mk
 $(srcdir)/manpages.mk: $(MAN_ROOTS) build-aux/sodepends.py python/build/soutil.py
 	@PYTHONPATH=$$PYTHONPATH$(psep)$(srcdir)/python $(PYTHON3) $(srcdir)/build-aux/sodepends.py -I. -I$(srcdir) $(MAN_ROOTS) >$(@F).tmp
 	@if cmp -s $(@F).tmp $@; then \
