@@ -190,8 +190,9 @@ struct ofservice {
 
 static void ofservice_run(struct ofservice *);
 static void ofservice_wait(struct ofservice *);
-static void ofservice_reconfigure(struct ofservice *,
-                                  const struct ofproto_controller *)
+static bool ofservice_reconfigure(struct ofservice *,
+                                  const struct ofproto_controller *,
+                                  bool)
     OVS_REQUIRES(ofproto_mutex);
 static void ofservice_create(struct connmgr *mgr, const char *target,
                              const struct ofproto_controller *)
@@ -602,7 +603,14 @@ connmgr_set_controllers(struct connmgr *mgr, struct shash *controllers)
                       target);
             ofservice_destroy(ofservice);
         } else {
-            ofservice_reconfigure(ofservice, c);
+            if (ofservice_reconfigure(ofservice, c, true) == false) {
+                char *target_to_restore = xstrdup(target);
+                VLOG_INFO("%s: restarting controller \"%s\" due to version change",
+                          mgr->name, target);
+                ofservice_destroy(ofservice);
+                ofservice_create(mgr, target_to_restore, c);
+                free(target_to_restore);
+            }
         }
     }
 
@@ -1935,7 +1943,7 @@ ofservice_create(struct connmgr *mgr, const char *target,
     ofservice->rconn = rconn;
     ofservice->pvconn = pvconn;
     ofservice->s = *c;
-    ofservice_reconfigure(ofservice, c);
+    (void)ofservice_reconfigure(ofservice, c, false);
 
     VLOG_INFO("%s: added %s controller \"%s\"",
               mgr->name, ofconn_type_to_string(ofservice->type), target);
@@ -2011,9 +2019,10 @@ ofservice_wait(struct ofservice *ofservice)
     }
 }
 
-static void
+static bool
 ofservice_reconfigure(struct ofservice *ofservice,
-                      const struct ofproto_controller *settings)
+                      const struct ofproto_controller *settings,
+                      bool reject_version)
     OVS_REQUIRES(ofproto_mutex)
 {
     /* If the allowed OpenFlow versions change, close all of the existing
@@ -2021,6 +2030,9 @@ ofservice_reconfigure(struct ofservice *ofservice,
      * version. */
     if (ofservice->s.allowed_versions != settings->allowed_versions) {
         ofservice_close_all(ofservice);
+        if (reject_version) {
+            return false;
+        }
     }
 
     ofservice->s = *settings;
@@ -2029,6 +2041,7 @@ ofservice_reconfigure(struct ofservice *ofservice,
     LIST_FOR_EACH (ofconn, ofservice_node, &ofservice->conns) {
         ofconn_reconfigure(ofconn, settings);
     }
+    return true;
 }
 
 /* Finds and returns the ofservice within 'mgr' that has the given
