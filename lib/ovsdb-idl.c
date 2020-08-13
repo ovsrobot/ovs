@@ -557,6 +557,15 @@ ovsdb_idl_set_remote(struct ovsdb_idl *idl, const char *remote, bool retry)
     }
 }
 
+/* Set next remote offset for ovsdb_idl jsonrpc session.*/
+void
+ovsdb_idl_set_next_remote(struct ovsdb_idl *idl, const char *remote)
+{
+    if (idl->session) {
+        jsonrpc_session_set_next_remote(idl->session, remote);
+    }
+}
+
 /* Set whether the order of remotes should be shuffled, when there
  * are more than one remotes.  The setting doesn't take effect
  * until the next time when ovsdb_idl_set_remote() is called. */
