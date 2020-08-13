@@ -300,6 +300,8 @@ struct pmd_auto_lb {
     bool is_enabled;            /* Current status of Auto load balancing. */
     uint64_t rebalance_intvl;
     uint64_t rebalance_poll_timer;
+    uint64_t rebalance_acc_improvement;
+    uint64_t rebalance_threshold;
 };
 
 /* Datapath based on the network device interface from netdev.h.
@@ -4346,6 +4348,12 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         pmd_alb->rebalance_intvl = rebalance_intvl;
     }
 
+    pmd_alb->rebalance_acc_improvement = smap_get_int(other_config,
+                "pmd-auto-lb-acc-improvement", ALB_ACCEPTABLE_IMPROVEMENT);
+
+    pmd_alb->rebalance_threshold = smap_get_int(other_config,
+                "pmd-auto-lb-threshold", ALB_PMD_LOAD_THRESHOLD);
+
     set_pmd_auto_lb(dp);
     return 0;
 }
@@ -5674,7 +5682,7 @@ pmd_rebalance_dry_run(struct dp_netdev *dp)
             improvement =
                 ((curr_variance - new_variance) * 100) / curr_variance;
         }
-        if (improvement < ALB_ACCEPTABLE_IMPROVEMENT) {
+        if (improvement < dp->pmd_alb.rebalance_acc_improvement) {
             ret = false;
         }
     }
@@ -8724,7 +8732,7 @@ dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
                 pmd_load = ((tot_proc * 100) / (tot_idle + tot_proc));
             }
 
-            if (pmd_load >= ALB_PMD_LOAD_THRESHOLD) {
+            if (pmd_load >= pmd_alb->rebalance_threshold) {
                 atomic_count_inc(&pmd->pmd_overloaded);
             } else {
                 atomic_count_set(&pmd->pmd_overloaded, 0);
