@@ -419,6 +419,27 @@ af_inet_ioctl(unsigned long int command, const void *arg)
 }
 
 int
+af_inet_ioctl_netns(unsigned long int command, const void *arg)
+{
+    int sock;
+    int error = 0;
+
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        error = -sock_errno();
+        VLOG_ERR("failed to create inet socket: %s", sock_strerror(error));
+    }
+
+    if (sock >= 0) {
+        if (ioctl(sock, command, arg) == -1) {
+            error = errno;
+        }
+        close(sock);
+    }
+    return error;
+}
+
+int
 af_inet_ifreq_ioctl(const char *name, struct ifreq *ifr, unsigned long int cmd,
                     const char *cmd_name)
 {
@@ -426,6 +447,22 @@ af_inet_ifreq_ioctl(const char *name, struct ifreq *ifr, unsigned long int cmd,
 
     ovs_strzcpy(ifr->ifr_name, name, sizeof ifr->ifr_name);
     error = af_inet_ioctl(cmd, ifr);
+    if (error) {
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+        VLOG_DBG_RL(&rl, "%s: ioctl(%s) failed: %s", name, cmd_name,
+                    ovs_strerror(error));
+    }
+    return error;
+}
+
+int
+af_inet_ifreq_ioctl_netns(const char *name, struct ifreq *ifr,
+                          unsigned long int cmd, const char *cmd_name)
+{
+    int error;
+
+    ovs_strzcpy(ifr->ifr_name, name, sizeof ifr->ifr_name);
+    error = af_inet_ioctl_netns(cmd, ifr);
     if (error) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
         VLOG_DBG_RL(&rl, "%s: ioctl(%s) failed: %s", name, cmd_name,
