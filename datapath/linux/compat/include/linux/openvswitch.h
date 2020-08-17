@@ -378,10 +378,10 @@ enum ovs_key_attr {
 #endif
 
 #ifndef __KERNEL__
-	/* Only used within userspace data path. */
 	OVS_KEY_ATTR_PACKET_TYPE,  /* be32 packet type */
-	OVS_KEY_ATTR_ND_EXTENSIONS, /* struct ovs_key_nd_extensions */
 #endif
+
+	OVS_KEY_ATTR_ND_EXTENSIONS, /* struct ovs_key_nd_extensions */
 
 	__OVS_KEY_ATTR_MAX
 };
@@ -518,12 +518,10 @@ struct ovs_key_nd {
 	__u8	nd_tll[ETH_ALEN];
 };
 
-#ifndef __KERNEL__
 struct ovs_key_nd_extensions {
     __be32  nd_reserved;
     __u8    nd_options_type;
 };
-#endif
 
 #define OVS_CT_LABELS_LEN_32	4
 #define OVS_CT_LABELS_LEN	(OVS_CT_LABELS_LEN_32 * sizeof(__u32))
