@@ -124,7 +124,13 @@ netdev_n_rxq(const struct netdev *netdev)
 bool
 netdev_is_pmd(const struct netdev *netdev)
 {
-    return netdev->netdev_class->is_pmd;
+    return netdev->is_internal ? false: netdev->netdev_class->is_pmd;
+}
+
+void
+netdev_set_internal(struct netdev *netdev)
+{
+    netdev->is_internal = true;
 }
 
 bool

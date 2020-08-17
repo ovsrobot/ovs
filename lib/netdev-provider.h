@@ -54,6 +54,7 @@ struct netdev {
     char *name;                         /* Name of network device. */
     const struct netdev_class *netdev_class; /* Functions to control
                                                 this device. */
+    bool is_internal; /* Is interface type internal? */
 
     /* If this is 'true' the user did not specify a netdev_class when
      * opening this device, and therefore got assigned to the "system" class */

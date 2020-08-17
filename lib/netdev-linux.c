@@ -3551,7 +3551,7 @@ exit:
 const struct netdev_class netdev_linux_class = {
     NETDEV_LINUX_CLASS_COMMON,
     .type = "system",
-    .is_pmd = false,
+    .is_pmd = true,
     .construct = netdev_linux_construct,
     .destruct = netdev_linux_destruct,
     .get_stats = netdev_linux_get_stats,
@@ -3567,7 +3567,7 @@ const struct netdev_class netdev_linux_class = {
 const struct netdev_class netdev_tap_class = {
     NETDEV_LINUX_CLASS_COMMON,
     .type = "tap",
-    .is_pmd = false,
+    .is_pmd = true,
     .construct = netdev_linux_construct_tap,
     .destruct = netdev_linux_destruct,
     .get_stats = netdev_tap_get_stats,

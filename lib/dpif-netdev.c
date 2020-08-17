@@ -2110,6 +2110,9 @@ do_add_port(struct dp_netdev *dp, const char *devname, const char *type,
     if (error) {
         return error;
     }
+    if (port_no == ODPP_LOCAL) {
+        netdev_set_internal(port->netdev);
+    }
 
     hmap_insert(&dp->ports, &port->node, hash_port_no(port_no));
     seq_change(dp->port_seq);

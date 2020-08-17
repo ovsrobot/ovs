@@ -2034,6 +2034,7 @@ iface_do_create(const struct bridge *br,
     struct netdev *netdev = NULL;
     int error;
     const char *type;
+    const char *iface_type;
 
     if (netdev_is_reserved_name(iface_cfg->name)) {
         VLOG_WARN("could not create interface %s, name is reserved",
@@ -2042,13 +2043,16 @@ iface_do_create(const struct bridge *br,
         goto error;
     }
 
-    type = ofproto_port_open_type(br->ofproto,
-                                  iface_get_type(iface_cfg, br->cfg));
+    iface_type = iface_get_type(iface_cfg, br->cfg);
+    type = ofproto_port_open_type(br->ofproto, iface_type);
     error = netdev_open(iface_cfg->name, type, &netdev);
     if (error) {
         VLOG_WARN_BUF(errp, "could not open network device %s (%s)",
                       iface_cfg->name, ovs_strerror(error));
         goto error;
+    }
+    if (strcmp(iface_type, "internal") == 0) {
+        netdev_set_internal(netdev);
     }
 
     error = iface_set_netdev_config(iface_cfg, netdev, errp);
@@ -2142,6 +2146,7 @@ iface_create(struct bridge *br, const struct ovsrec_interface *iface_cfg,
             error = netdev_open(port->name, "internal", &netdev);
             if (!error) {
                 ofp_port_t fake_ofp_port = OFPP_NONE;
+                netdev_set_internal(netdev);
                 ofproto_port_add(br->ofproto, netdev, &fake_ofp_port);
                 netdev_close(netdev);
             } else {
