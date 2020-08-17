@@ -68,6 +68,7 @@ struct netdev_linux {
     struct timer miimon_timer;
 
     int netnsid;                    /* Network namespace ID. */
+    char *netns;                    /* Network namespace name. */
     /* The following are figured out "on demand" only.  They are only valid
      * when the corresponding VALID_* bit in 'cache_valid' is set. */
     int ifindex;
