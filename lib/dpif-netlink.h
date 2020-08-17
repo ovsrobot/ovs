@@ -55,6 +55,9 @@ int dpif_netlink_vport_transact(const struct dpif_netlink_vport *request,
                                 struct ofpbuf **bufp);
 int dpif_netlink_vport_get(const char *name, struct dpif_netlink_vport *reply,
                            struct ofpbuf **bufp);
+int dpif_netlink_vport_get_nopool(const char *name,
+                                  struct dpif_netlink_vport *reply,
+                                  struct ofpbuf **bufp);
 
 bool dpif_netlink_is_internal_device(const char *name);
 

@@ -4282,6 +4282,43 @@ dpif_netlink_vport_transact(const struct dpif_netlink_vport *request,
     return error;
 }
 
+static int
+dpif_netlink_vport_transact_nopool(const struct dpif_netlink_vport *request,
+                                   struct dpif_netlink_vport *reply,
+                                   struct ofpbuf **bufp)
+{
+    struct ofpbuf *request_buf;
+    int error;
+
+    ovs_assert((reply != NULL) == (bufp != NULL));
+
+    error = dpif_netlink_init();
+    if (error) {
+        if (reply) {
+            *bufp = NULL;
+            dpif_netlink_vport_init(reply);
+        }
+        return error;
+    }
+
+    request_buf = ofpbuf_new(1024);
+    dpif_netlink_vport_to_ofpbuf(request, request_buf);
+    error = nl_transact_nopool(NETLINK_GENERIC, request_buf, bufp);
+    ofpbuf_delete(request_buf);
+
+    if (reply) {
+        if (!error) {
+            error = dpif_netlink_vport_from_ofpbuf(reply, *bufp);
+        }
+        if (error) {
+            dpif_netlink_vport_init(reply);
+            ofpbuf_delete(*bufp);
+            *bufp = NULL;
+        }
+    }
+    return error;
+}
+
 /* Obtains information about the kernel vport named 'name' and stores it into
  * '*reply' and '*bufp'.  The caller must free '*bufp' when the reply is no
  * longer needed ('reply' will contain pointers into '*bufp').  */
@@ -4296,6 +4333,20 @@ dpif_netlink_vport_get(const char *name, struct dpif_netlink_vport *reply,
     request.name = name;
 
     return dpif_netlink_vport_transact(&request, reply, bufp);
+}
+
+int
+dpif_netlink_vport_get_nopool(const char *name,
+                              struct dpif_netlink_vport *reply,
+                              struct ofpbuf **bufp)
+{
+    struct dpif_netlink_vport request;
+
+    dpif_netlink_vport_init(&request);
+    request.cmd = OVS_VPORT_CMD_GET;
+    request.name = name;
+
+    return dpif_netlink_vport_transact_nopool(&request, reply, bufp);
 }
 
 /* Parses the contents of 'buf', which contains a "struct ovs_header" followed

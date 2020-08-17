@@ -520,8 +520,16 @@ static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
  * changes in the device miimon status, so we can use atomic_count. */
 static atomic_count miimon_cnt = ATOMIC_COUNT_INIT(0);
 
+struct netns_knob {
+    int main_fd;
+    int netns_fd;
+    char nspath[128];
+};
+
 static int netdev_linux_parse_vnet_hdr(struct dp_packet *b);
 static void netdev_linux_prepend_vnet_hdr(struct dp_packet *b, int mtu);
+static int enter_netns(struct netns_knob *netns_knob, const char *netns);
+static void exit_netns(struct netns_knob *netns_knob);
 static int netdev_linux_do_ethtool(const char *name, struct ethtool_cmd *,
                                    int cmd, const char *cmd_name);
 static int get_flags(const struct netdev *, unsigned int *flags);
@@ -2158,11 +2166,18 @@ netdev_stats_from_ovs_vport_stats(struct netdev_stats *dst,
 static int
 get_stats_via_vport__(const struct netdev *netdev, struct netdev_stats *stats)
 {
+    struct netdev_linux *netdev_linux = netdev_linux_cast(netdev);
     struct dpif_netlink_vport reply;
     struct ofpbuf *buf;
     int error;
 
-    error = dpif_netlink_vport_get(netdev_get_name(netdev), &reply, &buf);
+    if (is_tap_netdev(netdev) && (netdev_linux->netns != NULL)) {
+        error = dpif_netlink_vport_get_nopool(netdev_get_name(netdev),
+                                              &reply, &buf);
+    } else {
+        error = dpif_netlink_vport_get(netdev_get_name(netdev),
+                                              &reply, &buf);
+    }
     if (error) {
         return error;
     } else if (!reply.stats) {
@@ -2237,6 +2252,33 @@ netdev_linux_get_stats(const struct netdev *netdev_,
     return error;
 }
 
+static int
+enter_netns(struct netns_knob *netns_knob, const char *netns)
+{
+    sprintf(netns_knob->nspath, "/proc/%d/ns/net", getpid());
+    netns_knob->main_fd = open(netns_knob->nspath, O_RDONLY);
+    if (netns_knob->main_fd < 0) {
+        return errno;
+    }
+
+    sprintf(netns_knob->nspath, "/var/run/netns/%s", netns);
+    netns_knob->netns_fd = open(netns_knob->nspath, O_RDONLY);
+    if (netns_knob->netns_fd < 0) {
+        close(netns_knob->main_fd);
+        return errno;
+    }
+    setns(netns_knob->netns_fd, 0);
+    return 0;
+}
+
+static void
+exit_netns(struct netns_knob *netns_knob)
+{
+    setns(netns_knob->main_fd, 0);
+    close(netns_knob->netns_fd);
+    close(netns_knob->main_fd);
+}
+
 /* Retrieves current device stats for 'netdev-tap' netdev or
  * netdev-internal. */
 static int
@@ -2245,6 +2287,11 @@ netdev_tap_get_stats(const struct netdev *netdev_, struct netdev_stats *stats)
     struct netdev_linux *netdev = netdev_linux_cast(netdev_);
     struct netdev_stats dev_stats;
     int error;
+    struct netns_knob netns_knob;
+
+    if (is_tap_netdev(netdev_) && (netdev->netns != NULL)) {
+        error = enter_netns(&netns_knob, netdev->netns);
+    }
 
     ovs_mutex_lock(&netdev->mutex);
     get_stats_via_vport(netdev_, stats);
@@ -2297,6 +2344,10 @@ netdev_tap_get_stats(const struct netdev *netdev_, struct netdev_stats *stats)
     stats->tx_dropped += netdev->tx_dropped;
     stats->rx_dropped += netdev->rx_dropped;
     ovs_mutex_unlock(&netdev->mutex);
+
+    if (is_tap_netdev(netdev_) && (netdev->netns != NULL)) {
+        exit_netns(&netns_knob);
+    }
 
     return error;
 }
@@ -6245,6 +6296,7 @@ netdev_stats_from_rtnl_link_stats64(struct netdev_stats *dst,
 int
 get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
 {
+    struct netdev_linux *netdev = netdev_linux_cast(netdev_);
     struct ofpbuf request;
     struct ofpbuf *reply;
     int error;
@@ -6258,7 +6310,11 @@ get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
                         RTM_GETLINK, NLM_F_REQUEST);
     ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
     nl_msg_put_string(&request, IFLA_IFNAME, netdev_get_name(netdev_));
-    error = nl_transact(NETLINK_ROUTE, &request, &reply);
+    if (is_tap_netdev(netdev_) && (netdev->netns != NULL)) {
+        error = nl_transact_nopool(NETLINK_ROUTE, &request, &reply);
+    } else {
+        error = nl_transact(NETLINK_ROUTE, &request, &reply);
+    }
     ofpbuf_uninit(&request);
     if (error) {
         return error;
