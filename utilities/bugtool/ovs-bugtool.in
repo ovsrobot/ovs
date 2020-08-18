@@ -1,4 +1,4 @@
-#! @PYTHON3@
+#!/usr/bin/env python3
 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of version 2.1 of the GNU Lesser General Public
@@ -14,7 +14,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 # Copyright (c) 2005, 2007 XenSource Ltd.
-# Copyright (c) 2010, 2011, 2012, 2013, 2015, 2016, 2017 Nicira, Inc.
+# Copyright (c) 2010, 2011, 2012, 2013, 2015, 2016, 2017, 2020 Nicira, Inc.
 
 #
 # To add new entries to the bugtool, you need to:
