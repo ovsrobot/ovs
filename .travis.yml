@@ -67,6 +67,17 @@ matrix:
       compiler: clang
       env: OPTS="--disable-ssl"
 
+matrix:
+  include:
+    - env: DEB_PACKAGE=1
+      addons:
+        apt:
+          packages:
+            - build-essential
+            - fakeroot
+            - devscripts
+            - equivs
+
 script: ./.travis/${TRAVIS_OS_NAME}-build.sh $OPTS
 
 notifications:
