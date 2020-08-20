@@ -1536,8 +1536,22 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
                 flow_clear_conntrack(&frozen_flow);
             }
 
+            /* Packet-in message expects tunnel metadata in non-udpif
+             * format. */
+            if (flow->tunnel.flags & FLOW_TNL_F_UDPIF) {
+                const struct tun_table *tun_tab =
+                    ofproto_get_tun_tab(&upcall->ofproto->up);
+                int err =
+                    tun_metadata_from_geneve_udpif(tun_tab, &flow->tunnel,
+                                                   &flow->tunnel,
+                                                   &frozen_flow.tunnel);
+                if (err) {
+                    return err;
+                }
+            }
+
             frozen_metadata_to_flow(&upcall->ofproto->up, &state->metadata,
-                                    &frozen_flow);
+                                    &frozen_flow, state->from_tunnel);
             flow_get_metadata(&frozen_flow, &am->pin.up.base.flow_metadata);
 
             ofproto_dpif_send_async_msg(upcall->ofproto, am);

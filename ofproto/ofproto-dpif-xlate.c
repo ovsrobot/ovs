@@ -396,6 +396,11 @@ struct xlate_ctx {
      * state from the datapath should be honored after thawing. */
     bool conntracked;
 
+    /* True if a packet is form a tunnel port.  This is used to determine
+     * whether tunnel information from the datapath should be honored after
+     * thawing. */
+    bool from_tunnel;
+
     /* Pointer to an embedded NAT action in a conntrack action, or NULL. */
     struct ofpact_nat *ct_nat_action;
 
@@ -4858,6 +4863,7 @@ xlate_controller_action(struct xlate_ctx *ctx, int len,
         .stack_size = ctx->stack.size,
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
+        .from_tunnel = ctx->from_tunnel,
         .was_mpls = ctx->was_mpls,
         .ofpacts = NULL,
         .ofpacts_len = 0,
@@ -4933,6 +4939,7 @@ finish_freezing__(struct xlate_ctx *ctx, uint8_t table)
         .stack_size = ctx->stack.size,
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
+        .from_tunnel = ctx->from_tunnel,
         .was_mpls = ctx->was_mpls,
         .xport_uuid = ctx->xin->xport_uuid,
         .ofpacts = ctx->frozen_actions.data,
@@ -7513,6 +7520,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
 
         .was_mpls = false,
         .conntracked = false,
+        .from_tunnel = false,
 
         .ct_nat_action = NULL,
 
@@ -7580,7 +7588,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         /* Restore pipeline metadata. May change flow's in_port and other
          * metadata to the values that existed when freezing was triggered. */
         frozen_metadata_to_flow(&ctx.xbridge->ofproto->up,
-                                &state->metadata, flow);
+                                &state->metadata, flow,
+                                state->from_tunnel);
 
         /* Restore stack, if any. */
         if (state->stack) {
@@ -7647,6 +7656,10 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
                                          ctx.base_flow.in_port.ofp_port);
     if (in_port && !in_port->peer) {
         ctx.xin->xport_uuid = in_port->uuid;
+    }
+
+    if (in_port && in_port->is_tunnel) {
+        ctx.from_tunnel = true;
     }
 
     if (flow->packet_type != htonl(PT_ETH) && in_port &&
@@ -7917,6 +7930,7 @@ xlate_resume(struct ofproto_dpif *ofproto,
         .mirrors = pin->mirrors,
         .conntracked = pin->conntracked,
         .xport_uuid = UUID_ZERO,
+        .from_tunnel = false,
 
         /* When there are no actions, xlate_actions() will search the flow
          * table.  We don't want it to do that (we want it to resume), so

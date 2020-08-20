@@ -949,6 +949,39 @@ Datapath actions: set(tunnel(dst=1.1.1.1,ttl=64,tp_dst=6081,geneve({class=0xffff
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([tunnel - Match tun_metadata after recirc])
+OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=geneve \
+                    options:remote_ip=1.1.1.1 ofport_request=1 \
+                    -- add-port br0 p2 -- set Interface p2 type=dummy \
+                    ofport_request=2 ofport_request=2])
+OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
+
+AT_CHECK([ovs-ofctl add-tlv-map br0 "{class=0xffff,type=0,len=4}->tun_metadata0"])
+
+AT_DATA([flows.txt], [dnl
+table=0,udp,actions=ct(table=1)
+table=1,udp,tun_metadata0=0x11,actions=IN_PORT
+table=1,udp,tun_metadata0=0x22,actions=drop
+])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+dnl check flow with tun_metadata0=0x11
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'recirc_id(0),tunnel(tun_id=0x0,src=1.1.1.1,dst=1.1.1.2,ttl=64,geneve({class=0xffff,type=0,len=4,0x11}),flags(df|key)),in_port(6081),skb_mark(0),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.1.1,dst=192.168.1.2,proto=17,tos=0,ttl=64,frag=no),udp(src=1234,dst=5678)' -generate], [0], [stdout])
+AT_CHECK([tail -2 stdout], [0],
+  [Megaflow: recirc_id=0x1,eth,udp,tun_id=0,tun_src=1.1.1.1,tun_dst=1.1.1.2,tun_tos=0,tun_flags=+df-csum+key,tun_metadata0=0x11,in_port=1,nw_ecn=0,nw_frag=no
+Datapath actions: set(tunnel(dst=1.1.1.1,ttl=64,tp_dst=6081,geneve({class=0xffff,type=0,len=4,0x11}),flags(df))),6081
+])
+
+dnl check flow with tun_metadata0=0x22 and recirc_id(0x1)
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'recirc_id(0x1),tunnel(tun_id=0x0,src=1.1.1.1,dst=1.1.1.2,ttl=64,geneve({class=0xffff,type=0,len=4,0x22}),flags(df|key)),in_port(6081),skb_mark(0),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.1.1,dst=192.168.1.2,proto=17,tos=0,ttl=64,frag=no),udp(src=1234,dst=5678)'], [0], [stdout])
+AT_CHECK([tail -2 stdout], [0],
+  [Megaflow: recirc_id=0x1,eth,udp,tun_id=0,tun_src=1.1.1.1,tun_dst=1.1.1.2,tun_tos=0,tun_flags=+df-csum+key,tun_metadata0=0x22,in_port=1,nw_frag=no
+Datapath actions: drop
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([tunnel - concomitant IPv6 and IPv4 tunnels])
 OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=vxlan \
                     options:remote_ip=1.1.1.1 ofport_request=1 \

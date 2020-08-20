@@ -131,9 +131,12 @@ frozen_metadata_from_flow(struct frozen_metadata *md,
 static inline void
 frozen_metadata_to_flow(struct ofproto *ofproto,
                         const struct frozen_metadata *md,
-                        struct flow *flow)
+                        struct flow *flow,
+                        bool from_tunnel)
 {
-    flow->tunnel = md->tunnel;
+    if (!from_tunnel) {
+        flow->tunnel = md->tunnel;
+    }
     flow->tunnel.metadata.tab = ofproto_get_tun_tab(ofproto);
     flow->metadata = md->metadata;
     memcpy(flow->regs, md->regs, sizeof flow->regs);
@@ -153,6 +156,7 @@ struct frozen_state {
     size_t stack_size;
     mirror_mask_t mirrors;        /* Mirrors already output. */
     bool conntracked;             /* Conntrack occurred prior to freeze. */
+    bool from_tunnel;             /* Flow is from a tunnel port. */
     bool was_mpls;                /* MPLS packet */
     struct uuid xport_uuid;       /* UUID of 1st port packet received on. */
 
