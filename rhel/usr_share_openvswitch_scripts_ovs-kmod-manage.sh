@@ -136,7 +136,7 @@ elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "12" ]; then
 fi
 
 if [ X"$ver_offset" = X ]; then
-    echo "This script is not intended to run on kernel $(uname -r)"
+#    echo "This script is not intended to run on kernel $(uname -r)"
     exit 1
 fi
 
