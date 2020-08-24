@@ -4007,6 +4007,21 @@ dpif_netdev_flow_dump_thread_create(struct dpif_flow_dump *dump_)
     struct dpif_netdev_flow_dump *dump = dpif_netdev_flow_dump_cast(dump_);
     struct dpif_netdev_flow_dump_thread *thread;
 
+    dump->cur_pmd = NULL;
+    if (dump->up.pmd_id != PMD_ID_NULL) {
+        struct dp_netdev *dp = get_dp_netdev(dump->up.dpif);
+        struct dp_netdev_pmd_thread *pmd;
+
+        pmd = dp_netdev_get_pmd(dp, dump->up.pmd_id);
+        if (!pmd || !dp_netdev_pmd_try_ref(pmd)) {
+            VLOG_DBG("The PMD ID (%u) not found or ref.\n",
+                      dump->up.pmd_id);
+            return NULL;
+        }
+
+        dump->cur_pmd = pmd;
+    }
+
     thread = xmalloc(sizeof *thread);
     dpif_flow_dump_thread_init(&thread->up, &dump->up);
     thread->dump = dump;
@@ -4018,6 +4033,11 @@ dpif_netdev_flow_dump_thread_destroy(struct dpif_flow_dump_thread *thread_)
 {
     struct dpif_netdev_flow_dump_thread *thread
         = dpif_netdev_flow_dump_thread_cast(thread_);
+    struct dpif_netdev_flow_dump *dump = thread->dump;
+
+    if (dump->up.pmd_id != PMD_ID_NULL && dump->cur_pmd) {
+        dp_netdev_pmd_unref(dump->cur_pmd);
+    }
 
     free(thread);
 }
@@ -4063,6 +4083,11 @@ dpif_netdev_flow_dump_next(struct dpif_flow_dump_thread *thread_,
                                                      struct dp_netdev_flow,
                                                      node);
             }
+
+            if (dump->up.pmd_id != PMD_ID_NULL) {
+                break;
+            }
+
             /* When finishing dumping the current pmd thread, moves to
              * the next. */
             if (n_flows < flow_limit) {

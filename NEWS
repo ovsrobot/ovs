@@ -40,6 +40,8 @@ v2.14.0 - 17 Aug 2020
      * Add runtime CPU ISA detection to allow optimized ISA functions
      * Add support for dynamically changing DPCLS subtable lookup functions
      * Add ISA optimized DPCLS lookup function using AVX512
+     * Command "ovs-appctl dpctl/dump-flows" added option "pmd" which allow
+       user to dump pmd specified.
    - New configuration knob 'other_config:bond-primary' for AB bonds
      that specifies interface will be the preferred port if it is active.
    - Tunnels: TC Flower offload

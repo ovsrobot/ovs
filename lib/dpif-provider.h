@@ -57,6 +57,7 @@ static inline void dpif_assert_class(const struct dpif *dpif,
 
 struct dpif_flow_dump {
     struct dpif *dpif;
+    unsigned pmd_id;    /* As a filter for PMD flows. */
     bool terse;         /* If true, key/mask/actions may be omitted. */
 };
 
@@ -64,6 +65,7 @@ static inline void
 dpif_flow_dump_init(struct dpif_flow_dump *dump, const struct dpif *dpif)
 {
     dump->dpif = CONST_CAST(struct dpif *, dpif);
+    dump->pmd_id = PMD_ID_NULL;
 }
 
 struct dpif_flow_dump_thread {
