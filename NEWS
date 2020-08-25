@@ -1,5 +1,7 @@
 Post-v2.14.0
 ---------------------
+   - DPDK:
+     * Add parameters to configure auto load balance behaviour.
 
 
 v2.14.0 - 17 Aug 2020

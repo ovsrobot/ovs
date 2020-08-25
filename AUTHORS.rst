@@ -88,6 +88,7 @@ Carlo Andreotti                    c.andreotti@m3s.it
 Casey Barker                       crbarker@google.com
 Chandra Sekhar Vejendla            csvejend@us.ibm.com
 Christoph Jaeger                   cj@linux.com
+Christophe Fontaine                cfontain@redhat.com
 Chris Wright                       chrisw@sous-sol.org
 Chuck Short                        zulcss@ubuntu.com
 Ciara Loftus                       ciara.loftus@intel.com
