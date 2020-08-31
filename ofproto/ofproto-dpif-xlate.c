@@ -3518,8 +3518,14 @@ propagate_tunnel_data_to_flow__(struct flow *dst_flow,
                                 struct in6_addr s_ip6, ovs_be32 s_ip,
                                 bool is_tnl_ipv6, uint8_t nw_proto)
 {
+    int n = flow_count_vlan_headers(dst_flow);
     dst_flow->dl_dst = dmac;
     dst_flow->dl_src = smac;
+
+    /* Clearing the inner packet vlan data from flow */
+    for (int i = 0; i < n; i++) {
+        flow_pop_vlan(dst_flow, NULL);
+    }
 
     dst_flow->packet_type = htonl(PT_ETH);
     dst_flow->nw_dst = src_flow->tunnel.ip_dst;
