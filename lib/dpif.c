@@ -2018,3 +2018,35 @@ dpif_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
            ? dpif->dpif_class->bond_stats_get(dpif, bond_id, n_bytes)
            : EOPNOTSUPP;
 }
+
+int
+dpif_cache_get_supported_levels(struct dpif *dpif, uint32_t *levels)
+{
+    return dpif->dpif_class->cache_get_supported_levels
+        ? dpif->dpif_class->cache_get_supported_levels(dpif, levels)
+        : EOPNOTSUPP;
+}
+
+int
+dpif_cache_get_name(struct dpif *dpif, uint32_t level, const char **name)
+{
+    return dpif->dpif_class->cache_get_name
+        ? dpif->dpif_class->cache_get_name(dpif, level, name)
+        : EOPNOTSUPP;
+}
+
+int
+dpif_cache_get_size(struct dpif *dpif, uint32_t level, uint32_t *size)
+{
+    return dpif->dpif_class->cache_get_size
+        ? dpif->dpif_class->cache_get_size(dpif, level, size)
+        : EOPNOTSUPP;
+}
+
+int
+dpif_cache_set_size(struct dpif *dpif, uint32_t level, uint32_t size)
+{
+    return dpif->dpif_class->cache_set_size
+        ? dpif->dpif_class->cache_set_size(dpif, level, size)
+        : EOPNOTSUPP;
+}
