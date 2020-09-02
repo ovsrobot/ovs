@@ -672,9 +672,12 @@ dpif_netlink_get_stats(const struct dpif *dpif_, struct dpif_dp_stats *stats)
             stats->n_masks = dp.megaflow_stats->n_masks;
             stats->n_mask_hit = get_32aligned_u64(
                 &dp.megaflow_stats->n_mask_hit);
+            stats->n_cache_hit = get_32aligned_u64(
+                &dp.megaflow_stats->n_cache_hit);
         } else {
             stats->n_masks = UINT32_MAX;
             stats->n_mask_hit = UINT64_MAX;
+            stats->n_cache_hit = UINT64_MAX;
         }
         ofpbuf_delete(buf);
     }
