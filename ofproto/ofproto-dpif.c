@@ -4637,14 +4637,6 @@ check_actions(const struct ofproto_dpif *ofproto,
                                        "ct original direction tuple");
                 return OFPERR_NXBAC_CT_DATAPATH_SUPPORT;
             }
-        } else if (!support->nd_ext && ofpact->type == OFPACT_SET_FIELD) {
-            const struct mf_field *dst = ofpact_get_mf_dst(ofpact);
-
-            if (dst->id == MFF_ND_RESERVED || dst->id == MFF_ND_OPTIONS_TYPE) {
-                report_unsupported_act("set field",
-                                       "setting IPv6 ND Extensions fields");
-                return OFPERR_OFPBAC_BAD_SET_ARGUMENT;
-            }
         }
     }
 
