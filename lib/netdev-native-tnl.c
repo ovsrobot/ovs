@@ -149,11 +149,15 @@ void *
 netdev_tnl_push_ip_header(struct dp_packet *packet,
                const void *header, int size, int *ip_tot_size)
 {
+    int padding = dp_packet_l2_pad_size(packet);
     struct eth_header *eth;
     struct ip_header *ip;
     struct ovs_16aligned_ip6_hdr *ip6;
 
     eth = dp_packet_push_uninit(packet, size);
+    if (padding) {
+        dp_packet_set_size(packet, dp_packet_size(packet) - padding);
+    }
     *ip_tot_size = dp_packet_size(packet) - sizeof (struct eth_header);
 
     memcpy(eth, header, size);
