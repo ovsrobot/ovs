@@ -158,7 +158,7 @@ AC_ARG_WITH([vstudiotarget],
 
             VSTUDIO_CONFIG=$withval
          ], [
-            VSTUDIO_CONFIG=
+            VSTUDIO_CONFIG="Debug"
          ]
       )
 
