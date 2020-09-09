@@ -15,4 +15,17 @@
 #define READ_ONCE(x) (x)
 #endif
 
+#ifndef WRITE_ONCE
+#define __WRITE_ONCE(x, val)						\
+do {									\
+	*(volatile typeof(x) *)&(x) = (val);				\
+} while (0)
+
+#define WRITE_ONCE(x, val)						\
+do {									\
+	__WRITE_ONCE(x, val);						\
+} while (0)
+#endif
+
+
 #endif
