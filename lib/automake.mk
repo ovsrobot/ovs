@@ -343,6 +343,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/unicode.h \
 	lib/unixctl.c \
 	lib/unixctl.h \
+        lib/userspace-sock-buf-size.c \
+        lib/userspace-sock-buf-size.h \
 	lib/userspace-tso.c \
 	lib/userspace-tso.h \
 	lib/util.c \
