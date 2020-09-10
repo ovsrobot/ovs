@@ -140,6 +140,9 @@ struct ifreq;
 int af_inet_ioctl(unsigned long int command, const void *arg);
 int af_inet_ifreq_ioctl(const char *name, struct ifreq *,
                         unsigned long int cmd, const char *cmd_name);
+int af_inet_ioctl_netns(unsigned long int command, const void *arg);
+int af_inet_ifreq_ioctl_netns(const char *name, struct ifreq *,
+                              unsigned long int cmd, const char *cmd_name);
 
 #define closesocket close
 #endif
