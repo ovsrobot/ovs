@@ -254,6 +254,8 @@ struct nl_transaction {
 int nl_transact(int protocol, const struct ofpbuf *request,
                 struct ofpbuf **replyp);
 void nl_transact_multiple(int protocol, struct nl_transaction **, size_t n);
+int nl_transact_nopool(int protocol, const struct ofpbuf *request,
+                       struct ofpbuf **replyp);
 
 /* Table dumping. */
 #define NL_DUMP_BUFSIZE         4096

@@ -1807,6 +1807,152 @@ nl_transact(int protocol, const struct ofpbuf *request,
     return error;
 }
 
+static int
+nl_sock_create_nopool(int protocol, struct nl_sock **sockp)
+{
+    struct nl_sock *sock;
+#ifndef _WIN32
+    struct sockaddr_nl local, remote;
+#endif
+    socklen_t local_size;
+    int rcvbuf;
+    int retval = 0;
+
+    *sockp = NULL;
+    sock = xmalloc(sizeof *sock);
+
+#ifdef _WIN32
+    sock->overlapped.hEvent = NULL;
+    sock->handle = CreateFile(OVS_DEVICE_NAME_USER,
+                              GENERIC_READ | GENERIC_WRITE,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE,
+                              NULL, OPEN_EXISTING,
+                              FILE_FLAG_OVERLAPPED, NULL);
+
+    if (sock->handle == INVALID_HANDLE_VALUE) {
+        VLOG_ERR("fcntl: %s", ovs_lasterror_to_string());
+        goto error;
+    }
+
+    memset(&sock->overlapped, 0, sizeof sock->overlapped);
+    sock->overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (sock->overlapped.hEvent == NULL) {
+        VLOG_ERR("fcntl: %s", ovs_lasterror_to_string());
+        goto error;
+    }
+    /* Initialize the type/ioctl to Generic */
+    sock->read_ioctl = OVS_IOCTL_READ;
+#else
+    sock->fd = socket(AF_NETLINK, SOCK_RAW, protocol);
+    if (sock->fd < 0) {
+        VLOG_ERR("fcntl: %s", ovs_strerror(errno));
+        goto error;
+    }
+#endif
+
+    sock->protocol = protocol;
+    sock->next_seq = 1;
+
+    rcvbuf = 1024 * 1024;
+#ifdef _WIN32
+    sock->rcvbuf = rcvbuf;
+    retval = get_sock_pid_from_kernel(sock);
+    if (retval != 0) {
+        goto error;
+    }
+    retval = set_sock_property(sock);
+    if (retval != 0) {
+        goto error;
+    }
+#else
+    if (setsockopt(sock->fd, SOL_SOCKET, SO_RCVBUFFORCE,
+                   &rcvbuf, sizeof rcvbuf)) {
+        /* Only root can use SO_RCVBUFFORCE.  Everyone else gets EPERM.
+         * Warn only if the failure is therefore unexpected. */
+        if (errno != EPERM) {
+            VLOG_WARN_RL(&rl, "setting %d-byte socket receive buffer failed "
+                         "(%s)", rcvbuf, ovs_strerror(errno));
+        }
+    }
+
+    retval = get_socket_rcvbuf(sock->fd);
+    if (retval < 0) {
+        retval = -retval;
+        goto error;
+    }
+    sock->rcvbuf = retval;
+    retval = 0;
+
+    /* Connect to kernel (pid 0) as remote address. */
+    memset(&remote, 0, sizeof remote);
+    remote.nl_family = AF_NETLINK;
+    remote.nl_pid = 0;
+    if (connect(sock->fd, (struct sockaddr *) &remote, sizeof remote) < 0) {
+        VLOG_ERR("connect(0): %s", ovs_strerror(errno));
+        goto error;
+    }
+
+    /* Obtain pid assigned by kernel. */
+    local_size = sizeof local;
+    if (getsockname(sock->fd, (struct sockaddr *) &local, &local_size) < 0) {
+        VLOG_ERR("getsockname: %s", ovs_strerror(errno));
+        goto error;
+    }
+    if (local_size < sizeof local || local.nl_family != AF_NETLINK) {
+        VLOG_ERR("getsockname returned bad Netlink name");
+        retval = EINVAL;
+        goto error;
+    }
+    sock->pid = local.nl_pid;
+#endif
+
+    *sockp = sock;
+    return 0;
+
+error:
+    if (retval == 0) {
+        retval = errno;
+        if (retval == 0) {
+            retval = EINVAL;
+        }
+    }
+#ifdef _WIN32
+    if (sock->overlapped.hEvent) {
+        CloseHandle(sock->overlapped.hEvent);
+    }
+    if (sock->handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(sock->handle);
+    }
+#else
+    if (sock->fd >= 0) {
+        close(sock->fd);
+    }
+#endif
+    free(sock);
+    return retval;
+}
+
+int
+nl_transact_nopool(int protocol, const struct ofpbuf *request,
+            struct ofpbuf **replyp)
+{
+    struct nl_sock *sock;
+    int error;
+
+    error = nl_sock_create_nopool(protocol, &sock);
+    if (error) {
+        if (replyp) {
+            *replyp = NULL;
+        }
+        return error;
+    }
+
+    error = nl_sock_transact(sock, request, replyp);
+    nl_sock_destroy(sock);
+
+    return error;
+}
+
 /* Sends the 'request' member of the 'n' transactions in 'transactions' on a
  * Netlink socket for the given 'protocol' (e.g. NETLINK_ROUTE or
  * NETLINK_GENERIC), in order, and receives responses to all of them.  Fills in
