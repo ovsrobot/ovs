@@ -1054,6 +1054,9 @@ netdev_linux_destruct(struct netdev *netdev_)
     {
         ioctl(netdev->tap_fd, TUNSETPERSIST, 0);
         close(netdev->tap_fd);
+        if (netdev->netns != NULL) {
+            free(netdev->netns);
+        }
     }
 
     if (netdev->miimon_interval > 0) {
@@ -3509,6 +3512,48 @@ exit:
     return error;
 }
 
+static int
+netdev_tap_set_config(struct netdev *netdev, const struct smap *args,
+                        char **errp OVS_UNUSED)
+{
+    struct netdev_linux *dev = netdev_linux_cast(netdev);
+    const char *netns;
+
+    ovs_mutex_lock(&dev->mutex);
+    netns = smap_get(args, "netns");
+    if (netns != NULL) {
+        char nspath[128];
+        int nsfd;
+
+        sprintf(nspath, "/var/run/netns/%s", netns);
+        nsfd = open(nspath, O_RDONLY);
+        if (nsfd < 0) {
+            ovs_mutex_unlock(&dev->mutex);
+            VLOG_ERR("%s: netns %s doesn't exist.",
+                         netdev_get_name(netdev), netns);
+            return EINVAL;
+        }
+        close(nsfd);
+    }
+
+    if (netns != NULL) {
+        dev->netns = xstrdup(netns);
+    }
+    ovs_mutex_unlock(&dev->mutex);
+    return 0;
+}
+
+static int
+netdev_tap_get_config(const struct netdev *netdev, struct smap *args)
+{
+    struct netdev_linux *dev = netdev_linux_cast(netdev);
+
+    ovs_mutex_lock(&dev->mutex);
+    smap_add_format(args, "netns", "%s", dev->netns);
+    ovs_mutex_unlock(&dev->mutex);
+    return 0;
+}
+
 #define NETDEV_LINUX_CLASS_COMMON                               \
     .run = netdev_linux_run,                                    \
     .wait = netdev_linux_wait,                                  \
@@ -3573,6 +3618,8 @@ const struct netdev_class netdev_tap_class = {
     .get_stats = netdev_tap_get_stats,
     .get_features = netdev_linux_get_features,
     .get_status = netdev_linux_get_status,
+    .set_config = netdev_tap_set_config,
+    .get_config = netdev_tap_get_config,
     .send = netdev_linux_send,
     .rxq_construct = netdev_linux_rxq_construct,
     .rxq_destruct = netdev_linux_rxq_destruct,
