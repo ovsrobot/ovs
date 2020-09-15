@@ -19,6 +19,11 @@ import random
 import socket
 import sys
 
+try:
+    from OpenSSL import SSL
+except ImportError:
+    SSL = None
+
 import ovs.fatal_signal
 import ovs.poller
 import ovs.vlog
@@ -184,7 +189,7 @@ def check_connection_completion(sock):
                 # XXX rate-limit
                 vlog.err("poll return POLLERR but send succeeded")
                 return errno.EPROTO
-            except socket.error as e:
+            except (socket.error, SSL.Error) if SSL else socket.error  as e:
                 return get_exception_errno(e)
         else:
             return 0
@@ -259,7 +264,7 @@ def get_exception_errno(e):
     exception is documented as having two completely different forms of
     arguments: either a string or a (errno, string) tuple.  We only want the
     errno."""
-    if isinstance(e.args, tuple):
+    if isinstance(e, socket.error) and isinstance(e.args, tuple):
         return e.args[0]
     else:
         return errno.EPROTO
