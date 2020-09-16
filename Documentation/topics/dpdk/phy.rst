@@ -379,6 +379,28 @@ an eth device whose mac address is ``00:11:22:33:44:55``::
     $ ovs-vsctl add-port br0 dpdk-mac -- set Interface dpdk-mac type=dpdk \
        options:dpdk-devargs="class=eth,mac=00:11:22:33:44:55"
 
+Representor specific configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In some topologies, a VF must be configured before being assigned to a
+guest (VM) machine.  This configuration is done through VF-specific fields
+in the ``options`` column of the Interface table.
+
+.. important::
+
+   Some DPDK port use `bifurcated drivers <bifurcated-drivers>`__,
+   which means that a kernel netdevice remains when Open vSwitch is stopped.
+
+   In such case, any configuration applied to a VF would remain set on the
+   kernel netdevice, and be inherited from it when Open vSwitch is restarted,
+   even if the options described in this section are unset from Open vSwitch.
+
+.. _bifurcated-drivers: http://doc.dpdk.org/guides/linux_gsg/linux_drivers.html#bifurcated-driver
+
+- Configure the VF MAC address::
+
+    $ ovs-vsctl set Interface dpdk-rep0 options:dpdk-vf-mac=00:11:22:33:44:55
+
 Jumbo Frames
 ------------
 

@@ -27,6 +27,8 @@ v2.14.0 - 17 Aug 2020
        to list and change log levels in DPDK components.
      * Vhost-user Dequeue zero-copy support is deprecated and will be removed
        in the next release.
+     * New 'options:dpdk-vf-mac' field for DPDK interface of VF ports,
+       that allows configuring the MAC address of a VF representor.
    - Linux datapath:
      * Support for kernel versions up to 5.5.x.
    - AF_XDP:
