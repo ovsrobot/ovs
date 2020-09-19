@@ -4,6 +4,9 @@ Post-v2.14.0
      * New unixctl command 'ovsdb-server/get-db-storage-status' to show the
        status of the storage that's backing a database.
 
+   - DPDK:
+     * The SMC cache is enabled by default.
+     * The EMC cache is disabled by default.
 
 v2.14.0 - 17 Aug 2020
 ---------------------
