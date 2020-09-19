@@ -311,6 +311,7 @@
  *         memory_order_seq_cst for atomic_flag_clear()).
  */
 
+#include <config.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -331,7 +332,7 @@
         #include "ovs-atomic-c11.h"
     #elif __GNUC__ >= 5 && !defined(__cplusplus)
         #error "GCC 5+ should have <stdatomic.h>"
-    #elif __GNUC__ >= 5 || (__GNUC__ >= 4 && __GNUC_MINOR__ >= 7)
+    #elif __GNUC__ >= 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7)
         #include "ovs-atomic-gcc4.7+.h"
     #elif __GNUC__ && defined(__x86_64__)
         #include "ovs-atomic-x86_64.h"
