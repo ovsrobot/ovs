@@ -71,6 +71,7 @@ DOC_SOURCE = \
 	Documentation/howto/sflow.rst \
 	Documentation/howto/tunneling.png \
 	Documentation/howto/tunneling.rst \
+	Documentation/howto/userspace-udp-performance-tunning.rst \
 	Documentation/howto/userspace-tunneling.rst \
 	Documentation/howto/vlan.png \
 	Documentation/howto/vlan.rst \
