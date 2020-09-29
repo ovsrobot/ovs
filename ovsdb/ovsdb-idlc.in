@@ -282,7 +282,7 @@ const struct %(s)s *%(s)s_table_track_get_first(const struct %(s)s_table *);
 /* Returns true if 'row' was inserted since the last change tracking reset. */
 static inline bool %(s)s_is_new(const struct %(s)s *row)
 {
-    return %(s)s_row_get_seqno(row, OVSDB_IDL_CHANGE_MODIFY) == 0;
+    return %(s)s_row_get_seqno(row, OVSDB_IDL_CHANGE_INSERT) > 0;
 }
 
 /* Returns true if 'row' was deleted since the last change tracking reset. */
