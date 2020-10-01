@@ -48,7 +48,8 @@ v2.14.0 - 17 Aug 2020
    - Tunnels: TC Flower offload
      * Tunnel Local endpoint address masked match are supported.
      * Tunnel Romte endpoint address masked match are supported.
-
+   - 'ovs-dpctl add-flows' command has been added which allows adding,
+     deleting, or modifying flows based on information read from a file.
 
 v2.13.0 - 14 Feb 2020
 ---------------------
