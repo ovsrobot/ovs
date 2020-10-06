@@ -23,6 +23,15 @@ import ovs.fatal_signal
 import ovs.poller
 import ovs.vlog
 
+try:
+    from OpenSSL import SSL
+    SSLError = SSL.Error
+except ImportError:
+    SSL = None
+    # Define an exception class to catch, even though it's never raised.
+    class SSLError(Exception):
+        pass
+
 if sys.platform == 'win32':
     import ovs.winutils as winutils
     import win32file
@@ -186,6 +195,9 @@ def check_connection_completion(sock):
                 return errno.EPROTO
             except socket.error as e:
                 return get_exception_errno(e)
+            except SSLError as e:
+                vlog.err("SSL error %s" % e)
+                return errno.EPROTO
         else:
             return 0
     else:
