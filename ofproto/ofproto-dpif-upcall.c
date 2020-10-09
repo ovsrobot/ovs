@@ -2367,11 +2367,6 @@ push_dp_ops(struct udpif *udpif, struct ukey_op *ops, size_t n_ops)
         stats = op->dop.flow_del.stats;
         push = &push_buf;
 
-        if (op->dop.type != DPIF_OP_FLOW_DEL) {
-            /* Only deleted flows need their stats pushed. */
-            continue;
-        }
-
         if (op->dop.error) {
             /* flow_del error, 'stats' is unusable. */
             if (op->ukey) {
@@ -2379,6 +2374,11 @@ push_dp_ops(struct udpif *udpif, struct ukey_op *ops, size_t n_ops)
                 transition_ukey(op->ukey, UKEY_EVICTED);
                 ovs_mutex_unlock(&op->ukey->mutex);
             }
+            continue;
+        }
+
+        if (op->dop.type != DPIF_OP_FLOW_DEL) {
+            /* Only deleted flows need their stats pushed. */
             continue;
         }
 
