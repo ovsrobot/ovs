@@ -39,7 +39,7 @@ typedef enum {
     memory_order_release,
     memory_order_acq_rel,
     memory_order_seq_cst
-} memory_order;
+} ovs_memory_order;
 
 #define IS_LOCKLESS_ATOMIC(OBJECT) (sizeof(OBJECT) <= sizeof(void *))
 
@@ -47,7 +47,7 @@ typedef enum {
 #define atomic_init(OBJECT, VALUE) (*(OBJECT) = (VALUE), (void) 0)
 
 static inline void
-atomic_thread_fence(memory_order order)
+atomic_thread_fence(ovs_memory_order order)
 {
     if (order != memory_order_relaxed) {
         __sync_synchronize();
@@ -55,7 +55,7 @@ atomic_thread_fence(memory_order order)
 }
 
 static inline void
-atomic_thread_fence_if_seq_cst(memory_order order)
+atomic_thread_fence_if_seq_cst(ovs_memory_order order)
 {
     if (order == memory_order_seq_cst) {
         __sync_synchronize();
@@ -63,7 +63,7 @@ atomic_thread_fence_if_seq_cst(memory_order order)
 }
 
 static inline void
-atomic_signal_fence(memory_order order)
+atomic_signal_fence(ovs_memory_order order)
 {
     if (order != memory_order_relaxed) {
         asm volatile("" : : : "memory");
@@ -168,7 +168,7 @@ typedef struct {
 
 static inline bool
 atomic_flag_test_and_set_explicit(volatile atomic_flag *object,
-                                  memory_order order)
+                                  ovs_memory_order order)
 {
     bool old;
 
@@ -188,7 +188,7 @@ atomic_flag_test_and_set_explicit(volatile atomic_flag *object,
 
 static inline void
 atomic_flag_clear_explicit(volatile atomic_flag *object,
-                           memory_order order)
+                           ovs_memory_order order)
 {
     /* __sync_lock_release() by itself is a release barrier.  For
      * anything else additional barrier may be needed. */
