@@ -529,7 +529,9 @@ enum dpif_flow_put_flags {
     DPIF_FP_CREATE = 1 << 0,    /* Allow creating a new flow. */
     DPIF_FP_MODIFY = 1 << 1,    /* Allow modifying an existing flow. */
     DPIF_FP_ZERO_STATS = 1 << 2, /* Zero the stats of an existing flow. */
-    DPIF_FP_PROBE = 1 << 3      /* Suppress error messages, if any. */
+    DPIF_FP_PROBE = 1 << 3,     /* Suppress error messages, if any. */
+    DPIF_FP_NO_OFFLOAD = 1 << 4,  /* Don't try send to netdev */
+    DPIF_FP_TRY_OFFLOAD = 1 << 5  /* Only try send to netdev */
 };
 
 bool dpif_probe_feature(struct dpif *, const char *name,

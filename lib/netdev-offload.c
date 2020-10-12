@@ -621,11 +621,26 @@ netdev_ifindex_to_odp_port(int ifindex)
 }
 
 static bool netdev_offload_rebalance_policy = false;
+static unsigned netdev_offload_delay = 0;
 
 bool
 netdev_is_offload_rebalance_policy_enabled(void)
 {
     return netdev_offload_rebalance_policy;
+}
+
+unsigned
+netdev_is_offload_delay(void)
+{
+    return netdev_offload_delay;
+}
+
+static void
+netdev_set_offload_delay(unsigned delay)
+{
+    if (delay >= 10000 && delay <= 60000) {
+        netdev_offload_delay = delay;
+    }
 }
 
 static void
@@ -659,6 +674,9 @@ netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
             if (smap_get_bool(ovs_other_config, "offload-rebalance", false)) {
                 netdev_offload_rebalance_policy = true;
             }
+
+            netdev_set_offload_delay(smap_get_int(ovs_other_config,
+                                                  "offload-delay", 0));
 
             netdev_ports_flow_init();
 

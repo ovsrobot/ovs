@@ -649,6 +649,27 @@
             be set to 'skip_sw'.
         </p>
       </column>
+
+      <column name="other_config" key="offload-delay"
+              type='{"type": "integer",
+                     "minInteger": 10000, "maxInteger": 60000}'>
+        <p>
+            Configures HW offload delay, that allows delay some time to
+            offload the flows. This can be used to only offload flow of
+            persistent connection.
+        </p>
+        <p>
+          Set this value to <code>10000-60000</code> to enable this option.
+        </p>
+        <p>
+          The default value is <code>0</code>. Changing this value requires
+          restarting the daemon.
+        </p>
+        <p>
+            This is only relevant if HW offloading is enabled (hw-offload).
+            When this policy is enabled.
+        </p>
+      </column>
       <column name="other_config" key="pmd-auto-lb"
               type='{"type": "boolean"}'>
         <p>

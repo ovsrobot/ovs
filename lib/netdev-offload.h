@@ -103,6 +103,7 @@ bool netdev_any_oor(void);
 bool netdev_is_flow_api_enabled(void);
 void netdev_set_flow_api_enabled(const struct smap *ovs_other_config);
 bool netdev_is_offload_rebalance_policy_enabled(void);
+unsigned netdev_is_offload_delay(void);
 
 struct dpif_port;
 int netdev_ports_insert(struct netdev *, const char *dpif_type,

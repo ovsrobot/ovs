@@ -310,6 +310,7 @@ struct udpif_key {
 
     uint32_t key_recirc_id;   /* Non-zero if reference is held by the ukey. */
     struct recirc_refs recircs;  /* Action recirc IDs with references held. */
+    bool try_offload;         /* Delay offload flags for flow */
 
 #define OFFL_REBAL_INTVL_MSEC  3000	/* dynamic offload rebalance freq */
     struct netdev *in_netdev;		/* in_odp_port's netdev */
@@ -1582,8 +1583,13 @@ handle_upcalls(struct udpif *udpif, struct upcall *upcalls,
             struct udpif_key *ukey = upcall->ukey;
 
             if (ukey_install(udpif, ukey)) {
+                enum dpif_flow_put_flags flags = DPIF_FP_CREATE;
+
                 upcall->ukey_persists = true;
-                put_op_init(&ops[n_ops++], ukey, DPIF_FP_CREATE);
+                if (netdev_is_offload_delay()) {
+                    flags |= DPIF_FP_NO_OFFLOAD;
+                }
+                put_op_init(&ops[n_ops++], ukey, flags);
             }
         }
 
@@ -1706,6 +1712,7 @@ ukey_create__(const struct nlattr *key, size_t key_len,
     ukey->stats.used = used;
     ukey->xcache = NULL;
 
+    ukey->try_offload = false;
     ukey->offloaded = false;
     ukey->in_netdev = NULL;
     ukey->flow_packets = ukey->flow_backlog_packets = 0;
@@ -2469,7 +2476,8 @@ log_unexpected_flow(const struct dpif_flow *flow, int error)
 static void
 reval_op_init(struct ukey_op *op, enum reval_result result,
               struct udpif *udpif, struct udpif_key *ukey,
-              struct recirc_refs *recircs, struct ofpbuf *odp_actions)
+              struct recirc_refs *recircs, struct ofpbuf *odp_actions,
+              enum dpif_flow_put_flags flags)
     OVS_REQUIRES(ukey->mutex)
 {
     if (result == UKEY_DELETE) {
@@ -2483,7 +2491,7 @@ reval_op_init(struct ukey_op *op, enum reval_result result,
         /* ukey->key_recirc_id remains, as the key is the same as before. */
 
         ukey_set_actions(ukey, odp_actions);
-        put_op_init(op, ukey, DPIF_FP_MODIFY);
+        put_op_init(op, ukey, DPIF_FP_MODIFY | flags);
     }
 }
 
@@ -2679,6 +2687,7 @@ revalidate(struct revalidator *revalidator)
             struct dpif_flow_stats stats = f->stats;
             enum reval_result result;
             struct udpif_key *ukey;
+            unsigned delay_offload;
             bool already_dumped;
             int error;
 
@@ -2737,10 +2746,22 @@ revalidate(struct revalidator *revalidator)
                 udpif_update_flow_pps(udpif, ukey, f);
             }
 
-            if (result != UKEY_KEEP) {
+            delay_offload = netdev_is_offload_delay();
+            if (delay_offload && result == UKEY_KEEP && !ukey->try_offload) {
+                if (used - ukey->created > delay_offload
+                    && now - used < 2000) {
+                    reval_op_init(&ops[n_ops++], UKEY_MODIFY, udpif,
+                                  ukey, &recircs,
+                                  ovsrcu_get(struct ofpbuf *, &ukey->actions),
+                                  DPIF_FP_TRY_OFFLOAD);
+                    ukey->try_offload = true;
+                    ukey->stats.n_packets = 0;
+                    ukey->stats.n_bytes = 0;
+                }
+            } else if (result != UKEY_KEEP) {
                 /* Takes ownership of 'recircs'. */
                 reval_op_init(&ops[n_ops++], result, udpif, ukey, &recircs,
-                              &odp_actions);
+                              &odp_actions, 0);
             }
             ovs_mutex_unlock(&ukey->mutex);
         }
@@ -2818,7 +2839,7 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
                 if (result != UKEY_KEEP) {
                     /* Clears 'recircs' if filled by revalidate_ukey(). */
                     reval_op_init(&ops[n_ops++], result, udpif, ukey, &recircs,
-                                  &odp_actions);
+                                  &odp_actions, 0);
                 }
             }
             ovs_mutex_unlock(&ukey->mutex);

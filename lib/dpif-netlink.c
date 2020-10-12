@@ -2060,6 +2060,10 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
         return EOPNOTSUPP;
     }
 
+    if (put->flags & DPIF_FP_NO_OFFLOAD) {
+        return EOPNOTSUPP;
+    }
+
     err = parse_key_and_mask_to_match(put->key, put->key_len, put->mask,
                                       put->mask_len, &match);
     if (err) {
@@ -2146,6 +2150,10 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
         VLOG_RL(&rl, level, "failed to offload flow: %s: %s",
                 ovs_strerror(err),
                 (oor_netdev ? oor_netdev->name : dev->name));
+    }
+
+    if (put->flags & DPIF_FP_TRY_OFFLOAD) {
+        return 0;
     }
 
 out:
