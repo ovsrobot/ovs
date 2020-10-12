@@ -1447,7 +1447,6 @@ netdev_dpdk_destruct(struct netdev *netdev)
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     struct rte_device *rte_dev;
     struct rte_eth_dev *eth_dev;
-    bool remove_on_close;
 
     ovs_mutex_lock(&dpdk_mutex);
 
@@ -1459,9 +1458,6 @@ netdev_dpdk_destruct(struct netdev *netdev)
          * FIXME: avoid direct access to DPDK internal array rte_eth_devices.
          */
         eth_dev = &rte_eth_devices[dev->port_id];
-        remove_on_close =
-            eth_dev->data &&
-                (eth_dev->data->dev_flags & RTE_ETH_DEV_CLOSE_REMOVE);
         rte_dev = eth_dev->device;
 
         /* Remove the eth device. */
@@ -1472,7 +1468,7 @@ netdev_dpdk_destruct(struct netdev *netdev)
          * are not supported), or if all the eth devices belonging to the rte
          * device are closed.
          */
-        if (!remove_on_close || !netdev_dpdk_get_num_ports(rte_dev)) {
+        if (!netdev_dpdk_get_num_ports(rte_dev)) {
             int ret = rte_dev_remove(rte_dev);
 
             if (ret < 0) {
