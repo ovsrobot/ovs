@@ -40,19 +40,19 @@ typedef enum {
     memory_order_release,
     memory_order_acq_rel,
     memory_order_seq_cst
-} memory_order;
+} ovs_memory_order;
 
 #define ATOMIC_VAR_INIT(VALUE) (VALUE)
 #define atomic_init(OBJECT, VALUE) (*(OBJECT) = (VALUE), (void) 0)
 
 static inline void
-atomic_thread_fence(memory_order order OVS_UNUSED)
+atomic_thread_fence(ovs_memory_order order OVS_UNUSED)
 {
     /* Nothing to do. */
 }
 
 static inline void
-atomic_signal_fence(memory_order order OVS_UNUSED)
+atomic_signal_fence(ovs_memory_order order OVS_UNUSED)
 {
     /* Nothing to do. */
 }
@@ -117,7 +117,7 @@ atomic_flag_test_and_set(volatile atomic_flag *flag_)
 
 static inline bool
 atomic_flag_test_and_set_explicit(volatile atomic_flag *flag,
-                                  memory_order order OVS_UNUSED)
+                                  ovs_memory_order order OVS_UNUSED)
 {
     return atomic_flag_test_and_set(flag);
 }
@@ -134,7 +134,7 @@ atomic_flag_clear(volatile atomic_flag *flag_)
 
 static inline void
 atomic_flag_clear_explicit(volatile atomic_flag *flag,
-                           memory_order order OVS_UNUSED)
+                           ovs_memory_order order OVS_UNUSED)
 {
     atomic_flag_clear(flag);
 }

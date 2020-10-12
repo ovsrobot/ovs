@@ -107,7 +107,7 @@ typedef enum {
     memory_order_release,
     memory_order_acq_rel,
     memory_order_seq_cst
-} memory_order;
+} ovs_memory_order;
 
 #define ATOMIC_BOOL_LOCK_FREE 2
 #define ATOMIC_CHAR_LOCK_FREE 2
@@ -144,7 +144,7 @@ typedef enum {
  * without a compiler memory barrier.
  */
 static inline void
-atomic_compiler_barrier(memory_order order)
+atomic_compiler_barrier(ovs_memory_order order)
 {
     if (order > memory_order_consume) {
         compiler_barrier();
@@ -152,7 +152,7 @@ atomic_compiler_barrier(memory_order order)
 }
 
 static inline void
-atomic_thread_fence(memory_order order)
+atomic_thread_fence(ovs_memory_order order)
 {
     if (order == memory_order_seq_cst) {
         cpu_barrier();
@@ -162,7 +162,7 @@ atomic_thread_fence(memory_order order)
 }
 
 static inline void
-atomic_signal_fence(memory_order order)
+atomic_signal_fence(ovs_memory_order order)
 {
     atomic_compiler_barrier(order);
 }

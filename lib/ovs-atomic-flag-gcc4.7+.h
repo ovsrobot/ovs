@@ -28,7 +28,7 @@ typedef struct {
 
 static inline bool
 atomic_flag_test_and_set_explicit(volatile atomic_flag *object,
-                                  memory_order order)
+                                  ovs_memory_order order)
 {
     return __atomic_test_and_set(&object->b, order);
 }
@@ -40,7 +40,7 @@ atomic_flag_test_and_set(volatile atomic_flag *object)
 }
 
 static inline void
-atomic_flag_clear_explicit(volatile atomic_flag *object, memory_order order)
+atomic_flag_clear_explicit(volatile atomic_flag *object, ovs_memory_order order)
 {
     __atomic_clear(object, order);
 }

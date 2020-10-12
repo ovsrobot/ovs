@@ -28,7 +28,7 @@ typedef enum {
     memory_order_release = __ATOMIC_RELEASE,
     memory_order_acq_rel = __ATOMIC_ACQ_REL,
     memory_order_seq_cst = __ATOMIC_SEQ_CST
-} memory_order;
+} ovs_memory_order;
 
 #define ATOMIC_VAR_INIT(VALUE) (VALUE)
 #define atomic_init(OBJECT, VALUE) (*(OBJECT) = (VALUE), (void) 0)

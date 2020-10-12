@@ -36,7 +36,7 @@ typedef enum {
     memory_order_release = 3,
     memory_order_acq_rel = 4,
     memory_order_seq_cst = 5
-} memory_order;
+} ovs_memory_order;
 
 #define atomic_thread_fence(ORDER) __c11_atomic_thread_fence(ORDER)
 #define atomic_signal_fence(ORDER) __c11_atomic_signal_fence(ORDER)

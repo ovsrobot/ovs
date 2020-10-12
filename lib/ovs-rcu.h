@@ -186,7 +186,7 @@
     ({                                                                  \
         typeof(VAR) ovsrcu_var = (VAR);                                 \
         typeof(VALUE) ovsrcu_value = (VALUE);                           \
-        memory_order ovsrcu_order = (ORDER);                            \
+        ovs_memory_order ovsrcu_order = (ORDER);                            \
                                                                         \
         atomic_store_explicit(&ovsrcu_var->p, ovsrcu_value, ovsrcu_order); \
         (void *) 0;                                                     \
@@ -196,7 +196,7 @@ struct ovsrcu_pointer { ATOMIC(void *) p; };
 #define OVSRCU_TYPE(TYPE) struct ovsrcu_pointer
 #define OVSRCU_INITIALIZER(VALUE) { ATOMIC_VAR_INIT(VALUE) }
 static inline void *
-ovsrcu_get__(const struct ovsrcu_pointer *pointer, memory_order order)
+ovsrcu_get__(const struct ovsrcu_pointer *pointer, ovs_memory_order order)
 {
     void *value;
     atomic_read_explicit(&CONST_CAST(struct ovsrcu_pointer *, pointer)->p,
@@ -210,7 +210,7 @@ ovsrcu_get__(const struct ovsrcu_pointer *pointer, memory_order order)
 
 static inline void ovsrcu_set__(struct ovsrcu_pointer *pointer,
                                 const void *value,
-                                memory_order order)
+                                ovs_memory_order order)
 {
     atomic_store_explicit(&pointer->p, CONST_CAST(void *, value), order);
 }
@@ -247,7 +247,7 @@ void ovsrcu_postpone__(void (*function)(void *aux), void *aux);
  * an RCU protected pointer to a malloc'd int. */
 typedef struct { atomic_int v; } ovsrcu_index;
 
-static inline int ovsrcu_index_get__(const ovsrcu_index *i, memory_order order)
+static inline int ovsrcu_index_get__(const ovsrcu_index *i, ovs_memory_order order)
 {
     int ret;
     atomic_read_explicit(CONST_CAST(atomic_int *, &i->v), &ret, order);
@@ -270,7 +270,7 @@ static inline int ovsrcu_index_get_protected(const ovsrcu_index *i)
 }
 
 static inline void ovsrcu_index_set__(ovsrcu_index *i, int value,
-                                      memory_order order)
+                                      ovs_memory_order order)
 {
     atomic_store_explicit(&i->v, value, order);
 }

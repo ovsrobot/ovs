@@ -106,7 +106,7 @@
  * Barriers
  * ========
  *
- * enum memory_order specifies the strictness of a memory barrier.  It has the
+ * enum ovs_memory_order specifies the strictness of a memory barrier.  It has the
  * following values:
  *
  *    memory_order_relaxed:
@@ -183,20 +183,20 @@
  *        whole system, providing a total order for stores on all atomic
  *        variables.
  *
- * OVS atomics require the memory_order to be passed as a compile-time constant
+ * OVS atomics require the ovs_memory_order to be passed as a compile-time constant
  * value, as some compiler implementations may perform poorly if the memory
  * order parameter is passed in as a run-time value.
  *
  * The following functions insert explicit barriers.  Most of the other atomic
  * functions also include barriers.
  *
- *     void atomic_thread_fence(memory_order order);
+ *     void atomic_thread_fence(ovs_memory_order order);
  *
  *         Inserts a barrier of the specified type.
  *
  *         For memory_order_relaxed, this is a no-op.
  *
- *     void atomic_signal_fence(memory_order order);
+ *     void atomic_signal_fence(ovs_memory_order order);
  *
  *         Inserts a barrier of the specified type, but only with respect to
  *         signal handlers in the same thread as the barrier.  This is
@@ -213,7 +213,7 @@
  * The "store" and "compare_exchange" primitives match C11:
  *
  *     void atomic_store(A *object, C value);
- *     void atomic_store_explicit(A *object, C value, memory_order);
+ *     void atomic_store_explicit(A *object, C value, ovs_memory_order);
  *
  *         Atomically stores 'value' into '*object', respecting the given
  *         memory order (or memory_order_seq_cst for atomic_store()).
@@ -222,12 +222,12 @@
  *     bool atomic_compare_exchange_weak(A *object, C *expected, C desired);
  *     bool atomic_compare_exchange_strong_explicit(A *object, C *expected,
  *                                                  C desired,
- *                                                  memory_order success,
- *                                                  memory_order failure);
+ *                                                  ovs_memory_order success,
+ *                                                  ovs_memory_order failure);
  *     bool atomic_compare_exchange_weak_explicit(A *object, C *expected,
  *                                                  C desired,
- *                                                  memory_order success,
- *                                                  memory_order failure);
+ *                                                  ovs_memory_order success,
+ *                                                  ovs_memory_order failure);
  *
  *         Atomically loads '*object' and compares it with '*expected' and if
  *         equal, stores 'desired' into '*object' (an atomic read-modify-write
@@ -249,7 +249,7 @@
  * primitives in standard C:
  *
  *     void atomic_read(A *src, C *dst);
- *     void atomic_read_explicit(A *src, C *dst, memory_order);
+ *     void atomic_read_explicit(A *src, C *dst, ovs_memory_order);
  *
  *         Atomically loads a value from 'src', writing the value read into
  *         '*dst', respecting the given memory order (or memory_order_seq_cst
@@ -260,11 +260,11 @@
  *     void atomic_or(A *rmw, C arg, C *orig);
  *     void atomic_xor(A *rmw, C arg, C *orig);
  *     void atomic_and(A *rmw, C arg, C *orig);
- *     void atomic_add_explicit(A *rmw, C arg, C *orig, memory_order);
- *     void atomic_sub_explicit(A *rmw, C arg, C *orig, memory_order);
- *     void atomic_or_explicit(A *rmw, C arg, C *orig, memory_order);
- *     void atomic_xor_explicit(A *rmw, C arg, C *orig, memory_order);
- *     void atomic_and_explicit(A *rmw, C arg, C *orig, memory_order);
+ *     void atomic_add_explicit(A *rmw, C arg, C *orig, ovs_memory_order);
+ *     void atomic_sub_explicit(A *rmw, C arg, C *orig, ovs_memory_order);
+ *     void atomic_or_explicit(A *rmw, C arg, C *orig, ovs_memory_order);
+ *     void atomic_xor_explicit(A *rmw, C arg, C *orig, ovs_memory_order);
+ *     void atomic_and_explicit(A *rmw, C arg, C *orig, ovs_memory_order);
  *
  *         Atomically applies the given operation, with 'arg' as the second
  *         operand, to '*rmw', and stores the original value of '*rmw' into
@@ -298,14 +298,14 @@
  *
  *     bool atomic_flag_test_and_set(atomic_flag *object)
  *     bool atomic_flag_test_and_set_explicit(atomic_flag *object,
- *                                            memory_order);
+ *                                            ovs_memory_order);
  *
  *         Atomically sets '*object', respecting the given memory order (or
  *         memory_order_seq_cst for atomic_flag_test_and_set()).  Returns the
  *         previous value of the flag (false for clear, true for set).
  *
  *     void atomic_flag_clear(atomic_flag *object);
- *     void atomic_flag_clear_explicit(atomic_flag *object, memory_order);
+ *     void atomic_flag_clear_explicit(atomic_flag *object, ovs_memory_order);
  *
  *         Atomically clears '*object', respecting the given memory order (or
  *         memory_order_seq_cst for atomic_flag_clear()).

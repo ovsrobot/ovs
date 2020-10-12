@@ -39,7 +39,7 @@ typedef enum {
     memory_order_release,
     memory_order_acq_rel,
     memory_order_seq_cst
-} memory_order;
+} ovs_memory_order;
 
 #if _MSC_VER > 1800 && defined(_M_IX86)
 /* From WDK 10 _InlineInterlocked* functions are renamed to
@@ -63,7 +63,7 @@ typedef enum {
 #define atomic_init(OBJECT, VALUE) (*(OBJECT) = (VALUE), (void) 0)
 
 static inline void
-atomic_compiler_barrier(memory_order order)
+atomic_compiler_barrier(ovs_memory_order order)
 {
     /* In case of 'memory_order_consume', it is implicitly assumed that
      * the compiler will not move instructions that have data-dependency
@@ -74,7 +74,7 @@ atomic_compiler_barrier(memory_order order)
 }
 
 static inline void
-atomic_thread_fence(memory_order order)
+atomic_thread_fence(ovs_memory_order order)
 {
     /* x86 is strongly ordered and acquire/release semantics come
      * automatically. */
@@ -86,7 +86,7 @@ atomic_thread_fence(memory_order order)
 }
 
 static inline void
-atomic_signal_fence(memory_order order)
+atomic_signal_fence(ovs_memory_order order)
 {
     atomic_compiler_barrier(order);
 }
