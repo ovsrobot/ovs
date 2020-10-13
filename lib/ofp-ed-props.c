@@ -48,6 +48,9 @@ decode_ed_prop(const struct ofp_ed_prop_header **ofp_prop,
             if (len > sizeof(*opnmt) || len > *remaining) {
                 return OFPERR_NXBAC_BAD_ED_PROP;
             }
+            if (!is_all_zeros(opnmt->pad, sizeof opnmt->pad)) {
+                return OFPERR_NXBRC_MUST_BE_ZERO;
+            }
             struct ofpact_ed_prop_nsh_md_type *pnmt =
                     ofpbuf_put_uninit(out, sizeof(*pnmt));
             pnmt->header.prop_class = prop_class;
@@ -108,6 +111,7 @@ encode_ed_prop(const struct ofpact_ed_prop **prop,
             opnmt->header.len =
                     offsetof(struct ofp_ed_prop_nsh_md_type, pad);
             opnmt->md_type = pnmt->md_type;
+            memset(opnmt->pad, 0, sizeof opnmt->pad);
             prop_len = sizeof(*pnmt);
             break;
         }
