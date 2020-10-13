@@ -7,6 +7,9 @@ Post-v2.14.0
      * Removed support for vhost-user dequeue zero-copy.
    - The environment variable OVS_UNBOUND_CONF, if set, is now used
      as the DNS resolver's (unbound) configuration file.
+  - ovs-dpctl and 'ovs-appctl dpctl/':
+    * New commands where added, which allow adding, deleting, or modifying
+      flows based on information read from a file.
 
 
 v2.14.0 - 17 Aug 2020
