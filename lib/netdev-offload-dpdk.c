@@ -1092,7 +1092,8 @@ netdev_offload_dpdk_validate_flow(const struct match *match)
     /* Create a wc-zeroed version of flow. */
     match_init(&match_zero_wc, &match->flow, &match->wc);
 
-    if (!is_all_zeros(&match_zero_wc.flow.tunnel,
+    if (flow_tnl_dst_is_set(&match->flow.tunnel) &&
+        !is_all_zeros(&match_zero_wc.flow.tunnel,
                       sizeof match_zero_wc.flow.tunnel)) {
         goto err;
     }
