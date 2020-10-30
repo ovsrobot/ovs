@@ -106,6 +106,22 @@ netdev_flow_key_gen_masks(const struct netdev_flow_key *tbl,
 bool dpcls_rule_matches_key(const struct dpcls_rule *rule,
                             const struct netdev_flow_key *target);
 
+static inline uint32_t
+dpif_netdev_packet_get_rss_hash_orig_pkt(struct dp_packet *packet,
+                                const struct miniflow *mf)
+{
+    uint32_t hash;
+
+    if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
+        hash = dp_packet_get_rss_hash(packet);
+    } else {
+        hash = miniflow_hash_5tuple(mf, 0);
+        dp_packet_set_rss_hash(packet, hash);
+    }
+
+    return hash;
+}
+
 #ifdef  __cplusplus
 }
 #endif

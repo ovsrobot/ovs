@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2020 Intel Corperation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#ifndef DPIF_NETDEV_PRIVATE_DPIF_H
+#define DPIF_NETDEV_PRIVATE_DPIF_H 1
+
+#include "openvswitch/types.h"
+
+/* Forward declarations to avoid including files */
+struct dp_netdev_pmd_thread;
+struct dp_packet_batch;
+
+/* Available implementations for dpif work */
+// TODO make this register/selectable just like DPCLS
+int32_t
+dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
+                             struct dp_packet_batch *packets,
+                             odp_port_t in_port);
+
+#endif /* netdev-private.h */
