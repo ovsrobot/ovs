@@ -45,6 +45,18 @@ struct pkt_flow_meta {
 };
 
 int32_t
+dp_netdev_input_outer_avx512_probe(void)
+{
+    int avx512f_available = dpdk_get_cpu_has_isa("x86_64", "avx512f");
+    int bmi2_available = dpdk_get_cpu_has_isa("x86_64", "bmi2");
+    printf("here: avx512f %d, bmi2 %d\n", avx512f_available, bmi2_available);
+    if (!avx512f_available || !bmi2_available) {
+        return 0;
+    }
+    return 1;
+}
+
+int32_t
 dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                              struct dp_packet_batch *packets,
                              odp_port_t in_port)
