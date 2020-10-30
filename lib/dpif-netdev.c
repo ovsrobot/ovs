@@ -6064,6 +6064,79 @@ reload:
     return NULL;
 }
 
+static inline void
+dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
+                           struct polled_queue *poll_list, int poll_cnt)
+{
+    struct dpcls *cls;
+    uint64_t tot_idle = 0, tot_proc = 0;
+    unsigned int pmd_load = 0;
+
+    if (pmd->ctx.now > pmd->rxq_next_cycle_store) {
+        uint64_t curr_tsc;
+        struct pmd_auto_lb *pmd_alb = &pmd->dp->pmd_alb;
+        if (pmd_alb->is_enabled && !pmd->isolated
+            && (pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE] >=
+                                       pmd->prev_stats[PMD_CYCLES_ITER_IDLE])
+            && (pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY] >=
+                                        pmd->prev_stats[PMD_CYCLES_ITER_BUSY]))
+            {
+            tot_idle = pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE] -
+                       pmd->prev_stats[PMD_CYCLES_ITER_IDLE];
+            tot_proc = pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY] -
+                       pmd->prev_stats[PMD_CYCLES_ITER_BUSY];
+
+            if (tot_proc) {
+                pmd_load = ((tot_proc * 100) / (tot_idle + tot_proc));
+            }
+
+            if (pmd_load >= ALB_PMD_LOAD_THRESHOLD) {
+                atomic_count_inc(&pmd->pmd_overloaded);
+            } else {
+                atomic_count_set(&pmd->pmd_overloaded, 0);
+            }
+        }
+
+        pmd->prev_stats[PMD_CYCLES_ITER_IDLE] =
+                        pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE];
+        pmd->prev_stats[PMD_CYCLES_ITER_BUSY] =
+                        pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY];
+
+        /* Get the cycles that were used to process each queue and store. */
+        for (unsigned i = 0; i < poll_cnt; i++) {
+            uint64_t rxq_cyc_curr = dp_netdev_rxq_get_cycles(poll_list[i].rxq,
+                                                        RXQ_CYCLES_PROC_CURR);
+            dp_netdev_rxq_set_intrvl_cycles(poll_list[i].rxq, rxq_cyc_curr);
+            dp_netdev_rxq_set_cycles(poll_list[i].rxq, RXQ_CYCLES_PROC_CURR,
+                                     0);
+        }
+        curr_tsc = cycles_counter_update(&pmd->perf_stats);
+        if (pmd->intrvl_tsc_prev) {
+            /* There is a prev timestamp, store a new intrvl cycle count. */
+            atomic_store_relaxed(&pmd->intrvl_cycles,
+                                 curr_tsc - pmd->intrvl_tsc_prev);
+        }
+        pmd->intrvl_tsc_prev = curr_tsc;
+        /* Start new measuring interval */
+        pmd->rxq_next_cycle_store = pmd->ctx.now + PMD_RXQ_INTERVAL_LEN;
+    }
+
+    if (pmd->ctx.now > pmd->next_optimization) {
+        /* Try to obtain the flow lock to block out revalidator threads.
+         * If not possible, just try next time. */
+        if (!ovs_mutex_trylock(&pmd->flow_mutex)) {
+            /* Optimize each classifier */
+            CMAP_FOR_EACH (cls, node, &pmd->classifiers) {
+                dpcls_sort_subtable_vector(cls);
+            }
+            ovs_mutex_unlock(&pmd->flow_mutex);
+            /* Start new measuring interval */
+            pmd->next_optimization = pmd->ctx.now
+                                     + DPCLS_OPTIMIZATION_INTERVAL;
+        }
+    }
+}
+
 static void
 dp_netdev_disable_upcall(struct dp_netdev *dp)
     OVS_ACQUIRES(dp->upcall_rwlock)
@@ -8710,79 +8783,6 @@ dpcls_sort_subtable_vector(struct dpcls *cls)
         subtable->hit_cnt = 0;
     }
     pvector_publish(pvec);
-}
-
-static inline void
-dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
-                           struct polled_queue *poll_list, int poll_cnt)
-{
-    struct dpcls *cls;
-    uint64_t tot_idle = 0, tot_proc = 0;
-    unsigned int pmd_load = 0;
-
-    if (pmd->ctx.now > pmd->rxq_next_cycle_store) {
-        uint64_t curr_tsc;
-        struct pmd_auto_lb *pmd_alb = &pmd->dp->pmd_alb;
-        if (pmd_alb->is_enabled && !pmd->isolated
-            && (pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE] >=
-                                       pmd->prev_stats[PMD_CYCLES_ITER_IDLE])
-            && (pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY] >=
-                                        pmd->prev_stats[PMD_CYCLES_ITER_BUSY]))
-            {
-            tot_idle = pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE] -
-                       pmd->prev_stats[PMD_CYCLES_ITER_IDLE];
-            tot_proc = pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY] -
-                       pmd->prev_stats[PMD_CYCLES_ITER_BUSY];
-
-            if (tot_proc) {
-                pmd_load = ((tot_proc * 100) / (tot_idle + tot_proc));
-            }
-
-            if (pmd_load >= ALB_PMD_LOAD_THRESHOLD) {
-                atomic_count_inc(&pmd->pmd_overloaded);
-            } else {
-                atomic_count_set(&pmd->pmd_overloaded, 0);
-            }
-        }
-
-        pmd->prev_stats[PMD_CYCLES_ITER_IDLE] =
-                        pmd->perf_stats.counters.n[PMD_CYCLES_ITER_IDLE];
-        pmd->prev_stats[PMD_CYCLES_ITER_BUSY] =
-                        pmd->perf_stats.counters.n[PMD_CYCLES_ITER_BUSY];
-
-        /* Get the cycles that were used to process each queue and store. */
-        for (unsigned i = 0; i < poll_cnt; i++) {
-            uint64_t rxq_cyc_curr = dp_netdev_rxq_get_cycles(poll_list[i].rxq,
-                                                        RXQ_CYCLES_PROC_CURR);
-            dp_netdev_rxq_set_intrvl_cycles(poll_list[i].rxq, rxq_cyc_curr);
-            dp_netdev_rxq_set_cycles(poll_list[i].rxq, RXQ_CYCLES_PROC_CURR,
-                                     0);
-        }
-        curr_tsc = cycles_counter_update(&pmd->perf_stats);
-        if (pmd->intrvl_tsc_prev) {
-            /* There is a prev timestamp, store a new intrvl cycle count. */
-            atomic_store_relaxed(&pmd->intrvl_cycles,
-                                 curr_tsc - pmd->intrvl_tsc_prev);
-        }
-        pmd->intrvl_tsc_prev = curr_tsc;
-        /* Start new measuring interval */
-        pmd->rxq_next_cycle_store = pmd->ctx.now + PMD_RXQ_INTERVAL_LEN;
-    }
-
-    if (pmd->ctx.now > pmd->next_optimization) {
-        /* Try to obtain the flow lock to block out revalidator threads.
-         * If not possible, just try next time. */
-        if (!ovs_mutex_trylock(&pmd->flow_mutex)) {
-            /* Optimize each classifier */
-            CMAP_FOR_EACH (cls, node, &pmd->classifiers) {
-                dpcls_sort_subtable_vector(cls);
-            }
-            ovs_mutex_unlock(&pmd->flow_mutex);
-            /* Start new measuring interval */
-            pmd->next_optimization = pmd->ctx.now
-                                     + DPCLS_OPTIMIZATION_INTERVAL;
-        }
-    }
 }
 
 /* Insert 'rule' into 'cls'. */
