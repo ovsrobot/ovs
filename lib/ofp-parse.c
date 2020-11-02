@@ -184,6 +184,7 @@ ofp_parse_protocol(const char *name, const struct ofp_protocol **p_out)
         { "ip4", ETH_TYPE_IP, 0 },
         { "arp", ETH_TYPE_ARP, 0 },
         { "icmp", ETH_TYPE_IP, IPPROTO_ICMP },
+        { "igmp", ETH_TYPE_IP, IPPROTO_IGMP },
         { "tcp", ETH_TYPE_IP, IPPROTO_TCP },
         { "udp", ETH_TYPE_IP, IPPROTO_UDP },
         { "sctp", ETH_TYPE_IP, IPPROTO_SCTP },

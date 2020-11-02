@@ -191,6 +191,7 @@ actions=note:41.42.43,note:00.01.02.03.04.05.06.07,note
 ip,actions=set_field:10.4.3.77->ip_src,mod_nw_ecn:2
 sctp actions=drop
 sctp actions=drop
+igmp actions=drop
 in_port=0 actions=resubmit:0
 actions=sample(probability=12345,collector_set_id=23456,obs_domain_id=34567,obs_point_id=45678)
 actions=sample(probability=12345,collector_set_id=23456,obs_domain_id=34567,obs_point_id=45678,ingress)
@@ -225,6 +226,7 @@ OFPT_FLOW_MOD: ADD actions=note:41.42.43.00.00.00,note:00.01.02.03.04.05.06.07.0
 OFPT_FLOW_MOD: ADD ip actions=mod_nw_src:10.4.3.77,load:0x2->NXM_NX_IP_ECN[]
 OFPT_FLOW_MOD: ADD sctp actions=drop
 OFPT_FLOW_MOD: ADD sctp actions=drop
+OFPT_FLOW_MOD: ADD igmp actions=drop
 OFPT_FLOW_MOD: ADD in_port=0 actions=resubmit:0
 OFPT_FLOW_MOD: ADD actions=sample(probability=12345,collector_set_id=23456,obs_domain_id=34567,obs_point_id=45678)
 OFPT_FLOW_MOD: ADD actions=sample(probability=12345,collector_set_id=23456,obs_domain_id=34567,obs_point_id=45678,ingress)
