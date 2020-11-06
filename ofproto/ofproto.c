@@ -5544,10 +5544,6 @@ replace_rule_start(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
             ovs_mutex_lock(&new_rule->mutex);
             ovs_mutex_lock(&old_rule->mutex);
             if (ofm->command != OFPFC_ADD) {
-                new_rule->idle_timeout = old_rule->idle_timeout;
-                new_rule->hard_timeout = old_rule->hard_timeout;
-                *CONST_CAST(uint16_t *, &new_rule->importance) = old_rule->importance;
-                new_rule->flags = old_rule->flags;
                 new_rule->created = old_rule->created;
             }
             if (!change_cookie) {
