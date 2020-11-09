@@ -188,6 +188,17 @@ enum ovsdb_idl_monitoring {
                                          outstanding. */
 };
 
+enum ovsdb_idl_monitor_cond_state {
+    OVSDB_IDL_MONITOR_COND_ACKED,     /* Local conditional monitoring clauses
+                                       * have been acked by the server. */
+    OVSDB_IDL_MONITOR_COND_LOCAL,     /* Local conditional monitoring clause
+                                       * changes have not yet been sent to the
+                                       * server. */
+    OVSDB_IDL_MONITOR_COND_REQUESTED, /* Local conditional monitoring clause
+                                       * changes have been sent to the server
+                                       * but have not yet been acked. */
+};
+
 struct ovsdb_idl_db {
     struct ovsdb_idl *idl;
 
@@ -203,8 +214,8 @@ struct ovsdb_idl_db {
     struct json *schema;
     enum ovsdb_idl_monitoring monitoring;
 
-    /* True if any of the tables' monitoring conditions has changed. */
-    bool cond_changed;
+    /* Current state of the conditional monitoring clauses. */
+    enum ovsdb_idl_monitor_cond_state cond_state;
 
     unsigned int cond_seqno;   /* Keep track of condition clauses changes
                                   over a single conditional monitoring session.
@@ -1580,7 +1591,7 @@ ovsdb_idl_db_set_condition(struct ovsdb_idl_db *db,
 
     if (!ovsdb_idl_condition_equals(condition, table_cond)) {
         ovsdb_idl_condition_clone(&table->new_cond, condition);
-        db->cond_changed = true;
+        db->cond_state = OVSDB_IDL_MONITOR_COND_LOCAL;
         poll_immediate_wake();
         return seqno + 1;
     }
@@ -1638,7 +1649,7 @@ ovsdb_idl_create_cond_change_req(const struct ovsdb_idl_condition *cond)
 static struct jsonrpc_msg *
 ovsdb_idl_db_compose_cond_change(struct ovsdb_idl_db *db)
 {
-    if (!db->cond_changed) {
+    if (db->cond_state != OVSDB_IDL_MONITOR_COND_LOCAL) {
         return NULL;
     }
 
@@ -1672,7 +1683,7 @@ ovsdb_idl_db_compose_cond_change(struct ovsdb_idl_db *db)
         return NULL;
     }
 
-    db->cond_changed = false;
+    db->cond_state = OVSDB_IDL_MONITOR_COND_REQUESTED;
     struct json *params = json_array_create_3(json_clone(db->monitor_id),
                                               json_clone(db->monitor_id),
                                               monitor_cond_change_requests);
@@ -1693,6 +1704,19 @@ ovsdb_idl_db_ack_condition(struct ovsdb_idl_db *db)
             ovsdb_idl_condition_move(&table->ack_cond, &table->req_cond);
         }
     }
+
+    /* Ack the last monitor condition change if no local changes happened in
+     * the meantime.
+     */
+    if (db->cond_state == OVSDB_IDL_MONITOR_COND_REQUESTED) {
+        db->cond_state = OVSDB_IDL_MONITOR_COND_ACKED;
+    }
+}
+
+bool
+ovsdb_idl_monitor_condition_pending(struct ovsdb_idl *idl)
+{
+    return idl->data.cond_state != OVSDB_IDL_MONITOR_COND_ACKED;
 }
 
 /* Should be called when the IDL fsm is restarted and resyncs table conditions
@@ -1712,7 +1736,7 @@ ovsdb_idl_db_sync_condition(struct ovsdb_idl_db *db)
 {
     bool ack_all = uuid_is_zero(&db->last_id);
 
-    db->cond_changed = false;
+    db->cond_state = OVSDB_IDL_MONITOR_COND_ACKED;
     for (size_t i = 0; i < db->class_->n_tables; i++) {
         struct ovsdb_idl_table *table = &db->tables[i];
 
@@ -1731,7 +1755,7 @@ ovsdb_idl_db_sync_condition(struct ovsdb_idl_db *db)
         } else {
             /* If there was no "unsent" condition but instead a
              * monitor_cond_change request was in flight, move table->req_cond
-             * to table->new_cond and set db->cond_changed to trigger a new
+             * to table->new_cond and set db->cond_state to trigger a new
              * monitor_cond_change request.
              *
              * However, if a new condition has been set by the IDL client,
@@ -1740,7 +1764,7 @@ ovsdb_idl_db_sync_condition(struct ovsdb_idl_db *db)
              */
             if (table->req_cond && !table->new_cond) {
                 ovsdb_idl_condition_move(&table->new_cond, &table->req_cond);
-                db->cond_changed = true;
+                db->cond_state = OVSDB_IDL_MONITOR_COND_LOCAL;
             }
         }
     }

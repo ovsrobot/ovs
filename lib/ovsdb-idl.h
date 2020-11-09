@@ -421,6 +421,7 @@ unsigned int ovsdb_idl_set_condition(struct ovsdb_idl *,
                                      const struct ovsdb_idl_condition *);
 
 unsigned int ovsdb_idl_get_condition_seqno(const struct ovsdb_idl *);
+bool ovsdb_idl_monitor_condition_pending(struct ovsdb_idl *);
 
 /* Indexes over one or more columns in the IDL, to retrieve rows matching
  * particular search criteria and to iterate over a subset of rows in a defined
