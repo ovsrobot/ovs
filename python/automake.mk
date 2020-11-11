@@ -68,6 +68,7 @@ FLAKE8_PYFILES += \
 	python/setup.py \
 	python/build/__init__.py \
 	python/build/nroff.py \
+	python/build/pkgcfg.py \
 	python/ovs/dirs.py.template
 
 nobase_pkgdata_DATA = $(ovs_pyfiles) $(ovstest_pyfiles)
