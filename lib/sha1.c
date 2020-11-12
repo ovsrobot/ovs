@@ -202,7 +202,7 @@ sha1_update(struct sha1_ctx *ctx, const void *buffer_, size_t count)
     const uint8_t *buffer = buffer_;
     unsigned int i;
 
-    if ((ctx->count_lo + (count << 3)) < ctx->count_lo) {
+    if ((uint32_t)(ctx->count_lo + (count << 3)) < ctx->count_lo) {
         ctx->count_hi++;
     }
     ctx->count_lo += count << 3;
