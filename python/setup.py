@@ -30,6 +30,14 @@ except IOError:
           file=sys.stderr)
     sys.exit(-1)
 
+try:
+    # Try to set dirs from the generated ovs/dirs.py
+    exec(open("ovs/dirs.py").read())
+except IOError:
+    print("Ensure dirs.py is created by running make python/ovs/dirs.py",
+          file=sys.stderr)
+    sys.exit(-1)
+
 ext_errors = (CCompilerError, DistutilsExecError, DistutilsPlatformError)
 if sys.platform == 'win32':
     ext_errors += (IOError, ValueError)
