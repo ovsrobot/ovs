@@ -7,7 +7,7 @@ EXTRA_DIST += vtep/vtep-idl.ann
 VTEP_IDL_FILES = \
 	$(srcdir)/vtep/vtep.ovsschema \
 	$(srcdir)/vtep/vtep-idl.ann
-vtep/vtep-idl.ovsidl: $(VTEP_IDL_FILES)
+vtep/vtep-idl.ovsidl: $(VTEP_IDL_FILES) python/ovs/dirs.py
 	$(AM_V_GEN)$(OVSDB_IDLC) annotate $(VTEP_IDL_FILES) > $@.tmp && \
 	mv $@.tmp $@
 
