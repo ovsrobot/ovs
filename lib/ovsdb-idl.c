@@ -920,7 +920,7 @@ ovsdb_idl_run(struct ovsdb_idl *idl)
     ovsdb_idl_send_cond_change(idl);
 
     jsonrpc_session_run(idl->session);
-    for (i = 0; jsonrpc_session_is_connected(idl->session) && i < 50; i++) {
+    for (i = 0; jsonrpc_session_is_connected(idl->session) && i < 1; i++) {
         struct jsonrpc_msg *msg;
         unsigned int seqno;
 
