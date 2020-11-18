@@ -107,6 +107,7 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dp-packet.h \
 	lib/dp-packet.c \
 	lib/dpdk.h \
+	lib/dpif-netdev-avx512-extract.h \
 	lib/dpif-netdev-lookup.h \
 	lib/dpif-netdev-lookup.c \
 	lib/dpif-netdev-lookup-autovalidator.c \
@@ -117,6 +118,7 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dpif-netdev-private-dpcls.h \
 	lib/dpif-netdev-private-dpif.c \
 	lib/dpif-netdev-private-dpif.h \
+	lib/dpif-netdev-private-extract.h \
 	lib/dpif-netdev-private-flow.h \
 	lib/dpif-netdev-private-hwol.h \
 	lib/dpif-netdev-private-thread.h \

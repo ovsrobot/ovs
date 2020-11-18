@@ -991,6 +991,92 @@ dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc,
 }
 
 static void
+dpif_miniflow_extract_template_add(struct unixctl_conn *conn, int argc,
+                                   const char *argv[], void *aux OVS_UNUSED)
+{
+    /* This function requires just one parameter, the template name.
+     * A second optional parameter can identify the datapath instance.
+     */
+    const char *template_name = argv[1];
+
+    /* Today the code here is hard-coded to the specific miniflow extract
+     * implementation. This will be reworked to be generic like the DPCLS,
+     * where different implementations can be selected at runtime.
+     */
+    int32_t isa_available = miniflow_extract_avx512_probe();
+    if (!isa_available) {
+        struct ds reply = DS_EMPTY_INITIALIZER;
+        ds_put_format(&reply, "Miniflow Extract %s not available.\n",
+                      template_name);
+        const char *reply_str = ds_cstr(&reply);
+        unixctl_command_reply(conn, reply_str);
+        VLOG_INFO("%s", reply_str);
+        ds_destroy(&reply);
+        return;
+    }
+
+    /* Insert the new pattern. There is ongoing work on designing the
+     * interaction between the string here, and the patterns in the miniflow
+     * extract optimized code.
+     */
+    int32_t insert_err = miniflow_extract_avx512_insert(template_name);
+    if (insert_err) {
+        VLOG_DBG("error inserting pattern, returned %d", insert_err);
+    }
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+    struct dp_netdev *dp = NULL;
+
+    /* Optional argument, if passed, study this number of packets. Defaults
+     * to 10k.
+     */
+    uint32_t study_pkts = 10000;
+    if (argc >= 3) {
+        study_pkts = atoi(argv[2]);
+    }
+
+    if (argc == 4) {
+        dp = shash_find_data(&dp_netdevs, argv[3]);
+    } else if (shash_count(&dp_netdevs) == 1) {
+        dp = shash_first(&dp_netdevs)->data;
+    }
+
+    if (!dp) {
+        ovs_mutex_unlock(&dp_netdev_mutex);
+        unixctl_command_reply_error(conn,
+                                    "please specify an existing datapath");
+        return;
+    }
+
+    /* Get PMD threads list */
+    size_t n;
+    struct dp_netdev_pmd_thread **pmd_list;
+    sorted_poll_thread_list(dp, &pmd_list, &n);
+
+    for (size_t i = 0; i < n; i++) {
+        struct dp_netdev_pmd_thread *pmd = pmd_list[i];
+        if (pmd->core_id == NON_PMD_CORE_ID) {
+            continue;
+        }
+
+        /* set PMD context to study N packets */
+        pmd->miniflow_study_pkts = study_pkts;
+
+        /* set PMD threads DPIF implementation to requested one */
+        pmd->miniflow_extract_opt = miniflow_extract_avx512_study;
+    };
+    ovs_mutex_unlock(&dp_netdev_mutex);
+
+    /* Reply with success to command */
+    struct ds reply = DS_EMPTY_INITIALIZER;
+    ds_put_format(&reply, "miniflow template %s added.\n", template_name);
+    const char *reply_str = ds_cstr(&reply);
+    unixctl_command_reply(conn, reply_str);
+    VLOG_INFO("%s", reply_str);
+    ds_destroy(&reply);
+}
+
+static void
 dpif_netdev_impl_set(struct unixctl_conn *conn, int argc,
                      const char *argv[], void *aux OVS_UNUSED)
 {
@@ -1287,6 +1373,10 @@ dpif_netdev_init(void)
     unixctl_command_register("dpif-netdev/dpif-set",
                              "[dpif implementation name] [dp]",
                              1, 2, dpif_netdev_impl_set,
+                             NULL);
+    unixctl_command_register("dpif-netdev/miniflow-template-add",
+                             "[template name] [study pkt count] [dp]",
+                             1, 3, dpif_miniflow_extract_template_add,
                              NULL);
     return 0;
 }
@@ -6122,6 +6212,9 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
 
     /* Initialize the DPIF function pointer to the default scalar version */
     pmd->netdev_input_func = dp_netdev_impl_get_default();
+
+    /* Initialize the miniflow extract function pointer not set */
+    pmd->miniflow_extract_opt = NULL;
 
     /* init the 'flow_cache' since there is no
      * actual thread created for NON_PMD_CORE_ID. */

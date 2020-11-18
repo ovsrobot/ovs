@@ -29,6 +29,7 @@
 #include "openvswitch/thread.h"
 
 #include "dpif-netdev-private-dpif.h"
+#include "dpif-netdev-private-extract.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -105,6 +106,14 @@ struct dp_netdev_pmd_thread {
 
     /* Function pointer to call for dp_netdev_input() functionality */
     dp_netdev_input_func netdev_input_func;
+
+    /* Function pointer to call for miniflow_extract() functionality */
+    miniflow_extract_func miniflow_extract_opt;
+    /* Number of miniflow packets to study before selecting miniflow
+     * implementation. Depending on variability in traffic, a higher number
+     * allows longer inspection of traffic to ensure all are covered.
+     */
+    uint32_t miniflow_study_pkts;
 
     struct seq *reload_seq;
     uint64_t last_reload_seq;

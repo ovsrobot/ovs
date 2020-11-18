@@ -34,6 +34,7 @@
 
 #include "immintrin.h"
 
+#include "dpif-netdev-avx512-extract.h"
 
 /* Structure to contain per-packet metadata that must be attributed to the
  * dp netdev flow. This is unfortunate to have to track per packet, however
@@ -104,9 +105,18 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
         struct dp_packet *packet = packets->packets[i];
         pkt_metadata_init(&packet->md, in_port);
         struct netdev_flow_key *key = &keys[i];
-        miniflow_extract(packet, &key->mf);
-        key->len = count_1bits(key->mf.map.bits[0])
-                   + count_1bits(key->mf.map.bits[1]);
+        if (pmd->miniflow_extract_opt) {
+            uint32_t matched = pmd->miniflow_extract_opt(pmd, packet,
+                                                         &key->mf);
+            if (!matched) {
+                miniflow_extract(packet, &key->mf);
+            }
+        } else {
+            miniflow_extract(packet, &key->mf);
+        }
+
+        key->len = count_1bits(key->mf.map.bits[0]) +
+                       count_1bits(key->mf.map.bits[1]);
         key->hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf);
 
         if (emc_enabled) {
