@@ -6936,6 +6936,7 @@ smc_lookup_batch(struct dp_netdev_pmd_thread *pmd,
     size_t n_smc_hit = 0, n_missed = 0;
     struct dfc_cache *cache = &pmd->flow_cache;
     struct smc_cache *smc_cache = &cache->smc_cache;
+    struct pmd_perf_stats *stats = &pmd->perf_stats;
     const struct cmap_node *flow_node;
     int recv_idx;
     uint16_t tcp_flags;
@@ -6990,7 +6991,11 @@ smc_lookup_batch(struct dp_netdev_pmd_thread *pmd,
         missed_keys[n_missed++] = &keys[i];
     }
 
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SMC_HIT, n_smc_hit);
+    pmd_perf_update_counter(stats, PMD_STAT_SMC_HIT, n_smc_hit);
+
+    if (pmd_perf_metrics_enabled(pmd)) {
+        stats->current.smc_hits += n_smc_hit;
+    }
 }
 
 /* Try to process all ('cnt') the 'packets' using only the datapath flow cache
@@ -7023,6 +7028,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     struct dfc_cache *cache = &pmd->flow_cache;
     struct dp_packet *packet;
     const size_t cnt = dp_packet_batch_size(packets_);
+    struct pmd_perf_stats *stats = &pmd->perf_stats;
     uint32_t cur_min = pmd->ctx.emc_insert_min;
     int i;
     uint16_t tcp_flags;
@@ -7031,7 +7037,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     bool batch_enable = true;
 
     atomic_read_relaxed(&pmd->dp->smc_enable_db, &smc_enable_db);
-    pmd_perf_update_counter(&pmd->perf_stats,
+    pmd_perf_update_counter(stats,
                             md_is_valid ? PMD_STAT_RECIRC : PMD_STAT_RECV,
                             cnt);
 
@@ -7123,7 +7129,11 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     /* Count of packets which are not flow batched. */
     *n_flows = map_cnt;
 
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_EXACT_HIT, n_emc_hit);
+    pmd_perf_update_counter(stats, PMD_STAT_EXACT_HIT, n_emc_hit);
+
+    if (pmd_perf_metrics_enabled(pmd)) {
+        stats->current.emc_hits += n_emc_hit;
+    }
 
     if (!smc_enable_db) {
         return dp_packet_batch_size(packets_);
@@ -7224,6 +7234,7 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
                      odp_port_t in_port)
 {
     const size_t cnt = dp_packet_batch_size(packets_);
+    struct pmd_perf_stats *stats = &pmd->perf_stats;
 #if !defined(__CHECKER__) && !defined(_WIN32)
     const size_t PKT_ARRAY_SIZE = cnt;
 #else
@@ -7322,14 +7333,16 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
                                    flow_map, recv_idx);
     }
 
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MASKED_HIT,
+    if (pmd_perf_metrics_enabled(pmd)) {
+        stats->current.megaflow_hits +=
+            (cnt - upcall_ok_cnt - upcall_fail_cnt);
+    }
+
+    pmd_perf_update_counter(stats, PMD_STAT_MASKED_HIT,
                             cnt - upcall_ok_cnt - upcall_fail_cnt);
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MASKED_LOOKUP,
-                            lookup_cnt);
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MISS,
-                            upcall_ok_cnt);
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_LOST,
-                            upcall_fail_cnt);
+    pmd_perf_update_counter(stats, PMD_STAT_MASKED_LOOKUP, lookup_cnt);
+    pmd_perf_update_counter(stats, PMD_STAT_MISS, upcall_ok_cnt);
+    pmd_perf_update_counter(stats, PMD_STAT_LOST, upcall_fail_cnt);
 }
 
 /* Packets enter the datapath from a port (or from recirculation) here.

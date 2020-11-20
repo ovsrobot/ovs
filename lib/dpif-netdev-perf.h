@@ -120,6 +120,9 @@ struct iter_stats {
     uint32_t upcall_cycles;     /* Cycles spent in upcalls in it. or ms. */
     uint32_t batches;           /* Number of rx batches in iteration or ms. */
     uint32_t max_vhost_qfill;   /* Maximum fill level in iteration or ms. */
+    uint32_t emc_hits;          /* EMC Hits in iteration or ms. */
+    uint32_t smc_hits;          /* SMC Hits in iteration or ms. */
+    uint32_t megaflow_hits;     /* Megaflow Hits in iteration or ms. */
 };
 
 #define HISTORY_LEN 1000        /* Length of recorded history
@@ -173,6 +176,9 @@ struct pmd_perf_stats {
     struct histogram cycles_per_upcall;
     struct histogram pkts_per_batch;
     struct histogram max_vhost_qfill;
+    struct histogram emc_hits;
+    struct histogram smc_hits;
+    struct histogram megaflow_hits;
     /* Iteration history buffer. */
     struct history iterations;
     /* Millisecond history buffer. */
