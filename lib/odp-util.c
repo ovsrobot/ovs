@@ -1455,14 +1455,20 @@ parse_odp_userspace_action(const char *s, struct ofpbuf *actions)
         int n1 = -1;
         if (ovs_scan(&s[n], ",tunnel_out_port=%"SCNi32")%n",
                      &tunnel_out_port, &n1)) {
-            odp_put_userspace_action(pid, user_data, user_data_size,
-                                     tunnel_out_port, include_actions, actions);
-            res = n + n1;
+            res = odp_put_userspace_action(pid, user_data, user_data_size,
+                                           tunnel_out_port, include_actions,
+                                           actions);
+            if (res >= 0) {
+                res = n + n1;
+            }
             goto out;
         } else if (s[n] == ')') {
-            odp_put_userspace_action(pid, user_data, user_data_size,
-                                     ODPP_NONE, include_actions, actions);
-            res = n + 1;
+            res = odp_put_userspace_action(pid, user_data, user_data_size,
+                                           ODPP_NONE, include_actions,
+                                           actions);
+            if (res >= 0) {
+                res = n + 1;
+            }
             goto out;
         }
     }
@@ -7559,8 +7565,10 @@ odp_key_fitness_to_string(enum odp_key_fitness fitness)
  * Netlink PID 'pid'.  If 'userdata' is nonnull, adds a userdata attribute
  * whose contents are the 'userdata_size' bytes at 'userdata' and returns the
  * offset within 'odp_actions' of the start of the cookie.  (If 'userdata' is
- * null, then the return value is not meaningful.) */
-size_t
+ * null, then the return value is not meaningful.)
+ *
+ * Returns negative error code on failure. */
+int
 odp_put_userspace_action(uint32_t pid,
                          const void *userdata, size_t userdata_size,
                          odp_port_t tunnel_out_port,
@@ -7573,6 +7581,9 @@ odp_put_userspace_action(uint32_t pid,
     offset = nl_msg_start_nested(odp_actions, OVS_ACTION_ATTR_USERSPACE);
     nl_msg_put_u32(odp_actions, OVS_USERSPACE_ATTR_PID, pid);
     if (userdata) {
+        if (nl_attr_oversized(userdata_size)) {
+            return -E2BIG;
+        }
         userdata_ofs = odp_actions->size + NLA_HDRLEN;
 
         /* The OVS kernel module before OVS 1.11 and the upstream Linux kernel
@@ -7597,6 +7608,9 @@ odp_put_userspace_action(uint32_t pid,
     }
     if (include_actions) {
         nl_msg_put_flag(odp_actions, OVS_USERSPACE_ATTR_ACTIONS);
+    }
+    if (nl_attr_oversized(odp_actions->size - offset - NLA_HDRLEN)) {
+        return -E2BIG;
     }
     nl_msg_end_nested(odp_actions, offset);
 
