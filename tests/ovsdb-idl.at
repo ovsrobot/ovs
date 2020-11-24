@@ -1851,7 +1851,7 @@ m4_define([OVSDB_CHECK_CLUSTER_IDL_C],
      [AT_CHECK([ovsdb-client transact $remotes $3], [0], [ignore], [ignore])])
    AT_CHECK([test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -vjsonrpc -t10 idl tcp:LPBK:$TCP_PORT_1 $4],
             [0], [stdout], [ignore])
-   AT_CHECK([sort stdout | uuidfilt]m4_if([$7],,, [[| $7]]),
+   AT_CHECK([sort stdout | uuidfilt]m4_if([$6],,, [[| $6]]),
             [0], [$5])
    AT_CLEANUP])
 
@@ -1885,8 +1885,11 @@ OVSDB_CHECK_CLUSTER_IDL_C([simple idl, monitor_cond_since, cluster disconnect],
 003: i=2 r=1 b=true s= u=<0> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<1>
 004: change conditions
 005: reconnect
-006: i=2 r=1 b=true s= u=<0> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<1>
+006: i=? r=1 b=true s= u=<0> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<?>
 007: {"error":null,"result":[{"count":1}]}
 008: i=1 r=2 b=true s= u=<0> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<2>
 009: done
-]])
+]], [dnl Step 6 can reasonably output the new or old row, depending on details.
+sed '/^006:/s/i=[[12]]/i=?/
+/^006:/s/uuid=<[[12]]>/uuid=<?>/'
+])
