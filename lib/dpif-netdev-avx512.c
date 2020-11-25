@@ -34,6 +34,7 @@
 
 #include "immintrin.h"
 
+#include "dpif-netdev-avx512-extract.h"
 
 /* Structure to contain per-packet metadata that must be attributed to the
  * dp netdev flow. This is unfortunate to have to track per packet, however
@@ -116,7 +117,16 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
         struct dp_packet *packet = packets->packets[i];
         pkt_metadata_init(&packet->md, in_port);
         struct netdev_flow_key *key = &keys[i];
-        miniflow_extract(packet, &key->mf);
+
+        if (pmd->miniflow_extract_opt) {
+            uint32_t matched = pmd->miniflow_extract_opt(pmd, packet,
+                                                         &key->mf);
+            if (!matched) {
+                miniflow_extract(packet, &key->mf);
+            }
+        } else {
+            miniflow_extract(packet, &key->mf);
+        }
 
         /* Cache TCP and byte values for all packets */
         pkt_meta[i].bytes = dp_packet_size(packet);

@@ -32,6 +32,7 @@ lib_libopenvswitch_la_LIBADD += lib/libopenvswitchavx512.la
 lib_libopenvswitchavx512_la_CFLAGS = \
 	-mavx512f \
 	-mavx512bw \
+	-mavx512vl \
 	-mavx512dq \
 	-mbmi \
 	-mbmi2 \
@@ -39,6 +40,7 @@ lib_libopenvswitchavx512_la_CFLAGS = \
 	$(AM_CFLAGS)
 lib_libopenvswitchavx512_la_SOURCES = \
 	lib/dpif-netdev-lookup-avx512-gather.c \
+	lib/dpif-netdev-avx512-extract.c \
 	lib/dpif-netdev-avx512.c
 lib_libopenvswitchavx512_la_LDFLAGS = \
 	-static
@@ -107,6 +109,7 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dp-packet.h \
 	lib/dp-packet.c \
 	lib/dpdk.h \
+	lib/dpif-netdev-avx512-extract.h \
 	lib/dpif-netdev-lookup.h \
 	lib/dpif-netdev-lookup.c \
 	lib/dpif-netdev-lookup-autovalidator.c \
@@ -117,6 +120,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dpif-netdev-private-dpcls.h \
 	lib/dpif-netdev-private-dpif.c \
 	lib/dpif-netdev-private-dpif.h \
+	lib/dpif-netdev-private-extract.c \
+	lib/dpif-netdev-private-extract.h \
 	lib/dpif-netdev-private-flow.h \
 	lib/dpif-netdev-private-hwol.h \
 	lib/dpif-netdev-private-thread.h \
