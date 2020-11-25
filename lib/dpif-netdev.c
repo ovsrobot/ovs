@@ -185,10 +185,6 @@ static uint32_t dpcls_subtable_lookup_reprobe(struct dpcls *cls);
 static void dpcls_insert(struct dpcls *, struct dpcls_rule *,
                          const struct netdev_flow_key *mask);
 static void dpcls_remove(struct dpcls *, struct dpcls_rule *);
-static bool dpcls_lookup(struct dpcls *cls,
-                         const struct netdev_flow_key *keys[],
-                         struct dpcls_rule **rules, size_t cnt,
-                         int *num_lookups_p);
 
 /* Set of supported meter flags */
 #define DP_SUPPORTED_METER_FLAGS_MASK \
@@ -482,7 +478,7 @@ static void dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
                                       const struct flow *flow,
                                       const struct nlattr *actions,
                                       size_t actions_len);
-static void dp_netdev_input(struct dp_netdev_pmd_thread *,
+static int32_t dp_netdev_input(struct dp_netdev_pmd_thread *,
                             struct dp_packet_batch *, odp_port_t port_no);
 static void dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
                                   struct dp_packet_batch *);
@@ -554,7 +550,7 @@ dpif_netdev_xps_revalidate_pmd(const struct dp_netdev_pmd_thread *pmd,
                                bool purge);
 static int dpif_netdev_xps_get_tx_qid(const struct dp_netdev_pmd_thread *pmd,
                                       struct tx_port *tx);
-static inline struct dpcls *
+inline struct dpcls *
 dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
                            odp_port_t in_port);
 
@@ -1917,7 +1913,7 @@ void dp_netdev_flow_unref(struct dp_netdev_flow *flow)
     }
 }
 
-static inline struct dpcls *
+inline struct dpcls *
 dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
                            odp_port_t in_port)
 {
@@ -2725,7 +2721,7 @@ dp_netdev_pmd_lookup_flow(struct dp_netdev_pmd_thread *pmd,
                           int *lookup_num_p)
 {
     struct dpcls *cls;
-    struct dpcls_rule *rule;
+    struct dpcls_rule *rule = NULL;
     odp_port_t in_port = u32_to_odp(MINIFLOW_GET_U32(&key->mf,
                                                      in_port.odp_port));
     struct dp_netdev_flow *netdev_flow = NULL;
@@ -4187,7 +4183,10 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
         }
 
         /* Process packet batch. */
-        pmd->netdev_input_func(pmd, &batch, port_no);
+        int32_t ret = pmd->netdev_input_func(pmd, &batch, port_no);
+        if (ret) {
+            dp_netdev_input(pmd, &batch, port_no);
+        }
 
         /* Assign processing cycles to rx queue. */
         cycles = cycle_timer_stop(&pmd->perf_stats, &timer);
@@ -6429,6 +6428,24 @@ packet_batch_per_flow_execute(struct packet_batch_per_flow *batch,
                               actions->actions, actions->size);
 }
 
+void
+dp_netdev_batch_execute(struct dp_netdev_pmd_thread *pmd,
+                        struct dp_packet_batch *packets,
+                        struct dpcls_rule *rule,
+                        uint32_t bytes,
+                        uint16_t tcp_flags)
+{
+    /* Gets action* from the rule */
+    struct dp_netdev_flow *flow = dp_netdev_flow_cast(rule);
+    struct dp_netdev_actions *actions = dp_netdev_flow_get_actions(flow);
+
+    dp_netdev_flow_used(flow, dp_packet_batch_size(packets), bytes,
+                        tcp_flags, pmd->ctx.now / 1000);
+    const uint32_t steal = 1;
+    dp_netdev_execute_actions(pmd, packets, steal, &flow->flow,
+                              actions->actions, actions->size);
+}
+
 static inline void
 dp_netdev_queue_batches(struct dp_packet *pkt,
                         struct dp_netdev_flow *flow, uint16_t tcp_flags,
@@ -6938,12 +6955,13 @@ dp_netdev_input__(struct dp_netdev_pmd_thread *pmd,
     }
 }
 
-static void
+static int32_t
 dp_netdev_input(struct dp_netdev_pmd_thread *pmd,
                 struct dp_packet_batch *packets,
                 odp_port_t port_no)
 {
     dp_netdev_input__(pmd, packets, false, port_no);
+    return 0;
 }
 
 static void
@@ -8308,7 +8326,7 @@ netdev_flow_key_gen_masks(const struct netdev_flow_key *tbl,
 
 /* Returns true if 'target' satisfies 'key' in 'mask', that is, if each 1-bit
  * in 'mask' the values in 'key' and 'target' are the same. */
-bool
+inline bool ALWAYS_INLINE
 dpcls_rule_matches_key(const struct dpcls_rule *rule,
                        const struct netdev_flow_key *target)
 {
@@ -8334,7 +8352,7 @@ dpcls_rule_matches_key(const struct dpcls_rule *rule,
  * priorities, instead returning any rule which matches the flow.
  *
  * Returns true if all miniflows found a corresponding rule. */
-static bool
+bool
 dpcls_lookup(struct dpcls *cls, const struct netdev_flow_key *keys[],
              struct dpcls_rule **rules, const size_t cnt,
              int *num_lookups_p)
