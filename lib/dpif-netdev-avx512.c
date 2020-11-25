@@ -83,7 +83,10 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
     /* Check if EMC or SMC are enabled */
     struct dfc_cache *cache = &pmd->flow_cache;
     const uint32_t emc_enabled = pmd->ctx.emc_insert_min != 0;
+    bool smc_enable_db = pmd->ctx.smc_enable_db;
+
     uint32_t emc_hits = 0;
+    uint32_t smc_hits = 0;
 
     /* a 1 bit in this mask indidcates a hit, so no DPCLS lookup on the pkt. */
     uint32_t hwol_emc_smc_hitmask = 0;
@@ -110,8 +113,11 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                        count_1bits(key->mf.map.bits[1]);
         key->hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf);
 
+        struct dp_netdev_flow *f = NULL;
+
         if (emc_enabled) {
-            struct dp_netdev_flow *f = emc_lookup(&cache->emc_cache, key);
+            f = emc_lookup(&cache->emc_cache, key);
+
             if (f) {
                 rules[i] = &f->cr;
                 emc_hits++;
@@ -119,6 +125,16 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                 continue;
             }
         };
+
+        if (smc_enable_db && !f) {
+            f = smc_lookup_single(pmd, packet, key);
+            if (f) {
+                rules[i] = &f->cr;
+                smc_hits++;
+                hwol_emc_smc_hitmask |= (1 << i);
+                continue;
+            }
+        }
 
         /* The flow pointer was not found in HWOL/EMC/SMC, so add it to the
          * dpcls input keys array for batch lookup later.

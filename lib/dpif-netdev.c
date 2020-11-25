@@ -5191,6 +5191,8 @@ dpif_netdev_run(struct dpif *dpif)
                     non_pmd->ctx.emc_insert_min = 0;
                 }
 
+                non_pmd->ctx.smc_enable_db = dp->smc_enable_db;
+
                 for (i = 0; i < port->n_rxq; i++) {
 
                     if (!netdev_rxq_enabled(port->rxqs[i].rx)) {
@@ -5461,6 +5463,8 @@ reload:
             } else {
                 pmd->ctx.emc_insert_min = 0;
             }
+
+            pmd->ctx.smc_enable_db = pmd->dp->smc_enable_db;
 
             process_packets =
                 dp_netdev_process_rxq_port(pmd, poll_list[i].rxq,
@@ -6548,6 +6552,30 @@ smc_lookup_batch(struct dp_netdev_pmd_thread *pmd,
     }
 
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SMC_HIT, n_smc_hit);
+}
+
+struct dp_netdev_flow *
+smc_lookup_single(struct dp_netdev_pmd_thread *pmd,
+                  struct dp_packet *packet,
+                  struct netdev_flow_key *key)
+{
+    const struct cmap_node *flow_node = smc_entry_get(pmd, key->hash);
+
+    if (OVS_LIKELY(flow_node != NULL)) {
+        struct dp_netdev_flow *flow = NULL;
+
+        CMAP_NODE_FOR_EACH (flow, node, flow_node) {
+            /* Since we dont have per-port megaflow to check the port
+             * number, we need to  verify that the input ports match. */
+            if (OVS_LIKELY(dpcls_rule_matches_key(&flow->cr, key) &&
+                flow->flow.in_port.odp_port == packet->md.in_port.odp_port)) {
+
+                return (void *)flow;
+            }
+        }
+    }
+
+    return 0;
 }
 
 /* Try to process all ('cnt') the 'packets' using only the datapath flow cache
