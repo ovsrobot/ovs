@@ -6828,27 +6828,41 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
             pkt_metadata_init(&packet->md, port_no);
         }
 
-        if ((*recirc_depth_get() == 0) &&
-            dp_packet_has_flow_mark(packet, &mark)) {
-            flow = mark_to_flow_find(pmd, mark);
-            if (OVS_LIKELY(flow)) {
-                tcp_flags = parse_tcp_flags(packet);
-                if (OVS_LIKELY(batch_enable)) {
-                    dp_netdev_queue_batches(packet, flow, tcp_flags, batches,
-                                            n_batches);
-                } else {
-                    /* Flow batching should be performed only after fast-path
-                     * processing is also completed for packets with emc miss
-                     * or else it will result in reordering of packets with
-                     * same datapath flows. */
-                    packet_enqueue_to_flow_map(packet, flow, tcp_flags,
-                                               flow_map, map_cnt++);
+        /* Outer classification checks only */
+        uint32_t miniflow_extract_done = 0;
+        if (*recirc_depth_get() == 0) {
+            /* Check if packet has hardware flow mark */
+            if (dp_packet_has_flow_mark(packet, &mark)) {
+                flow = mark_to_flow_find(pmd, mark);
+                if (OVS_LIKELY(flow)) {
+                    tcp_flags = parse_tcp_flags(packet);
+                    if (OVS_LIKELY(batch_enable)) {
+                        dp_netdev_queue_batches(packet, flow, tcp_flags,
+                                                batches, n_batches);
+                    } else {
+                        /* Flow batching should be performed only after fast-
+                         * path processing is also completed for packets with
+                         * emc miss or else it will result in reordering of
+                         * packets with same datapath flows.
+                         */
+                        packet_enqueue_to_flow_map(packet, flow, tcp_flags,
+                                                   flow_map, map_cnt++);
+                    }
                 }
                 continue;
             }
+
+            /* Use optimized outer miniflow extract if available */
+            if (pmd->miniflow_extract_opt) {
+                miniflow_extract_done = pmd->miniflow_extract_opt(pmd, packet,
+                                                                  &key->mf);
+            }
         }
 
-        miniflow_extract(packet, &key->mf);
+        if (!miniflow_extract_done) {
+            miniflow_extract(packet, &key->mf);
+        }
+
         key->len = 0; /* Not computed yet. */
         key->hash =
                 (md_is_valid == false)
