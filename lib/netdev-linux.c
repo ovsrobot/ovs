@@ -50,6 +50,7 @@
 #include <unistd.h>
 
 #include "coverage.h"
+#include "csum.h"
 #include "dp-packet.h"
 #include "dpif-netlink.h"
 #include "dpif-netdev.h"
@@ -79,6 +80,7 @@
 #include "unaligned.h"
 #include "openvswitch/vlog.h"
 #include "userspace-tso.h"
+#include "userspace-tso-segsz.h"
 #include "util.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_linux);
@@ -6508,6 +6510,8 @@ netdev_linux_parse_l2(struct dp_packet *b, uint16_t *l4proto)
     struct eth_header *eth_hdr;
     ovs_be16 eth_type;
     int l2_len;
+    int l3_len = 0;
+    int l4_len = 0;
 
     eth_hdr = dp_packet_at(b, 0, ETH_HEADER_LEN);
     if (!eth_hdr) {
@@ -6527,6 +6531,8 @@ netdev_linux_parse_l2(struct dp_packet *b, uint16_t *l4proto)
         l2_len += VLAN_HEADER_LEN;
     }
 
+    dp_packet_hwol_set_l2_len(b, l2_len);
+
     if (eth_type == htons(ETH_TYPE_IP)) {
         struct ip_header *ip_hdr = dp_packet_at(b, l2_len, IP_HEADER_LEN);
 
@@ -6534,6 +6540,7 @@ netdev_linux_parse_l2(struct dp_packet *b, uint16_t *l4proto)
             return -EINVAL;
         }
 
+        l3_len = IP_HEADER_LEN;
         *l4proto = ip_hdr->ip_proto;
         dp_packet_hwol_set_tx_ipv4(b);
     } else if (eth_type == htons(ETH_TYPE_IPV6)) {
@@ -6544,8 +6551,33 @@ netdev_linux_parse_l2(struct dp_packet *b, uint16_t *l4proto)
             return -EINVAL;
         }
 
+        l3_len = IPV6_HEADER_LEN;
         *l4proto = nh6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
         dp_packet_hwol_set_tx_ipv6(b);
+    }
+
+    dp_packet_hwol_set_l3_len(b, l3_len);
+
+    if (*l4proto == IPPROTO_TCP) {
+        struct tcp_header *tcp_hdr =  dp_packet_at(b, l2_len + l3_len,
+                                          sizeof(struct tcp_header));
+
+        if (!tcp_hdr) {
+            return -EINVAL;
+        }
+
+        l4_len = TCP_OFFSET(tcp_hdr->tcp_ctl) * 4;
+        dp_packet_hwol_set_l4_len(b, l4_len);
+    } else if (*l4proto == IPPROTO_UDP) {
+        struct udp_header *udp_hdr =  dp_packet_at(b, l2_len + l3_len,
+                                          sizeof(struct udp_header));
+
+        if (!udp_hdr) {
+            return -EINVAL;
+        }
+
+        l4_len = sizeof(struct udp_header);
+        dp_packet_hwol_set_l4_len(b, l4_len);
     }
 
     return 0;
@@ -6559,10 +6591,6 @@ netdev_linux_parse_vnet_hdr(struct dp_packet *b)
 
     if (OVS_UNLIKELY(!vnet)) {
         return -EINVAL;
-    }
-
-    if (vnet->flags == 0 && vnet->gso_type == VIRTIO_NET_HDR_GSO_NONE) {
-        return 0;
     }
 
     if (netdev_linux_parse_l2(b, &l4proto)) {
@@ -6595,22 +6623,130 @@ netdev_linux_parse_vnet_hdr(struct dp_packet *b)
 }
 
 static void
-netdev_linux_prepend_vnet_hdr(struct dp_packet *b, int mtu)
+netdev_linux_set_ol_flags_and_cksum(struct dp_packet *b, int mtu)
 {
-    struct virtio_net_hdr *vnet = dp_packet_push_zeros(b, sizeof *vnet);
+    struct eth_header *eth_hdr;
+    struct ip_header *ip_hdr = NULL;
+    struct ovs_16aligned_ip6_hdr *nh6 = NULL;
+    uint16_t l4proto = 0;
+    ovs_be16 eth_type;
+    int l2_len;
+    int l3_len = 0;
+    int l4_len = 0;
+
+    eth_hdr = dp_packet_at(b, 0, ETH_HEADER_LEN);
+    if (!eth_hdr) {
+        return;
+    }
+
+    l2_len = ETH_HEADER_LEN;
+    eth_type = eth_hdr->eth_type;
+    if (eth_type_vlan(eth_type)) {
+        struct vlan_header *vlan = dp_packet_at(b, l2_len, VLAN_HEADER_LEN);
+
+        if (!vlan) {
+            return;
+        }
+
+        eth_type = vlan->vlan_next_type;
+        l2_len += VLAN_HEADER_LEN;
+    }
+
+    if (eth_type == htons(ETH_TYPE_IP)) {
+        ip_hdr = dp_packet_at(b, l2_len, IP_HEADER_LEN);
+
+        if (!ip_hdr) {
+            return;
+        }
+
+        dp_packet_set_l3(b, ip_hdr);
+        ip_hdr->ip_csum = 0;
+        ip_hdr->ip_csum = csum(ip_hdr, sizeof *ip_hdr);
+        l4proto = ip_hdr->ip_proto;
+        dp_packet_hwol_set_tx_ipv4(b);
+        l3_len = IP_HEADER_LEN;
+    } else if (eth_type == htons(ETH_TYPE_IPV6)) {
+        nh6 = dp_packet_at(b, l2_len, IPV6_HEADER_LEN);
+        if (!nh6) {
+            return;
+        }
+
+        dp_packet_set_l3(b, nh6);
+        l4proto = nh6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+        dp_packet_hwol_set_tx_ipv6(b);
+        l3_len = IPV6_HEADER_LEN;
+    }
+
+    if (l4proto == IPPROTO_TCP) {
+        /* Note: need set tcp pseudo checksum */
+        struct tcp_header *tcp_hdr =  dp_packet_at(b, l2_len + l3_len,
+                                          sizeof(struct tcp_header));
+
+        if (!tcp_hdr) {
+            return;
+        }
+        l4_len = TCP_OFFSET(tcp_hdr->tcp_ctl) * 4;
+        dp_packet_hwol_set_l4_len(b, l4_len);
+        dp_packet_set_l4(b, tcp_hdr);
+
+        if (l3_len == IP_HEADER_LEN) {
+            tcp_hdr->tcp_csum = csum_finish(packet_csum_pseudoheader(ip_hdr));
+        } else {
+            tcp_hdr->tcp_csum = csum_finish(packet_csum_pseudoheader6(nh6));
+        }
+        if (dp_packet_size(b) > mtu + l2_len) {
+            dp_packet_hwol_set_tcp_seg(b);
+        }
+        dp_packet_hwol_set_csum_tcp(b);
+    } else if (l4proto == IPPROTO_UDP) {
+        struct udp_header *udp_hdr =  dp_packet_at(b, l2_len + l3_len,
+                                          sizeof(struct udp_header));
+
+        if (!udp_hdr) {
+            return;
+        }
+        l4_len = sizeof(struct udp_header);
+        dp_packet_hwol_set_l4_len(b, l4_len);
+        dp_packet_set_l4(b, udp_hdr);
+        if (dp_packet_size(b) > mtu + l2_len) {
+            dp_packet_hwol_set_udp_seg(b);
+        }
+        dp_packet_hwol_set_csum_udp(b);
+    }
+}
+
+static void
+netdev_linux_prepend_vnet_hdr(struct dp_packet *b, int mtu OVS_UNUSED)
+{
+    struct virtio_net_hdr *vnet;
+    uint16_t tso_segsz = get_userspace_tso_segsz();
+    uint16_t l4proto;
+
+    netdev_linux_parse_l2(b, &l4proto);
+
+    /* ol_flags weren't set correctly for received packets which are from
+     * physical port, so it has to been set again in order that
+     * vnet_hdr can be prepended correctly. Note: here tso_segsz but not
+     * mtu are used because tso_segsz may be less than mtu.
+     */
+    if ((dp_packet_size(b) > tso_segsz + dp_packet_hwol_get_l2_len(b))
+        && !dp_packet_hwol_l4_mask(b)) {
+        netdev_linux_set_ol_flags_and_cksum(b, tso_segsz);
+    }
+
+    vnet = dp_packet_push_zeros(b, sizeof *vnet);
 
     if (dp_packet_hwol_is_tso(b)) {
         uint16_t hdr_len = ((char *)dp_packet_l4(b) - (char *)dp_packet_eth(b))
-                            + TCP_HEADER_LEN;
+                            + dp_packet_hwol_get_l4_len(b);
 
         vnet->hdr_len = (OVS_FORCE __virtio16)hdr_len;
-        vnet->gso_size = (OVS_FORCE __virtio16)(mtu - hdr_len);
+        vnet->gso_size = (OVS_FORCE __virtio16)(tso_segsz - hdr_len);
         if (dp_packet_hwol_is_ipv4(b)) {
             vnet->gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
         } else {
             vnet->gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
         }
-
     } else {
         vnet->flags = VIRTIO_NET_HDR_GSO_NONE;
     }

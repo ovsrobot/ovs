@@ -502,7 +502,16 @@ dp_packet_resize_l2_5(struct dp_packet *b, int increment)
 void *
 dp_packet_resize_l2(struct dp_packet *b, int increment)
 {
+    int outer_l2_len = dp_packet_hwol_get_outer_l2_len(b);
+
     dp_packet_resize_l2_5(b, increment);
     dp_packet_adjust_layer_offset(&b->l2_5_ofs, increment);
+    if (outer_l2_len) {
+        dp_packet_hwol_set_outer_l2_len(b, outer_l2_len + increment);
+    } else {
+        int l2_len = dp_packet_hwol_get_l2_len(b);
+
+        dp_packet_hwol_set_l2_len(b, l2_len + increment);
+    }
     return dp_packet_data(b);
 }

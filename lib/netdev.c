@@ -33,6 +33,7 @@
 
 #include "cmap.h"
 #include "coverage.h"
+#include "csum.h"
 #include "dpif.h"
 #include "dp-packet.h"
 #include "openvswitch/dynamic-string.h"
@@ -55,6 +56,7 @@
 #include "svec.h"
 #include "openvswitch/vlog.h"
 #include "flow.h"
+#include "userspace-tso.h"
 #include "util.h"
 #ifdef __linux__
 #include "tc.h"
@@ -785,6 +787,64 @@ netdev_get_pt_mode(const struct netdev *netdev)
             : NETDEV_PT_LEGACY_L2);
 }
 
+static inline void
+calculate_tcpudp_checksum(struct dp_packet *p)
+{
+    uint32_t pseudo_hdr_csum = 0;
+    bool is_ipv6 = false;
+    struct ovs_16aligned_ip6_hdr *ip6 = NULL;
+    size_t len_l2 = (char *) dp_packet_l3(p) - (char *) dp_packet_eth(p);
+    size_t len_l3 = (char *) dp_packet_l4(p) - (char *) dp_packet_l3(p);
+    size_t l4_len = (char *) dp_packet_tail(p) - (char *) dp_packet_l4(p);
+    uint16_t l4_proto = 0;
+
+    /* It is possible l2_len and l3_len aren't set here, so set them if no */
+    if (dp_packet_hwol_get_l2_len(p) != len_l2) {
+        dp_packet_hwol_set_l2_len(p, len_l2);
+        dp_packet_hwol_set_l3_len(p, len_l3);
+    }
+
+    if (len_l3 == sizeof(struct ovs_16aligned_ip6_hdr)) {
+        ip6 = dp_packet_l3(p);
+        l4_proto = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+        is_ipv6 = true;
+    } else {
+        struct ip_header *ip = dp_packet_l3(p);
+
+        l4_proto = ip->ip_proto;
+        ip->ip_csum = 0;
+        ip->ip_csum = csum(ip, sizeof *ip);
+        pseudo_hdr_csum = packet_csum_pseudoheader(ip);
+    }
+
+    if (l4_proto == IPPROTO_TCP) {
+        struct tcp_header *tcp = dp_packet_l4(p);
+
+        tcp->tcp_csum = 0;
+        if (is_ipv6) {
+            tcp->tcp_csum = packet_csum_upperlayer6(ip6, tcp, l4_proto,
+                                                    l4_len);
+        } else {
+            tcp->tcp_csum = csum_finish(csum_continue(pseudo_hdr_csum,
+                                                      tcp, l4_len));
+        }
+    } else if (l4_proto == IPPROTO_UDP) {
+        struct udp_header *udp = dp_packet_l4(p);
+
+        udp->udp_csum = 0;
+        if (is_ipv6) {
+            udp->udp_csum = packet_csum_upperlayer6(ip6, udp, l4_proto,
+                                                    l4_len);
+        } else {
+            udp->udp_csum = csum_finish(csum_continue(pseudo_hdr_csum,
+                                                      udp, l4_len));
+        }
+        if (!udp->udp_csum) {
+            udp->udp_csum = htons(0xffff);
+        }
+    }
+}
+
 /* Check if a 'packet' is compatible with 'netdev_flags'.
  * If a packet is incompatible, return 'false' with the 'errormsg'
  * pointing to a reason. */
@@ -793,6 +853,14 @@ netdev_send_prepare_packet(const uint64_t netdev_flags,
                            struct dp_packet *packet, char **errormsg)
 {
     uint64_t l4_mask;
+
+    if (dp_packet_hwol_is_vxlan_tcp_seg(packet)
+        && (dp_packet_hwol_is_tso(packet) || dp_packet_hwol_l4_mask(packet))
+        && !(netdev_flags & NETDEV_TX_OFFLOAD_VXLAN_TSO)) {
+        /* Fall back to GSO in software. */
+        VLOG_ERR_BUF(errormsg, "No VXLAN TSO support");
+        return false;
+    }
 
     if (dp_packet_hwol_is_tso(packet)
         && !(netdev_flags & NETDEV_TX_OFFLOAD_TCP_TSO)) {
@@ -803,6 +871,33 @@ netdev_send_prepare_packet(const uint64_t netdev_flags,
 
     l4_mask = dp_packet_hwol_l4_mask(packet);
     if (l4_mask) {
+        /* Calculate checksum for VLAN TSO case when no hardware offload
+         * feature is available. Note: for VXLAN TSO case, checksum has
+         * been calculated before here, so it won't be done here again
+         * because checksum flags in packet->m.ol_flags have been cleaned.
+         */
+        if (dp_packet_hwol_l4_is_tcp(packet)
+            && !dp_packet_hwol_is_vxlan_tcp_seg(packet)
+            && !(netdev_flags & NETDEV_TX_OFFLOAD_TCP_CKSUM)) {
+            dp_packet_hwol_reset_csum_tcp(packet);
+            /* Only calculate TCP checksum for non-TSO packet.
+             */
+            if (!dp_packet_hwol_is_tso(packet)) {
+                calculate_tcpudp_checksum(packet);
+            }
+            return true;
+        } else if (dp_packet_hwol_l4_is_udp(packet)
+            && !dp_packet_hwol_is_vxlan_tcp_seg(packet)
+            && !(netdev_flags & NETDEV_TX_OFFLOAD_UDP_CKSUM)) {
+            dp_packet_hwol_reset_csum_udp(packet);
+            /* Only calculate UDP checksum for non-UFO packet.
+             */
+            if (!dp_packet_hwol_is_ufo(packet)) {
+                calculate_tcpudp_checksum(packet);
+            }
+            return true;
+        }
+
         if (dp_packet_hwol_l4_is_tcp(packet)) {
             if (!(netdev_flags & NETDEV_TX_OFFLOAD_TCP_CKSUM)) {
                 /* Fall back to TCP csum in software. */
@@ -960,15 +1055,61 @@ netdev_push_header(const struct netdev *netdev,
     size_t i, size = dp_packet_batch_size(batch);
 
     DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
-        if (OVS_UNLIKELY(dp_packet_hwol_is_tso(packet)
-                         || dp_packet_hwol_l4_mask(packet))) {
+        if (OVS_UNLIKELY((dp_packet_hwol_is_tso(packet)
+                          || dp_packet_hwol_l4_mask(packet))
+                         && (data->tnl_type != OVS_VPORT_TYPE_VXLAN))) {
             COVERAGE_INC(netdev_push_header_drops);
             dp_packet_delete(packet);
-            VLOG_WARN_RL(&rl, "%s: Tunneling packets with HW offload flags is "
-                         "not supported: packet dropped",
+            VLOG_WARN_RL(&rl,
+                         "%s: non-VxLAN Tunneling packets with HW offload "
+                         "flags is not supported: packet dropped",
                          netdev_get_name(netdev));
         } else {
+            size_t len_l2 = (char *) dp_packet_l3(packet)
+                                - (char *) dp_packet_eth(packet);
+            size_t len_l3 = (char *) dp_packet_l4(packet)
+                                - (char *) dp_packet_l3(packet);
+            if (data->tnl_type == OVS_VPORT_TYPE_VXLAN) {
+                /* VXLAN offload can't support udp checksum offload
+                 * for inner udp packet, so udp checksum must be set
+                 * before push header in order that outer checksum can
+                 * be set correctly.
+                 */
+                if (dp_packet_hwol_l4_is_udp(packet)) {
+                    dp_packet_hwol_reset_csum_udp(packet);
+                    /* Only calculate UDP checksum for non-UFO packet.
+                     */
+                    if (!dp_packet_hwol_is_ufo(packet)) {
+                        calculate_tcpudp_checksum(packet);
+                    }
+                } else if (dp_packet_hwol_l4_is_tcp(packet)) {
+                    dp_packet_hwol_reset_csum_tcp(packet);
+                    /* Only calculate TCP checksum for non-TSO packet.
+                     */
+                    if (!dp_packet_hwol_is_tso(packet)) {
+                        calculate_tcpudp_checksum(packet);
+                    }
+                }
+            }
+            /* It is possible l2_len and l3_len aren't set here, so set them
+             * if no.
+             */
+            if (dp_packet_hwol_get_l2_len(packet) != len_l2) {
+                dp_packet_hwol_set_l2_len(packet, len_l2);
+                dp_packet_hwol_set_l3_len(packet, len_l3);
+            }
+
             netdev->netdev_class->push_header(netdev, packet, data);
+            if (userspace_tso_enabled()
+                && (data->tnl_type == OVS_VPORT_TYPE_VXLAN)) {
+                /* Just identify it as a vxlan packet, here netdev is
+                 * vxlan_sys_*, netdev->ol_flags can't indicate if final
+                 * physical output port can support VXLAN TSO, in
+                 * netdev_send_prepare_packet will drop it if final
+                 * physical output port can't support VXLAN TSO.
+                 */
+                dp_packet_hwol_set_vxlan_tcp_seg(packet);
+            }
             pkt_metadata_init(&packet->md, data->out_port);
             dp_packet_batch_refill(batch, packet, i);
         }

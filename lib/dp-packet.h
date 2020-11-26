@@ -81,6 +81,14 @@ enum dp_packet_offload_mask {
     DEF_OL_FLAG(DP_PACKET_OL_TX_UDP_CKSUM, PKT_TX_UDP_CKSUM, 0x400),
     /* Offload SCTP checksum. */
     DEF_OL_FLAG(DP_PACKET_OL_TX_SCTP_CKSUM, PKT_TX_SCTP_CKSUM, 0x800),
+    /* VXLAN TCP Segmentation Offload. */
+    DEF_OL_FLAG(DP_PACKET_OL_TX_TUNNEL_VXLAN, PKT_TX_TUNNEL_VXLAN, 0x1000),
+    /* UDP Segmentation Offload. */
+    DEF_OL_FLAG(DP_PACKET_OL_TX_UDP_SEG, PKT_TX_UDP_SEG, 0x2000),
+    /* Outer L3 Type IPV4 For Tunnel Offload. */
+    DEF_OL_FLAG(DP_PACKET_OL_TX_OUTER_IPV4, PKT_TX_OUTER_IPV4, 0x4000),
+    /* Outer L3 Type IPV6 For Tunnel Offload. */
+    DEF_OL_FLAG(DP_PACKET_OL_TX_OUTER_IPV6, PKT_TX_OUTER_IPV6, 0x8000),
     /* Adding new field requires adding to DP_PACKET_OL_SUPPORTED_MASK. */
 };
 
@@ -95,7 +103,8 @@ enum dp_packet_offload_mask {
                                      DP_PACKET_OL_TX_IPV6          | \
                                      DP_PACKET_OL_TX_TCP_CKSUM     | \
                                      DP_PACKET_OL_TX_UDP_CKSUM     | \
-                                     DP_PACKET_OL_TX_SCTP_CKSUM)
+                                     DP_PACKET_OL_TX_SCTP_CKSUM    | \
+                                     DP_PACKET_OL_TX_UDP_SEG)
 
 #define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CKSUM | \
                                  DP_PACKET_OL_TX_UDP_CKSUM | \
@@ -954,6 +963,13 @@ dp_packet_hwol_is_tso(const struct dp_packet *b)
     return !!(*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_TCP_SEG);
 }
 
+/* Returns 'true' if packet 'b' is marked for UDP fragmentation offloading. */
+static inline bool
+dp_packet_hwol_is_ufo(const struct dp_packet *b)
+{
+    return !!(*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_UDP_SEG);
+}
+
 /* Returns 'true' if packet 'b' is marked for IPv4 checksum offloading. */
 static inline bool
 dp_packet_hwol_is_ipv4(const struct dp_packet *b)
@@ -992,11 +1008,39 @@ dp_packet_hwol_set_tx_ipv4(struct dp_packet *b)
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_IPV4;
 }
 
+/* Reset packet 'b' for IPv4 checksum offloading. */
+static inline void
+dp_packet_hwol_reset_tx_ipv4(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) &= ~DP_PACKET_OL_TX_IPV4;
+}
+
 /* Mark packet 'b' for IPv6 checksum offloading. */
 static inline void
 dp_packet_hwol_set_tx_ipv6(struct dp_packet *b)
 {
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_IPV6;
+}
+
+/* Reset packet 'b' for IPv6 checksum offloading. */
+static inline void
+dp_packet_hwol_reset_tx_ipv6(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) &= ~DP_PACKET_OL_TX_IPV6;
+}
+
+/* Mark packet 'b' for Outer IPv4 checksum offloading. */
+static inline void
+dp_packet_hwol_set_tx_outer_ipv4(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_OUTER_IPV4;
+}
+
+/* Mark packet 'b' for Outer IPv6 checksum offloading. */
+static inline void
+dp_packet_hwol_set_tx_outer_ipv6(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_OUTER_IPV6;
 }
 
 /* Mark packet 'b' for TCP checksum offloading.  It implies that either
@@ -1007,6 +1051,14 @@ dp_packet_hwol_set_csum_tcp(struct dp_packet *b)
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TCP_CKSUM;
 }
 
+/* Reset TCP checksum offloading flag for packet 'b'.
+ */
+static inline void
+dp_packet_hwol_reset_csum_tcp(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) &= ~DP_PACKET_OL_TX_TCP_CKSUM;
+}
+
 /* Mark packet 'b' for UDP checksum offloading.  It implies that either
  * the packet 'b' is marked for IPv4 or IPv6 checksum offloading. */
 static inline void
@@ -1014,6 +1066,15 @@ dp_packet_hwol_set_csum_udp(struct dp_packet *b)
 {
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_UDP_CKSUM;
 }
+
+/* Reset UDP checksum offloading flag for packet 'b'.
+ */
+static inline void
+dp_packet_hwol_reset_csum_udp(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) &= ~DP_PACKET_OL_TX_UDP_CKSUM;
+}
+
 
 /* Mark packet 'b' for SCTP checksum offloading.  It implies that either
  * the packet 'b' is marked for IPv4 or IPv6 checksum offloading. */
@@ -1031,6 +1092,181 @@ dp_packet_hwol_set_tcp_seg(struct dp_packet *b)
 {
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TCP_SEG;
 }
+
+/* Mark packet 'b' for UDP segmentation offloading.  It implies that
+ * either the packet 'b' is marked for IPv4 or IPv6 checksum offloading
+ * and also for UDP checksum offloading. */
+static inline void
+dp_packet_hwol_set_udp_seg(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_UDP_SEG;
+}
+
+#ifdef DPDK_NETDEV
+/* Set l2_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_l2_len(struct dp_packet *b, int l2_len)
+{
+    b->mbuf.l2_len = l2_len;
+}
+
+/* Set l3_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_l3_len(struct dp_packet *b, int l3_len)
+{
+    b->mbuf.l3_len = l3_len;
+}
+
+/* Set l4_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_l4_len(struct dp_packet *b, int l4_len)
+{
+    b->mbuf.l4_len = l4_len;
+}
+
+/* Set outer_l2_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l2_len(struct dp_packet *b, int outer_l2_len)
+{
+    b->mbuf.outer_l2_len = outer_l2_len;
+}
+
+/* Set outer_l3_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l3_len(struct dp_packet *b, int outer_l3_len)
+{
+    b->mbuf.outer_l3_len = outer_l3_len;
+}
+
+/* Get l2_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_l2_len(struct dp_packet *b)
+{
+    return b->mbuf.l2_len;
+}
+
+/* Get l3_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_l3_len(struct dp_packet *b)
+{
+    return b->mbuf.l3_len;
+}
+
+/* Get l4_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_l4_len(struct dp_packet *b)
+{
+    return b->mbuf.l4_len;
+}
+
+/* Get outer_l2_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_outer_l2_len(struct dp_packet *b)
+{
+    return b->mbuf.outer_l2_len;
+}
+
+
+/* Get outer_l3_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_outer_l3_len(struct dp_packet *b)
+{
+    return b->mbuf.outer_l3_len;
+}
+
+#else
+/* Set l2_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_l2_len(struct dp_packet *b OVS_UNUSED,
+                          int l2_len OVS_UNUSED)
+{
+}
+
+/* Set l3_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_l3_len(struct dp_packet *b OVS_UNUSED,
+                          int l3_len OVS_UNUSED)
+{
+}
+
+/* Set l4_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_l4_len(struct dp_packet *b OVS_UNUSED,
+                          int l4_len OVS_UNUSED)
+{
+}
+
+/* Set outer_l2_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l2_len(struct dp_packet *b OVS_UNUSED,
+                                int outer_l2_len OVS_UNUSED)
+{
+}
+
+/* Set outer_l3_len for the packet 'b' */
+static inline void
+dp_packet_hwol_set_outer_l3_len(struct dp_packet *b OVS_UNUSED,
+                                int outer_l3_len OVS_UNUSED)
+{
+}
+
+/* Get l2_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_l2_len(struct dp_packet *b)
+{
+    return ((char *)dp_packet_l3(b) - (char *)dp_packet_eth(b));
+}
+
+/* Get l3_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_l3_len(struct dp_packet *b)
+{
+    return ((char *)dp_packet_l4(b) - (char *)dp_packet_l3(b));
+}
+
+/* Get l4_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_l4_len(struct dp_packet *b OVS_UNUSED)
+{
+    return 0;
+}
+
+
+/* Get outer_l2_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_outer_l2_len(struct dp_packet *b)
+{
+    return ((char *)dp_packet_l3(b) - (char *)dp_packet_eth(b));
+}
+
+/* Get outer_l3_len for the packet 'b' */
+static inline int
+dp_packet_hwol_get_outer_l3_len(struct dp_packet *b)
+{
+    return ((char *)dp_packet_l4(b) - (char *)dp_packet_l3(b));
+}
+
+#endif /* DPDK_NETDEV */
+
+/* Mark packet 'b' for VXLAN TCP segmentation offloading. */
+static inline void
+dp_packet_hwol_set_vxlan_tcp_seg(struct dp_packet *b)
+{
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TUNNEL_VXLAN;
+    /* Set outer_l2_len and outer_l3_len */
+    dp_packet_hwol_set_outer_l2_len(b, (char *) dp_packet_l3(b)
+                                       - (char *) dp_packet_eth(b));
+    dp_packet_hwol_set_outer_l3_len(b, (char *) dp_packet_l4(b)
+                                       - (char *) dp_packet_l3(b));
+}
+
+/* Check if it is a VXLAN packet */
+static inline bool
+dp_packet_hwol_is_vxlan_tcp_seg(struct dp_packet *b)
+{
+    return (*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_TUNNEL_VXLAN);
+}
+
 
 static inline bool
 dp_packet_ip_checksum_valid(const struct dp_packet *p)
