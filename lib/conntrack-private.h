@@ -83,21 +83,23 @@ struct alg_exp_node {
     bool nat_rpl_dst;
 };
 
-enum OVS_PACKED_ENUM ct_conn_type {
-    CT_CONN_TYPE_DEFAULT,
-    CT_CONN_TYPE_UN_NAT,
+#define CONN_FLAG_NAT_MASK 0xf
+
+struct conn_dir {
+    struct cmap_node cm_node;
+    bool orig;
 };
 
 struct conn {
     /* Immutable data. */
     struct conn_key key;
+    struct conn_dir orig;
     struct conn_key rev_key;
+    struct conn_dir rev;
     struct conn_key parent_key; /* Only used for orig_tuple support. */
     struct ovs_list exp_node;
-    struct cmap_node cm_node;
-    struct nat_action_info_t *nat_info;
+    uint64_t conn_flags;
     char *alg;
-    struct conn *nat_conn; /* The NAT 'conn' context, if there is one. */
 
     /* Mutable data. */
     struct ovs_mutex lock; /* Guards all mutable fields. */
@@ -117,10 +119,14 @@ struct conn {
 
     /* Immutable data. */
     bool alg_related; /* True if alg data connection. */
-    enum ct_conn_type conn_type;
 
     uint32_t tp_id; /* Timeout policy ID. */
 };
+
+static inline struct conn * conn_from_conndir(struct conn_dir *conndir) {
+    return conndir->orig ? CONTAINER_OF(conndir, struct conn, orig) : \
+                           CONTAINER_OF(conndir, struct conn, rev);
+}
 
 enum ct_update_res {
     CT_UPDATE_INVALID,
