@@ -93,48 +93,92 @@ enum ct_alg_ctl_type {
     CT_ALG_CTL_MAX,
 };
 
-#define CONN_FLAG_NAT_MASK 0xf
-#define CONN_FLAG_CTL_FTP  (CT_ALG_CTL_FTP  << 4)
-#define CONN_FLAG_CTL_TFTP (CT_ALG_CTL_TFTP << 4)
-#define CONN_FLAG_CTL_SIP  (CT_ALG_CTL_SIP  << 4)
+#define CONN_FLAG_NAT_MASK    0xf
+#define CONN_FLAG_CTL_FTP     (CT_ALG_CTL_FTP  << 4)
+#define CONN_FLAG_CTL_TFTP    (CT_ALG_CTL_TFTP << 4)
+#define CONN_FLAG_CTL_SIP     (CT_ALG_CTL_SIP  << 4)
 /* currently only 3 algs supported */
-#define CONN_FLAG_ALG_MASK 0x70
+#define CONN_FLAG_ALG_MASK    0x70
+#define CONN_FLAG_ALG_RELATED 0x80
+#define CONN_FLAG_CLEANED     0x100 /* indicate if it is removed from timer */
+ 
 
 struct conn_dir {
     struct cmap_node cm_node;
     bool orig;
 };
 
+#if HAVE_PTHREAD_SPIN_LOCK == 0
+static inline void conn_lock(const struct ovs_mutex *lock) {
+    ovs_mutex_lock(lock);
+}
+#else
+static inline void conn_lock(const struct ovs_spin *lock) {
+    ovs_spin_lock(lock);
+}
+#endif
+
+#if HAVE_PTHREAD_SPIN_LOCK == 0
+static inline void conn_unlock(const struct ovs_mutex *lock) {
+    ovs_mutex_unlock(lock);
+}
+#else
+static inline void conn_unlock(const struct ovs_spin *lock) {
+    ovs_spin_unlock(lock);
+}
+#endif
+
+#if HAVE_PTHREAD_SPIN_LOCK == 0
+static inline void conn_lock_init(struct ovs_mutex *lock) {
+    ovs_mutex_init_adaptive(lock);
+}
+#else
+static inline void conn_lock_init(struct ovs_spin *lock) {
+    ovs_spin_init(lock);
+}
+#endif
+
+#if HAVE_PTHREAD_SPIN_LOCK == 0
+static inline void conn_lock_destroy(struct ovs_mutex *lock) {
+    ovs_mutex_destroy(lock);
+}
+#else
+static inline void conn_lock_destroy(struct ovs_spin *lock) {
+    (void)lock;
+}
+#endif
+
+struct conn_alg {
+    struct conn_key parent_key; /* Only used for orig_tuple support. */
+    int seq_skew;
+    bool seq_skew_dir; /* TCP sequence skew direction due to NATTing of FTP
+                        * control messages; true if reply direction. */
+};
+ 
 struct conn {
     /* Immutable data. */
     struct conn_key key;
     struct conn_dir orig;
     struct conn_key rev_key;
     struct conn_dir rev;
-    struct conn_key parent_key; /* Only used for orig_tuple support. */
     struct ovs_list exp_node;
     uint64_t conn_flags;
-
-    /* Mutable data. */
-    struct ovs_mutex lock; /* Guards all mutable fields. */
-    ovs_u128 label;
-    long long expiration;
-    uint32_t mark;
-    int seq_skew;
 
     /* Immutable data. */
     int32_t admit_zone; /* The zone for managing zone limit counts. */
     uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
-
-    /* Mutable data. */
-    bool seq_skew_dir; /* TCP sequence skew direction due to NATTing of FTP
-                        * control messages; true if reply direction. */
-    bool cleaned; /* True if cleaned from expiry lists. */
-
-    /* Immutable data. */
-    bool alg_related; /* True if alg data connection. */
-
     uint32_t tp_id; /* Timeout policy ID. */
+    
+    /* Mutable data. */
+#if HAVE_PTHREAD_SPIN_LOCK == 0
+    struct ovs_mutex lock; /* Guards all mutable fields. */
+#else
+    struct ovs_spin  lock; /* Guards all mutable fields. */
+#endif
+    ovs_u128 label;
+    long long expiration;
+    struct conn_alg *alg;
+    uint32_t mark;
 };
 
 static inline struct conn * conn_from_conndir(struct conn_dir *conndir) {
