@@ -83,7 +83,22 @@ struct alg_exp_node {
     bool nat_rpl_dst;
 };
 
+enum ct_alg_ctl_type {
+    CT_ALG_CTL_NONE,
+    CT_ALG_CTL_FTP,
+    CT_ALG_CTL_TFTP,
+    /* SIP is not enabled through Openflow and presently only used as
+     * an example of an alg that allows a wildcard src ip. */
+    CT_ALG_CTL_SIP,
+    CT_ALG_CTL_MAX,
+};
+
 #define CONN_FLAG_NAT_MASK 0xf
+#define CONN_FLAG_CTL_FTP  (CT_ALG_CTL_FTP  << 4)
+#define CONN_FLAG_CTL_TFTP (CT_ALG_CTL_TFTP << 4)
+#define CONN_FLAG_CTL_SIP  (CT_ALG_CTL_SIP  << 4)
+/* currently only 3 algs supported */
+#define CONN_FLAG_ALG_MASK 0x70
 
 struct conn_dir {
     struct cmap_node cm_node;
@@ -99,7 +114,6 @@ struct conn {
     struct conn_key parent_key; /* Only used for orig_tuple support. */
     struct ovs_list exp_node;
     uint64_t conn_flags;
-    char *alg;
 
     /* Mutable data. */
     struct ovs_mutex lock; /* Guards all mutable fields. */
