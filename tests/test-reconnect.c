@@ -48,6 +48,7 @@ test_reconnect_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
 
     now = 1000;
     reconnect = reconnect_create(now);
+    reconnect_try_receive(reconnect, LLONG_MAX);
     reconnect_set_name(reconnect, "remote");
     reconnect_get_stats(reconnect, now, &prev);
     printf("### t=%d ###\n", now);
