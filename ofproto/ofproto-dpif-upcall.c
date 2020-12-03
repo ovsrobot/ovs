@@ -1581,6 +1581,11 @@ handle_upcalls(struct udpif *udpif, struct upcall *upcalls,
         if (should_install_flow(udpif, upcall)) {
             struct udpif_key *ukey = upcall->ukey;
 
+            /* OVS userspace solve it, no need to install this flow. */
+            if (upcall->fitness == ODP_FIT_TOO_LITTLE) {
+                continue;
+            }
+
             if (ukey_install(udpif, ukey)) {
                 upcall->ukey_persists = true;
                 put_op_init(&ops[n_ops++], ukey, DPIF_FP_CREATE);
