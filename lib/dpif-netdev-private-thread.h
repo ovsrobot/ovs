@@ -45,6 +45,8 @@ struct dp_netdev_pmd_thread_ctx {
     struct dp_netdev_rxq *last_rxq;
     /* EMC insertion probability context for the current processing cycle. */
     uint32_t emc_insert_min;
+    /* Enable the SMC cache from ovsdb config */
+    bool smc_enable_db;
 };
 
 /* Forward declaration for typedef */
