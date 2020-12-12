@@ -3140,9 +3140,12 @@ stats_update_wait(void)
 static void
 run_status_update(void)
 {
-    if (!status_txn) {
+    if (!status_txn || status_txn_try_again) {
         uint64_t seq;
-
+        if (status_txn) {
+            ovsdb_idl_txn_commit(status_txn);
+            ovsdb_idl_txn_destroy(status_txn);
+        }
         /* Rate limit the update.  Do not start a new update if the
          * previous one is not done. */
         seq = seq_read(connectivity_seq_get());
