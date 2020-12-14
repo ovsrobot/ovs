@@ -6592,6 +6592,17 @@ odp_flow_key_hash(const void *key, size_t key_len, ovs_u128 *hash)
     }
     hash_bytes128(key, key_len, secret, hash);
     uuid_set_bits_v4((struct uuid *)hash);
+
+    /* Clean up the first bit. */
+    hash->u32[0] &= ~0x1;
+}
+
+void
+odp_flow_key_hash_local(const void *key, size_t key_len, ovs_u128 *hash)
+{
+    odp_flow_key_hash(key, key_len, hash);
+    /* If setting 1, it means flows are consistent. */
+    hash->u32[0] |= 0x1;
 }
 
 static void

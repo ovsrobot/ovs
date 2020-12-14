@@ -2685,6 +2685,10 @@ revalidate(struct revalidator *revalidator)
             bool already_dumped;
             int error;
 
+            if (f->ufid_present && UUID_LOCAL(&(f)->ufid)) {
+                continue;
+            }
+
             if (ukey_acquire(udpif, f, &ukey, &error)) {
                 if (error == EBUSY) {
                     /* Another thread is processing this flow, so don't bother
@@ -2794,6 +2798,9 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
         CMAP_FOR_EACH(ukey, cmap_node, &umap->cmap) {
             enum ukey_state ukey_state;
 
+            if (ukey->ufid_present && UUID_LOCAL(&(ukey)->ufid)) {
+                continue;
+            }
             /* Handler threads could be holding a ukey lock while it installs a
              * new flow, so don't hang around waiting for access to it. */
             if (ovs_mutex_trylock(&ukey->mutex)) {

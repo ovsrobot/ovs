@@ -1146,6 +1146,12 @@ dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
         ufid_present = true;
     }
 
+    if (ufid_present && dpctl_p->consistent) {
+        dpctl_error(dpctl_p, -1,
+                    "ufid and consistent are enabled at same time.");
+        return -1;
+    }
+
     simap_init(&port_names);
     DPIF_PORT_FOR_EACH (&dpif_port, &port_dump, dpif) {
         simap_put(&port_names, dpif_port.name, odp_to_u32(dpif_port.port_no));
@@ -1167,6 +1173,11 @@ dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
     if (error) {
         dpctl_error(dpctl_p, error, "parsing actions");
         goto out_freeactions;
+    }
+
+    if (dpctl_p->consistent) {
+        odp_flow_key_hash_local(key.data, key.size, &ufid);
+        ufid_present = true;
     }
 
     if (!ufid_present && dpctl_p->is_appctl) {
@@ -1324,6 +1335,17 @@ dpctl_del_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
         dpctl_error(dpctl_p, error, "%s", error_s);
         free(error_s);
         goto out;
+    }
+
+    if (ufid_present && dpctl_p->consistent) {
+        dpctl_error(dpctl_p, -1,
+                    "ufid and consistent are enabled at same time.");
+        goto out;
+    }
+
+    if (dpctl_p->consistent) {
+        odp_flow_key_hash_local(key.data, key.size, &ufid);
+        ufid_present = ufid_generated = true;
     }
 
     if (!ufid_present && dpctl_p->is_appctl) {
@@ -2670,6 +2692,8 @@ dpctl_unixctl_handler(struct unixctl_conn *conn, int argc, const char *argv[],
             } else if (!strcmp(arg, "--no-names")) {
                 dpctl_p.names = false;
                 set_names = true;
+            } else if (!strcmp(arg, "--consistent")) {
+                dpctl_p.consistent = true;
             } else {
                 ds_put_format(&ds, "Unrecognized option %s", argv[1]);
                 error = true;

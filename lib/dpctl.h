@@ -42,6 +42,9 @@ struct dpctl_params {
     /* --names: Use port names in output? */
     bool names;
 
+    /* --consistent: Install consistent flow. */
+    bool consistent;
+
     /* Callback for printing.  This function is called from dpctl_run_command()
      * to output data.  The 'aux' parameter is set to the 'aux'
      * member.  The 'error' parameter is true if 'string' is an error

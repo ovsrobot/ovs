@@ -42,6 +42,9 @@ extern "C" {
     ((unsigned int) ((UUID)->parts[2] & 0xffff)),   \
     ((unsigned int) ((UUID)->parts[3]))
 
+#define UUID_LOCAL(ufid) \
+    (((ufid)->u32[0] & 0x1) == 0x1)
+
 /* Returns a hash value for 'uuid'.  This hash value is the same regardless of
  * whether we are running on a 32-bit or 64-bit or big-endian or little-endian
  * architecture. */
