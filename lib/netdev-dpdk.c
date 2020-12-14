@@ -522,6 +522,10 @@ struct netdev_dpdk {
          * otherwise interrupt mode is used. */
         bool requested_lsc_interrupt_mode;
         bool lsc_interrupt_mode;
+        /* Allow to use hardware capable ethernet devices to
+         * split traffic between userspace and kernel space. */
+        bool requested_isolate_offload_mode;
+        bool isolate_offload_mode;
 
         /* VF configuration. */
         struct eth_addr requested_hwaddr;
@@ -965,6 +969,13 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev, int n_rxq, int n_txq)
     struct rte_eth_dev_info info;
     uint16_t conf_mtu;
 
+    diag = rte_flow_isolate(dev->port_id, dev->isolate_offload_mode, NULL);
+    if (diag && diag != -ENOSYS) {
+        VLOG_WARN("rte_flow_isolate was invoked unsuccessfully, mode(%d): %d\n",
+                  dev->isolate_offload_mode, diag);
+        return diag;
+    }
+
     rte_eth_dev_info_get(dev->port_id, &info);
 
     /* As of DPDK 19.11, it is not allowed to set a mq_mode for
@@ -1245,6 +1256,7 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->requested_mtu = RTE_ETHER_MTU;
     dev->max_packet_len = MTU_TO_FRAME_LEN(dev->mtu);
     dev->requested_lsc_interrupt_mode = 0;
+    dev->requested_isolate_offload_mode = 0;
     ovsrcu_index_init(&dev->vid, -1);
     dev->vhost_reconfigured = false;
     dev->attached = false;
@@ -1739,6 +1751,8 @@ netdev_dpdk_get_config(const struct netdev *netdev, struct smap *args)
         }
         smap_add(args, "lsc_interrupt_mode",
                  dev->lsc_interrupt_mode ? "true" : "false");
+        smap_add(args, "isolate_offload_mode",
+                 dev->isolate_offload_mode ? "true" : "false");
 
         if (dpdk_port_is_representor(dev)) {
             smap_add_format(args, "dpdk-vf-mac", ETH_ADDR_FMT,
@@ -1918,6 +1932,7 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
     bool rx_fc_en, tx_fc_en, autoneg, lsc_interrupt_mode;
     bool flow_control_requested = true;
     enum rte_eth_fc_mode fc_mode;
+    bool isolate_offload_mode;
     static const enum rte_eth_fc_mode fc_mode_set[2][2] = {
         {RTE_FC_NONE,     RTE_FC_TX_PAUSE},
         {RTE_FC_RX_PAUSE, RTE_FC_FULL    }
@@ -2019,6 +2034,12 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
     lsc_interrupt_mode = smap_get_bool(args, "dpdk-lsc-interrupt", false);
     if (dev->requested_lsc_interrupt_mode != lsc_interrupt_mode) {
         dev->requested_lsc_interrupt_mode = lsc_interrupt_mode;
+        netdev_request_reconfigure(netdev);
+    }
+
+    isolate_offload_mode = smap_get_bool(args, "isolate-offload-mode", false);
+    if (dev->requested_isolate_offload_mode != isolate_offload_mode) {
+        dev->requested_isolate_offload_mode = isolate_offload_mode;
         netdev_request_reconfigure(netdev);
     }
 
@@ -4985,6 +5006,7 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
         && netdev->n_rxq == dev->requested_n_rxq
         && dev->mtu == dev->requested_mtu
         && dev->lsc_interrupt_mode == dev->requested_lsc_interrupt_mode
+        && dev->isolate_offload_mode == dev->requested_isolate_offload_mode
         && dev->rxq_size == dev->requested_rxq_size
         && dev->txq_size == dev->requested_txq_size
         && eth_addr_equals(dev->hwaddr, dev->requested_hwaddr)
@@ -5011,6 +5033,7 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
     }
 
     dev->lsc_interrupt_mode = dev->requested_lsc_interrupt_mode;
+    dev->isolate_offload_mode = dev->requested_isolate_offload_mode;
 
     netdev->n_txq = dev->requested_n_txq;
     netdev->n_rxq = dev->requested_n_rxq;
