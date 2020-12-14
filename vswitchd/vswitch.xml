@@ -2694,6 +2694,15 @@
             </p>
           </dd>
 
+          <dt><code>Bareudp</code></dt>
+          <dd>
+            <p>
+            The Bareudp tunnel provides a generic L3 encapsulation support for
+            tunnelling different L3 protocols like MPLS, IP, NSH etc. inside a
+            UDP tunnel.
+            </p>
+          </dd>
+
         </dl>
       </column>
     </group>
@@ -3088,6 +3097,17 @@
         <p>
           ERSPAN hardware ID is a 6-bit unique identifier of an
           ERSPAN v2 engine within a system.
+        </p>
+      </column>
+    </group>
+
+    <group title="Tunnel Options: Bareudp only">
+      <column name="options" key="payload_type">
+        <p>
+           Specifies the ethertype of the l3 protocol the bareudp
+           device is tunnelling. For the tunnels which supports multiple
+           ethertypes of a l3 protocol (IP, MPLS) this field specifies the
+           protocol name as a string.
         </p>
       </column>
     </group>
