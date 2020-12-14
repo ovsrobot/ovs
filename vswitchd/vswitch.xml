@@ -222,6 +222,23 @@
         </p>
       </column>
 
+      <column name="other_config" key="tnl-neigh-event-enabled"
+              type='{"type": "boolean"}'>
+        <p>
+          Set this value to <code>true</code> to enable learning neigh from system.
+          The default value is <code>false</code>.
+        </p>
+        <p>
+          If enabled, Open vSwitch can learn the neigh entries from system. Then you
+          may not configure tunnel IP address on Open vSwitch bridge,
+          when encapsulating tunnel packets(e.g. native_tunnel_output), we try to use
+          the neigh entry which learned from system. That is useful for the flow bifurcation
+          that is a mechanism which uses hardware capable Ethernet devices
+          to split traffic between Linux user space and kernel space. More details:
+          http://git.dpdk.org/next/dpdk-next-net/tree/doc/guides/howto/flow_bifurcation.rst
+        </p>
+      </column>
+
       <column name="other_config" key="hw-offload"
               type='{"type": "boolean"}'>
         <p>

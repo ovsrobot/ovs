@@ -5804,6 +5804,7 @@ dpif_netdev_wait(struct dpif *dpif)
     ovs_mutex_unlock(&dp->port_mutex);
     ovs_mutex_unlock(&dp_netdev_mutex);
     seq_wait(tnl_conf_seq, dp->last_tnl_conf_seq);
+    tnl_neigh_cache_wait();
 }
 
 static void

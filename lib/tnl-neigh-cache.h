@@ -37,6 +37,8 @@ int tnl_neigh_lookup(const char dev_name[], const struct in6_addr *dst,
                      struct eth_addr *mac);
 void tnl_neigh_cache_init(void);
 void tnl_neigh_cache_run(void);
+void tnl_neigh_cache_wait(void);
 void tnl_neigh_flush(const char dev_name[]);
+void tnl_neigh_event_enabled(const struct smap *ovs_other_config);
 
 #endif

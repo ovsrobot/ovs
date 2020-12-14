@@ -69,6 +69,7 @@
 #include "util.h"
 #include "unixctl.h"
 #include "lib/vswitch-idl.h"
+#include "tnl-neigh-cache.h"
 #include "xenserver.h"
 #include "vlan-bitmap.h"
 
@@ -3292,6 +3293,7 @@ bridge_run(void)
         netdev_set_flow_api_enabled(&cfg->other_config);
         dpdk_init(&cfg->other_config);
         userspace_tso_init(&cfg->other_config);
+        tnl_neigh_event_enabled(&cfg->other_config);
     }
 
     /* Initialize the ofproto library.  This only needs to run once, but
