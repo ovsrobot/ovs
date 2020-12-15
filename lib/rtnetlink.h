@@ -65,7 +65,7 @@ void rtnetlink_notify_func(const struct rtnetlink_change *change,
 
 bool rtnetlink_type_is_rtnlgrp_link(uint16_t type);
 bool rtnetlink_type_is_rtnlgrp_addr(uint16_t type);
-bool rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change);
+int rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change);
 struct nln_notifier *
 rtnetlink_notifier_create(rtnetlink_notify_func *, void *aux);
 void rtnetlink_notifier_destroy(struct nln_notifier *);

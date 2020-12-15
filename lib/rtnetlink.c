@@ -82,7 +82,7 @@ rtnetlink_parse_link_info(const struct nlattr *nla,
 /* Parses a rtnetlink message 'buf' into 'change'.  If 'buf' is unparseable,
  * leaves 'change' untouched and returns false.  Otherwise, populates 'change'
  * and returns true. */
-bool
+int
 rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
 {
     const struct nlmsghdr *nlmsg = buf->data;
@@ -99,6 +99,7 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
             [IFLA_MTU]    = { .type = NL_A_U32,    .optional = true },
             [IFLA_ADDRESS] = { .type = NL_A_UNSPEC, .optional = true },
             [IFLA_LINKINFO] = { .type = NL_A_NESTED, .optional = true },
+            [IFLA_WIRELESS] = { .type = NL_A_UNSPEC, .optional = true },
         };
 
         struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -110,6 +111,22 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
             const struct ifinfomsg *ifinfo;
 
             ifinfo = ofpbuf_at(buf, NLMSG_HDRLEN, sizeof *ifinfo);
+
+            /* Wireless events can be spammy and cause a
+             * lot of unnecessary churn and CPU load in
+             * ovs-vswitchd. The best way to filter them out
+             * is to rely on the IFLA_WIRELESS and
+             * ifi_change. As per rtnetlink_ifinfo_prep() in
+             * the kernel, the ifi_change = 0. That combined
+             * with the fact wireless events never really
+             * change interface state (as far as core
+             * networking is concerned) they can be ignored
+             * by ovs-vswitchd. It doesn't understand
+             * wireless extensions anyway and has no way of
+             * presenting these bits into ovsdb.
+             */
+            if (attrs[IFLA_WIRELESS] && ifinfo->ifi_change == 0)
+                return RTNLGRP_NONE;
 
             change->nlmsg_type     = nlmsg->nlmsg_type;
             change->if_index       = ifinfo->ifi_index;
@@ -165,14 +182,14 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
         }
     }
 
-    return parsed;
+    return parsed ? RTNLGRP_LINK : -1;
 }
 
 /* Return RTNLGRP_LINK on success, 0 on parse error. */
 static int
 rtnetlink_parse_cb(struct ofpbuf *buf, void *change)
 {
-    return rtnetlink_parse(buf, change) ? RTNLGRP_LINK : 0;
+    return rtnetlink_parse(buf, change);
 }
 
 /* Registers 'cb' to be called with auxiliary data 'aux' with network device

@@ -742,7 +742,7 @@ netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
         if (!error) {
             struct rtnetlink_change change;
 
-            if (rtnetlink_parse(&buf, &change)) {
+            if (rtnetlink_parse(&buf, &change) > 0) {
                 struct netdev *netdev_ = NULL;
                 char dev_name[IFNAMSIZ];
 
@@ -6343,7 +6343,7 @@ netdev_linux_update_via_netlink(struct netdev_linux *netdev)
         return error;
     }
 
-    if (rtnetlink_parse(reply, change)
+    if (rtnetlink_parse(reply, change) > 0
         && change->nlmsg_type == RTM_NEWLINK) {
         bool changed = false;
         error = 0;
