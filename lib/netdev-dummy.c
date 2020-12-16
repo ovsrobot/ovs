@@ -39,6 +39,7 @@
 #include "pcap-file.h"
 #include "openvswitch/poll-loop.h"
 #include "openvswitch/shash.h"
+#include "ovs-router.h"
 #include "sset.h"
 #include "stream.h"
 #include "unaligned.h"
@@ -1941,6 +1942,12 @@ netdev_dummy_ip4addr(struct unixctl_conn *conn, int argc OVS_UNUSED,
         error = ip_parse_masked(argv[2], &ip.s_addr, &mask.s_addr);
         if (!error) {
             netdev_dummy_set_in4(netdev, ip, mask);
+
+            /* insert local route entry for the new address */
+            struct in6_addr ip6;
+            in6_addr_set_mapped_ipv4(&ip6, ip.s_addr);
+            ovs_router_insert(0, &ip6, 128, true, argv[1], &in6addr_any);
+
             unixctl_command_reply(conn, "OK");
         } else {
             unixctl_command_reply_error(conn, error);
@@ -1970,6 +1977,10 @@ netdev_dummy_ip6addr(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
             mask = ipv6_create_mask(plen);
             netdev_dummy_set_in6(netdev, &ip6, &mask);
+
+            /* insert local route entry for the new address */
+            ovs_router_insert(0, &ip6, 128, true, argv[1], &in6addr_any);
+
             unixctl_command_reply(conn, "OK");
         } else {
             unixctl_command_reply_error(conn, error);
