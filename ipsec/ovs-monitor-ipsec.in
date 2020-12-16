@@ -1146,6 +1146,11 @@ def unixctl_refresh(conn, unused_argv, unused_aux):
     monitor.ike_helper.refresh(monitor)
     conn.reply(None)
 
+def unixctl_exit_noflush(conn, unused_argv, unused_aux):
+    global exiting
+    # Do not clear persistent state
+    exiting = True
+    conn.reply(None)
 
 def unixctl_exit(conn, unused_argv, unused_aux):
     global monitor
@@ -1205,6 +1210,7 @@ def main():
     ovs.unixctl.command_register("tunnels/show", "", 0, 0,
                                  unixctl_show, None)
     ovs.unixctl.command_register("refresh", "", 0, 0, unixctl_refresh, None)
+    ovs.unixctl.command_register("exit/noflush", "", 0, 0, unixctl_exit_noflush, None)
     ovs.unixctl.command_register("exit", "", 0, 0, unixctl_exit, None)
 
     error, unixctl_server = ovs.unixctl.server.UnixctlServer.create(None)
