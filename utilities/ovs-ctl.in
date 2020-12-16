@@ -254,7 +254,11 @@ stop_forwarding () {
 }
 
 stop_ovs_ipsec () {
-    ${bindir}/ovs-appctl -t ovs-monitor-ipsec exit || return 1
+    if test -f ${rundir}/ovs-monitor-ipsec.pid; then
+        ${bindir}/ovs-appctl -t ovs-monitor-ipsec exit || return 1
+    else
+        pkill ovs-monitor-ipsec
+    fi
     return 0
 }
 
