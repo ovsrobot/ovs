@@ -62,6 +62,8 @@
 
 VLOG_DEFINE_THIS_MODULE(ovsdb_server);
 
+#define MAX_NUM_DB_REMOTES 64
+
 struct db {
     char *filename;
     struct ovsdb *db;
@@ -1577,6 +1579,12 @@ ovsdb_server_add_remote(struct unixctl_conn *conn, int argc OVS_UNUSED,
     const struct ovsdb_table *table;
     const struct db *db;
     char *retval;
+
+    if (sset_count(config->remotes) > MAX_NUM_DB_REMOTES) {
+        unixctl_command_reply_error(conn,
+            "exceed the maximum number of db remotes");
+        return;
+    }
 
     retval = (strncmp("db:", remote, 3)
               ? NULL
