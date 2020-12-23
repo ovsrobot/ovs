@@ -267,7 +267,8 @@
           <ref column="other_config" key="hw-offload"/> is enabled.
         </p>
         <p>
-          The default value is <code>none</code>.
+          The default value is <code>none</code>. Changing this value requires
+          restarting the daemon
         </p>
       </column>
 
