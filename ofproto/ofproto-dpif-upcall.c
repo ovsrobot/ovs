@@ -768,9 +768,10 @@ recv_upcalls(struct handler *handler)
     struct dpif_upcall dupcalls[UPCALL_MAX_BATCH];
     struct upcall upcalls[UPCALL_MAX_BATCH];
     struct flow flows[UPCALL_MAX_BATCH];
-    size_t n_upcalls, i;
+    size_t n_upcalls, i, n_errors;
 
     n_upcalls = 0;
+    n_errors = 0;
     while (n_upcalls < UPCALL_MAX_BATCH) {
         struct ofpbuf *recv_buf = &recv_bufs[n_upcalls];
         struct dpif_upcall *dupcall = &dupcalls[n_upcalls];
@@ -805,6 +806,7 @@ recv_upcalls(struct handler *handler)
                                dupcall->type, dupcall->userdata, flow, mru,
                                &dupcall->ufid, PMD_ID_NULL);
         if (error) {
+            n_errors++;
             if (error == ENODEV) {
                 /* Received packet on datapath port for which we couldn't
                  * associate an ofproto.  This can happen if a port is removed
@@ -833,6 +835,7 @@ recv_upcalls(struct handler *handler)
         error = process_upcall(udpif, upcall,
                                &upcall->odp_actions, &upcall->wc);
         if (error) {
+            n_errors++;
             goto cleanup;
         }
 
@@ -844,6 +847,13 @@ cleanup:
 free_dupcall:
         dp_packet_uninit(&dupcall->packet);
         ofpbuf_uninit(recv_buf);
+        if (n_errors >= UPCALL_MAX_BATCH * 2) {
+            if (n_upcalls == 0) {
+                return 1;
+            } else {
+                break;
+            }
+        }
     }
 
     if (n_upcalls) {
