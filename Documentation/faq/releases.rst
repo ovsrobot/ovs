@@ -85,6 +85,10 @@ Q: What Linux kernel versions does each Open vSwitch release work with?
     RHEL and CentOS 7 3.10 based kernels since they have diverged from the
     Linux kernel.org 3.10 kernels.
 
+    Beginning with Open vSwitch branch 2.15 the Open vSwitch Out of Tree
+    (OOT) Linux kernel driver is deprecated and support is capped at Linux
+    kernel version 5.8.
+
 Q: Are all features available with all datapaths?
 
     A: Open vSwitch supports different datapaths on different platforms.  Each
@@ -101,7 +105,8 @@ Q: Are all features available with all datapaths?
 
     Linux OVS tree
       The datapath implemented by the Linux kernel module distributed with the
-      OVS source tree.
+      OVS source tree. This datapath will be deprecated starting with OVS
+      2.15.x and support capped at Linux kernel version 5.8.
 
     Userspace
       This datapath supports conventional system devices as well as
