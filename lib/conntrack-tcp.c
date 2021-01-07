@@ -406,6 +406,7 @@ tcp_conn_update(struct conntrack *ct, struct conn *conn_,
 
         if (tcp_flags & TCP_RST) {
             src->state = dst->state = CT_DPIF_TCPS_TIME_WAIT;
+            conn_update_expiration(ct, &conn->up, CT_TM_TCP_CLOSED, now);
         }
     } else {
         COVERAGE_INC(conntrack_tcp_seq_chk_failed);
