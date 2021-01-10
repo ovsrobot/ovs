@@ -3546,6 +3546,7 @@ propagate_tunnel_data_to_flow__(struct flow *dst_flow,
         }
     }
     dst_flow->nw_proto = nw_proto;
+    memset(dst_flow->vlans, 0, sizeof(dst_flow->vlans));
 }
 
 /*
