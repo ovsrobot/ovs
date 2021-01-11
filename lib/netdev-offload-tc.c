@@ -1651,6 +1651,10 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     }
 
     if (mask->ct_state) {
+        if (mask->ct_state & OVS_CS_F_INVALID) {
+            return EOPNOTSUPP;
+        }
+
         if (mask->ct_state & OVS_CS_F_NEW) {
             if (key->ct_state & OVS_CS_F_NEW) {
                 flower.key.ct_state |= TCA_FLOWER_KEY_CT_FLAGS_NEW;
