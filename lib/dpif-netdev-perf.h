@@ -157,6 +157,8 @@ struct pmd_perf_stats {
     uint64_t last_tsc;
     /* Used to space certain checks in time. */
     uint64_t next_check_tsc;
+    /* Exact Match Cache used entries counter. */
+    atomic_uint32_t emc_n_entries;
     /* If non-NULL, outermost cycle timer currently running in PMD. */
     struct cycle_timer *cur_timer;
     /* Set of PMD counters with their zero offsets. */

@@ -913,7 +913,7 @@ dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
                            odp_port_t in_port);
 
 static inline bool emc_entry_alive(struct emc_entry *ce);
-static void emc_clear_entry(struct emc_entry *ce);
+static void emc_clear_entry(struct emc_entry *ce, struct pmd_perf_stats *s);
 static void smc_clear_entry(struct smc_bucket *b, int idx);
 
 static void dp_netdev_request_reconfigure(struct dp_netdev *dp);
@@ -955,13 +955,16 @@ dfc_cache_init(struct dfc_cache *flow_cache)
 }
 
 static void
-emc_cache_uninit(struct emc_cache *flow_cache)
+emc_cache_uninit(struct emc_cache *flow_cache, struct pmd_perf_stats *s)
 {
     int i;
 
+
     for (i = 0; i < ARRAY_SIZE(flow_cache->entries); i++) {
-        emc_clear_entry(&flow_cache->entries[i]);
+        emc_clear_entry(&flow_cache->entries[i], s);
     }
+
+    atomic_store_relaxed(&s->emc_n_entries, 0);
 }
 
 static void
@@ -977,21 +980,21 @@ smc_cache_uninit(struct smc_cache *smc)
 }
 
 static void
-dfc_cache_uninit(struct dfc_cache *flow_cache)
+dfc_cache_uninit(struct dfc_cache *flow_cache, struct pmd_perf_stats *s)
 {
     smc_cache_uninit(&flow_cache->smc_cache);
-    emc_cache_uninit(&flow_cache->emc_cache);
+    emc_cache_uninit(&flow_cache->emc_cache, s);
 }
 
 /* Check and clear dead flow references slowly (one entry at each
  * invocation).  */
 static void
-emc_cache_slow_sweep(struct emc_cache *flow_cache)
+emc_cache_slow_sweep(struct emc_cache *flow_cache, struct pmd_perf_stats *s)
 {
     struct emc_entry *entry = &flow_cache->entries[flow_cache->sweep_idx];
 
     if (!emc_entry_alive(entry)) {
-        emc_clear_entry(entry);
+        emc_clear_entry(entry, s);
     }
     flow_cache->sweep_idx = (flow_cache->sweep_idx + 1) & EM_FLOW_HASH_MASK;
 }
@@ -1093,15 +1096,26 @@ pmd_info_show_stats(struct ds *reply,
                   "  packets received: %"PRIu64"\n"
                   "  packet recirculations: %"PRIu64"\n"
                   "  avg. datapath passes per packet: %.02f\n"
-                  "  emc hits: %"PRIu64"\n"
+                  "  emc hits: %"PRIu64"\n",
+                  total_packets, stats[PMD_STAT_RECIRC],
+                  passes_per_pkt, stats[PMD_STAT_EXACT_HIT]
+                  );
+
+    if (pmd->core_id != NON_PMD_CORE_ID) {
+        uint32_t emc_entries;
+        atomic_read_relaxed(&pmd->perf_stats.emc_n_entries, &emc_entries);
+        ds_put_format(reply, "  emc entries: %"PRIu32" (%.02f%%)\n",
+                      emc_entries,
+                      100.0 * emc_entries / EM_FLOW_HASH_ENTRIES);
+    }
+
+    ds_put_format(reply,
                   "  smc hits: %"PRIu64"\n"
                   "  megaflow hits: %"PRIu64"\n"
                   "  avg. subtable lookups per megaflow hit: %.02f\n"
                   "  miss with success upcall: %"PRIu64"\n"
                   "  miss with failed upcall: %"PRIu64"\n"
                   "  avg. packets per output batch: %.02f\n",
-                  total_packets, stats[PMD_STAT_RECIRC],
-                  passes_per_pkt, stats[PMD_STAT_EXACT_HIT],
                   stats[PMD_STAT_SMC_HIT],
                   stats[PMD_STAT_MASKED_HIT], lookups_per_hit,
                   stats[PMD_STAT_MISS], stats[PMD_STAT_LOST],
@@ -2001,6 +2015,26 @@ non_atomic_ullong_add(atomic_ullong *var, unsigned long long n)
 
     atomic_read_relaxed(var, &tmp);
     tmp += n;
+    atomic_store_relaxed(var, tmp);
+}
+
+static void
+non_atomic_dec(atomic_uint32_t *var)
+{
+    unsigned int tmp;
+
+    atomic_read_relaxed(var, &tmp);
+    tmp--;
+    atomic_store_relaxed(var, tmp);
+}
+
+static void
+non_atomic_inc(atomic_uint32_t *var)
+{
+    unsigned int tmp;
+
+    atomic_read_relaxed(var, &tmp);
+    tmp++;
     atomic_store_relaxed(var, tmp);
 }
 
@@ -3070,25 +3104,28 @@ emc_entry_alive(struct emc_entry *ce)
 }
 
 static void
-emc_clear_entry(struct emc_entry *ce)
+emc_clear_entry(struct emc_entry *ce, struct pmd_perf_stats *s)
 {
     if (ce->flow) {
         dp_netdev_flow_unref(ce->flow);
         ce->flow = NULL;
+        non_atomic_dec(&s->emc_n_entries);
     }
 }
 
 static inline void
 emc_change_entry(struct emc_entry *ce, struct dp_netdev_flow *flow,
-                 const struct netdev_flow_key *key)
+                 const struct netdev_flow_key *key, struct pmd_perf_stats *s)
 {
     if (ce->flow != flow) {
         if (ce->flow) {
             dp_netdev_flow_unref(ce->flow);
+            non_atomic_dec(&s->emc_n_entries);
         }
 
         if (dp_netdev_flow_ref(flow)) {
             ce->flow = flow;
+            non_atomic_inc(&s->emc_n_entries);
         } else {
             ce->flow = NULL;
         }
@@ -3100,7 +3137,7 @@ emc_change_entry(struct emc_entry *ce, struct dp_netdev_flow *flow,
 
 static inline void
 emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
-           struct dp_netdev_flow *flow)
+           struct dp_netdev_flow *flow, struct pmd_perf_stats *s)
 {
     struct emc_entry *to_be_replaced = NULL;
     struct emc_entry *current_entry;
@@ -3108,7 +3145,7 @@ emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
     EMC_FOR_EACH_POS_WITH_HASH(cache, current_entry, key->hash) {
         if (netdev_flow_key_equal(&current_entry->key, key)) {
             /* We found the entry with the 'mf' miniflow */
-            emc_change_entry(current_entry, flow, NULL);
+            emc_change_entry(current_entry, flow, NULL, s);
             return;
         }
 
@@ -3124,7 +3161,7 @@ emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
     /* We didn't find the miniflow in the cache.
      * The 'to_be_replaced' entry is where the new flow will be stored */
 
-    emc_change_entry(to_be_replaced, flow, key);
+    emc_change_entry(to_be_replaced, flow, key, s);
 }
 
 static inline void
@@ -3139,7 +3176,7 @@ emc_probabilistic_insert(struct dp_netdev_pmd_thread *pmd,
     uint32_t min = pmd->ctx.emc_insert_min;
 
     if (min && random_uint32() <= min) {
-        emc_insert(&(pmd->flow_cache).emc_cache, key, flow);
+        emc_insert(&(pmd->flow_cache).emc_cache, key, flow, &pmd->perf_stats);
     }
 }
 
@@ -6014,7 +6051,8 @@ reload:
             coverage_try_clear();
             dp_netdev_pmd_try_optimize(pmd, poll_list, poll_cnt);
             if (!ovsrcu_try_quiesce()) {
-                emc_cache_slow_sweep(&((pmd->flow_cache).emc_cache));
+                emc_cache_slow_sweep(&((pmd->flow_cache).emc_cache),
+                                     &pmd->perf_stats);
                 pmd->next_rcu_quiesce =
                     pmd->ctx.now + PMD_RCU_QUIESCE_INTERVAL;
             }
@@ -6058,7 +6096,7 @@ reload:
     }
 
     pmd_free_static_tx_qid(pmd);
-    dfc_cache_uninit(&pmd->flow_cache);
+    dfc_cache_uninit(&pmd->flow_cache, &pmd->perf_stats);
     free(poll_list);
     pmd_free_cached_ports(pmd);
     return NULL;
@@ -6537,7 +6575,7 @@ dp_netdev_del_pmd(struct dp_netdev *dp, struct dp_netdev_pmd_thread *pmd)
      * but extra cleanup is necessary */
     if (pmd->core_id == NON_PMD_CORE_ID) {
         ovs_mutex_lock(&dp->non_pmd_mutex);
-        dfc_cache_uninit(&pmd->flow_cache);
+        dfc_cache_uninit(&pmd->flow_cache, &pmd->perf_stats);
         pmd_free_cached_ports(pmd);
         pmd_free_static_tx_qid(pmd);
         ovs_mutex_unlock(&dp->non_pmd_mutex);

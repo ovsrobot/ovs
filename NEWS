@@ -20,6 +20,8 @@ Post-v2.14.0
      * Add generic IP protocol support to conntrack. With this change, all
        none UDP, TCP, and ICMP traffic will be treated as general L3
        traffic, i.e. using 3 tupples.
+     * EMC alive entries counter has been added to command
+       "ovs-appctl dpif-netdev/pmd-stats-show"
    - The environment variable OVS_UNBOUND_CONF, if set, is now used
      as the DNS resolver's (unbound) configuration file.
    - Linux datapath:
