@@ -87,6 +87,7 @@ Install DPDK
        $ ninja -C build
        $ sudo ninja -C build install
        $ sudo ldconfig
+       $ export PKG_CONFIG_PATH=/path/to/installed/".pc" file/for/DPDK
 
    Detailed information can be found at `DPDK documentation`_.
 
@@ -97,11 +98,9 @@ Install DPDK
 
    Exporting the path to library is not necessary if the DPDK libraries are
    system installed. For libraries installed using a prefix, export the path
-   to this library and also update the $PKG_CONFIG_PATH for use
-   before building OVS::
+   to this library::
 
       $ export LD_LIBRARY_PATH=/path/to/installed/DPDK/libraries
-      $ export PKG_CONFIG_PATH=/path/to/installed/".pc" file/for/DPDK
 
    .. note::
 
