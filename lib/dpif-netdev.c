@@ -6205,7 +6205,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
 
         band = &meter->bands[m];
         /* Update band's bucket. */
-        max_bucket_size = band->rate * 1000ULL;
+        max_bucket_size = (band->burst_size + band->rate) * 1000ULL;
         band->bucket += (uint64_t)delta_t * band->rate;
         if (band->bucket > max_bucket_size) {
             band->bucket = max_bucket_size;
@@ -6328,7 +6328,8 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
         meter->bands[i].rate = config->bands[i].rate;
         meter->bands[i].burst_size = config->bands[i].burst_size;
         /* Start with a full bucket. */
-        meter->bands[i].bucket = meter->bands[i].rate * 1000ULL;
+        meter->bands[i].bucket =
+            (meter->bands[i].burst_size + meter->bands[i].rate) * 1000ULL;
 
         /* Figure out max delta_t that is enough to fill any bucket. */
         band_max_delta_t
