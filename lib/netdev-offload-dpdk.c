@@ -1588,6 +1588,28 @@ netdev_offload_dpdk_flow_flush(struct netdev *netdev)
     return 0;
 }
 
+static int
+netdev_offload_dpdk_flow_dump_create(struct netdev *netdev,
+                                     struct netdev_flow_dump **dump_out,
+                                     bool terse OVS_UNUSED)
+{
+    struct netdev_flow_dump *dump;
+
+    dump = xzalloc(sizeof *dump);
+    dump->netdev = netdev_ref(netdev);
+
+    *dump_out = dump;
+    return 0;
+}
+
+static int
+netdev_offload_dpdk_flow_dump_destroy(struct netdev_flow_dump *dump)
+{
+    netdev_close(dump->netdev);
+    free(dump);
+    return 0;
+}
+
 const struct netdev_flow_api netdev_offload_dpdk = {
     .type = "dpdk_flow_api",
     .flow_put = netdev_offload_dpdk_flow_put,
@@ -1595,4 +1617,6 @@ const struct netdev_flow_api netdev_offload_dpdk = {
     .init_flow_api = netdev_offload_dpdk_init_flow_api,
     .flow_get = netdev_offload_dpdk_flow_get,
     .flow_flush = netdev_offload_dpdk_flow_flush,
+    .flow_dump_create = netdev_offload_dpdk_flow_dump_create,
+    .flow_dump_destroy = netdev_offload_dpdk_flow_dump_destroy,
 };
