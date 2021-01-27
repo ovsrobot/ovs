@@ -1009,30 +1009,6 @@ add_flow_mark_rss_actions(struct flow_actions *actions,
     add_flow_action(actions, RTE_FLOW_ACTION_TYPE_END, NULL);
 }
 
-static struct rte_flow *
-netdev_offload_dpdk_mark_rss(struct flow_patterns *patterns,
-                             struct netdev *netdev,
-                             uint32_t flow_mark)
-{
-    struct flow_actions actions = { .actions = NULL, .cnt = 0 };
-    const struct rte_flow_attr flow_attr = {
-        .group = 0,
-        .priority = 0,
-        .ingress = 1,
-        .egress = 0
-    };
-    struct rte_flow_error error;
-    struct rte_flow *flow;
-
-    add_flow_mark_rss_actions(&actions, flow_mark, netdev);
-
-    flow = netdev_offload_dpdk_flow_create(netdev, &flow_attr, patterns->items,
-                                           &actions, &error);
-
-    free_flow_actions(&actions);
-    return flow;
-}
-
 static void
 add_count_action(struct flow_actions *actions)
 {
@@ -1509,27 +1485,49 @@ parse_flow_actions(struct netdev *netdev,
     return 0;
 }
 
-static struct rte_flow *
-netdev_offload_dpdk_actions(struct netdev *netdev,
-                            struct flow_patterns *patterns,
-                            struct nlattr *nl_actions,
-                            size_t actions_len)
+static struct ufid_to_rte_flow_data *
+create_netdev_offload(struct netdev *netdev,
+                      const ovs_u128 *ufid,
+                      struct flow_patterns *flow_patterns,
+                      struct flow_actions *flow_actions,
+                      bool enable_full,
+                      bool enable_partial,
+                      uint32_t flow_mark)
 {
-    const struct rte_flow_attr flow_attr = { .ingress = 1, .transfer = 1 };
-    struct flow_actions actions = { .actions = NULL, .cnt = 0 };
+    struct flow_actions rss_actions = { .s_tnl = DS_EMPTY_INITIALIZER, };
+    struct rte_flow_item *items = flow_patterns->items;
+    struct rte_flow_attr flow_attr = { .ingress = 1, .transfer = 1, };
+    struct ufid_to_rte_flow_data *flow_data = NULL;
+    bool actions_offloaded = true;
     struct rte_flow *flow = NULL;
     struct rte_flow_error error;
-    int ret;
 
-    ret = parse_flow_actions(netdev, &actions, nl_actions, actions_len);
-    if (ret) {
-        goto out;
+    if (enable_full) {
+        flow = netdev_offload_dpdk_flow_create(netdev, &flow_attr, items,
+                                               flow_actions, &error);
     }
-    flow = netdev_offload_dpdk_flow_create(netdev, &flow_attr, patterns->items,
-                                           &actions, &error);
-out:
-    free_flow_actions(&actions);
-    return flow;
+
+    if (enable_partial && !flow) {
+        /* If we failed to offload the rule actions fallback to MARK+RSS
+         * actions.
+         */
+        actions_offloaded = false;
+        flow_attr.transfer = 0;
+        add_flow_mark_rss_actions(&rss_actions, flow_mark, netdev);
+        flow = netdev_offload_dpdk_flow_create(netdev, &flow_attr, items,
+                                               &rss_actions, &error);
+    }
+
+    if (flow) {
+        flow_data = ufid_to_rte_flow_associate(ufid, netdev, flow,
+                                               actions_offloaded);
+        VLOG_DBG("%s: installed flow %p by ufid "UUID_FMT,
+                 netdev_get_name(netdev), flow,
+                 UUID_ARGS((struct uuid *) ufid));
+    }
+
+    free_flow_actions(&rss_actions);
+    return flow_data;
 }
 
 static struct ufid_to_rte_flow_data *
@@ -1541,9 +1539,9 @@ netdev_offload_dpdk_add_flow(struct netdev *netdev,
                              struct offload_info *info)
 {
     struct flow_patterns patterns = { .items = NULL, .cnt = 0 };
+    struct flow_actions actions = { .actions = NULL, .cnt = 0 };
     struct ufid_to_rte_flow_data *flows_data = NULL;
-    bool actions_offloaded = true;
-    struct rte_flow *flow;
+    int err;
 
     if (parse_flow_match(&patterns, match)) {
         VLOG_DBG_RL(&rl, "%s: matches of ufid "UUID_FMT" are not supported",
@@ -1551,27 +1549,14 @@ netdev_offload_dpdk_add_flow(struct netdev *netdev,
         goto out;
     }
 
-    flow = netdev_offload_dpdk_actions(netdev, &patterns, nl_actions,
-                                       actions_len);
-    if (!flow) {
-        /* If we failed to offload the rule actions fallback to MARK+RSS
-         * actions.
-         */
-        flow = netdev_offload_dpdk_mark_rss(&patterns, netdev,
-                                            info->flow_mark);
-        actions_offloaded = false;
-    }
+    err = parse_flow_actions(netdev, &actions, nl_actions, actions_len);
 
-    if (!flow) {
-        goto out;
-    }
-    flows_data = ufid_to_rte_flow_associate(ufid, netdev, flow,
-                                            actions_offloaded);
-    VLOG_DBG("%s: installed flow %p by ufid "UUID_FMT,
-             netdev_get_name(netdev), flow, UUID_ARGS((struct uuid *)ufid));
+    flows_data = create_netdev_offload(netdev, ufid, &patterns, &actions,
+                                       !err, true, info->flow_mark);
 
 out:
     free_flow_patterns(&patterns);
+    free_flow_actions(&actions);
     return flows_data;
 }
 
