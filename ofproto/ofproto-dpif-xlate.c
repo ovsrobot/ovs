@@ -4101,7 +4101,15 @@ terminate_native_tunnel(struct xlate_ctx *ctx, struct flow *flow,
         }
     }
 
-    return *tnl_port != ODPP_NONE;
+    /* Allow tunnel packets which source, and destination address
+     * are the local address to be sent outside. */
+    if (*tnl_port != ODPP_NONE &&
+        (flow->nw_src != flow->nw_dst ||
+         !ipv6_addr_equals(&flow->ipv6_src, &flow->ipv6_dst))) {
+        return true;
+    }
+    
+    return false;
 }
 
 static void
