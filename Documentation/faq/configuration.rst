@@ -281,3 +281,24 @@ the sense of OFPP_LOCAL)
 
     A: Open vSwitch does not support such a configuration.  Bridges always have
     their local ports.
+
+Q: Why the datapath-id choose the minimum non-local MAC address among all of 
+the ports in bridge?
+
+    A: The reason that this happens is to keep the MAC address of the bridge
+    steady.
+
+    Here's the use case it was designed to address. It started with 
+    XenServer, but other hypervisors work similarly. Each physical NIC that
+    might have VMs on it gets put into a bridge, and then the IP address for
+    that NIC (if any) gets migrated from the pnic to the bridge device. You
+    want the bridge device to have the same MAC address as the physical NIC,
+    so taking the minimum MAC address does that. Adding virtual NICs doesn't
+    change it because OVS ignores random MACs.
+    
+    If you want a stable MAC and datapath-id, you could set your own MAC 
+    by ``hwaddr`` in ``other_config`` of bridge.
+     
+    ::
+
+    ovs-vsctl set bridge br-int other_config:hwaddr=3a:4d:a7:05:2a:45
