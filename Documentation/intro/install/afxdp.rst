@@ -204,6 +204,8 @@ more details):
  * ``use-need-wakeup``: default ``true`` if libbpf supports it,
    otherwise ``false``.
 
+* ``start-qid``: default ``0``.
+
 For example, to use 1 PMD (on core 4) on 1 queue (queue 0) device,
 configure these options: ``pmd-cpu-mask``, ``pmd-rxq-affinity``, and
 ``n_rxq``::

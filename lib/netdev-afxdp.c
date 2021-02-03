@@ -458,12 +458,13 @@ xsk_configure_queue(struct netdev_linux *dev, int ifindex, int queue_id,
     VLOG_DBG("%s: configuring queue: %d, mode: %s, use-need-wakeup: %s.",
              netdev_get_name(&dev->up), queue_id, xdp_modes[mode].name,
              dev->use_need_wakeup ? "true" : "false");
-    xsk_info = xsk_configure(ifindex, queue_id, mode, dev->use_need_wakeup,
-                             report_socket_failures);
+    xsk_info = xsk_configure(ifindex, dev->startqid + queue_id, mode,
+                             dev->use_need_wakeup, report_socket_failures);
     if (!xsk_info) {
         VLOG(report_socket_failures ? VLL_ERR : VLL_DBG,
-             "%s: Failed to create AF_XDP socket on queue %d in %s mode.",
-             netdev_get_name(&dev->up), queue_id, xdp_modes[mode].name);
+             "%s: Failed to create AF_XDP socket on queue %d+%d in %s mode.",
+             netdev_get_name(&dev->up), dev->startqid, queue_id,
+             xdp_modes[mode].name);
         dev->xsks[queue_id] = NULL;
         return -1;
     }
@@ -604,6 +605,7 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     enum afxdp_mode xdp_mode;
     bool need_wakeup;
     int new_n_rxq;
+    int new_startqid;
 
     ovs_mutex_lock(&dev->mutex);
     new_n_rxq = MAX(smap_get_int(args, "n_rxq", NR_QUEUE), 1);
@@ -637,12 +639,18 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     }
 #endif
 
+    /* TODO: need to check
+     * new_startqid + new_n_rxq > total dev's queues. */
+    new_startqid = smap_get_int(args, "start-qid", 0);
+
     if (dev->requested_n_rxq != new_n_rxq
         || dev->requested_xdp_mode != xdp_mode
-        || dev->requested_need_wakeup != need_wakeup) {
+        || dev->requested_need_wakeup != need_wakeup
+        || dev->requested_startqid != new_startqid) {
         dev->requested_n_rxq = new_n_rxq;
         dev->requested_xdp_mode = xdp_mode;
         dev->requested_need_wakeup = need_wakeup;
+        dev->requested_startqid = new_startqid;
         netdev_request_reconfigure(netdev);
     }
     ovs_mutex_unlock(&dev->mutex);
@@ -661,6 +669,7 @@ netdev_afxdp_get_config(const struct netdev *netdev, struct smap *args)
                     xdp_modes[dev->xdp_mode_in_use].name);
     smap_add_format(args, "use-need-wakeup", "%s",
                     dev->use_need_wakeup ? "true" : "false");
+    smap_add_format(args, "start-qid", "%d", dev->startqid);
     ovs_mutex_unlock(&dev->mutex);
     return 0;
 }
@@ -696,6 +705,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     if (netdev->n_rxq == dev->requested_n_rxq
         && dev->xdp_mode == dev->requested_xdp_mode
         && dev->use_need_wakeup == dev->requested_need_wakeup
+        && dev->startqid == dev->requested_startqid
         && dev->xsks) {
         goto out;
     }
@@ -713,6 +723,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
         VLOG_ERR("setrlimit(RLIMIT_MEMLOCK) failed: %s", ovs_strerror(errno));
     }
     dev->use_need_wakeup = dev->requested_need_wakeup;
+    dev->startqid = dev->requested_startqid;
 
     err = xsk_configure_all(netdev);
     if (err) {
@@ -1177,12 +1188,14 @@ netdev_afxdp_construct(struct netdev *netdev)
     /* Queues should not be used before the first reconfiguration. Clearing. */
     netdev->n_rxq = 0;
     netdev->n_txq = 0;
+    dev->startqid = 0;
     dev->xdp_mode = OVS_AF_XDP_MODE_UNSPEC;
     dev->xdp_mode_in_use = OVS_AF_XDP_MODE_UNSPEC;
 
     dev->requested_n_rxq = NR_QUEUE;
     dev->requested_xdp_mode = OVS_AF_XDP_MODE_BEST_EFFORT;
     dev->requested_need_wakeup = NEED_WAKEUP_DEFAULT;
+    dev->requested_startqid = 0;
 
     dev->xsks = NULL;
     dev->tx_locks = NULL;

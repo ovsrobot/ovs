@@ -109,6 +109,7 @@ struct netdev_linux {
     /* AF_XDP information. */
     struct xsk_socket_info **xsks;
     int requested_n_rxq;
+    int startqid, requested_startqid;
 
     enum afxdp_mode xdp_mode;               /* Configured AF_XDP mode. */
     enum afxdp_mode requested_xdp_mode;     /* Requested  AF_XDP mode. */

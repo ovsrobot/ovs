@@ -3290,6 +3290,14 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="options" key="start-qid"
+              type='{"type": "integer", "minInteger": 0, "maxInteger": 32}'>
+        <p>
+          Specifies the starting XDP socket's queue id.
+          Defaults to 0.
+        </p>
+      </column>
+
       <column name="options" key="vhost-server-path"
               type='{"type": "string"}'>
         <p>
