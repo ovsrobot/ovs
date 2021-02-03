@@ -228,8 +228,8 @@
           Set this value to <code>true</code> to enable netdev flow offload.
         </p>
         <p>
-          The default value is <code>false</code>. Changing this value requires
-          restarting the daemon
+          The default value is <code>false</code>. Disabling this value requires
+          restarting the daemon.
         </p>
         <p>
           Currently Open vSwitch supports hardware offloading on
@@ -267,7 +267,9 @@
           <ref column="other_config" key="hw-offload"/> is enabled.
         </p>
         <p>
-          The default value is <code>none</code>.
+          The default value is <code>none</code>. Changing this value requires
+	  restarting the daemon if <ref column="other_config" key="hw-offload"/>
+	  was already enabled.
         </p>
       </column>
 
