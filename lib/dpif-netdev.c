@@ -4212,6 +4212,7 @@ set_pmd_auto_lb(struct dp_netdev *dp, bool always_log)
 
     bool enable_alb = false;
     bool multi_rxq = false;
+    bool minreq = false;
     bool pmd_rxq_assign_cyc = dp->pmd_rxq_assign_cyc;
 
     /* Ensure that there is at least 2 non-isolated PMDs and
@@ -4225,15 +4226,14 @@ set_pmd_auto_lb(struct dp_netdev *dp, bool always_log)
             multi_rxq = true;
         }
         if (cnt && multi_rxq) {
-                enable_alb = true;
-                break;
+            minreq = true;
+            break;
         }
         cnt++;
     }
 
     /* Enable auto LB if it is requested and cycle based assignment is true. */
-    enable_alb = enable_alb && pmd_rxq_assign_cyc &&
-                    pmd_alb->auto_lb_requested;
+    enable_alb = minreq && pmd_rxq_assign_cyc && pmd_alb->auto_lb_requested;
 
     if (pmd_alb->is_enabled != enable_alb || always_log) {
         pmd_alb->is_enabled = enable_alb;
@@ -4250,6 +4250,17 @@ set_pmd_auto_lb(struct dp_netdev *dp, bool always_log)
 
         } else {
             pmd_alb->rebalance_poll_timer = 0;
+            if (pmd_alb->auto_lb_requested) {
+                if (!minreq) {
+                    VLOG_INFO("PMD auto load balance not enough "
+                              "PMDs or Rx Queues to enable");
+                }
+                if (!pmd_rxq_assign_cyc) {
+                    VLOG_INFO("PMD auto load balance needs "
+                              "'other_config:pmd-rxq-assign=cycles' "
+                              "to enable");
+                }
+            }
             VLOG_INFO("PMD auto load balance is disabled");
         }
     }
