@@ -1610,6 +1610,100 @@ netdev_offload_dpdk_flow_dump_destroy(struct netdev_flow_dump *dump)
     return 0;
 }
 
+static struct netdev *
+get_vport_netdev(const char *dpif_type,
+                 struct rte_flow_tunnel *tunnel,
+                 odp_port_t *odp_port)
+{
+    const struct netdev_tunnel_config *tnl_cfg;
+    struct netdev_flow_dump **netdev_dumps;
+    struct netdev *vport = NULL;
+    bool found = false;
+    int num_ports = 0;
+    int err;
+    int i;
+
+    netdev_dumps = netdev_ports_flow_dump_create(dpif_type, &num_ports, false);
+    for (i = 0; i < num_ports; i++) {
+        if (!found && tunnel->type == RTE_FLOW_ITEM_TYPE_VXLAN &&
+            !strcmp(netdev_get_type(netdev_dumps[i]->netdev), "vxlan")) {
+            tnl_cfg = netdev_get_tunnel_config(netdev_dumps[i]->netdev);
+            if (tnl_cfg && tnl_cfg->dst_port == tunnel->tp_dst) {
+                found = true;
+                vport = netdev_dumps[i]->netdev;
+                netdev_ref(vport);
+                *odp_port = netdev_dumps[i]->port;
+            }
+        }
+        err = netdev_flow_dump_destroy(netdev_dumps[i]);
+        if (err != 0 && err != EOPNOTSUPP) {
+            VLOG_ERR("failed dumping netdev: %s", ovs_strerror(err));
+        }
+    }
+    return vport;
+}
+
+static int
+netdev_offload_dpdk_hw_miss_packet_recover(struct netdev *netdev,
+                                           struct dp_packet *packet)
+{
+    struct rte_flow_restore_info rte_restore_info;
+    struct rte_flow_tunnel *rte_tnl;
+    struct rte_flow_error error;
+    struct netdev *vport_netdev;
+    struct pkt_metadata *md;
+    struct flow_tnl *md_tnl;
+    odp_port_t vport_odp;
+
+    if (netdev_dpdk_rte_flow_get_restore_info(netdev, packet,
+                                              &rte_restore_info, &error)) {
+        /* This function is called for every packet, and in most cases there
+         * will be no restore info from the HW, thus error is expected.
+         */
+        (void) error;
+        return -1;
+    }
+
+    rte_tnl = &rte_restore_info.tunnel;
+    if (rte_restore_info.flags & RTE_FLOW_RESTORE_INFO_TUNNEL) {
+        vport_netdev = get_vport_netdev(netdev->dpif_type, rte_tnl,
+                                        &vport_odp);
+        md = &packet->md;
+        if (rte_restore_info.flags & RTE_FLOW_RESTORE_INFO_ENCAPSULATED) {
+            if (!vport_netdev || !vport_netdev->netdev_class ||
+                !vport_netdev->netdev_class->pop_header) {
+                VLOG_ERR("vport nedtdev=%s with no pop_header method",
+                         netdev_get_name(vport_netdev));
+                return -1;
+            }
+            vport_netdev->netdev_class->pop_header(packet);
+            netdev_close(vport_netdev);
+         } else {
+             md_tnl = &md->tunnel;
+             if (rte_tnl->is_ipv6) {
+                 memcpy(&md_tnl->ipv6_src, &rte_tnl->ipv6.src_addr,
+                        sizeof md_tnl->ipv6_src);
+                 memcpy(&md_tnl->ipv6_dst, &rte_tnl->ipv6.dst_addr,
+                        sizeof md_tnl->ipv6_dst);
+             } else {
+                 md_tnl->ip_src = rte_tnl->ipv4.src_addr;
+                 md_tnl->ip_dst = rte_tnl->ipv4.dst_addr;
+             }
+             md_tnl->tun_id = htonll(rte_tnl->tun_id);
+             md_tnl->flags = rte_tnl->tun_flags;
+             md_tnl->ip_tos = rte_tnl->tos;
+             md_tnl->ip_ttl = rte_tnl->ttl;
+             md_tnl->tp_src = rte_tnl->tp_src;
+         }
+         if (vport_netdev) {
+             md->in_port.odp_port = vport_odp;
+         }
+    }
+    dp_packet_reset_offload(packet);
+
+    return 0;
+}
+
 const struct netdev_flow_api netdev_offload_dpdk = {
     .type = "dpdk_flow_api",
     .flow_put = netdev_offload_dpdk_flow_put,
@@ -1619,4 +1713,5 @@ const struct netdev_flow_api netdev_offload_dpdk = {
     .flow_flush = netdev_offload_dpdk_flow_flush,
     .flow_dump_create = netdev_offload_dpdk_flow_dump_create,
     .flow_dump_destroy = netdev_offload_dpdk_flow_dump_destroy,
+    .hw_miss_packet_recover = netdev_offload_dpdk_hw_miss_packet_recover,
 };
