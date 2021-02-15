@@ -1927,6 +1927,45 @@ tcp,orig=(src=10.1.1.3,dst=10.1.1.4,sport=<cleared>,dport=<cleared>),reply=(src=
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([conntrack - zones from other field])
+CHECK_CONNTRACK()
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24")
+
+dnl Allow any traffic from ns0->ns1. Only allow nd, return traffic from ns1->ns0.
+AT_DATA([flows.txt], [dnl
+priority=1,action=drop
+priority=10,arp,action=normal
+priority=10,icmp,action=normal
+priority=100,in_port=1,tcp,ct_state=-trk,action=ct(zone=5,table=0)
+priority=100,in_port=1,tcp,ct_state=+trk,action=ct(commit,zone=NXM_NX_CT_ZONE[]),2
+priority=100,in_port=2,ct_state=-trk,tcp,action=ct(table=0,zone=5)
+priority=100,in_port=2,ct_state=+trk,ct_zone=5,tcp,action=1
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+
+OVS_START_L7([at_ns1], [http])
+
+dnl HTTP requests from p0->p1 should work fine.
+NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
+tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=5,protoinfo=(state=<cleared>)
+])
+
+AT_CHECK([ovs-appctl dpctl/dump-flows --names filter=in_port=ovs-p0 | strip_used | grep "+trk" ], [0], [dnl
+ct_state(+trk),ct_zone(0x5),recirc_id(0x2),in_port(ovs-p0),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(proto=6,frag=no), packets:5, bytes:465, used:0.0s, flags:FP., actions:ct(commit,zone=5),ovs-p1
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+
 AT_SETUP([conntrack - multiple bridges])
 CHECK_CONNTRACK()
 OVS_TRAFFIC_VSWITCHD_START(

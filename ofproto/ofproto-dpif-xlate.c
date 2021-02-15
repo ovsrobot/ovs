@@ -6212,6 +6212,21 @@ compose_conntrack_action(struct xlate_ctx *ctx, struct ofpact_conntrack *ofc,
                            &ctx->xin->flow, ctx->wc, zone);
         }
     }
+
+    if (ofc->zone_src.field) {
+        if (ctx->xin->frozen_state) {
+            /* If the upcall is a resume of a recirculation, we only need to
+             * unwildcard the fields that are not in the frozen_metadata, as
+             * when the rules update, OVS will generate a new recirc_id,
+             * which will invalidate the megaflow with old the recirc_id.
+             */
+            if (!mf_is_frozen_metadata(ofc->zone_src.field)) {
+                mf_mask_field(ofc->zone_src.field, ctx->wc);
+            }
+        } else {
+            mf_mask_field(ofc->zone_src.field, ctx->wc);
+        }
+    }
     nl_msg_put_u16(ctx->odp_actions, OVS_CT_ATTR_ZONE, zone);
     put_ct_mark(&ctx->xin->flow, ctx->odp_actions, ctx->wc);
     put_ct_label(&ctx->xin->flow, ctx->odp_actions, ctx->wc);
