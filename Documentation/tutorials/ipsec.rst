@@ -144,6 +144,14 @@ external IP is 1.1.1.1, and `host_2`'s external IP is 2.2.2.2. Make sure
                                     options:remote_ip=$ip_1 \
                                     options:psk=swordfish
 
+      Set the "local_ip" field in the Interface table on host_1::
+
+          $ ovs-vsctl set Interface tun options:local_ip=$ip_1
+
+      Same on host_2::
+
+          $ ovs-vsctl set Interface tun options:local_ip=$ip_2
+
       .. note::
 
         Pre-shared key (PSK) based authentication is easy to set up but less
