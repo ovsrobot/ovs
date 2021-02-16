@@ -230,7 +230,9 @@ start_forwarding () {
     if test X"$OVS_VSWITCHD" = Xyes; then
         do_start_forwarding || return 1
     fi
-    set_hostname &
+    if test X"$RECORD_HOSTNAME" = Xyes; then
+        set_hostname &
+    fi
     return 0
 }
 
@@ -321,6 +323,7 @@ set_defaults () {
     SYSTEM_ID=
 
     FULL_HOSTNAME=yes
+    RECORD_HOSTNAME=yes
 
     DELETE_BRIDGES=no
     DELETE_TRANSIENT_PORTS=no
@@ -394,6 +397,8 @@ Commands:
   delete-transient-ports  delete transient (other_config:transient=true) ports
   start-ovs-ipsec         start Open vSwitch ipsec daemon
   stop-ovs-ipsec          stop Open vSwitch ipsec daemon
+  record-hostname         determine the system hostname and record it in the
+                          Open vSwitch database if not already set
   help                    display this help message
 
 One of the following options is required for "start", "restart" and "force-reload-kmod":
@@ -415,6 +420,8 @@ Less important options for "start", "restart" and "force-reload-kmod":
   --ovsdb-server-priority=NICE   set ovsdb-server's niceness (default: $OVSDB_SERVER_PRIORITY)
   --ovs-vswitchd-priority=NICE   set ovs-vswitchd's niceness (default: $OVS_VSWITCHD_PRIORITY)
   --no-full-hostname             set short hostname instead of full hostname
+  --no-record-hostname           do not attempt to determine/record system
+                                 hostname as part of start command
 
 Debugging options for "start", "restart" and "force-reload-kmod":
   --ovsdb-server-wrapper=WRAPPER
@@ -572,6 +579,9 @@ case $command in
         ;;
     stop-ovs-ipsec)
         stop_ovs_ipsec
+        ;;
+    record-hostname)
+        set_hostname
         ;;
     help)
         usage
