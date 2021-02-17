@@ -1574,8 +1574,10 @@ ct_sweep(struct conntrack *ct, long long now, size_t limit)
     }
 
 out:
-    VLOG_DBG("conntrack cleanup %"PRIuSIZE" entries in %lld msec", count,
-             time_msec() - now);
+    if (count > 0) {
+        VLOG_DBG("conntrack cleanup %"PRIuSIZE" entries in %lld msec", count,
+                 time_msec() - now);
+    }
     return min_expiration;
 }
 
