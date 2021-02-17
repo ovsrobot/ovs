@@ -140,6 +140,9 @@ struct conn {
     struct nat_action_info_t *nat_info;
     char *alg;
     struct conn *nat_conn; /* The NAT 'conn' context, if there is one. */
+    atomic_flag reclaimed; /* False during the lifetime of the connection,
+                            * True as soon as a thread has started freeing
+                            * its memory. */
 
     /* Mutable data. */
     struct ovs_mutex lock; /* Guards all mutable fields. */
@@ -200,8 +203,8 @@ struct conntrack {
 };
 
 /* Lock acquisition order:
- *    1. 'ct_lock'
- *    2. 'conn->lock'
+ *    1. 'conn->lock'
+ *    2. 'ct_lock'
  *    3. 'resources_lock'
  */
 
@@ -222,11 +225,18 @@ struct ct_l4_proto {
 };
 
 static inline void
-conn_expire_remove(struct conn_expire *exp)
+conn_expire_remove(struct conn_expire *exp, bool need_ct_lock)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     if (!atomic_flag_test_and_set(&exp->remove_once)
         && rculist_next(&exp->node)) {
+        if (need_ct_lock) {
+            ovs_mutex_lock(&exp->ct->ct_lock);
+        }
         rculist_remove(&exp->node);
+        if (need_ct_lock) {
+            ovs_mutex_unlock(&exp->ct->ct_lock);
+        }
     }
 }
 
