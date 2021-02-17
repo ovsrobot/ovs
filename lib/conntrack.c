@@ -99,6 +99,7 @@ static enum ct_update_res conn_update(struct conntrack *ct, struct conn *conn,
                                       struct dp_packet *pkt,
                                       struct conn_lookup_ctx *ctx,
                                       long long now);
+static long long int conn_expiration(const struct conn *);
 static bool conn_expired(struct conn *, long long now);
 static void set_mark(struct dp_packet *, struct conn *,
                      uint32_t val, uint32_t mask);
@@ -1555,10 +1556,8 @@ ct_sweep(struct conntrack *ct, long long now, size_t limit)
 
     for (unsigned i = 0; i < N_CT_TM; i++) {
         RCULIST_FOR_EACH (conn, exp.node, &ct->exp_lists[i]) {
-            ovs_mutex_lock(&conn->lock);
-            if (now < conn->expiration || count >= limit) {
-                min_expiration = MIN(min_expiration, conn->expiration);
-                ovs_mutex_unlock(&conn->lock);
+            if (!conn_expired(conn, now) || count >= limit) {
+                min_expiration = MIN(min_expiration, conn_expiration(conn));
                 if (count >= limit) {
                     /* Do not check other lists. */
                     COVERAGE_INC(conntrack_long_cleanup);
@@ -1566,7 +1565,6 @@ ct_sweep(struct conntrack *ct, long long now, size_t limit)
                 }
                 break;
             } else {
-                ovs_mutex_unlock(&conn->lock);
                 conn_clean(ct, conn);
             }
             count++;
@@ -2395,14 +2393,21 @@ conn_update(struct conntrack *ct, struct conn *conn, struct dp_packet *pkt,
     return update_res;
 }
 
+static long long int
+conn_expiration(const struct conn *conn)
+{
+    long long int expiration;
+
+    atomic_read_relaxed(&CONST_CAST(struct conn *, conn)->expiration,
+                        &expiration);
+    return expiration;
+}
+
 static bool
 conn_expired(struct conn *conn, long long now)
 {
     if (conn->conn_type == CT_CONN_TYPE_DEFAULT) {
-        ovs_mutex_lock(&conn->lock);
-        bool expired = now >= conn->expiration ? true : false;
-        ovs_mutex_unlock(&conn->lock);
-        return expired;
+        return now >= conn_expiration(conn);
     }
     return false;
 }
@@ -2545,7 +2550,7 @@ conn_to_ct_dpif_entry(const struct conn *conn, struct ct_dpif_entry *entry,
     entry->mark = conn->mark;
     memcpy(&entry->labels, &conn->label, sizeof entry->labels);
 
-    long long expiration = conn->expiration - now;
+    long long expiration = conn_expiration(conn) - now;
 
     struct ct_l4_proto *class = l4_protos[conn->key.nw_proto];
     if (class->conn_get_protoinfo) {
