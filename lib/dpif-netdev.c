@@ -3834,6 +3834,12 @@ dpif_netdev_flow_put(struct dpif *dpif, const struct dpif_flow_put *put)
         return error;
     }
 
+    if (match.wc.masks.in_port.odp_port != ODPP_NONE) {
+        VLOG_ERR("missing in_port info in %s", __func__);
+        error = EINVAL;
+        return error;
+    }
+
     if (put->ufid) {
         ufid = *put->ufid;
     } else {
