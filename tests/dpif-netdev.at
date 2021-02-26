@@ -146,7 +146,7 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:
 ])
 
    # Now, the same again without megaflows.
-   AT_CHECK([ovs-appctl upcall/disable-megaflows], [0], [megaflows disabled
+   AT_CHECK([ovs-appctl upcall/disable-megaflowsx], [0], [megaflows disabled
 ])
    AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
 
@@ -589,3 +589,25 @@ arp,in_port=ANY,dl_vlan=11,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:
 
 DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS_VID_ARP([dummy])
 DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS_VID_ARP([dummy-pmd])
+
+m4_define([DPIF_NETDEV_CHECK_IN_PORT_EXACT_MATCH],
+  [AT_SETUP([dpif-netdev - check dpctl/add-flow in_port exact match - $1])
+   OVS_VSWITCHD_START(
+     [add-port br0 p1 \
+      -- set interface p1 type=$1 options:pstream=punix:$OVS_RUNDIR/p0.sock \
+      -- set bridge br0 datapath-type=dummy \
+                        other-config:datapath-id=1234 fail-mode=secure], [], [],
+      [m4_if([$1], [dummy-pmd], [--dummy-numa="0,0,0,0,1,1,1,1"], [])])
+
+   AT_CHECK([ovs-appctl dpctl/add-flow "eth(),eth_type(0x0800),ipv4()" "3"], [2], [],
+     [ovs-vswitchd: updating flow table (Invalid argument)
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+   OVS_WAIT_UNTIL([grep "flow: in_port is not an exact match" ovs-vswitchd.log])
+
+   AT_CHECK([grep 'flow: in_port is not an exact match' ovs-vswitchd.log],[0], [ignore], [ignore])
+   OVS_VSWITCHD_STOP(["/flow: in_port is not an exact match/d
+/failed to put/d"])
+   AT_CLEANUP])
+
+DPIF_NETDEV_CHECK_IN_PORT_EXACT_MATCH([dummy-pmd])
