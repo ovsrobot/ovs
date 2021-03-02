@@ -163,6 +163,7 @@ static void ovsdb_idl_row_unparse(struct ovsdb_idl_row *);
 static void ovsdb_idl_row_clear_old(struct ovsdb_idl_row *);
 static void ovsdb_idl_row_clear_new(struct ovsdb_idl_row *);
 static void ovsdb_idl_row_clear_arcs(struct ovsdb_idl_row *, bool destroy_dsts);
+static void ovsdb_idl_row_reparse_backrefs(struct ovsdb_idl_row *row);
 
 static void ovsdb_idl_txn_abort_all(struct ovsdb_idl *);
 static bool ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *,
@@ -368,6 +369,8 @@ ovsdb_idl_clear(struct ovsdb_idl *db)
                 ovsdb_idl_row_unparse(row);
             }
             LIST_FOR_EACH_SAFE (arc, next_arc, src_node, &row->src_arcs) {
+                ovs_list_remove(&arc->src_node);
+                ovs_list_remove(&arc->dst_node);
                 free(arc);
             }
             /* No need to do anything with dst_arcs: some node has those arcs
@@ -1235,6 +1238,7 @@ ovsdb_idl_track_clear__(struct ovsdb_idl *idl, bool flush_all)
                 ovs_list_remove(&row->track_node);
                 ovs_list_init(&row->track_node);
                 if (ovsdb_idl_row_is_orphan(row)) {
+                    ovsdb_idl_row_reparse_backrefs(row);
                     ovsdb_idl_row_unparse(row);
                     if (row->tracked_old_datum) {
                         const struct ovsdb_idl_table_class *class =
@@ -2157,8 +2161,6 @@ ovsdb_idl_delete_row(struct ovsdb_idl_row *row)
     ovsdb_idl_row_clear_old(row);
     if (ovs_list_is_empty(&row->dst_arcs)) {
         ovsdb_idl_row_destroy(row);
-    } else {
-        ovsdb_idl_row_reparse_backrefs(row);
     }
 }
 
