@@ -663,6 +663,10 @@ netdev_linux_update_lag(struct rtnetlink_change *change)
 {
     struct linux_lag_member *lag;
 
+    if (change->irrelevant) {
+        return;
+    }
+
     if (change->sub && netdev_linux_kind_is_lag(change->sub)) {
         lag = shash_find_data(&lag_shash, change->ifname);
 
@@ -887,6 +891,10 @@ netdev_linux_update(struct netdev_linux *dev, int nsid,
                     const struct rtnetlink_change *change)
     OVS_REQUIRES(dev->mutex)
 {
+    if (change->irrelevant) {
+        return;
+    }
+
     if (netdev_linux_netnsid_is_eq(dev, nsid)) {
         netdev_linux_update__(dev, change);
     }
@@ -6344,6 +6352,7 @@ netdev_linux_update_via_netlink(struct netdev_linux *netdev)
     }
 
     if (rtnetlink_parse(reply, change)
+        && !change->irrelevant
         && change->nlmsg_type == RTM_NEWLINK) {
         bool changed = false;
         error = 0;
