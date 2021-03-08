@@ -545,6 +545,7 @@ ofproto_create(const char *datapath_name, const char *datapath_type,
 
     ovs_mutex_init(&ofproto->vl_mff_map.mutex);
     cmap_init(&ofproto->vl_mff_map.cmap);
+    ovs_refcount_init(&ofproto->ref_count);
 
     error = ofproto->ofproto_class->construct(ofproto);
     if (error) {
@@ -1738,8 +1739,7 @@ ofproto_destroy(struct ofproto *p, bool del)
     p->connmgr = NULL;
     ovs_mutex_unlock(&ofproto_mutex);
 
-    /* Destroying rules is deferred, must have 'ofproto' around for them. */
-    ovsrcu_postpone(ofproto_destroy_defer__, p);
+    ofproto_unref(p);
 }
 
 /* Destroys the datapath with the respective 'name' and 'type'.  With the Linux
@@ -2928,6 +2928,7 @@ ofproto_rule_destroy__(struct rule *rule)
     cls_rule_destroy(CONST_CAST(struct cls_rule *, &rule->cr));
     rule_actions_destroy(rule_get_actions(rule));
     ovs_mutex_destroy(&rule->mutex);
+    ofproto_unref(rule->ofproto);
     rule->ofproto->ofproto_class->rule_dealloc(rule);
 }
 
@@ -2976,6 +2977,28 @@ ofproto_rule_unref(struct rule *rule)
     if (rule && ovs_refcount_unref_relaxed(&rule->ref_count) == 1) {
         ovs_assert(rule->state != RULE_INSERTED);
         ovsrcu_postpone(rule_destroy_cb, rule);
+    }
+}
+
+void ofproto_ref(struct ofproto *ofproto)
+{
+    if (ofproto) {
+        ovs_refcount_ref(&ofproto->ref_count);
+    }
+}
+
+bool ofproto_try_ref(struct ofproto *ofproto)
+{
+    if (ofproto) {
+        return ovs_refcount_try_ref_rcu(&ofproto->ref_count);
+    }
+    return false;
+}
+
+void ofproto_unref(struct ofproto *ofproto)
+{
+    if (ofproto && ovs_refcount_unref_relaxed(&ofproto->ref_count) == 1) {
+        ovsrcu_postpone(ofproto_destroy_defer__, ofproto);
     }
 }
 
@@ -3068,6 +3091,7 @@ group_destroy_cb(struct ofgroup *group)
                                                 &group->props));
     ofputil_bucket_list_destroy(CONST_CAST(struct ovs_list *,
                                            &group->buckets));
+    ofproto_unref(group->ofproto);
     group->ofproto->ofproto_class->group_dealloc(group);
 }
 
@@ -5266,6 +5290,7 @@ ofproto_rule_create(struct ofproto *ofproto, struct cls_rule *cr,
 
     /* Initialize base state. */
     *CONST_CAST(struct ofproto **, &rule->ofproto) = ofproto;
+    ofproto_ref(ofproto);
     cls_rule_move(CONST_CAST(struct cls_rule *, &rule->cr), cr);
     ovs_refcount_init(&rule->ref_count);
 
@@ -6214,7 +6239,7 @@ handle_flow_mod__(struct ofproto *ofproto, const struct ofputil_flow_mod *fm,
     error = ofproto_flow_mod_start(ofproto, &ofm);
     if (!error) {
         ofproto_bump_tables_version(ofproto);
-        error = ofproto_flow_mod_finish(ofproto, &ofm, req);        
+        error = ofproto_flow_mod_finish(ofproto, &ofm, req);
         ofmonitor_flush(ofproto->connmgr);
     }
     ovs_mutex_unlock(&ofproto_mutex);
@@ -7331,6 +7356,7 @@ init_group(struct ofproto *ofproto, const struct ofputil_group_mod *gm,
     }
 
     *CONST_CAST(struct ofproto **, &(*ofgroup)->ofproto) = ofproto;
+    ofproto_ref(ofproto);
     *CONST_CAST(uint32_t *, &((*ofgroup)->group_id)) = gm->group_id;
     *CONST_CAST(enum ofp11_group_type *, &(*ofgroup)->type) = gm->type;
     *CONST_CAST(long long int *, &((*ofgroup)->created)) = now;
@@ -7363,6 +7389,7 @@ init_group(struct ofproto *ofproto, const struct ofputil_group_mod *gm,
         ofputil_bucket_list_destroy(CONST_CAST(struct ovs_list *,
                                                &(*ofgroup)->buckets));
         ofproto->ofproto_class->group_dealloc(*ofgroup);
+        ofproto_unref(ofproto);
     }
     return error;
 }
@@ -8199,7 +8226,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
             /* Send error referring to the original message. */
             ofconn_send_error(ofconn, be->msg, error);
             error = OFPERR_OFPBFC_MSG_FAILED;
- 
+
             /* 2. Revert.  Undo all the changes made above. */
             LIST_FOR_EACH_REVERSE_CONTINUE(be, node, &bundle->msg_list) {
                 if (be->type == OFPTYPE_FLOW_MOD) {
