@@ -70,3 +70,50 @@ AT_CHECK([ovs-appctl upcall/show | grep -E "offloaded flows : [[1-9]]"], [0], [i
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([offloads - set ingress_policing_rate and ingress_policing_burst - offloads disabled])
+AT_KEYWORDS([ingress_policing])
+OVS_TRAFFIC_VSWITCHD_START()
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=false])
+AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
+ADD_NAMESPACES(at_ns0)
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+AT_CHECK([ovs-vsctl set interface ovs-p0 ingress_policing_rate=100])
+AT_CHECK([ovs-vsctl set interface ovs-p0 ingress_policing_burst=10])
+AT_CHECK([ovs-vsctl list open | grep other_config > other_config.txt])
+AT_CHECK([cat other_config.txt],[0],
+    [other_config        : {hw-offload="false"}
+])
+AT_CHECK([tc -s -d filter show dev ovs-p0 ingress |grep rate| awk '{a=index($0,"rate");b=index($0,"mtu");print substr($0,a,b-a-1)}' > tc_ovs-p0.txt ],[0],[])
+AT_CHECK([cat tc_ovs-p0.txt],[0],
+    [rate 100Kbit burst 1280b
+])
+AT_CHECK([tc -s -d filter show dev ovs-p0 ingress | grep basic | head -n 1 | awk '{a=index($0,"basic");print substr($0,a,5)}'| head -n 1],[0],
+    [basic
+])
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+
+AT_SETUP([offloads - set ingress_policing_rate and ingress_policing_burst - offloads enabled])
+AT_KEYWORDS([ingress_policing])
+OVS_TRAFFIC_VSWITCHD_START()
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=true])
+AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
+ADD_NAMESPACES(at_ns0)
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+AT_CHECK([ovs-vsctl set interface ovs-p0 ingress_policing_rate=100])
+AT_CHECK([ovs-vsctl set interface ovs-p0 ingress_policing_burst=10])
+AT_CHECK([ovs-vsctl list open | grep other_config > other_config.txt])
+AT_CHECK([cat other_config.txt],[0],
+    [other_config        : {hw-offload="true"}
+])
+AT_CHECK([tc -s -d filter show dev ovs-p0 ingress | grep rate| awk '{a=index($0,"rate");b=index($0,"mtu");print substr($0,a,b-a-1)}' > tc_ovs-p0.txt ],[0],[])
+AT_CHECK([cat tc_ovs-p0.txt],[0],
+    [rate 100Kbit burst 1280b
+])
+AT_CHECK([tc -s -d filter show dev ovs-p0 ingress | grep matchall | head -n 1 | awk '{a=index($0,"matchall");print substr($0,a,8)}'| head -n 1],[0],
+    [matchall
+])
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP

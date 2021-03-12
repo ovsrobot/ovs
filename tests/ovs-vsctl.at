@@ -1659,3 +1659,61 @@ AT_CHECK([grep "server name" ovsdb-server.log], [0],
 
 OVS_VSCTL_CLEANUP
 AT_CLEANUP
+
+dnl ----------------------------------------------------------------------
+AT_BANNER([set ingress policing test])
+
+AT_SETUP([set ingress_policing_rate and ingress_policing_burst])
+AT_KEYWORDS([ingress_policing])
+OVS_VSCTL_SETUP
+AT_CHECK([RUN_OVS_VSCTL_TOGETHER(
+   [add-br a],
+   [add-port a a1],
+   [set interface a1 ingress_policing_rate=100],
+   [set interface a1 ingress_policing_burst=10],
+   [list interface a1 > configured_interface_a1.txt])],
+   [0], [])
+AT_CHECK(
+    [uuidfilt configured_interface_a1.txt],
+    [0],
+    [[
+
+
+
+_uuid               : <0>
+admin_state         : []
+bfd                 : {}
+bfd_status          : {}
+cfm_fault           : []
+cfm_fault_status    : []
+cfm_flap_count      : []
+cfm_health          : []
+cfm_mpid            : []
+cfm_remote_mpids    : []
+cfm_remote_opstate  : []
+duplex              : []
+error               : []
+external_ids        : {}
+ifindex             : []
+ingress_policing_burst: 10
+ingress_policing_rate: 100
+lacp_current        : []
+link_resets         : []
+link_speed          : []
+link_state          : []
+lldp                : {}
+mac                 : []
+mac_in_use          : []
+mtu                 : []
+mtu_request         : []
+name                : a1
+ofport              : []
+ofport_request      : []
+options             : {}
+other_config        : {}
+statistics          : {}
+status              : {}
+type                : ""
+]])
+OVS_VSCTL_CLEANUP
+AT_CLEANUP
