@@ -237,9 +237,12 @@ If not set, the default variance improvement threshold is 25%.
 
 .. note::
 
-    PMD Auto Load Balancing doesn't currently work if queues are assigned
-    cross NUMA as actual processing load could get worse after assignment
-    as compared to what dry run predicts.
+    PMD Auto Load Balancing doesn't request a reassignment if queues are
+    assigned cross NUMA and there are multiple NUMA nodes available for
+    reassignment. This is because reassignment to a different NUMA node could
+    lead to an unpredictable change in processing cycles required for a queue.
+    However, if there is only one cross NUMA node available then a dry run and
+    possible request to reassign may continue as normal.
 
 The minimum time between 2 consecutive PMD auto load balancing iterations can
 also be configured by::
