@@ -4030,6 +4030,8 @@ ofctl_meter_mod__(const char *bridge, const char *str, int command)
         usable_protocols = OFPUTIL_P_OF13_UP;
         mm.command = command;
         mm.meter.meter_id = OFPM13_ALL;
+        mm.meter.flags = 0;
+        mm.meter.n_bands = 0;
         mm.meter.bands = NULL;
     }
 
@@ -4059,6 +4061,8 @@ ofctl_meter_request__(const char *bridge, const char *str,
     } else {
         usable_protocols = OFPUTIL_P_OF13_UP;
         mm.meter.meter_id = OFPM13_ALL;
+        mm.meter.flags = 0;
+        mm.meter.n_bands = 0;
         mm.meter.bands = NULL;
     }
 
