@@ -333,7 +333,7 @@ class Stream(object):
 
         try:
             return (0, self.socket.recv(n))
-        except socket.error as e:
+        except ovs.socket_util.SOCKET_EXCEPTIONS as e:
             return (ovs.socket_util.get_exception_errno(e), "")
 
     def __recv_windows(self, n):
@@ -411,7 +411,7 @@ class Stream(object):
 
         try:
             return self.socket.send(buf)
-        except socket.error as e:
+        except ovs.socket_util.SOCKET_EXCEPTIONS as e:
             return -ovs.socket_util.get_exception_errno(e)
 
     def __send_windows(self, buf):
@@ -615,7 +615,7 @@ class PassiveStream(object):
 
         try:
             sock.listen(10)
-        except socket.error as e:
+        except ovs.socket_util.SOCKET_EXCEPTIONS as e:
             vlog.err("%s: listen: %s" % (name, os.strerror(e.error)))
             sock.close()
             return e.error, None
@@ -651,7 +651,7 @@ class PassiveStream(object):
                     return 0, Stream(sock, "unix:%s" % addr, 0)
                 return 0, Stream(sock, 'ptcp:%s:%s' % (addr[0],
                                                        str(addr[1])), 0)
-            except socket.error as e:
+            except ovs.socket_util.SOCKET_EXCEPTIONS as e:
                 error = ovs.socket_util.get_exception_errno(e)
                 if sys.platform == 'win32' and error == errno.WSAEWOULDBLOCK:
                     # WSAEWOULDBLOCK would be the equivalent on Windows

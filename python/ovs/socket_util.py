@@ -19,6 +19,13 @@ import random
 import socket
 import sys
 
+try:
+    from OpenSSL import SSL
+    SOCKET_EXCEPTIONS = (socket.error, SSL.SysCallError)
+except ImportError:
+    SSL = None
+    SOCKET_EXCEPTIONS = (socket.error,)
+
 import ovs.fatal_signal
 import ovs.poller
 import ovs.vlog
@@ -68,7 +75,7 @@ def make_unix_socket(style, nonblock, bind_path, connect_path, short=False):
 
     try:
         sock = socket.socket(socket.AF_UNIX, style)
-    except socket.error as e:
+    except SOCKET_EXCEPTIONS as e:
         return get_exception_errno(e), None
 
     try:
@@ -92,11 +99,11 @@ def make_unix_socket(style, nonblock, bind_path, connect_path, short=False):
         if connect_path is not None:
             try:
                 sock.connect(connect_path)
-            except socket.error as e:
+            except SOCKET_EXCEPTIONS as e:
                 if get_exception_errno(e) != errno.EINPROGRESS:
                     raise
         return 0, sock
-    except socket.error as e:
+    except SOCKET_EXCEPTIONS as e:
         sock.close()
         if (bind_path is not None and
             os.path.exists(bind_path)):
@@ -184,7 +191,7 @@ def check_connection_completion(sock):
                 # XXX rate-limit
                 vlog.err("poll return POLLERR but send succeeded")
                 return errno.EPROTO
-            except socket.error as e:
+            except SOCKET_EXCEPTIONS as e:
                 return get_exception_errno(e)
         else:
             return 0
@@ -198,9 +205,9 @@ def is_valid_ipv4_address(address):
     except AttributeError:
         try:
             socket.inet_aton(address)
-        except socket.error:
+        except SOCKET_EXCEPTIONS:
             return False
-    except socket.error:
+    except SOCKET_EXCEPTIONS:
         return False
 
     return True
@@ -232,7 +239,7 @@ def inet_open_active(style, target, default_port, dscp):
         else:
             sock = socket.socket(socket.AF_INET6, style, 0)
             family = socket.AF_INET6
-    except socket.error as e:
+    except SOCKET_EXCEPTIONS as e:
         return get_exception_errno(e), None
 
     try:
@@ -240,7 +247,7 @@ def inet_open_active(style, target, default_port, dscp):
         set_dscp(sock, family, dscp)
         try:
             sock.connect(address)
-        except socket.error as e:
+        except SOCKET_EXCEPTIONS as e:
             error = get_exception_errno(e)
             if sys.platform == 'win32' and error == errno.WSAEWOULDBLOCK:
                 # WSAEWOULDBLOCK would be the equivalent on Windows
@@ -249,7 +256,7 @@ def inet_open_active(style, target, default_port, dscp):
             if error != errno.EINPROGRESS:
                 raise
         return 0, sock
-    except socket.error as e:
+    except SOCKET_EXCEPTIONS as e:
         sock.close()
         return get_exception_errno(e), None
 
@@ -314,7 +321,7 @@ def write_fully(fd, buf):
 def set_nonblocking(sock):
     try:
         sock.setblocking(0)
-    except socket.error as e:
+    except SOCKET_EXCEPTIONS as e:
         vlog.err("could not set nonblocking mode on socket: %s"
                  % os.strerror(get_exception_errno(e)))
 
