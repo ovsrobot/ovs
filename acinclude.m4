@@ -30,6 +30,20 @@ AC_DEFUN([OVS_CHECK_DPCLS_AUTOVALIDATOR], [
   fi
 ])
 
+
+AC_DEFUN([OVS_CHECK_CPU_ISA_OPT_IN], [
+  AC_ARG_ENABLE([cpu-isa],
+                [AC_HELP_STRING([--enable-cpu-isa], [Enable CPU ISA default enable.])],
+                [isa=yes],[isa=no])
+  AC_MSG_CHECKING([whether CPU ISA should be enabled by default])
+  if test "$isa" != yes; then
+    AC_MSG_RESULT([no])
+  else
+    OVS_CFLAGS="$OVS_CFLAGS -DCPU_ISA_OPT_IN"
+    AC_MSG_RESULT([yes])
+  fi
+])
+
 dnl OVS_ENABLE_WERROR
 AC_DEFUN([OVS_ENABLE_WERROR],
   [AC_ARG_ENABLE(
