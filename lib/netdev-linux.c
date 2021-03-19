@@ -680,7 +680,7 @@ netdev_linux_update_lag(struct rtnetlink_change *change)
 
             if (is_netdev_linux_class(master_netdev->netdev_class)) {
                 block_id = netdev_get_block_id(master_netdev);
-                if (!block_id) {
+                if (!block_id || master_netdev->auto_classified) {
                     netdev_close(master_netdev);
                     return;
                 }
