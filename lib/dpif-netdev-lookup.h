@@ -29,11 +29,6 @@ typedef
 dpcls_subtable_lookup_func (*dpcls_subtable_probe_func)(uint32_t u0_bit_count,
                                                         uint32_t u1_bit_count);
 
-/* Prototypes for subtable implementations */
-dpcls_subtable_lookup_func
-dpcls_subtable_autovalidator_probe(uint32_t u0_bit_count,
-                                   uint32_t u1_bit_count);
-
 /* Probe function to select a specialized version of the generic lookup
  * implementation. This provides performance benefit due to compile-time
  * optimizations such as loop-unrolling. These are enabled by the compile-time
@@ -41,11 +36,6 @@ dpcls_subtable_autovalidator_probe(uint32_t u0_bit_count,
  */
 dpcls_subtable_lookup_func
 dpcls_subtable_generic_probe(uint32_t u0_bit_count, uint32_t u1_bit_count);
-
-/* Probe function for AVX-512 gather implementation */
-dpcls_subtable_lookup_func
-dpcls_subtable_avx512_gather_probe(uint32_t u0_bit_cnt, uint32_t u1_bit_cnt);
-
 
 /* Subtable registration and iteration helpers */
 struct dpcls_subtable_lookup_info_t {
@@ -63,6 +53,15 @@ struct dpcls_subtable_lookup_info_t {
     /* Human readable name, used in setting subtable priority commands */
     const char *name;
 };
+
+void dpcls_subtable_lookup_init(void);
+
+void dpcls_subtable_lookup_register(struct dpcls_subtable_lookup_info_t *);
+
+/* Register functions for different subtable lookup implementations. */
+void dpcls_subtable_autovalidator_register(uint8_t priority);
+void dpcls_subtable_generic_register(uint8_t priority);
+void dpcls_subtable_avx512_gather_register(uint8_t priority);
 
 int32_t dpcls_subtable_set_prio(const char *name, uint8_t priority);
 

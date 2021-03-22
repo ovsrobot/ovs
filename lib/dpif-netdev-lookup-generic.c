@@ -318,3 +318,15 @@ dpcls_subtable_generic_probe(uint32_t u0_bits, uint32_t u1_bits)
 
     return f;
 }
+
+void
+dpcls_subtable_generic_register(uint8_t priority)
+{
+    struct dpcls_subtable_lookup_info_t lookup = {
+        .prio = priority,
+        .probe = dpcls_subtable_generic_probe,
+        .name = "generic",
+    };
+
+    dpcls_subtable_lookup_register(&lookup);
+}

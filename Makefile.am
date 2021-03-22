@@ -41,6 +41,16 @@ else
 DPDKSTRIP_FLAGS = --nodpdk
 endif
 
+if HAVE_SSE42
+if HAVE_POPCNT
+if HAVE_AVX512F
+if HAVE_LD_AVX512_GOOD
+AM_CFLAGS += -DHAVE_AVX512_DPCLS
+endif
+endif
+endif
+endif
+
 if NDEBUG
 AM_CPPFLAGS += -DNDEBUG
 AM_CFLAGS += -fomit-frame-pointer

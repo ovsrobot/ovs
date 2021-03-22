@@ -38,10 +38,6 @@ VLOG_DEFINE_THIS_MODULE(dpif_lookup_autovalidator);
  * implementation, however the results (rules[] output) must be the same.
  */
 
-dpcls_subtable_lookup_func
-dpcls_subtable_autovalidator_probe(uint32_t u0 OVS_UNUSED,
-                                   uint32_t u1 OVS_UNUSED);
-
 static uint32_t
 dpcls_subtable_autovalidator(struct dpcls_subtable *subtable,
                              uint32_t keys_map,
@@ -101,10 +97,22 @@ dpcls_subtable_autovalidator(struct dpcls_subtable *subtable,
     return matches_good;
 }
 
-dpcls_subtable_lookup_func
+static dpcls_subtable_lookup_func
 dpcls_subtable_autovalidator_probe(uint32_t u0 OVS_UNUSED,
                                    uint32_t u1 OVS_UNUSED)
 {
     /* Always return the same validator tester, it works for all subtables. */
     return dpcls_subtable_autovalidator;
+}
+
+void
+dpcls_subtable_autovalidator_register(uint8_t priority)
+{
+    struct dpcls_subtable_lookup_info_t lookup = {
+        .prio = priority,
+        .probe = dpcls_subtable_autovalidator_probe,
+        .name = "autovalidator",
+    };
+
+    dpcls_subtable_lookup_register(&lookup);
 }

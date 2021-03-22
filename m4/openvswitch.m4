@@ -412,7 +412,6 @@ AC_DEFUN([OVS_CHECK_BINUTILS_AVX512],
      if ($CC -dumpmachine | grep x86_64) >/dev/null 2>&1; then
        if (objdump -d  --no-show-raw-insn $OBJFILE | grep -q $GATHER_PARAMS) >/dev/null 2>&1; then
          ovs_cv_binutils_avx512_good=yes
-         CFLAGS="$CFLAGS -DHAVE_LD_AVX512_GOOD"
        else
          ovs_cv_binutils_avx512_good=no
          dnl Explicitly disallow avx512f to stop compiler auto-vectorizing

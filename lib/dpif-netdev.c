@@ -1650,6 +1650,9 @@ dpif_netdev_init(void)
     unixctl_command_register("dpif-netdev/subtable-lookup-prio-get", "",
                              0, 0, dpif_netdev_subtable_lookup_get,
                              NULL);
+
+    dpcls_subtable_lookup_init();
+
     return 0;
 }
 

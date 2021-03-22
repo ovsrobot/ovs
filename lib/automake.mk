@@ -21,6 +21,8 @@ lib_libopenvswitch_la_LDFLAGS = \
         -Wl,--version-script=$(top_builddir)/lib/libopenvswitch.sym \
         $(AM_LDFLAGS)
 
+if HAVE_SSE42
+if HAVE_POPCNT
 if HAVE_AVX512F
 if HAVE_LD_AVX512_GOOD
 # Build library of avx512 code with CPU ISA CFLAGS enabled. This allows the
@@ -30,6 +32,8 @@ if HAVE_LD_AVX512_GOOD
 lib_LTLIBRARIES += lib/libopenvswitchavx512.la
 lib_libopenvswitch_la_LIBADD += lib/libopenvswitchavx512.la
 lib_libopenvswitchavx512_la_CFLAGS = \
+	-msse4.2 \
+	-mpopcnt \
 	-mavx512f \
 	-mavx512bw \
 	-mavx512dq \
@@ -40,6 +44,8 @@ lib_libopenvswitchavx512_la_SOURCES = \
 	lib/dpif-netdev-lookup-avx512-gather.c
 lib_libopenvswitchavx512_la_LDFLAGS = \
 	-static
+endif
+endif
 endif
 endif
 

@@ -236,16 +236,10 @@ dpcls_avx512_gather_mf_any(struct dpcls_subtable *subtable, uint32_t keys_map,
                               subtable->mf_bits_set_unit1);
 }
 
-dpcls_subtable_lookup_func
+static dpcls_subtable_lookup_func
 dpcls_subtable_avx512_gather_probe(uint32_t u0_bits, uint32_t u1_bits)
 {
     dpcls_subtable_lookup_func f = NULL;
-
-    int avx512f_available = dpdk_get_cpu_has_isa("x86_64", "avx512f");
-    int bmi2_available = dpdk_get_cpu_has_isa("x86_64", "bmi2");
-    if (!avx512f_available || !bmi2_available) {
-        return NULL;
-    }
 
     CHECK_LOOKUP_FUNCTION(5, 1);
     CHECK_LOOKUP_FUNCTION(4, 1);
@@ -258,6 +252,18 @@ dpcls_subtable_avx512_gather_probe(uint32_t u0_bits, uint32_t u1_bits)
     }
 
     return f;
+}
+
+void
+dpcls_subtable_avx512_gather_register(uint8_t priority)
+{
+    struct dpcls_subtable_lookup_info_t lookup = {
+        .prio = priority,
+        .probe = dpcls_subtable_avx512_gather_probe,
+        .name = "avx512_gather",
+    };
+
+    dpcls_subtable_lookup_register(&lookup);
 }
 
 #endif /* CHECKER */

@@ -155,16 +155,6 @@ has to be configured to build against the DPDK library (``--with-dpdk``).
      While ``--with-dpdk`` is required, you can pass any other configuration
      option described in :ref:`general-configuring`.
 
-   It is strongly recommended to build OVS with at least ``-msse4.2`` and
-   ``-mpopcnt`` optimization flags. If these flags are not enabled, the AVX512
-   optimized DPCLS implementation is not available in the resulting binary.
-   For technical details see the subtable registration code in the
-   ``lib/dpif-netdev-lookup.c`` file.
-
-   An example that enables the AVX512 optimizations is::
-
-       $ ./configure --with-dpdk=static CFLAGS="-Ofast -msse4.2 -mpopcnt"
-
 #. Build and install OVS, as described in :ref:`general-building`
 
 Additional information can be found in :doc:`general`.

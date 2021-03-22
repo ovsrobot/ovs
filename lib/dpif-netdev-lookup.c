@@ -16,14 +16,35 @@
 
 #include <config.h>
 #include <errno.h>
+#include "dpdk.h"
 #include "dpif-netdev-lookup.h"
 
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(dpif_netdev_lookup);
 
-/* Actual list of implementations goes here */
-static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
+#define LOOKUPS_MAX 3
+static int subtable_lookups_size = 0;
+static struct dpcls_subtable_lookup_info_t subtable_lookups[LOOKUPS_MAX];
+
+void
+dpcls_subtable_lookup_register(struct dpcls_subtable_lookup_info_t *lookup)
+{
+    VLOG_DBG("Registering dpcls subtable lookup implementation: %s"
+             ", priority: %d.", lookup->name, lookup->prio);
+    ovs_assert(subtable_lookups_size < LOOKUPS_MAX);
+    subtable_lookups[subtable_lookups_size++] = *lookup;
+}
+
+void
+dpcls_subtable_lookup_init(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+
+    if (!ovsthread_once_start(&once)) {
+        return;
+    }
+
     /* The autovalidator implementation will not be used by default, it must
      * be enabled at compile time to be the default lookup implementation. The
      * user may enable it at runtime using the normal "prio-set" command if
@@ -31,30 +52,36 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
      * tests to transparently run with the autovalidator.
      */
 #ifdef DPCLS_AUTOVALIDATOR_DEFAULT
-    { .prio = 255,
+    dpcls_subtable_autovalidator_register(255);
 #else
-    { .prio = 0,
+    dpcls_subtable_autovalidator_register(0);
 #endif
-      .probe = dpcls_subtable_autovalidator_probe,
-      .name = "autovalidator", },
 
-    /* The default scalar C code implementation. */
-    { .prio = 1,
-      .probe = dpcls_subtable_generic_probe,
-      .name = "generic", },
+    dpcls_subtable_generic_register(1);
 
-#if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
-    /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
-    { .prio = 0,
-      .probe = dpcls_subtable_avx512_gather_probe,
-      .name = "avx512_gather", },
+#if (__x86_64__ && HAVE_AVX512_DPCLS)
+    /* Checks below performed here and not inside the _avx512_gather_register
+     * function, because implementation of this function is already built with
+     * support of these instruction sets.  Need to check here to avoid possible
+     * illegal instruction execution. */
+    if (dpdk_get_cpu_has_isa("x86_64", "avx512f") &&
+        dpdk_get_cpu_has_isa("x86_64", "bmi2")    &&
+        dpdk_get_cpu_has_isa("x86_64", "sse4.2")  &&
+        dpdk_get_cpu_has_isa("x86_64", "popcnt")) {
+        /* Runtime checks succeeded.  Current CPU supports all required
+         * instruction sets for avx512 dpcls implementation. */
+        dpcls_subtable_avx512_gather_register(0);
+    }
+
 #else
-    /* Disabling AVX512 at compile time, as compile time requirements not met.
+    /* Not registering AVX512 support as compile time requirements not met.
      * This could be due to a number of reasons:
-     *  1) core OVS is not compiled with SSE4.2 instruction set.
-     *     The SSE42 instructions are required to use CRC32 ISA for high-
-     *     performance hashing. Consider ./configure of OVS with -msse42 (or
-     *     newer) to enable CRC32 hashing and higher performance.
+     *  1) AVX512 or SSE4.2 instruction set not supported by compiler or
+     *     explicitly disabled in compile time.
+     *     The SSE4.2 instructions are required to use CRC32 ISA for high-
+     *     performance hashing. Check that compiler supports -msse4.2 and
+     *     -mavx512f.  Or check that OVS is not configured with -mno-sse4.2,
+     *     -mno-avx512f or similar.
      *  2) The assembler in binutils versions 2.30 and 2.31 has bugs in AVX512
      *     assembly. Compile time probes check for this assembler issue, and
      *     disable the HAVE_LD_AVX512_GOOD check if an issue is detected.
@@ -62,7 +89,8 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
      *     2069ccaf8dc28ea699bd901fdd35d90613e4402a
      */
 #endif
-};
+     ovsthread_once_done(&once);
+}
 
 int32_t
 dpcls_subtable_lookup_info_get(struct dpcls_subtable_lookup_info_t **out_ptr)
@@ -72,14 +100,14 @@ dpcls_subtable_lookup_info_get(struct dpcls_subtable_lookup_info_t **out_ptr)
     }
 
     *out_ptr = subtable_lookups;
-    return ARRAY_SIZE(subtable_lookups);
+    return subtable_lookups_size;
 }
 
 /* sets the priority of the lookup function with "name". */
 int32_t
 dpcls_subtable_set_prio(const char *name, uint8_t priority)
 {
-    for (int i = 0; i < ARRAY_SIZE(subtable_lookups); i++) {
+    for (int i = 0; i < subtable_lookups_size; i++) {
         if (strcmp(name, subtable_lookups[i].name) == 0) {
                 subtable_lookups[i].prio = priority;
                 VLOG_INFO("Subtable function '%s' set priority to %d\n",
@@ -100,7 +128,7 @@ dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
     const char *name = NULL;
     dpcls_subtable_lookup_func best_func = NULL;
 
-    for (int i = 0; i < ARRAY_SIZE(subtable_lookups); i++) {
+    for (int i = 0; i < subtable_lookups_size; i++) {
         int32_t probed_prio = subtable_lookups[i].prio;
         if (probed_prio > prio) {
             dpcls_subtable_lookup_func probed_func;
