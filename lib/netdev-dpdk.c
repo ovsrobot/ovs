@@ -2598,7 +2598,7 @@ __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
     int max_retries = VHOST_ENQ_RETRY_MIN;
     int vid = netdev_dpdk_get_vid(dev);
 
-    qid = dev->tx_q[qid % netdev->n_txq].map;
+    qid = dev->tx_q[qid].map;
 
     if (OVS_UNLIKELY(vid < 0 || !dev->vhost_reconfigured || qid < 0
                      || !(dev->flags & NETDEV_UP))) {
@@ -2872,7 +2872,6 @@ netdev_dpdk_send__(struct netdev_dpdk *dev, int qid,
     }
 
     if (OVS_UNLIKELY(concurrent_txq)) {
-        qid = qid % dev->up.n_txq;
         rte_spinlock_lock(&dev->tx_q[qid].tx_lock);
     }
 

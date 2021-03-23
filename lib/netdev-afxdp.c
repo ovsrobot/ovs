@@ -1117,7 +1117,6 @@ netdev_afxdp_batch_send(struct netdev *netdev, int qid,
 
     if (concurrent_txq) {
         dev = netdev_linux_cast(netdev);
-        qid = qid % netdev_n_txq(netdev);
 
         ovs_spin_lock(&dev->tx_locks[qid].lock);
         ret = __netdev_afxdp_batch_send(netdev, qid, batch);
