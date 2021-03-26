@@ -79,6 +79,27 @@ decode_ed_prop(const struct ofp_ed_prop_header **ofp_prop,
         }
         break;
     }
+    case OFPPPC_MPLS: {
+       switch (prop_type) {
+        case OFPPPT_PROP_MPLS_ETHERTYPE: {
+            struct ofp_ed_prop_mpls_ethertype *opnmt =
+                ALIGNED_CAST(struct ofp_ed_prop_mpls_ethertype *, *ofp_prop);
+            if (len > sizeof(*opnmt) || len > *remaining) {
+                return OFPERR_NXBAC_BAD_ED_PROP;
+            }
+            struct ofpact_ed_prop_mpls_ethertype *pnmt =
+                    ofpbuf_put_uninit(out, sizeof(*pnmt));
+            pnmt->header.prop_class = prop_class;
+            pnmt->header.type = prop_type;
+            pnmt->header.len = len;
+            pnmt->ether_type = opnmt->ether_type;
+            break;
+        }
+        default:
+            return OFPERR_NXBAC_UNKNOWN_ED_PROP;
+        }
+        break;
+    }
     default:
         return OFPERR_NXBAC_UNKNOWN_ED_PROP;
     }
@@ -134,6 +155,27 @@ encode_ed_prop(const struct ofpact_ed_prop **prop,
         }
         break;
     }
+    case OFPPPC_MPLS: {
+       switch ((*prop)->type) {
+       case OFPPPT_PROP_MPLS_ETHERTYPE: {
+           struct ofpact_ed_prop_mpls_ethertype *pnmt =
+                ALIGNED_CAST(struct ofpact_ed_prop_mpls_ethertype *, *prop);
+            struct ofp_ed_prop_mpls_ethertype *opnmt =
+                    ofpbuf_put_uninit(out, sizeof(*opnmt));
+            opnmt->header.prop_class = htons((*prop)->prop_class);
+            opnmt->header.type = (*prop)->type;
+            opnmt->header.len =
+                    offsetof(struct ofpact_ed_prop_mpls_ethertype, pad);
+            opnmt->ether_type = pnmt->ether_type;
+            prop_len = sizeof(*pnmt);
+            break;
+
+       }
+       default:
+            return OFPERR_OFPBAC_BAD_ARGUMENT;
+       }
+       break;
+    }
     default:
         return OFPERR_OFPBAC_BAD_ARGUMENT;
     }
@@ -177,6 +219,13 @@ parse_ed_prop_type(uint16_t prop_class,
             return true;
         } else if (!strcmp(str, "tlv")) {
             *type = OFPPPT_PROP_NSH_TLV;
+            return true;
+        } else {
+            return false;
+        }
+    case OFPPPC_MPLS:
+        if (!strcmp(str, "ether_type")) {
+            *type = OFPPPT_PROP_MPLS_ETHERTYPE;
             return true;
         } else {
             return false;
@@ -259,6 +308,28 @@ parse_ed_prop_value(uint16_t prop_class, uint8_t prop_type OVS_UNUSED,
             OVS_NOT_REACHED();
         }
         break;
+    case OFPPPC_MPLS:
+        switch (prop_type) {
+        case OFPPPT_PROP_MPLS_ETHERTYPE: {
+            uint16_t ethertype;
+            error = str_to_u16(value, "ether_type", &ethertype);
+            if (error != NULL) {
+                return error;
+            }
+            struct ofpact_ed_prop_mpls_ethertype *pnmt =
+                    ofpbuf_put_uninit(out, sizeof(*pnmt));
+            pnmt->header.prop_class = prop_class;
+            pnmt->header.type = prop_type;
+            pnmt->header.len =
+                    offsetof(struct ofpact_ed_prop_mpls_ethertype, pad);
+            pnmt->ether_type = ethertype;
+
+            break;
+        }
+        default:
+            break;
+      }
+      break;
     default:
         /* Unsupported property classes rejected before. */
         OVS_NOT_REACHED();
@@ -300,6 +371,14 @@ format_ed_prop_type(const struct ofpact_ed_prop *prop)
             OVS_NOT_REACHED();
         }
         break;
+    case OFPPPC_MPLS:
+         switch (prop->type) {
+         case OFPPPT_PROP_MPLS_ETHERTYPE:
+              return "ether_type";
+         default:
+               OVS_NOT_REACHED();
+         }
+         break;
     default:
         OVS_NOT_REACHED();
     }
@@ -327,6 +406,18 @@ format_ed_prop(struct ds *s OVS_UNUSED,
                           ntohs(pnt->tlv_class), pnt->tlv_type);
             ds_put_hex(s, pnt->data, pnt->tlv_len);
             ds_put_cstr(s,")");
+            return;
+        }
+        default:
+            OVS_NOT_REACHED();
+        }
+     case OFPPPC_MPLS:
+        switch (prop->type) {
+        case OFPPPT_PROP_MPLS_ETHERTYPE: {
+          struct ofpact_ed_prop_mpls_ethertype *pnmt =
+                ALIGNED_CAST(struct ofpact_ed_prop_mpls_ethertype *, prop);
+            ds_put_format(s, "%s=%d", format_ed_prop_type(prop),
+                          pnmt->ether_type);
             return;
         }
         default:

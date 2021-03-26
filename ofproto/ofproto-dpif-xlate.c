@@ -6381,6 +6381,45 @@ rewrite_flow_encap_ethernet(struct xlate_ctx *ctx,
         ctx->error = XLATE_UNSUPPORTED_PACKET_TYPE;
     }
 }
+static void
+rewrite_flow_encap_mpls(struct xlate_ctx *ctx,
+                        const struct ofpact_encap *encap,
+                        struct flow *flow,
+                        struct flow_wildcards *wc)
+{
+    int n;
+    uint32_t i;
+    uint16_t ether_type;
+    const char *ptr = (char *) encap->props;
+
+     for (i = 0; i < encap->n_props; i++) {
+        struct ofpact_ed_prop *prop_ptr =
+            ALIGNED_CAST(struct ofpact_ed_prop *, ptr);
+        if (prop_ptr->prop_class == OFPPPC_MPLS) {
+            switch (prop_ptr->type) {
+                case OFPPPT_PROP_MPLS_ETHERTYPE: {
+                     struct ofpact_ed_prop_mpls_ethertype *prop_ether_type =
+                        ALIGNED_CAST(struct ofpact_ed_prop_mpls_ethertype *,
+                                     prop_ptr);
+                    ether_type = prop_ether_type->ether_type;
+                    break;
+                 }
+            }
+        }
+     }
+
+    wc->masks.packet_type = OVS_BE32_MAX;
+    if (flow->packet_type != htonl(PT_MPLS)) {
+        memset(&ctx->wc->masks.mpls_lse, 0x0,
+               sizeof *wc->masks.mpls_lse * FLOW_MAX_MPLS_LABELS);
+        memset(&flow->mpls_lse, 0x0, sizeof *flow->mpls_lse *
+               FLOW_MAX_MPLS_LABELS);
+    }
+    flow->packet_type = htonl(PT_MPLS);
+    n = flow_count_mpls_labels(flow, ctx->wc);
+    flow_push_mpls(flow, n, htons(ether_type), ctx->wc, true);
+}
+
 
 /* For an MD2 NSH header returns a pointer to an ofpbuf with the encoded
  * MD2 TLVs provided as encap properties to the encap operation. This
@@ -6513,6 +6552,12 @@ xlate_generic_encap_action(struct xlate_ctx *ctx,
         case PT_NSH:
             encap_data = rewrite_flow_push_nsh(ctx, encap, flow, wc);
             break;
+        case PT_MPLS:
+            rewrite_flow_encap_mpls(ctx, encap,  flow, wc);
+            if (!ctx->xbridge->support.add_mpls) {
+                ctx->xout->slow |= SLOW_ACTION;
+            }
+            break;
         default:
             /* New packet type was checked during decoding. */
             OVS_NOT_REACHED();
@@ -6582,6 +6627,21 @@ xlate_generic_decap_action(struct xlate_ctx *ctx,
             ctx->pending_decap = true;
             /* Trigger recirculation. */
             return true;
+        case PT_MPLS: {
+             int n;
+             ovs_be16 ethertype;
+
+             flow->packet_type = decap->new_pkt_type;
+             ethertype = pt_ns_type_be(flow->packet_type);
+
+             n = flow_count_mpls_labels(flow, ctx->wc);
+             flow_pop_mpls(flow, n, ethertype, ctx->wc);
+             if (!ctx->xbridge->support.add_mpls) {
+                ctx->xout->slow |= SLOW_ACTION;
+             }
+             ctx->pending_decap = true;
+             return true;
+        }
         default:
             /* Error handling: drop packet. */
             xlate_report_debug(

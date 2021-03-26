@@ -418,6 +418,38 @@ push_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse)
     pkt_metadata_init_conn(&packet->md);
 }
 
+void
+add_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse, bool l3)
+{
+    char * header;
+
+    if (!eth_type_mpls(ethtype)) {
+        return;
+    }
+
+    if (!l3) {
+        header =  dp_packet_push_uninit(packet, MPLS_HLEN);
+        memcpy(header, &lse, sizeof lse);
+        packet->l2_5_ofs = 0;
+        packet->packet_type = htonl(PT_MPLS);
+    } else {
+        size_t len;
+
+        if (!is_mpls(packet)) {
+            /* Set MPLS label stack offset. */
+            packet->l2_5_ofs = packet->l3_ofs;
+        }
+        set_ethertype(packet, ethtype);
+
+        /* Push new MPLS shim header onto packet. */
+        len = packet->l2_5_ofs;
+        header = dp_packet_resize_l2_5(packet, MPLS_HLEN);
+        memmove(header, header + MPLS_HLEN, len);
+        memcpy(header + len, &lse, sizeof lse);
+    }
+    pkt_metadata_init_conn(&packet->md);
+}
+
 /* If 'packet' is an MPLS packet, removes its outermost MPLS label stack entry.
  * If the label that was removed was the only MPLS label, changes 'packet''s
  * Ethertype to 'ethtype' (which ordinarily should not be an MPLS
@@ -428,6 +460,10 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
     if (is_mpls(packet)) {
         struct mpls_hdr *mh = dp_packet_l2_5(packet);
         size_t len = packet->l2_5_ofs;
+
+        if (ethtype == htons(ETH_TYPE_TEB)) {
+             packet->packet_type = htonl(PT_ETH);
+        }
 
         set_ethertype(packet, ethtype);
         if (get_16aligned_be32(&mh->mpls_lse) & htonl(MPLS_BOS_MASK)) {
