@@ -294,11 +294,7 @@ void xpthread_join(pthread_t, void **);
         value = NAME##_get_unsafe();                                    \
         if (!value) {                                                   \
             static const NAME##_type initial_value = __VA_ARGS__;       \
-                                                                        \
-            value = malloc(sizeof *value);                              \
-            if (value == NULL) {                                        \
-                out_of_memory();                                        \
-            }                                                           \
+            value = xmalloc__(sizeof *value);                           \
             *value = initial_value;                                     \
             xpthread_setspecific(NAME##_key, value);                    \
         }                                                               \
@@ -334,11 +330,7 @@ void xpthread_join(pthread_t, void **);
         value = NAME##_get_unsafe();                                    \
         if (!value) {                                                   \
             static const NAME##_type initial_value = __VA_ARGS__;       \
-                                                                        \
-            value = malloc(sizeof *value);                              \
-            if (value == NULL) {                                        \
-                out_of_memory();                                        \
-            }                                                           \
+            value = xmalloc__(sizeof *value);                           \
             *value = initial_value;                                     \
             xpthread_setspecific(NAME##_key, value);                    \
         }                                                               \
