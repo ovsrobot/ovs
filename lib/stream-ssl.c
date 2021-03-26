@@ -1096,10 +1096,10 @@ tmp_dh_callback(SSL *ssl OVS_UNUSED, int is_export OVS_UNUSED, int keylength)
 
     for (dh = dh_table; dh < &dh_table[ARRAY_SIZE(dh_table)]; dh++) {
         if (dh->keylength == keylength) {
-            if (!dh->dh) {
+            while (!dh->dh) {
                 dh->dh = dh->constructor();
                 if (!dh->dh) {
-                    out_of_memory();
+                    munlockall_or_out_of_memory();
                 }
             }
             return dh->dh;
