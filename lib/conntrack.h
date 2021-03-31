@@ -77,6 +77,14 @@ enum nat_action_e {
     NAT_ACTION_DST_PORT = 1 << 3,
 };
 
+#define NAT_ACTION_SNAT_ALL (NAT_ACTION_SRC | NAT_ACTION_SRC_PORT)
+#define NAT_ACTION_DNAT_ALL (NAT_ACTION_DST | NAT_ACTION_DST_PORT)
+
+enum {
+    MIN_NAT_EPHEMERAL_PORT = 1024,
+    MAX_NAT_EPHEMERAL_PORT = 65535
+};
+
 struct nat_action_info_t {
     union ct_addr min_addr;
     union ct_addr max_addr;
@@ -84,6 +92,13 @@ struct nat_action_info_t {
     uint16_t max_port;
     uint16_t nat_action;
 };
+
+#define NEXT_PORT_IN_RANGE(curr, min, max) \
+    curr = (curr == max) ? min : curr + 1
+
+#define FOR_EACH_PORT_IN_RANGE(idx, curr, min, max) \
+    for (idx = 0; idx < (max - min) + 1; idx++, \
+             NEXT_PORT_IN_RANGE(curr, min, max))
 
 struct conntrack *conntrack_init(void);
 void conntrack_destroy(struct conntrack *);
