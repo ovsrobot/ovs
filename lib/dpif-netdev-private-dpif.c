@@ -61,6 +61,13 @@ dp_netdev_impl_get_default(void)
     return func;
 }
 
+uint32_t
+dp_netdev_impl_get(const struct dpif_netdev_impl_info_t **out_impls)
+{
+    ovs_assert(out_impls);
+    *out_impls = dpif_impls;
+    return ARRAY_SIZE(dpif_impls);
+}
 
 /* This function checks all available DPIF implementations, and selects the
  * returns the function pointer to the one requested by "name".
