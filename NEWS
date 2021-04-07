@@ -13,6 +13,7 @@ Post-v2.15.0
      * Add avx512 implementation of dpif which can process non recirculated
        packets. It supports partial HWOL, EMC, SMC and DPCLS lookups.
      * Add commands to get and set the dpif implementations.
+     * Enable AVX512 optimized DPCLS to search subtables with larger miniflows.
 
 
 v2.15.0 - 15 Feb 2021
