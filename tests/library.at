@@ -254,3 +254,8 @@ AT_SETUP([stopwatch module])
 AT_CHECK([ovstest test-stopwatch], [0], [......
 ], [ignore])
 AT_CLEANUP
+
+AT_SETUP([mpsc-queue module])
+AT_CHECK([ovstest test-mpsc-queue check], [0], [....
+])
+AT_CLEANUP
