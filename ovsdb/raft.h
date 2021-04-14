@@ -170,6 +170,14 @@ uint64_t raft_command_get_commit_index(const struct raft_command *);
 void raft_command_unref(struct raft_command *);
 void raft_command_wait(const struct raft_command *);
 
+struct ovsdb_error *raft_write_entry(struct raft *raft,
+                                     uint64_t term,
+                                     struct json *data,
+                                     const struct uuid *eid,
+                                     struct json *servers,
+                                     uint64_t election_timer)
+    OVS_WARN_UNUSED_RESULT;
+
 /* Replacing the local log by a snapshot. */
 bool raft_grew_lots(const struct raft *);
 uint64_t raft_get_log_length(const struct raft *);

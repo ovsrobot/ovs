@@ -276,9 +276,21 @@ do_create_cluster(struct ovs_cmdl_context *ctx)
     const char *db_file_name = ctx->argv[1];
     const char *src_file_name = ctx->argv[2];
     const char *local = ctx->argv[3];
+    uint64_t election_timer = 0;
 
     struct ovsdb_schema *schema;
     struct json *data;
+
+    if (ctx->argc >= 5) {
+        election_timer = atoll(ctx->argv[4]);
+        /* Election timer smaller than 100ms or bigger than 10min doesn't make
+         * sense. */
+        if (election_timer < 100 || election_timer > 600000) {
+            ovs_fatal(0, "election timer must be between 100 and 600000, "
+                      "in msec.");
+            return;
+        }
+    }
 
     struct ovsdb_error *error = ovsdb_schema_from_file(src_file_name, &schema);
     if (!error) {
@@ -306,6 +318,21 @@ do_create_cluster(struct ovs_cmdl_context *ctx)
                                           local, snapshot));
     ovsdb_schema_destroy(schema);
     json_destroy(snapshot);
+
+    if (election_timer > 0) {
+        struct ovsdb_log *log = NULL;
+        struct raft *raft = NULL;
+
+        check_ovsdb_error(ovsdb_log_open(db_file_name, RAFT_MAGIC,
+                                         OVSDB_LOG_READ_WRITE, -1, &log));
+        check_ovsdb_error(raft_open(log, &raft));
+        /* Use term=1 since raft_open() triggers leader election and sets
+         * the term to 1. */
+        check_ovsdb_error(raft_write_entry(raft, 1, json_nullable_clone(NULL),
+                                           NULL, json_nullable_clone(NULL),
+                                           election_timer));
+        raft_close(raft);
+    }
 }
 
 static void
@@ -1675,7 +1702,8 @@ do_list_commands(struct ovs_cmdl_context *ctx OVS_UNUSED)
 
 static const struct ovs_cmdl_command all_commands[] = {
     { "create", "[db [schema]]", 0, 2, do_create, OVS_RW },
-    { "create-cluster", "db contents local", 3, 3, do_create_cluster, OVS_RW },
+    { "create-cluster", "db contents local [election timer ms]", 3, 4,
+      do_create_cluster, OVS_RW },
     { "join-cluster", "db name local remote...", 4, INT_MAX, do_join_cluster,
       OVS_RW },
     { "compact", "[db [dst]]", 0, 2, do_compact, OVS_RW },

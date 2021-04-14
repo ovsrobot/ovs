@@ -697,7 +697,7 @@ raft_add_entry(struct raft *raft,
 
 /* Writes a RAFT_REC_ENTRY record for 'term', 'data', 'eid', 'servers',
  * 'election_timer' to * 'raft''s log and returns an error indication. */
-static struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 raft_write_entry(struct raft *raft, uint64_t term, struct json *data,
                  const struct uuid *eid, struct json *servers,
                  uint64_t election_timer)
