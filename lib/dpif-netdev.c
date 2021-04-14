@@ -7095,6 +7095,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     struct dp_packet *packet;
     const size_t cnt = dp_packet_batch_size(packets_);
     uint32_t cur_min = pmd->ctx.emc_insert_min;
+    const uint32_t recirc_depth = *recirc_depth_get();
     int i;
     uint16_t tcp_flags;
     bool smc_enable_db;
@@ -7127,7 +7128,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
             pkt_metadata_init(&packet->md, port_no);
         }
 
-        if ((*recirc_depth_get() == 0) &&
+        if (recirc_depth == 0 &&
             dp_packet_has_flow_mark(packet, &mark)) {
             flow = mark_to_flow_find(pmd, mark);
             if (OVS_LIKELY(flow)) {
