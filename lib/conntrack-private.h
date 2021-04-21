@@ -134,6 +134,9 @@ struct conn {
     struct nat_action_info_t *nat_info;
     char *alg;
     struct conn *nat_conn; /* The NAT 'conn' context, if there is one. */
+    atomic_flag reclaimed; /* False during the lifetime of the connection,
+                            * True as soon as a thread has started freeing
+                            * its memory. */
 
     /* Inserted once by a PMD, then managed by the 'ct_clean' thread. */
     struct conn_expire exp;
@@ -196,8 +199,8 @@ struct conntrack {
 };
 
 /* Lock acquisition order:
- *    1. 'ct_lock'
- *    2. 'conn->lock'
+ *    1. 'conn->lock'
+ *    2. 'ct_lock'
  *    3. 'resources_lock'
  */
 

@@ -245,58 +245,30 @@ conn_schedule_expiration(struct conn *conn, enum ct_timeout tm, long long now,
     ignore(atomic_flag_test_and_set(&conn->exp.reschedule));
 }
 
-static void
-conn_update_expiration__(struct conntrack *ct, struct conn *conn,
-                         enum ct_timeout tm, long long now,
-                         uint32_t tp_value)
-    OVS_REQUIRES(conn->lock)
-{
-    ovs_mutex_unlock(&conn->lock);
-
-    ovs_mutex_lock(&ct->ct_lock);
-    ovs_mutex_lock(&conn->lock);
-    conn_schedule_expiration(conn, tm, now, tp_value);
-    ovs_mutex_unlock(&conn->lock);
-    ovs_mutex_unlock(&ct->ct_lock);
-
-    ovs_mutex_lock(&conn->lock);
-}
-
 /* The conn entry lock must be held on entry and exit. */
 void
 conn_update_expiration(struct conntrack *ct, struct conn *conn,
                        enum ct_timeout tm, long long now)
-    OVS_REQUIRES(conn->lock)
 {
     struct timeout_policy *tp;
     uint32_t val;
 
-    ovs_mutex_unlock(&conn->lock);
-
-    ovs_mutex_lock(&ct->ct_lock);
-    ovs_mutex_lock(&conn->lock);
     tp = timeout_policy_lookup(ct, conn->tp_id);
     if (tp) {
         val = tp->policy.attrs[tm_to_ct_dpif_tp(tm)];
     } else {
         val = ct_dpif_netdev_tp_def[tm_to_ct_dpif_tp(tm)];
     }
-    ovs_mutex_unlock(&conn->lock);
-    ovs_mutex_unlock(&ct->ct_lock);
-
-    ovs_mutex_lock(&conn->lock);
     VLOG_DBG_RL(&rl, "Update timeout %s zone=%u with policy id=%d "
                 "val=%u sec.",
                 ct_timeout_str[tm], conn->key.zone, conn->tp_id, val);
 
-    conn_update_expiration__(ct, conn, tm, now, val);
+    conn_schedule_expiration(conn, tm, now, val);
 }
 
-/* ct_lock must be held. */
 void
 conn_init_expiration(struct conntrack *ct, struct conn *conn,
                      enum ct_timeout tm, long long now)
-    OVS_REQUIRES(ct->ct_lock)
 {
     struct timeout_policy *tp;
     uint32_t val;
