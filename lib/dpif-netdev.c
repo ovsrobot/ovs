@@ -2787,7 +2787,8 @@ queue_netdev_flow_del(struct dp_netdev_pmd_thread *pmd,
 static void
 queue_netdev_flow_put(struct dp_netdev_pmd_thread *pmd,
                       struct dp_netdev_flow *flow, struct match *match,
-                      const struct nlattr *actions, size_t actions_len)
+                      const struct nlattr *actions, size_t actions_len,
+                      const struct dp_netdev_actions *old_actions)
 {
     struct dp_flow_offload_item *offload;
     int op;
@@ -2803,11 +2804,9 @@ queue_netdev_flow_put(struct dp_netdev_pmd_thread *pmd,
         ovsthread_once_done(&offload_thread_once);
     }
 
-    if (flow->mark != INVALID_FLOW_MARK) {
-        op = DP_NETDEV_FLOW_OFFLOAD_OP_MOD;
-    } else {
-        op = DP_NETDEV_FLOW_OFFLOAD_OP_ADD;
-    }
+    op = old_actions
+        ? DP_NETDEV_FLOW_OFFLOAD_OP_MOD
+        : DP_NETDEV_FLOW_OFFLOAD_OP_ADD;
     offload = dp_netdev_alloc_flow_offload(pmd, flow, op);
     offload->match = *match;
     offload->actions = xmalloc(actions_len);
@@ -3680,7 +3679,7 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
     cmap_insert(&pmd->flow_table, CONST_CAST(struct cmap_node *, &flow->node),
                 dp_netdev_flow_hash(&flow->ufid));
 
-    queue_netdev_flow_put(pmd, flow, match, actions, actions_len);
+    queue_netdev_flow_put(pmd, flow, match, actions, actions_len, NULL);
 
     if (OVS_UNLIKELY(!VLOG_DROP_DBG((&upcall_rl)))) {
         struct ds ds = DS_EMPTY_INITIALIZER;
@@ -3767,7 +3766,7 @@ flow_put_on_pmd(struct dp_netdev_pmd_thread *pmd,
             ovsrcu_set(&netdev_flow->actions, new_actions);
 
             queue_netdev_flow_put(pmd, netdev_flow, match,
-                                  put->actions, put->actions_len);
+                                  put->actions, put->actions_len, old_actions);
 
             if (stats) {
                 get_dpif_flow_status(pmd->dp, netdev_flow, stats, NULL);
