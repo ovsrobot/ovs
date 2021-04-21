@@ -240,7 +240,7 @@ static void
 conn_schedule_expiration(struct conn *conn, enum ct_timeout tm, long long now,
                          uint32_t tp_value)
 {
-    conn->expiration = now + tp_value * 1000;
+    atomic_store_relaxed(&conn->expiration, now + tp_value * 1000);
     conn->exp.tm = tm;
     ignore(atomic_flag_test_and_set(&conn->exp.reschedule));
 }
