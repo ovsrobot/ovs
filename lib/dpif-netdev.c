@@ -420,22 +420,34 @@ enum rxq_cycles_counter_type {
     RXQ_N_CYCLES
 };
 
+enum dp_offload_type {
+    DP_OFFLOAD_FLOW,
+};
+
 enum {
     DP_NETDEV_FLOW_OFFLOAD_OP_ADD,
     DP_NETDEV_FLOW_OFFLOAD_OP_MOD,
     DP_NETDEV_FLOW_OFFLOAD_OP_DEL,
 };
 
-struct dp_offload_thread_item {
+struct dp_offload_flow_item {
     struct dp_netdev_pmd_thread *pmd;
     struct dp_netdev_flow *flow;
     int op;
     struct match match;
     struct nlattr *actions;
     size_t actions_len;
-    long long int timestamp;
+};
 
+union dp_offload_thread_data {
+    struct dp_offload_flow_item flow;
+};
+
+struct dp_offload_thread_item {
     struct ovs_list node;
+    enum dp_offload_type type;
+    long long int timestamp;
+    union dp_offload_thread_data data[0];
 };
 
 struct dp_offload_thread {
@@ -2619,32 +2631,53 @@ dp_netdev_alloc_flow_offload(struct dp_netdev_pmd_thread *pmd,
                              struct dp_netdev_flow *flow,
                              int op)
 {
-    struct dp_offload_thread_item *offload;
+    struct dp_offload_thread_item *item;
+    struct dp_offload_flow_item *flow_offload;
 
-    offload = xzalloc(sizeof(*offload));
-    offload->pmd = pmd;
-    offload->flow = flow;
-    offload->op = op;
+    item = xzalloc(sizeof *item + sizeof *flow_offload);
+    flow_offload = &item->data->flow;
+
+    item->type = DP_OFFLOAD_FLOW;
+
+    flow_offload->pmd = pmd;
+    flow_offload->flow = flow;
+    flow_offload->op = op;
 
     dp_netdev_flow_ref(flow);
     dp_netdev_pmd_try_ref(pmd);
 
-    return offload;
+    return item;
 }
 
 static void
 dp_netdev_free_flow_offload__(struct dp_offload_thread_item *offload)
 {
-    free(offload->actions);
+    struct dp_offload_flow_item *flow_offload = &offload->data->flow;
+
+    free(flow_offload->actions);
     free(offload);
 }
 
 static void
 dp_netdev_free_flow_offload(struct dp_offload_thread_item *offload)
 {
-    dp_netdev_pmd_unref(offload->pmd);
-    dp_netdev_flow_unref(offload->flow);
+    struct dp_offload_flow_item *flow_offload = &offload->data->flow;
+
+    dp_netdev_pmd_unref(flow_offload->pmd);
+    dp_netdev_flow_unref(flow_offload->flow);
     ovsrcu_postpone(dp_netdev_free_flow_offload__, offload);
+}
+
+static void
+dp_netdev_free_offload(struct dp_offload_thread_item *offload)
+{
+    switch (offload->type) {
+    case DP_OFFLOAD_FLOW:
+        dp_netdev_free_flow_offload(offload);
+        break;
+    default:
+        OVS_NOT_REACHED();
+    };
 }
 
 static void
@@ -2658,7 +2691,7 @@ dp_netdev_append_flow_offload(struct dp_offload_thread_item *offload)
 }
 
 static int
-dp_netdev_flow_offload_del(struct dp_offload_thread_item *offload)
+dp_netdev_flow_offload_del(struct dp_offload_flow_item *offload)
 {
     return mark_to_flow_disassociate(offload->pmd, offload->flow);
 }
@@ -2675,7 +2708,7 @@ dp_netdev_flow_offload_del(struct dp_offload_thread_item *offload)
  * valid, thus only item 2 needed.
  */
 static int
-dp_netdev_flow_offload_put(struct dp_offload_thread_item *offload)
+dp_netdev_flow_offload_put(struct dp_offload_flow_item *offload)
 {
     struct dp_netdev_pmd_thread *pmd = offload->pmd;
     struct dp_netdev_flow *flow = offload->flow;
@@ -2752,6 +2785,35 @@ err_free:
     return -1;
 }
 
+static void
+dp_offload_flow(struct dp_offload_thread_item *item)
+{
+    struct dp_offload_flow_item *flow_offload = &item->data->flow;
+    const char *op;
+    int ret;
+
+    switch (flow_offload->op) {
+    case DP_NETDEV_FLOW_OFFLOAD_OP_ADD:
+        op = "add";
+        ret = dp_netdev_flow_offload_put(flow_offload);
+        break;
+    case DP_NETDEV_FLOW_OFFLOAD_OP_MOD:
+        op = "modify";
+        ret = dp_netdev_flow_offload_put(flow_offload);
+        break;
+    case DP_NETDEV_FLOW_OFFLOAD_OP_DEL:
+        op = "delete";
+        ret = dp_netdev_flow_offload_del(flow_offload);
+        break;
+    default:
+        OVS_NOT_REACHED();
+    }
+
+    VLOG_DBG("%s to %s netdev flow "UUID_FMT,
+             ret == 0 ? "succeed" : "failed", op,
+             UUID_ARGS((struct uuid *) &flow_offload->flow->mega_ufid));
+}
+
 #define DP_NETDEV_OFFLOAD_QUIESCE_INTERVAL_US (10 * 1000) /* 10 ms */
 
 static void *
@@ -2762,8 +2824,6 @@ dp_netdev_flow_offload_main(void *data OVS_UNUSED)
     long long int latency_us;
     long long int next_rcu;
     long long int now;
-    const char *op;
-    int ret;
 
     next_rcu = time_usec() + DP_NETDEV_OFFLOAD_QUIESCE_INTERVAL_US;
     for (;;) {
@@ -2780,18 +2840,9 @@ dp_netdev_flow_offload_main(void *data OVS_UNUSED)
         offload = CONTAINER_OF(list, struct dp_offload_thread_item, node);
         ovs_mutex_unlock(&dp_offload_thread.mutex);
 
-        switch (offload->op) {
-        case DP_NETDEV_FLOW_OFFLOAD_OP_ADD:
-            op = "add";
-            ret = dp_netdev_flow_offload_put(offload);
-            break;
-        case DP_NETDEV_FLOW_OFFLOAD_OP_MOD:
-            op = "modify";
-            ret = dp_netdev_flow_offload_put(offload);
-            break;
-        case DP_NETDEV_FLOW_OFFLOAD_OP_DEL:
-            op = "delete";
-            ret = dp_netdev_flow_offload_del(offload);
+        switch (offload->type) {
+        case DP_OFFLOAD_FLOW:
+            dp_offload_flow(offload);
             break;
         default:
             OVS_NOT_REACHED();
@@ -2803,10 +2854,7 @@ dp_netdev_flow_offload_main(void *data OVS_UNUSED)
         mov_avg_cma_update(&dp_offload_thread.cma, latency_us);
         mov_avg_ema_update(&dp_offload_thread.ema, latency_us);
 
-        VLOG_DBG("%s to %s netdev flow "UUID_FMT,
-                 ret == 0 ? "succeed" : "failed", op,
-                 UUID_ARGS((struct uuid *) &offload->flow->mega_ufid));
-        dp_netdev_free_flow_offload(offload);
+        dp_netdev_free_offload(offload);
 
         /* Do RCU synchronization at fixed interval. */
         if (now > next_rcu) {
@@ -2841,7 +2889,8 @@ queue_netdev_flow_put(struct dp_netdev_pmd_thread *pmd,
                       struct dp_netdev_flow *flow, struct match *match,
                       const struct nlattr *actions, size_t actions_len)
 {
-    struct dp_offload_thread_item *offload;
+    struct dp_offload_thread_item *item;
+    struct dp_offload_flow_item *flow_offload;
     int op;
 
     if (!netdev_is_flow_api_enabled()) {
@@ -2859,14 +2908,15 @@ queue_netdev_flow_put(struct dp_netdev_pmd_thread *pmd,
     } else {
         op = DP_NETDEV_FLOW_OFFLOAD_OP_ADD;
     }
-    offload = dp_netdev_alloc_flow_offload(pmd, flow, op);
-    offload->match = *match;
-    offload->actions = xmalloc(actions_len);
-    memcpy(offload->actions, actions, actions_len);
-    offload->actions_len = actions_len;
+    item = dp_netdev_alloc_flow_offload(pmd, flow, op);
+    flow_offload = &item->data->flow;
+    flow_offload->match = *match;
+    flow_offload->actions = xmalloc(actions_len);
+    memcpy(flow_offload->actions, actions, actions_len);
+    flow_offload->actions_len = actions_len;
 
-    offload->timestamp = pmd->ctx.now;
-    dp_netdev_append_flow_offload(offload);
+    item->timestamp = pmd->ctx.now;
+    dp_netdev_append_flow_offload(item);
 }
 
 static void
