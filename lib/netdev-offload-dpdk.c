@@ -59,6 +59,7 @@ struct ufid_to_rte_flow_data {
     bool actions_offloaded;
     struct dpif_flow_stats stats;
     struct ovs_mutex lock;
+    unsigned int creation_tid;
     bool dead;
 };
 
@@ -235,6 +236,7 @@ ufid_to_rte_flow_associate(struct netdev *netdev, const ovs_u128 *ufid,
     data->netdev = netdev_ref(netdev);
     data->rte_flow = rte_flow;
     data->actions_offloaded = actions_offloaded;
+    data->creation_tid = netdev_offload_thread_id();
     ovs_mutex_init(&data->lock);
 
     cmap_insert(map, CONST_CAST(struct cmap_node *, &data->node), hash);
@@ -1772,13 +1774,16 @@ netdev_offload_dpdk_flow_flush(struct netdev *netdev)
 {
     struct cmap *map = offload_data_map(netdev);
     struct ufid_to_rte_flow_data *data;
+    unsigned int tid = netdev_offload_thread_id();
 
     if (!map) {
         return -1;
     }
 
     CMAP_FOR_EACH (data, node, map) {
-        netdev_offload_dpdk_flow_destroy(data);
+        if (data->creation_tid == tid) {
+            netdev_offload_dpdk_flow_destroy(data);
+        }
     }
 
     return 0;
