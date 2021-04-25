@@ -11,6 +11,7 @@ Post-v2.15.0
      * New command 'record-hostname-if-not-set' to update hostname in ovsdb.
    - DPDK:
      * New debug appctl command 'dpdk/get-socket-stats'.
+     * New debug appctl command 'dpdk/get-malloc-stats'.
 
 
 v2.15.0 - 15 Feb 2021
