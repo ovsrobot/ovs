@@ -74,6 +74,7 @@
 #include "pvector.h"
 #include "random.h"
 #include "seq.h"
+#include "seq-pool.h"
 #include "smap.h"
 #include "sset.h"
 #include "timeval.h"
@@ -2418,7 +2419,7 @@ struct megaflow_to_mark_data {
 struct flow_mark {
     struct cmap megaflow_to_mark;
     struct cmap mark_to_flow;
-    struct id_pool *pool;
+    struct seq_pool *pool;
 };
 
 static struct flow_mark flow_mark = {
@@ -2429,14 +2430,18 @@ static struct flow_mark flow_mark = {
 static uint32_t
 flow_mark_alloc(void)
 {
+    static struct ovsthread_once pool_init = OVSTHREAD_ONCE_INITIALIZER;
+    unsigned int tid = netdev_offload_thread_id();
     uint32_t mark;
 
-    if (!flow_mark.pool) {
+    if (ovsthread_once_start(&pool_init)) {
         /* Haven't initiated yet, do it here */
-        flow_mark.pool = id_pool_create(1, MAX_FLOW_MARK);
+        flow_mark.pool = seq_pool_create(netdev_offload_thread_nb(),
+                                         1, MAX_FLOW_MARK);
+        ovsthread_once_done(&pool_init);
     }
 
-    if (id_pool_alloc_id(flow_mark.pool, &mark)) {
+    if (seq_pool_new_id(flow_mark.pool, tid, &mark)) {
         return mark;
     }
 
@@ -2446,7 +2451,9 @@ flow_mark_alloc(void)
 static void
 flow_mark_free(uint32_t mark)
 {
-    id_pool_free_id(flow_mark.pool, mark);
+    unsigned int tid = netdev_offload_thread_id();
+
+    seq_pool_free_id(flow_mark.pool, tid, mark);
 }
 
 /* associate megaflow with a mark, which is a 1:1 mapping */
