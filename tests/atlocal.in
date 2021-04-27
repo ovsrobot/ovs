@@ -220,6 +220,7 @@ export OVS_SYSLOG_METHOD
 OVS_CTL_TIMEOUT=30
 export OVS_CTL_TIMEOUT
 
+ASAN_ENABLED='@ASAN_ENABLED@'
 # Add some default flags to make the tests run better under Address
 # Sanitizer, if it was used for the build.
 #

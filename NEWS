@@ -9,6 +9,7 @@ Post-v2.15.0
      * New option '--no-record-hostname' to disable hostname configuration
        in ovsdb on startup.
      * New command 'record-hostname-if-not-set' to update hostname in ovsdb.
+   - New --enable-asan configure option enables AddressSanitizer.
 
 
 v2.15.0 - 15 Feb 2021
