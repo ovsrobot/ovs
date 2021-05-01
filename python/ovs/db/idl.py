@@ -587,16 +587,18 @@ class Idl(object):
     def __send_server_monitor_request(self):
         self.state = self.IDL_S_SERVER_MONITOR_REQUESTED
         monitor_requests = {}
-        table = self.server_tables[self._server_db_table]
-        columns = [column for column in table.columns.keys()]
-        for column in table.columns.values():
-            if not hasattr(column, 'alert'):
-                column.alert = True
-        table.rows = custom_index.IndexedRows(table)
-        table.need_table = False
-        table.idl = self
-        monitor_request = {"columns": columns}
-        monitor_requests[table.name] = [monitor_request]
+
+        for table in self.server_tables.values():
+            columns = [column for column in table.columns.keys()]
+            for column in table.columns.values():
+                if not hasattr(column, 'alert'):
+                    column.alert = True
+            table.rows = custom_index.IndexedRows(table)
+            table.need_table = False
+            table.idl = self
+            monitor_request = {"columns": columns}
+            monitor_requests[table.name] = [monitor_request]
+
         msg = ovs.jsonrpc.Message.create_request(
             'monitor', [self._server_db.name,
                              str(self.server_monitor_uuid),
@@ -749,17 +751,12 @@ class Idl(object):
                 return Notice(op, row, Row.from_json(self, table, uuid, old))
         return False
 
-    def __check_server_db(self):
-        """Returns True if this is a valid server database, False otherwise."""
+    def __check_server_db_table(self, table_name):
+        """Returns True if this is a valid server database table,
+        False otherwise."""
         session_name = self.session_name()
 
-        if self._server_db_table not in self.server_tables:
-            vlog.info("%s: server does not have %s table in its %s database"
-                      % (session_name, self._server_db_table,
-                         self._server_db_name))
-            return False
-
-        rows = self.server_tables[self._server_db_table].rows
+        rows = self.server_tables[table_name].rows
 
         database = None
         for row in rows.values():
@@ -798,6 +795,30 @@ class Idl(object):
                               'trying another server' % session_name)
                     return False
                 self._min_index = database.index[0]
+
+        return True
+
+    def __check_server_db(self):
+        """Returns True if this is a valid server database, False otherwise."""
+        session_name = self.session_name()
+
+        if self._server_db_table not in self.server_tables:
+            vlog.info("%s: server does not have %s table in its %s database"
+                      % (session_name, self._server_db_table,
+                         self._server_db_name))
+            return False
+
+        if not self.__check_server_db_table(self._server_db_table):
+            return False
+
+        synced_table_name = '_synced_' + self._server_db_table
+        if (synced_table_name in self.server_tables and
+            len(self.server_tables[synced_table_name].rows) > 0):
+            if self.leader_only:
+                vlog.info('%s is a replication server and therefore not a '
+                          'leader; trying another server' % session_name)
+            if not self.__check_server_db_table(synced_table_name):
+                return False
 
         return True
 
@@ -2018,6 +2039,12 @@ class SchemaHelper(object):
             for table, columns in self._tables.items():
                 schema_tables[table] = (
                     self._keep_table_columns(schema, table, columns))
+
+                if schema_tables[table].copy_for_replication:
+                    synced_table_name = '_synced_' + table
+                    schema_tables[synced_table_name] = (
+                        self._keep_table_columns(schema, synced_table_name,
+                                                 columns))
 
             schema.tables = schema_tables
         schema.readonly = self._readonly
