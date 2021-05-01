@@ -35,9 +35,9 @@ struct ovsdb;
  * - replication_destroy() should be called when OVSDB server shutdown to
  *   reclaim resources.
  *
- * - replication_run(), replication_wait(), replication_is_alive() and
- *   replication_get_last_error() should be call within the main loop
- *   whenever OVSDB server runs in the backup mode.
+ * - replication_run(), replication_wait(), replication_is_alive(),
+ *   replication_is_connected() and replication_get_last_error() should be
+ *   called within the main loop whenever OVSDB server runs in the backup mode.
  *
  * - set_excluded_tables(), get_excluded_tables(), disconnect_active_server()
  *   and replication_usage() are support functions used mainly by unixctl
@@ -54,6 +54,7 @@ void replication_destroy(void);
 void replication_usage(void);
 void replication_add_local_db(const char *databse, struct ovsdb *db);
 bool replication_is_alive(void);
+bool replication_is_connected(void);
 int replication_get_last_error(void);
 char *replication_status(void);
 void replication_set_probe_interval(int);

@@ -1876,13 +1876,13 @@ ovsdb_cs_check_server_db_row(struct ovsdb_cs *cs,
     const char *server_name = jsonrpc_session_get_name(cs->session);
     const char *model = server_column_get_string(db_row, COL_MODEL, "");
     const char *schema = server_column_get_string(db_row, COL_SCHEMA, NULL);
+    bool connected = server_column_get_bool(db_row, COL_CONNECTED, false);
     bool ok = false;
 
     if (cs->leader_only && db_row->synced_table) {
         VLOG_INFO("%s is a replication server and therefore not a leader; "
                   "trying another server", server_name);
     } else if (!strcmp(model, "clustered")) {
-        bool connected = server_column_get_bool(db_row, COL_CONNECTED, false);
         bool leader = server_column_get_bool(db_row, COL_LEADER, false);
         uint64_t index = server_column_get_int(db_row, COL_INDEX, 0);
 
@@ -1905,6 +1905,10 @@ ovsdb_cs_check_server_db_row(struct ovsdb_cs *cs,
     } else {
         if (!schema) {
             VLOG_INFO("%s: missing database schema", server_name);
+        } else if (!connected) {
+            VLOG_INFO("%s: replication server is disconnected from the "
+                      "replication source; trying another server",
+                      server_name);
         } else {
             ok = true;
         }

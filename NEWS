@@ -8,6 +8,9 @@ Post-v2.15.0
        replication source (active server).  Data from the 'Database' table of
        the active server stored in '_synced_Database' table on backup and
        available for monitoring.
+     * Replication (backup) server now reports 'connected: false' in Database
+       table of _Server database if it's not currently connected to the
+       replication source (active server).
    - In ovs-vsctl and vtep-ctl, the "find" command now accept new
      operators {in} and {not-in}.
    - Userspace datapath:

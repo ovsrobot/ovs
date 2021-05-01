@@ -952,6 +952,14 @@ replication_is_alive(void)
     return false;
 }
 
+/* Returns 'true' if there is an active established connection with a
+ * replication source. */
+bool
+replication_is_connected(void)
+{
+    return session ? jsonrpc_session_is_connected(session) : false;
+}
+
 /* Return the last error reported on a connection by 'session'. The
  * return value is 0 if replication is not currently running, or
  * if replication session has not encountered any error.

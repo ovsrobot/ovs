@@ -139,7 +139,7 @@ static void report_error_if_changed(char *error, char **last_errorp);
 static void update_remote_status(const struct ovsdb_jsonrpc_server *jsonrpc,
                                  const struct sset *remotes,
                                  struct shash *all_dbs);
-static void update_server_status(struct shash *all_dbs);
+static void update_server_status(struct shash *all_dbs, bool is_backup);
 
 static void save_config__(FILE *config_file, const struct sset *remotes,
                           const struct sset *db_filenames,
@@ -267,7 +267,7 @@ main_loop(struct server_config *config,
             update_remote_status(jsonrpc, remotes, all_dbs);
         }
 
-        update_server_status(all_dbs);
+        update_server_status(all_dbs, *is_backup);
 
         memory_wait();
         if (*is_backup) {
@@ -1154,13 +1154,14 @@ update_remote_status(const struct ovsdb_jsonrpc_server *jsonrpc,
 /* Updates 'row', a row in the _Server database's Database table, to match
  * 'db'. */
 static void
-update_database_status(struct ovsdb_row *row, struct db *db)
+update_database_status(struct ovsdb_row *row, struct db *db, bool is_backup)
 {
     ovsdb_util_write_string_column(row, "name", db->db->name);
     ovsdb_util_write_string_column(row, "model",
                                    ovsdb_storage_get_model(db->db->storage));
     ovsdb_util_write_bool_column(row, "connected",
-                                 ovsdb_storage_is_connected(db->db->storage));
+            is_backup ? replication_is_connected()
+                      : ovsdb_storage_is_connected(db->db->storage));
     ovsdb_util_write_bool_column(row, "leader",
                                  ovsdb_storage_is_leader(db->db->storage));
     ovsdb_util_write_uuid_column(row, "cid",
@@ -1195,7 +1196,7 @@ update_database_status(struct ovsdb_row *row, struct db *db)
 
 /* Updates the Database table in the _Server database. */
 static void
-update_server_status(struct shash *all_dbs)
+update_server_status(struct shash *all_dbs, bool is_backup)
 {
     struct db *server_db = shash_find_data(all_dbs, "_Server");
     struct ovsdb_table *database_table = shash_find_data(
@@ -1212,7 +1213,8 @@ update_server_status(struct shash *all_dbs)
         if (!db || !db->db) {
             ovsdb_txn_row_delete(txn, row);
         } else {
-            update_database_status(ovsdb_txn_row_modify(txn, row), db);
+            update_database_status(ovsdb_txn_row_modify(txn, row),
+                                   db, is_backup);
         }
     }
 
@@ -1238,7 +1240,7 @@ update_server_status(struct shash *all_dbs)
         /* Add row. */
         struct ovsdb_row *new_row = ovsdb_row_create(database_table);
         uuid_generate(ovsdb_row_get_uuid_rw(new_row));
-        update_database_status(new_row, db);
+        update_database_status(new_row, db, is_backup);
         ovsdb_txn_row_insert(txn, new_row);
 
     next:;
