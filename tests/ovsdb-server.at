@@ -1502,6 +1502,11 @@ m4_define([OVSDB_CHECK_EXECUTION],
    AT_CHECK([ovsdb-client dump], [0], [stdout], [ignore])
    OVS_WAIT_UNTIL([ ovsdb-client dump unix:db2.sock > dump2; diff stdout dump2])
 
+   AT_CHECK([ovsdb-client dump unix:db2.sock _Server _synced_Database | dnl
+                          sed 's/_synced_Database/Database/' > synced_Server ])
+   AT_CHECK([ovsdb-client dump unix:db.sock  _Server Database > Server])
+   AT_CHECK([diff synced_Server Server])
+
    OVSDB_SERVER_SHUTDOWN
    OVSDB_SERVER_SHUTDOWN2
    AT_CLEANUP])

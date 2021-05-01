@@ -54,6 +54,16 @@
       to the server causes its row <code>_uuid</code> to change.
     </p>
 
+    <p>
+      This table is marked with <code>copyForReplication</code> flag.  This
+      means that <code>ovsdb-server</code> will create one more table with
+      name <code>_synced_Database</code> for replication purposes.  Backup
+      database in active-backup model will replicate content of this table
+      from the active database and store it in <code>_synced_Database</code>
+      table.  This way clients are able to monitor the state of the active
+      server, e.g., check the status of clustered databases.
+    </p>
+
     <column name="name">
       The database's name, as specified in its schema.
     </column>

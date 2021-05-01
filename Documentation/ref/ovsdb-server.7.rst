@@ -109,7 +109,8 @@ by setting ``copyForReplication`` flag to ``true``.  For each table marked
 with this flag, ``ovsdb-server`` will create one more table with the same
 name and ``_synced_`` prefix (e.g., ``_synced_<table-name>``).  Server in a
 backup role will keep its own content in the original table and will put
-data, received from the active server, to this special table.
+data, received from the active server, to this special table.  Currently
+used to replicate ``Database`` table from a ``_Server`` database.
 
 4 Wire Protocol
 ---------------

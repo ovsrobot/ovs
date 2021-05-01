@@ -160,7 +160,7 @@ ovsdb_replication_init(const char *sync_from, const char *exclude,
     struct shash_node *node;
     SHASH_FOR_EACH (node, all_dbs) {
         struct db *db = node->data;
-        if (node->name[0] != '_' && db->db) {
+        if (db->db) {
             replication_add_local_db(node->name, db->db);
         }
     }

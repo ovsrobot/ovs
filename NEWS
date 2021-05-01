@@ -4,6 +4,10 @@ Post-v2.15.0
      * New command line argument '--enable-txn-forward' for ovsdb-server in
        replication mode that allows to forward transactions that includes
        database modifications to the primary database server.
+     * Replication (backup) server now replicates a _Server database from the
+       replication source (active server).  Data from the 'Database' table of
+       the active server stored in '_synced_Database' table on backup and
+       available for monitoring.
    - In ovs-vsctl and vtep-ctl, the "find" command now accept new
      operators {in} and {not-in}.
    - Userspace datapath:
