@@ -779,8 +779,7 @@ class Idl(object):
                 vlog.info('%s: replication server is disconnected from the '
                           'replication source; trying another server'
                           % session_name)
-        elif (database.model == CLUSTERED and
-              self._session.get_num_of_remotes() > 1):
+        elif database.model == CLUSTERED:
             if not database.schema:
                 vlog.info('%s: clustered database server has not yet joined '
                           'cluster; trying another server' % session_name)
