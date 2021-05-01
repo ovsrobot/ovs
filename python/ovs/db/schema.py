@@ -80,6 +80,13 @@ class DbSchema(object):
             _check_id(tableName, json)
             tables[tableName] = TableSchema.from_json(tableJson, tableName,
                                                       allow_extensions)
+            if tables[tableName].copy_for_replication:
+                synced_table_name = "_synced_" + tableName
+                synced_table = TableSchema.from_json(tableJson,
+                                                     synced_table_name,
+                                                     allow_extensions)
+                synced_table.copy_for_replication = False
+                tables[synced_table_name] = synced_table
 
         return DbSchema(name, version, tables)
 
@@ -92,7 +99,8 @@ class DbSchema(object):
 
         tables = {}
         for table in self.tables.values():
-            tables[table.name] = table.to_json(default_is_root)
+            if not table.name.startswith("_"):
+                tables[table.name] = table.to_json(default_is_root)
         json = {"name": self.name, "tables": tables}
         if self.version:
             json["version"] = self.version
@@ -172,7 +180,8 @@ def column_set_from_json(json, columns):
 
 class TableSchema(object):
     def __init__(self, name, columns, mutable=True, max_rows=sys.maxsize,
-                 is_root=True, indexes=[], extensions={}):
+                 is_root=True, indexes=[], extensions={},
+                 copy_for_replication=False):
         self.name = name
         self.columns = columns
         self.mutable = mutable
@@ -180,6 +189,7 @@ class TableSchema(object):
         self.is_root = is_root
         self.indexes = indexes
         self.extensions = extensions
+        self.copy_for_replication = copy_for_replication
 
     @staticmethod
     def from_json(json, name, allow_extensions=False):
@@ -188,6 +198,8 @@ class TableSchema(object):
         mutable = parser.get_optional("mutable", [bool], True)
         max_rows = parser.get_optional("maxRows", [int])
         is_root = parser.get_optional("isRoot", [bool], False)
+        copy_for_replication = parser.get_optional("copyForReplication",
+                                                   [bool], False)
         indexes_json = parser.get_optional("indexes", [list], [])
         if allow_extensions:
             extensions = parser.get_optional("extensions", [dict], {})
@@ -224,7 +236,7 @@ class TableSchema(object):
             indexes.append(index)
 
         return TableSchema(name, columns, mutable, max_rows, is_root, indexes,
-                           extensions)
+                           extensions, copy_for_replication)
 
     def to_json(self, default_is_root=False):
         """Returns this table schema serialized into JSON.
@@ -243,6 +255,8 @@ class TableSchema(object):
             json["mutable"] = False
         if default_is_root != self.is_root:
             json["isRoot"] = self.is_root
+        if self.copy_for_replication:
+            json["copyForReplication"] = True
 
         json["columns"] = columns = {}
         for column in self.columns.values():

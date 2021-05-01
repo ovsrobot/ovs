@@ -213,7 +213,8 @@ def docsToNroff(schemaFile, xmlFile, erFile, version=None):
             introNodes += [dbNode]
 
     documented_tables = set((name for (name, title) in summary))
-    schema_tables = set(schema.tables.keys())
+    schema_tables = set([name for name in schema.tables.keys()
+                         if not name.startswith("_")])
     undocumented_tables = schema_tables - documented_tables
     for table in undocumented_tables:
         raise error.Error("undocumented table %s" % table)

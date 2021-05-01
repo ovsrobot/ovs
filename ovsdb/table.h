@@ -29,6 +29,7 @@ struct ovsdb_table_schema {
     char *name;
     bool mutable;
     bool is_root;               /* Part of garbage collection root set? */
+    bool copy_for_replication;  /* '_synced_' copy of the table needed? */
     unsigned int max_rows;      /* Maximum number of rows. */
     struct shash columns;       /* Contains "struct ovsdb_column *"s. */
     struct ovsdb_column_set *indexes;
@@ -36,7 +37,8 @@ struct ovsdb_table_schema {
 };
 
 struct ovsdb_table_schema *ovsdb_table_schema_create(
-    const char *name, bool mutable, unsigned int max_rows, bool is_root);
+    const char *name, bool mutable, unsigned int max_rows,
+    bool is_root, bool copy_for_replication);
 struct ovsdb_table_schema *ovsdb_table_schema_clone(
     const struct ovsdb_table_schema *);
 void ovsdb_table_schema_destroy(struct ovsdb_table_schema *);

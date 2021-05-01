@@ -36,7 +36,8 @@ add_column(struct ovsdb_table_schema *ts, struct ovsdb_column *column)
 
 struct ovsdb_table_schema *
 ovsdb_table_schema_create(const char *name, bool mutable,
-                          unsigned int max_rows, bool is_root)
+                          unsigned int max_rows, bool is_root,
+                          bool copy_for_replication)
 {
     struct ovsdb_column *uuid, *version;
     struct ovsdb_table_schema *ts;
@@ -47,6 +48,7 @@ ovsdb_table_schema_create(const char *name, bool mutable,
     shash_init(&ts->columns);
     ts->max_rows = max_rows;
     ts->is_root = is_root;
+    ts->copy_for_replication = copy_for_replication;
 
     uuid = ovsdb_column_create("_uuid", false, true, &ovsdb_type_uuid);
     add_column(ts, uuid);
@@ -70,7 +72,8 @@ ovsdb_table_schema_clone(const struct ovsdb_table_schema *old)
     size_t i;
 
     new = ovsdb_table_schema_create(old->name, old->mutable,
-                                    old->max_rows, old->is_root);
+                                    old->max_rows, old->is_root,
+                                    old->copy_for_replication);
     SHASH_FOR_EACH (node, &old->columns) {
         const struct ovsdb_column *column = node->data;
 
@@ -126,7 +129,8 @@ ovsdb_table_schema_from_json(const struct json *json, const char *name,
                              struct ovsdb_table_schema **tsp)
 {
     struct ovsdb_table_schema *ts;
-    const struct json *columns, *mutable, *max_rows, *is_root, *indexes;
+    const struct json *columns, *mutable, *max_rows;
+    const struct json *is_root, *indexes, *copy_for_replication;
     struct shash_node *node;
     struct ovsdb_parser parser;
     struct ovsdb_error *error;
@@ -141,6 +145,8 @@ ovsdb_table_schema_from_json(const struct json *json, const char *name,
     max_rows = ovsdb_parser_member(&parser, "maxRows",
                                    OP_INTEGER | OP_OPTIONAL);
     is_root = ovsdb_parser_member(&parser, "isRoot", OP_BOOLEAN | OP_OPTIONAL);
+    copy_for_replication = ovsdb_parser_member(&parser, "copyForReplication",
+                                               OP_BOOLEAN | OP_OPTIONAL);
     indexes = ovsdb_parser_member(&parser, "indexes", OP_ARRAY | OP_OPTIONAL);
     error = ovsdb_parser_finish(&parser);
     if (error) {
@@ -165,7 +171,10 @@ ovsdb_table_schema_from_json(const struct json *json, const char *name,
     ts = ovsdb_table_schema_create(name,
                                    mutable ? json_boolean(mutable) : true,
                                    MIN(n_max_rows, UINT_MAX),
-                                   is_root ? json_boolean(is_root) : false);
+                                   is_root ? json_boolean(is_root) : false,
+                                   copy_for_replication
+                                   ? json_boolean(copy_for_replication)
+                                   : false);
     SHASH_FOR_EACH (node, json_object(columns)) {
         struct ovsdb_column *column;
 
@@ -248,6 +257,9 @@ ovsdb_table_schema_to_json(const struct ovsdb_table_schema *ts,
     }
     if (default_is_root != ts->is_root) {
         json_object_put(json, "isRoot", json_boolean_create(ts->is_root));
+    }
+    if (ts->copy_for_replication) {
+        json_object_put(json, "copyForReplication", json_boolean_create(true));
     }
 
     columns = json_object_create();

@@ -238,6 +238,21 @@ ovsdb_schema_from_json(const struct json *json, struct ovsdb_schema **schemap)
         }
 
         shash_add(&schema->tables, table->name, table);
+
+        if (table->copy_for_replication) {
+            /* Need to create a copy of the table for the case it will be
+             * synced from another server. */
+            struct ovsdb_table_schema *synced_table;
+
+            synced_table = ovsdb_table_schema_clone(table);
+            free(synced_table->name);
+            synced_table->name = xasprintf("_synced_%s", node->name);
+            /* Clearing 'copy' flag to avoid accidental further copying. */
+            synced_table->copy_for_replication = false;
+
+            shash_add(&schema->tables, synced_table->name, synced_table);
+        }
+
     }
 
     /* "isRoot" was not part of the original schema definition.  Before it was
@@ -308,8 +323,10 @@ ovsdb_schema_to_json(const struct ovsdb_schema *schema)
 
     SHASH_FOR_EACH (node, &schema->tables) {
         struct ovsdb_table_schema *table = node->data;
-        json_object_put(tables, table->name,
+        if (node->name[0] != '_') {
+            json_object_put(tables, table->name,
                         ovsdb_table_schema_to_json(table, default_is_root));
+        }
     }
     json_object_put(json, "tables", tables);
 

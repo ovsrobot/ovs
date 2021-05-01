@@ -104,6 +104,13 @@ configuration and the following columns:
     The set of columns and column:key pairs for which authorized update and
     mutate operations should be permitted.
 
+Since version 2.16, database table could be copied for replication purposes
+by setting ``copyForReplication`` flag to ``true``.  For each table marked
+with this flag, ``ovsdb-server`` will create one more table with the same
+name and ``_synced_`` prefix (e.g., ``_synced_<table-name>``).  Server in a
+backup role will keep its own content in the original table and will put
+data, received from the active server, to this special table.
+
 4 Wire Protocol
 ---------------
 
