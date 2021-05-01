@@ -24,7 +24,8 @@ struct shash;
 struct simap;
 struct uuid;
 
-struct ovsdb_jsonrpc_server *ovsdb_jsonrpc_server_create(bool read_only);
+struct ovsdb_jsonrpc_server *ovsdb_jsonrpc_server_create(bool read_only,
+                                                         bool txn_forward);
 bool ovsdb_jsonrpc_server_add_db(struct ovsdb_jsonrpc_server *,
                                  struct ovsdb *);
 void ovsdb_jsonrpc_server_remove_db(struct ovsdb_jsonrpc_server *,
@@ -36,6 +37,7 @@ struct ovsdb_jsonrpc_options {
     int max_backoff;            /* Maximum reconnection backoff, in msec. */
     int probe_interval;         /* Max idle time before probing, in msec. */
     bool read_only;             /* Only read-only transactions are allowed. */
+    bool txn_forward;           /* Transaction forwarding is allowed. */
     int dscp;                   /* Dscp value for manager connections */
     char *role;                 /* Role, for role-based access controls */
 };
@@ -72,6 +74,8 @@ void ovsdb_jsonrpc_server_wait(struct ovsdb_jsonrpc_server *);
 
 void ovsdb_jsonrpc_server_set_read_only(struct ovsdb_jsonrpc_server *,
                                         bool read_only);
+void ovsdb_jsonrpc_server_set_txn_forward(struct ovsdb_jsonrpc_server *,
+                                          bool txn_forward);
 
 void ovsdb_jsonrpc_server_get_memory_usage(const struct ovsdb_jsonrpc_server *,
                                            struct simap *usage);

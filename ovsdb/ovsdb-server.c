@@ -103,6 +103,7 @@ struct server_config {
     char **sync_from;
     char **sync_exclude;
     bool *is_backup;
+    bool *txn_forward;
     int *replication_probe_interval;
     struct ovsdb_jsonrpc_server *jsonrpc;
 };
@@ -126,7 +127,7 @@ static void parse_options(int argc, char *argvp[],
                           struct sset *db_filenames, struct sset *remotes,
                           char **unixctl_pathp, char **run_command,
                           char **sync_from, char **sync_exclude,
-                          bool *is_backup);
+                          bool *is_backup, bool *txn_forward);
 OVS_NO_RETURN static void usage(void);
 
 static char *reconfigure_remotes(struct ovsdb_jsonrpc_server *,
@@ -143,11 +144,12 @@ static void update_server_status(struct shash *all_dbs);
 static void save_config__(FILE *config_file, const struct sset *remotes,
                           const struct sset *db_filenames,
                           const char *sync_from, const char *sync_exclude,
-                          bool is_backup);
+                          bool is_backup, bool txn_forward);
 static void save_config(struct server_config *);
 static void load_config(FILE *config_file, struct sset *remotes,
                         struct sset *db_filenames, char **sync_from,
-                        char **sync_exclude, bool *is_backup);
+                        char **sync_exclude, bool *is_backup,
+                        bool *txn_forward);
 
 static void
 ovsdb_replication_init(const char *sync_from, const char *exclude,
@@ -178,7 +180,8 @@ static void
 main_loop(struct server_config *config,
           struct ovsdb_jsonrpc_server *jsonrpc, struct shash *all_dbs,
           struct unixctl_server *unixctl, struct sset *remotes,
-          struct process *run_process, bool *exiting, bool *is_backup)
+          struct process *run_process, bool *exiting, bool *is_backup,
+          bool *txn_forward)
 {
     char *remotes_error, *ssl_error;
     struct shash_node *node;
@@ -209,6 +212,7 @@ main_loop(struct server_config *config,
         unixctl_server_run(unixctl);
 
         ovsdb_jsonrpc_server_set_read_only(jsonrpc, *is_backup);
+        ovsdb_jsonrpc_server_set_txn_forward(jsonrpc, *txn_forward);
 
         report_error_if_changed(
             reconfigure_remotes(jsonrpc, all_dbs, remotes),
@@ -321,8 +325,10 @@ main(int argc, char *argv[])
     process_init();
 
     bool active = false;
+    bool txn_forward = false;
     parse_options(argc, argv, &db_filenames, &remotes, &unixctl_path,
-                  &run_command, &sync_from, &sync_exclude, &active);
+                  &run_command, &sync_from, &sync_exclude, &active,
+                  &txn_forward);
     is_backup = sync_from && !active;
 
     daemon_become_new_user(false);
@@ -341,18 +347,18 @@ main(int argc, char *argv[])
     server_config.config_tmpfile = config_tmpfile;
 
     save_config__(config_tmpfile, &remotes, &db_filenames, sync_from,
-                  sync_exclude, is_backup);
+                  sync_exclude, is_backup, txn_forward);
 
     daemonize_start(false);
 
     /* Load the saved config. */
     load_config(config_tmpfile, &remotes, &db_filenames, &sync_from,
-                &sync_exclude, &is_backup);
+                &sync_exclude, &is_backup, &txn_forward);
 
     /* Start ovsdb jsonrpc server. When running as a backup server,
      * jsonrpc connections are read only. Otherwise, both read
      * and write transactions are allowed.  */
-    jsonrpc = ovsdb_jsonrpc_server_create(is_backup);
+    jsonrpc = ovsdb_jsonrpc_server_create(is_backup, txn_forward);
 
     shash_init(&all_dbs);
     server_config.all_dbs = &all_dbs;
@@ -360,6 +366,7 @@ main(int argc, char *argv[])
     server_config.sync_from = &sync_from;
     server_config.sync_exclude = &sync_exclude;
     server_config.is_backup = &is_backup;
+    server_config.txn_forward = &txn_forward;
     server_config.replication_probe_interval = &replication_probe_interval;
 
     perf_counters_init();
@@ -478,7 +485,7 @@ main(int argc, char *argv[])
     }
 
     main_loop(&server_config, jsonrpc, &all_dbs, unixctl, &remotes,
-              run_process, &exiting, &is_backup);
+              run_process, &exiting, &is_backup, &txn_forward);
 
     SHASH_FOR_EACH_SAFE(node, next, &all_dbs) {
         struct db *db = node->data;
@@ -905,7 +912,7 @@ add_manager_options(struct shash *remotes, const struct ovsdb_row *row)
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
     struct ovsdb_jsonrpc_options *options;
     long long int max_backoff, probe_interval;
-    bool read_only;
+    bool read_only, txn_forward;
     const char *target, *dscp_string, *role;
 
     if (!ovsdb_util_read_string_column(row, "target", &target) || !target) {
@@ -924,6 +931,9 @@ add_manager_options(struct shash *remotes, const struct ovsdb_row *row)
     }
     if (ovsdb_util_read_bool_column(row, "read_only", &read_only)) {
         options->read_only = read_only;
+    }
+    if (ovsdb_util_read_bool_column(row, "txn_forward", &txn_forward)) {
+        options->txn_forward = txn_forward;
     }
 
     free(options->role);
@@ -1733,7 +1743,8 @@ ovsdb_server_get_sync_status(struct unixctl_conn *conn, int argc OVS_UNUSED,
     struct ds ds = DS_EMPTY_INITIALIZER;
 
     ds_put_format(&ds, "state: %s\n", is_backup ? "backup" : "active");
-
+    ds_put_format(&ds, "transaction forwarding: %s\n",
+                       *config->txn_forward ? "enabled" : "disabled");
     if (is_backup) {
         ds_put_and_free_cstr(&ds, replication_status());
     }
@@ -1781,7 +1792,8 @@ static void
 parse_options(int argc, char *argv[],
               struct sset *db_filenames, struct sset *remotes,
               char **unixctl_pathp, char **run_command,
-              char **sync_from, char **sync_exclude, bool *active)
+              char **sync_from, char **sync_exclude,
+              bool *active, bool *txn_forward)
 {
     enum {
         OPT_REMOTE = UCHAR_MAX + 1,
@@ -1791,6 +1803,7 @@ parse_options(int argc, char *argv[],
         OPT_PEER_CA_CERT,
         OPT_SYNC_FROM,
         OPT_SYNC_EXCLUDE,
+        OPT_TXN_FORWARD,
         OPT_ACTIVE,
         OPT_NO_DBS,
         OPT_FILE_COLUMN_DIFF,
@@ -1814,6 +1827,7 @@ parse_options(int argc, char *argv[],
         STREAM_SSL_LONG_OPTIONS,
         {"sync-from",   required_argument, NULL, OPT_SYNC_FROM},
         {"sync-exclude-tables", required_argument, NULL, OPT_SYNC_EXCLUDE},
+        {"enable-txn-forward", no_argument, NULL, OPT_TXN_FORWARD},
         {"active", no_argument, NULL, OPT_ACTIVE},
         {"no-dbs", no_argument, NULL, OPT_NO_DBS},
         {"disable-file-column-diff", no_argument, NULL, OPT_FILE_COLUMN_DIFF},
@@ -1899,6 +1913,11 @@ parse_options(int argc, char *argv[],
             *sync_exclude = xstrdup(optarg);
             break;
         }
+
+        case OPT_TXN_FORWARD:
+            *txn_forward = true;
+            break;
+
         case OPT_ACTIVE:
             *active = true;
             break;
@@ -1973,7 +1992,7 @@ sset_to_json(const struct sset *sset)
 static void
 save_config__(FILE *config_file, const struct sset *remotes,
               const struct sset *db_filenames, const char *sync_from,
-              const char *sync_exclude, bool is_backup)
+              const char *sync_exclude, bool is_backup, bool txn_forward)
 {
     struct json *obj;
     char *s;
@@ -1994,6 +2013,7 @@ save_config__(FILE *config_file, const struct sset *remotes,
                         json_string_create(sync_exclude));
     }
     json_object_put(obj, "is_backup", json_boolean_create(is_backup));
+    json_object_put(obj, "txn_forward", json_boolean_create(txn_forward));
 
     s = json_to_string(obj, 0);
     json_destroy(obj);
@@ -2024,7 +2044,7 @@ save_config(struct server_config *config)
 
     save_config__(config->config_tmpfile, config->remotes, &db_filenames,
                   *config->sync_from, *config->sync_exclude,
-                  *config->is_backup);
+                  *config->is_backup, *config->txn_forward);
 
     sset_destroy(&db_filenames);
 }
@@ -2047,7 +2067,8 @@ sset_from_json(struct sset *sset, const struct json *array)
  * 'config_file', which must have been previously written by save_config(). */
 static void
 load_config(FILE *config_file, struct sset *remotes, struct sset *db_filenames,
-            char **sync_from, char **sync_exclude, bool *is_backup)
+            char **sync_from, char **sync_exclude, bool *is_backup,
+            bool *txn_forward)
 {
     struct json *json;
 
@@ -2074,6 +2095,7 @@ load_config(FILE *config_file, struct sset *remotes, struct sset *db_filenames,
     *sync_exclude = string ? xstrdup(json_string(string)) : NULL;
 
     *is_backup = json_boolean(shash_find_data(json_object(json), "is_backup"));
-
+    *txn_forward = json_boolean(shash_find_data(json_object(json),
+                                                "txn_forward"));
     json_destroy(json);
 }

@@ -104,7 +104,7 @@ struct ovsdb_txn *ovsdb_execute_compose(
     struct ovsdb *, const struct ovsdb_session *, const struct json *params,
     bool read_only, const char *role, const char *id,
     long long int elapsed_msec, long long int *timeout_msec,
-    bool *durable, struct json **);
+    bool *durable, bool *all_ops_read_only, struct json **);
 
 struct json *ovsdb_execute(struct ovsdb *, const struct ovsdb_session *,
                            const struct json *params, bool read_only,

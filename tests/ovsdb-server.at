@@ -1452,6 +1452,62 @@ m4_define([OVSDB_CHECK_EXECUTION],
 
 EXECUTION_EXAMPLES
 
+AT_BANNER([OVSDB -- ovsdb-server replication with transaction forwarding])
+
+# OVSDB_CHECK_EXECUTION(TITLE, SCHEMA, TRANSACTIONS, OUTPUT, [KEYWORDS])
+#
+# Creates two databases with the given SCHEMA, and starts an ovsdb-server on
+# each database.
+# Runs each of the TRANSACTIONS (which should be a quoted list of
+# quoted strings) against the replication server with ovsdb-client one at a
+# time. The server executes read-only transactions and forwards rest of them
+# to the other ovsdb-server.
+#
+# Checks that the overall output is OUTPUT, but UUIDs in the output
+# are replaced by markers of the form <N> where N is a number.  The
+# first unique UUID is replaced by <0>, the next by <1>, and so on.
+# If a given UUID appears more than once it is always replaced by the
+# same marker.
+#
+# Checks that the dump of both databases are the same.
+#
+# TITLE is provided to AT_SETUP and KEYWORDS to AT_KEYWORDS.
+m4_define([OVSDB_CHECK_EXECUTION],
+  [AT_SETUP([$1])
+   AT_KEYWORDS([ovsdb server tcp replication transaction forward $5])
+   $2 > schema
+   AT_CHECK([ovsdb-tool create db1 schema], [0], [stdout], [ignore])
+   AT_CHECK([ovsdb-tool create db2 schema], [0], [stdout], [ignore])
+
+   on_exit 'kill `cat *.pid`'
+   AT_CHECK([ovsdb-server --detach --no-chdir --log-file=ovsdb-server1.log dnl
+                          --pidfile --remote=punix:db.sock db1
+            ], [0], [ignore], [ignore])
+
+   AT_CHECK([ovsdb-server --detach --no-chdir --log-file=ovsdb-server2.log dnl
+                          --pidfile=pid2 --remote=punix:db2.sock           dnl
+                          --unixctl=unixctl2 -vjsonrpc:file:dbg            dnl
+                          --sync-from=unix:db.sock --enable-txn-forward db2
+            ], [0], [ignore], [ignore])
+   on_exit 'test ! -e pid2 || kill `cat pid2`'
+
+   m4_foreach([txn], [$3],
+     [AT_CHECK([ovsdb-client transact unix:db2.sock 'txn'], [0],
+               [stdout], [ignore])
+      cat stdout >> output
+   ])
+
+   AT_CHECK([uuidfilt output], [0], [$4], [ignore])
+
+   AT_CHECK([ovsdb-client dump], [0], [stdout], [ignore])
+   OVS_WAIT_UNTIL([ ovsdb-client dump unix:db2.sock > dump2; diff stdout dump2])
+
+   OVSDB_SERVER_SHUTDOWN
+   OVSDB_SERVER_SHUTDOWN2
+   AT_CLEANUP])
+
+EXECUTION_EXAMPLES
+
 AT_BANNER([OVSDB -- ovsdb-server replication table-exclusion])
 
 # OVSDB_CHECK_REPLICATION(TITLE, SCHEMA, TRANSACTIONS, OUTPUT, [KEYWORDS])
@@ -1762,7 +1818,9 @@ OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/unixctl2 ovsdb-server/sync-status |grep re
 
 dnl Switch the 'db1' to active
 AT_CHECK([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/disconnect-active-ovsdb-server])
-AT_CHECK([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/sync-status], [0], [state: active
+AT_CHECK([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/sync-status], [0], [dnl
+state: active
+transaction forwarding: disabled
 ])
 
 dnl Issue a transaction to 'db1'
@@ -1781,7 +1839,9 @@ AT_CHECK([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/connect-active-ovsdb-server
 
 dnl Verify the change happend
 OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/sync-status |grep replicating])
-AT_CHECK([ovs-appctl -t "`pwd`"/unixctl2 ovsdb-server/sync-status], [0], [state: active
+AT_CHECK([ovs-appctl -t "`pwd`"/unixctl2 ovsdb-server/sync-status], [0], [dnl
+state: active
+transaction forwarding: disabled
 ])
 
 dnl Issue an transaction to 'db2' which is now active.

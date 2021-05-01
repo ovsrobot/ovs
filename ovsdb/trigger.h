@@ -22,26 +22,34 @@ struct ovsdb;
 
 /* Triggers have the following states:
  *
- *    - Initialized (reply == NULL, progress == NULL): Executing the trigger
- *      can keep it in the initialized state, if it has a "wait" condition that
- *      isn't met.  Executing the trigger can also yield an error, in which
- *      case it transitions to "complete".  Otherwise, execution yields a
- *      transaction, which the database attempts to commit.  If the transaction
- *      completes immediately and synchronously, then the trigger transitions
- *      to the "complete" state.  If the transaction requires some time to
- *      complete, it transitions to the "committing" state.
+ *    - Initialized (reply == NULL, progress == NULL, txn_forward == NULL):
+ *      Executing the trigger can keep it in the initialized state, if it has a
+ *      "wait" condition that isn't met.  Executing the trigger can also yield
+ *      an error, in which case it transitions to "complete".  Otherwise,
+ *      execution yields a transaction, which the database attempts to commit.
+ *      If the transaction completes immediately and synchronously, then the
+ *      trigger transitions to the "complete" state.  If the transaction
+ *      requires some time to complete, it transitions to the "committing"
+ *      state.  If the transaction can not be completed locally due to
+ *      read-only restrictions and transaction forwarding is enabled, starts
+ *      forwarding and transitions to the "forwarding" state.
  *
- *    - Committing (reply != NULL, progress != NULL): The transaction is
- *      committing.  If it succeeds, or if it fails permanently, then the
- *      trigger transitions to "complete".  If it fails temporarily
- *      (e.g. because someone else committed to cluster-based storage before we
- *      did), then we transition back to "initialized" to try again.
+ *    - Committing (reply != NULL, progress != NULL, txn_forward == NULL):
+ *      The transaction is committing.  If it succeeds, or if it fails
+ *      permanently, then the trigger transitions to "complete".  If it fails
+ *      temporarily (e.g. because someone else committed to cluster-based
+ *      storage before we did), then we transition back to "initialized" to
+ *      try again.
  *
- *    - Complete (reply != NULL, progress == NULL): The transaction is done
- *      and either succeeded or failed.
+ *    - Forwarding (reply == NULL, progress == NULL, txn_forward != NULL):
+ *      Transaction is forwarded.  Either it succeeds or it fails, the trigger
+ *      transitions to "complete".
+ *
+ *    - Complete (reply != NULL, progress == NULL, txn_forward == NULL):
+ *      The transaction is done and either succeeded or failed.
  */
 struct ovsdb_trigger {
-    /* In "initialized" or "committing" state, in db->triggers.
+    /* In "initialized", "committing" or "forwarding" state, in db->triggers.
      * In "complete", in session->completions. */
     struct ovs_list node;
     struct ovsdb_session *session; /* Session that owns this trigger. */
@@ -49,9 +57,11 @@ struct ovsdb_trigger {
     struct jsonrpc_msg *request; /* Database request. */
     struct jsonrpc_msg *reply;   /* Result (null if none yet). */
     struct ovsdb_txn_progress *progress;
+    struct ovsdb_txn_forward *txn_forward; /* Tracks transaction forwarding. */
     long long int created;      /* Time created. */
     long long int timeout_msec; /* Max wait duration. */
     bool read_only;             /* Database is in read only mode. */
+    bool txn_forward_enabled;   /* Server configured to forward transactions.*/
     char *role;                 /* Role, for role-based access controls. */
     char *id;                   /* ID, for role-based access controls. */
 };
@@ -59,7 +69,8 @@ struct ovsdb_trigger {
 bool ovsdb_trigger_init(struct ovsdb_session *, struct ovsdb *,
                         struct ovsdb_trigger *,
                         struct jsonrpc_msg *request, long long int now,
-                        bool read_only, const char *role, const char *id);
+                        bool read_only, bool txn_forward_enabled,
+                        const char *role, const char *id);
 void ovsdb_trigger_destroy(struct ovsdb_trigger *);
 
 bool ovsdb_trigger_is_complete(const struct ovsdb_trigger *);

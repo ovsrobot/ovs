@@ -1573,7 +1573,7 @@ do_trigger(struct ovs_cmdl_context *ctx)
             ovsdb_trigger_init(&session, db, &t->trigger,
                                jsonrpc_create_request("transact", params,
                                                       NULL),
-                               now, false, NULL, NULL);
+                               now, false, false, NULL, NULL);
             t->number = number++;
             if (ovsdb_trigger_is_complete(&t->trigger)) {
                 do_trigger_dump(t, now, "immediate");

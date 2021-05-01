@@ -424,6 +424,14 @@ A database can have multiple replicas.
 
 Open vSwitch 2.6 introduced support for database replication.
 
+Open vSwitch 2.16 introduced transaction forwarding support for database
+replication.  It can be enabled by passing ``--enable-txn-forward`` command
+line argument to ``ovsdb-server``.  A replica with enabled transaction
+forwarding can be used to scale out read-mostly access to the primary database.
+In this case replica will work as a proxy between the client and the primary
+database for transactions that needs to modify the database, while executing
+read-only transactions and serving monitor requests by itself.
+
 Connection Methods
 ==================
 

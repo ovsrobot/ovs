@@ -34,6 +34,7 @@
 #include "svec.h"
 #include "table.h"
 #include "transaction.h"
+#include "transaction-forward.h"
 #include "uuid.h"
 
 VLOG_DEFINE_THIS_MODULE(replication);
@@ -140,6 +141,9 @@ replication_init(const char *sync_from_, const char *exclude_tables,
         jsonrpc_session_close(session);
     }
 
+    /* Cancel all pending transactions. */
+    ovsdb_txn_forward_cancel_all(false);
+
     session = jsonrpc_session_open(sync_from, true);
     session_seqno = UINT_MAX;
 
@@ -198,6 +202,9 @@ replication_run(void)
         if (seqno != session_seqno || state == RPL_S_INIT) {
             session_seqno = seqno;
             request_ids_clear();
+            /* Canceling all the transactions that have already been forwarded,
+             * as they might be lost. */
+            ovsdb_txn_forward_cancel_all(true);
             struct jsonrpc_msg *request;
             request = jsonrpc_create_request("get_server_id",
                                              json_array_create_empty(), NULL);
@@ -206,6 +213,12 @@ replication_run(void)
 
             state = RPL_S_SERVER_ID_REQUESTED;
             VLOG_DBG("send server ID request.");
+        }
+
+        if (state == RPL_S_REPLICATING) {
+            /* Replication is active.  Trying to forward client transactions
+             * to the replication source. */
+            ovsdb_txn_forward_run(session);
         }
 
         msg = jsonrpc_session_recv(session);
@@ -233,7 +246,8 @@ replication_run(void)
         } else if (msg->type == JSONRPC_REPLY) {
             struct replication_db *rdb;
             struct ovsdb *db;
-            if (!request_ids_lookup_and_free(msg->id, &db)) {
+            if (!request_ids_lookup_and_free(msg->id, &db)
+                && state != RPL_S_REPLICATING) {
                 VLOG_WARN("received unexpected reply");
                 goto next;
             }
@@ -383,12 +397,17 @@ replication_run(void)
                 break;
             }
 
+            case RPL_S_REPLICATING:
+                /* We're not expecting any replies in this state.  Assuming
+                 * this is a reply for forwarded transaction. */
+                ovsdb_txn_forward_complete(msg);
+                break;
+
             case RPL_S_ERR:
                 /* Ignore all messages */
                 break;
 
             case RPL_S_INIT:
-            case RPL_S_REPLICATING:
             default:
                 OVS_NOT_REACHED();
             }
@@ -404,6 +423,11 @@ replication_wait(void)
     if (session) {
         jsonrpc_session_wait(session);
         jsonrpc_session_recv_wait(session);
+
+        if (jsonrpc_session_is_connected(session)
+            && state == RPL_S_REPLICATING) {
+            ovsdb_txn_forward_wait();
+        }
     }
 }
 
@@ -526,6 +550,8 @@ disconnect_active_server(void)
 {
     jsonrpc_session_close(session);
     session = NULL;
+    /* Cancel all pending transactions. */
+    ovsdb_txn_forward_cancel_all(false);
 }
 
 void
@@ -541,6 +567,8 @@ replication_destroy(void)
 
     request_ids_destroy();
     replication_dbs_destroy();
+
+    ovsdb_txn_forward_cancel_all(false);
 
     shash_destroy(&local_dbs);
 }
@@ -998,5 +1026,7 @@ Syncing options:\n\
                           backup mode (except with --active)\n\
   --sync-exclude-tables=DB:TABLE,...\n\
                           exclude the TABLE in DB from syncing\n\
+  --enable-txn-forward    allow trnasaction forwarding to the\n\
+                          replication source.\n\
   --active                with --sync-from, start in active mode\n");
 }

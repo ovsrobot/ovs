@@ -99,7 +99,8 @@ lookup_executor(const char *name, bool *read_only)
 }
 
 /* On success, returns a transaction and stores the results to return to the
- * client in '*resultsp'.
+ * client in '*resultsp'.  If 'all_ops_read_only' is nonnull and all oparations
+ * in transaction are read-only operations, sets '*all_ops_read_only' to true.
  *
  * On failure, returns NULL.  If '*resultsp' is nonnull, then it is the results
  * to return to the client.  If '*resultsp' is null, then the execution failed
@@ -111,7 +112,8 @@ ovsdb_execute_compose(struct ovsdb *db, const struct ovsdb_session *session,
                       const struct json *params, bool read_only,
                       const char *role, const char *id,
                       long long int elapsed_msec, long long int *timeout_msec,
-                      bool *durable, struct json **resultsp)
+                      bool *durable, bool *all_ops_read_only,
+                      struct json **resultsp)
 {
     struct ovsdb_execution x;
     struct ovsdb_error *error;
@@ -120,6 +122,9 @@ ovsdb_execute_compose(struct ovsdb *db, const struct ovsdb_session *session,
     size_t i;
 
     *durable = false;
+    if (all_ops_read_only) {
+        *all_ops_read_only = true;
+    }
     if (params->type != JSON_ARRAY
         || !params->array.n
         || params->array.elems[0]->type != JSON_STRING
@@ -210,6 +215,9 @@ ovsdb_execute_compose(struct ovsdb *db, const struct ovsdb_session *session,
             }
             break;
         }
+        if (!ro && all_ops_read_only) {
+            *all_ops_read_only = false;
+        }
         json_array_add(results, result);
     }
     while (json_array(results)->n < n_operations) {
@@ -240,7 +248,7 @@ ovsdb_execute(struct ovsdb *db, const struct ovsdb_session *session,
     struct json *results;
     struct ovsdb_txn *txn = ovsdb_execute_compose(
         db, session, params, read_only, role, id, elapsed_msec, timeout_msec,
-        &durable, &results);
+        &durable, NULL, &results);
     if (!txn) {
         return results;
     }
