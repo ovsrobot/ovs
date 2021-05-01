@@ -66,16 +66,19 @@ EXECUTION_EXAMPLES
 AT_BANNER([OVSDB - disconnect from cluster])
 
 OVS_START_SHELL_HELPERS
-# ovsdb_test_cluster_disconnect N_SERVERS LEADER_OR_FOLLOWER [CHECK_FLAPPING]
+# ovsdb_test_cluster_disconnect N_SERVERS LEADER_OR_FOLLOWER [CHECK_FLAPPING [REPLICATION]]
 # Test server disconnected from the cluster.
 # N_SERVERS: Number of servers in the cluster.
 # LEADER_OR_FOLLOWER: The role of the server that is disconnected from the
 #                     cluster: "leader" or "follower".
 # CHECK_FLAPPING: Whether to check if is_disconnected flapped. "yes", "no".
+# REPLICATION: Whether to start replication server and connect client to it:
+#              "yes" or "no"
 ovsdb_test_cluster_disconnect () {
     n=$1
     leader_or_follower=$2
     check_flapping=$3
+    replication=$4
     schema_name=`ovsdb-tool schema-name $abs_srcdir/idltest.ovsschema`
     ordinal_schema > schema
     AT_CHECK([ovsdb-tool '-vPATTERN:console:%c|%p|%m' create-cluster s1.db $abs_srcdir/idltest.ovsschema unix:s1.raft], [0], [], [stderr])
@@ -119,7 +122,22 @@ ovsdb_test_cluster_disconnect () {
     # Connect to $target.  Use "wait" to trigger a non-op transaction so
     # that test-ovsdb will not quit.
 
-    test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -v -t10 idl unix:s$target.ovsdb '[["idltest",
+    client_target=$target
+    if test X$replication == X"yes"; then
+        AT_CHECK([ovsdb-tool create s${target}_backup.db $abs_srcdir/idltest.ovsschema])
+        AT_CHECK([ovsdb-server -v -vconsole:off -vsyslog:off --detach    dnl
+                    --no-chdir --log-file=s${target}_backup.log          dnl
+                    --pidfile=s${target}_backup.pid                      dnl
+                    --unixctl=s${target}_backup                          dnl
+                    --sync-from=unix:s$target.ovsdb                      dnl
+                    --remote=punix:s${target}_backup.ovsdb               dnl
+                    s${target}_backup.db])
+        AT_CHECK([ovsdb_client_wait unix:s${target}_backup.ovsdb $schema_name connected])
+        client_target=${target}_backup
+        cleanup="$cleanup ${target}_backup"
+    fi
+
+    test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -v -t10 idl unix:s${client_target}.ovsdb '[["idltest",
           {"op": "wait",
            "table": "simple",
            "where": [["i", "==", 1]],
@@ -177,6 +195,21 @@ AT_CLEANUP
 AT_SETUP([OVSDB cluster - leader disconnect from cluster, check flapping])
 AT_KEYWORDS([ovsdb server negative unix cluster disconnect])
 ovsdb_test_cluster_disconnect 5 leader yes
+AT_CLEANUP
+
+AT_SETUP([OVSDB cluster - follower disconnect from cluster, single remote, replication])
+AT_KEYWORDS([ovsdb server negative unix cluster disconnect replication])
+ovsdb_test_cluster_disconnect 3 follower no yes
+AT_CLEANUP
+
+AT_SETUP([OVSDB cluster - leader disconnect from cluster, single remote, replication])
+AT_KEYWORDS([ovsdb server negative unix cluster disconnect replication])
+ovsdb_test_cluster_disconnect 3 leader no yes
+AT_CLEANUP
+
+AT_SETUP([OVSDB cluster - leader disconnect from cluster, check flapping, replication])
+AT_KEYWORDS([ovsdb server negative unix cluster disconnect replication])
+ovsdb_test_cluster_disconnect 5 leader yes yes
 AT_CLEANUP
 
 AT_SETUP([OVSDB cluster - initial status should be disconnected])

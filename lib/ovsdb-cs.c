@@ -1639,6 +1639,7 @@ static const struct server_column server_columns[] = {
 struct server_row {
     struct hmap_node hmap_node;
     struct uuid uuid;
+    bool synced_table;
     struct ovsdb_datum data[N_SERVER_COLUMNS];
 };
 
@@ -1673,11 +1674,13 @@ ovsdb_cs_delete_server_row(struct ovsdb_cs *cs, struct server_row *row)
 }
 
 static struct server_row *
-ovsdb_cs_insert_server_row(struct ovsdb_cs *cs, const struct uuid *uuid)
+ovsdb_cs_insert_server_row(struct ovsdb_cs *cs, const struct uuid *uuid,
+                           bool synced_table)
 {
     struct server_row *row = xmalloc(sizeof *row);
     hmap_insert(&cs->server_rows, &row->hmap_node, uuid_hash(uuid));
     row->uuid = *uuid;
+    row->synced_table = synced_table;
     for (size_t i = 0; i < N_SERVER_COLUMNS; i++) {
         ovsdb_datum_init_default(&row->data[i], &server_columns[i].type);
     }
@@ -1758,9 +1761,13 @@ ovsdb_cs_process_server_event(struct ovsdb_cs *cs,
         ovsdb_cs_clear_server_rows(cs);
     }
 
-    const struct ovsdb_cs_table_update *tu = ovsdb_cs_db_update_find_table(
-        du, "Database");
-    if (tu) {
+    const char *tables[] = {"Database", "_synced_Database"};
+    for (size_t idx = 0; idx < ARRAY_SIZE(tables); idx++) {
+        const struct ovsdb_cs_table_update *tu = ovsdb_cs_db_update_find_table(
+            du, tables[idx]);
+        if (!tu) {
+            continue;
+        }
         for (size_t i = 0; i < tu->n; i++) {
             const struct ovsdb_cs_row_update *ru = &tu->row_updates[i];
             struct server_row *row
@@ -1769,14 +1776,13 @@ ovsdb_cs_process_server_event(struct ovsdb_cs *cs,
                 ovsdb_cs_delete_server_row(cs, row);
             } else {
                 if (!row) {
-                    row = ovsdb_cs_insert_server_row(cs, &ru->row_uuid);
+                    row = ovsdb_cs_insert_server_row(cs, &ru->row_uuid, idx);
                 }
                 ovsdb_cs_update_server_row(row, ru->columns,
                                            ru->type == OVSDB_CS_ROW_XOR);
             }
         }
     }
-
     ovsdb_cs_db_update_destroy(du);
 }
 
@@ -1820,20 +1826,26 @@ server_column_get_uuid(const struct server_row *row,
     return d->n == 1 ? &d->keys[0].uuid : default_value;
 }
 
-static const struct server_row *
-ovsdb_find_server_row(struct ovsdb_cs *cs)
+static size_t
+ovsdb_find_server_rows(struct ovsdb_cs *cs,
+                       const struct server_row *rows[], size_t max_rows)
 {
     const struct server_row *row;
+    size_t n = 0;
+
     HMAP_FOR_EACH (row, hmap_node, &cs->server_rows) {
         const struct uuid *cid = server_column_get_uuid(row, COL_CID, NULL);
         const char *name = server_column_get_string(row, COL_NAME, NULL);
         if (uuid_is_zero(&cs->cid)
             ? (name && !strcmp(cs->data.db_name, name))
             : (cid && uuid_equals(cid, &cs->cid))) {
-            return row;
+            rows[n++] = row;
+            if (n == max_rows) {
+                break;
+            }
         }
     }
-    return NULL;
+    return n;
 }
 
 static void OVS_UNUSED
@@ -1858,27 +1870,18 @@ ovsdb_log_server_rows(const struct ovsdb_cs *cs)
 }
 
 static bool
-ovsdb_cs_check_server_db__(struct ovsdb_cs *cs)
+ovsdb_cs_check_server_db_row(struct ovsdb_cs *cs,
+                             const struct server_row *db_row)
 {
-    struct ovsdb_cs_event *event;
-    LIST_FOR_EACH_POP (event, list_node, &cs->server.events) {
-        ovsdb_cs_process_server_event(cs, event);
-        ovsdb_cs_event_destroy(event);
-    }
-
-    const struct server_row *db_row = ovsdb_find_server_row(cs);
-    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
     const char *server_name = jsonrpc_session_get_name(cs->session);
-    if (!db_row) {
-        VLOG_INFO_RL(&rl, "%s: server does not have %s database",
-                     server_name, cs->data.db_name);
-        return false;
-    }
-
-    bool ok = false;
     const char *model = server_column_get_string(db_row, COL_MODEL, "");
     const char *schema = server_column_get_string(db_row, COL_SCHEMA, NULL);
-    if (!strcmp(model, "clustered")) {
+    bool ok = false;
+
+    if (cs->leader_only && db_row->synced_table) {
+        VLOG_INFO("%s is a replication server and therefore not a leader; "
+                  "trying another server", server_name);
+    } else if (!strcmp(model, "clustered")) {
         bool connected = server_column_get_bool(db_row, COL_CONNECTED, false);
         bool leader = server_column_get_bool(db_row, COL_LEADER, false);
         uint64_t index = server_column_get_int(db_row, COL_INDEX, 0);
@@ -1906,7 +1909,38 @@ ovsdb_cs_check_server_db__(struct ovsdb_cs *cs)
             ok = true;
         }
     }
-    if (!ok) {
+    return ok;
+}
+
+static bool
+ovsdb_cs_check_server_db__(struct ovsdb_cs *cs)
+{
+    struct ovsdb_cs_event *event;
+    LIST_FOR_EACH_POP (event, list_node, &cs->server.events) {
+        ovsdb_cs_process_server_event(cs, event);
+        ovsdb_cs_event_destroy(event);
+    }
+
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
+    const char *server_name = jsonrpc_session_get_name(cs->session);
+    const struct server_row *db_row[2];
+    size_t n_rows = ovsdb_find_server_rows(cs, db_row, ARRAY_SIZE(db_row));
+    const char *schema = NULL;
+
+    for (size_t i = 0; i < n_rows; i++) {
+        if (!ovsdb_cs_check_server_db_row(cs, db_row[i])) {
+            return false;
+        }
+        /* Getting the schema from the original Database table, because that
+         * is what we actually will monitor. */
+        if (!db_row[i]->synced_table) {
+            schema = server_column_get_string(db_row[i], COL_SCHEMA, NULL);
+        }
+    }
+
+    if (!n_rows || !schema) {
+        VLOG_INFO_RL(&rl, "%s: server does not have %s database",
+                     server_name, cs->data.db_name);
         return false;
     }
 
@@ -1946,6 +1980,7 @@ ovsdb_cs_compose_server_monitor_request(const struct json *schema_json,
     struct json *monitor_requests = json_object_create();
 
     const char *table_name = "Database";
+    const char *synced_table_name = "_synced_Database";
     const struct sset *table_schema
         = schema ? shash_find_data(schema, table_name) : NULL;
     if (!table_schema) {
@@ -1972,6 +2007,12 @@ ovsdb_cs_compose_server_monitor_request(const struct json *schema_json,
         json_object_put(monitor_request, "columns", columns);
         json_object_put(monitor_requests, table_name,
                         json_array_create_1(monitor_request));
+        if (shash_find_data(schema, synced_table_name)) {
+            struct json *synced_request = json_deep_clone(monitor_request);
+
+            json_object_put(monitor_requests, synced_table_name,
+                            json_array_create_1(synced_request));
+        }
     }
     ovsdb_cs_free_schema(schema);
 
@@ -2022,11 +2063,14 @@ ovsdb_cs_parse_schema(const struct json *schema_json)
     SHASH_FOR_EACH (node, json_object(tables_json)) {
         const char *table_name = node->name;
         const struct json *json = node->data;
-        const struct json *columns_json;
+        const struct json *columns_json, *copy_for_replication;
 
         ovsdb_parser_init(&parser, json, "table schema for table %s",
                           table_name);
         columns_json = ovsdb_parser_member(&parser, "columns", OP_OBJECT);
+        copy_for_replication = ovsdb_parser_member(&parser,
+                                                   "copyForReplication",
+                                                   OP_BOOLEAN | OP_OPTIONAL);
         error = ovsdb_parser_destroy(&parser);
         if (error) {
             log_error(error);
@@ -2043,6 +2087,14 @@ ovsdb_cs_parse_schema(const struct json *schema_json)
             sset_add(columns, column_name);
         }
         shash_add(schema, table_name, columns);
+
+        if (copy_for_replication && json_boolean(copy_for_replication)) {
+            struct sset *synced_columns = xmalloc(sizeof *synced_columns);
+
+            sset_clone(synced_columns, columns);
+            shash_add_nocopy(schema, xasprintf("_synced_%s", table_name),
+                             synced_columns);
+        }
     }
     return schema;
 }
