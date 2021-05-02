@@ -25,6 +25,7 @@
 #include <rte_cpuflags.h>
 #include <rte_errno.h>
 #include <rte_log.h>
+#include <rte_malloc.h>
 #include <rte_memzone.h>
 #include <rte_version.h>
 
@@ -356,6 +357,33 @@ dpdk_unixctl_log_set(struct unixctl_conn *conn, int argc, const char *argv[],
     unixctl_command_reply(conn, NULL);
 }
 
+static void
+dpdk_unixctl_get_malloc_stats(struct unixctl_conn *conn,
+                              int argc OVS_UNUSED,
+                              const char *argv[] OVS_UNUSED,
+                              void *aux OVS_UNUSED)
+{
+    char *response = NULL;
+    FILE *stream;
+    size_t size;
+
+    stream = open_memstream(&response, &size);
+    if (!stream) {
+        response = xasprintf("Unable to open memstream: %s.",
+                             ovs_strerror(errno));
+        unixctl_command_reply_error(conn, response);
+        goto out;
+    }
+
+    rte_malloc_dump_stats(stream, NULL);
+
+    fclose(stream);
+
+    unixctl_command_reply(conn, response);
+out:
+    free(response);
+}
+
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
 {
@@ -525,6 +553,8 @@ dpdk_init__(const struct smap *ovs_other_config)
                              dpdk_unixctl_mem_stream, rte_log_dump);
     unixctl_command_register("dpdk/log-set", "{level | pattern:level}", 0,
                              INT_MAX, dpdk_unixctl_log_set, NULL);
+    unixctl_command_register("dpdk/get-malloc-stats", "", 0, 0,
+                             dpdk_unixctl_get_malloc_stats, NULL);
 
     /* We are called from the main thread here */
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
