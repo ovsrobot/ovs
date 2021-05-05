@@ -1,4 +1,5 @@
 noinst_HEADERS += \
+	include/linux/devlink.h \
 	include/linux/netlink.h \
 	include/linux/netfilter/nf_conntrack_sctp.h \
 	include/linux/pkt_cls.h \

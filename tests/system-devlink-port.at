@@ -1,0 +1,12 @@
+AT_BANNER([devlink port])
+
+AT_SETUP([devlink - dump port])
+NETDEVSIM_START()
+AT_CHECK([netdevsim_add_device 11 1])
+AT_CHECK([$abs_top_builddir/utilities/devlink dump > devlink-dump-port.out 2>&1])
+AT_CHECK([grep -q bus_name.*netdevsim devlink-dump-port.out])
+AT_CHECK([grep -q dev_name.*netdevsim11 devlink-dump-port.out])
+AT_CHECK([grep -q type.*ETH devlink-dump-port.out])
+AT_CHECK([grep -q flavour.*PHYSICAL devlink-dump-port.out])
+AT_CHECK([grep -q number.*1 devlink-dump-port.out])
+AT_CLEANUP

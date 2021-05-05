@@ -8,6 +8,7 @@ EXTRA_DIST += \
 	$(SYSTEM_AFXDP_TESTSUITE_AT) \
 	$(SYSTEM_OFFLOADS_TESTSUITE_AT) \
 	$(SYSTEM_DPDK_TESTSUITE_AT) \
+	$(SYSTEM_DEVLINK_TESTSUITE_AT) \
 	$(OVSDB_CLUSTER_TESTSUITE_AT) \
 	$(TESTSUITE) \
 	$(SYSTEM_KMOD_TESTSUITE) \
@@ -16,6 +17,7 @@ EXTRA_DIST += \
 	$(SYSTEM_AFXDP_TESTSUITE) \
 	$(SYSTEM_OFFLOADS_TESTSUITE) \
 	$(SYSTEM_DPDK_TESTSUITE) \
+	$(SYSTEM_DEVLINK_TESTSUITE) \
 	$(OVSDB_CLUSTER_TESTSUITE) \
 	tests/atlocal.in \
 	$(srcdir)/package.m4 \
@@ -187,6 +189,11 @@ SYSTEM_DPDK_TESTSUITE_AT = \
 	tests/system-dpdk-testsuite.at \
 	tests/system-dpdk.at
 
+SYSTEM_DEVLINK_TESTSUITE_AT = \
+	tests/system-devlink-info.at \
+	tests/system-devlink-port.at \
+	tests/system-devlink-testsuite.at
+
 check_SCRIPTS += tests/atlocal
 
 TESTSUITE = $(srcdir)/tests/testsuite
@@ -198,6 +205,7 @@ SYSTEM_TSO_TESTSUITE = $(srcdir)/tests/system-tso-testsuite
 SYSTEM_AFXDP_TESTSUITE = $(srcdir)/tests/system-afxdp-testsuite
 SYSTEM_OFFLOADS_TESTSUITE = $(srcdir)/tests/system-offloads-testsuite
 SYSTEM_DPDK_TESTSUITE = $(srcdir)/tests/system-dpdk-testsuite
+SYSTEM_DEVLINK_TESTSUITE = $(srcdir)/tests/system-devlink-testsuite
 OVSDB_CLUSTER_TESTSUITE = $(srcdir)/tests/ovsdb-cluster-testsuite
 DISTCLEANFILES += tests/atconfig tests/atlocal
 
@@ -362,6 +370,10 @@ check-dpdk: all
 	set $(SHELL) '$(SYSTEM_DPDK_TESTSUITE)' -C tests  AUTOTEST_PATH='$(AUTOTEST_PATH)'; \
 	"$$@" $(TESTSUITEFLAGS) -j1 || (test X'$(RECHECK)' = Xyes && "$$@" --recheck)
 
+check-system-devlink: all
+	set $(SHELL) '$(SYSTEM_DEVLINK_TESTSUITE)' -C tests  AUTOTEST_PATH='$(AUTOTEST_PATH)'; \
+	"$$@" $(TESTSUITEFLAGS) -j1 || (test X'$(RECHECK)' = Xyes && "$$@" --recheck)
+
 clean-local:
 	test ! -f '$(TESTSUITE)' || $(SHELL) '$(TESTSUITE)' -C tests --clean
 
@@ -404,6 +416,10 @@ $(SYSTEM_OFFLOADS_TESTSUITE): package.m4 $(SYSTEM_TESTSUITE_AT) $(SYSTEM_OFFLOAD
 	$(AM_V_at)mv $@.tmp $@
 
 $(SYSTEM_DPDK_TESTSUITE): package.m4 $(SYSTEM_TESTSUITE_AT) $(SYSTEM_DPDK_TESTSUITE_AT) $(COMMON_MACROS_AT)
+	$(AM_V_GEN)$(AUTOTEST) -I '$(srcdir)' -o $@.tmp $@.at
+	$(AM_V_at)mv $@.tmp $@
+
+$(SYSTEM_DEVLINK_TESTSUITE): package.m4 $(SYSTEM_TESTSUITE_AT) $(SYSTEM_DEVLINK_TESTSUITE_AT) $(COMMON_MACROS_AT)
 	$(AM_V_GEN)$(AUTOTEST) -I '$(srcdir)' -o $@.tmp $@.at
 	$(AM_V_at)mv $@.tmp $@
 

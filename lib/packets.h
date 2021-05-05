@@ -197,6 +197,7 @@ pkt_metadata_prefetch_init(struct pkt_metadata *md)
 bool dpid_from_string(const char *s, uint64_t *dpidp);
 
 #define ETH_ADDR_LEN           6
+#define IB_ADDR_LEN           20
 
 static const struct eth_addr eth_addr_broadcast OVS_UNUSED
     = ETH_ADDR_C(ff,ff,ff,ff,ff,ff);

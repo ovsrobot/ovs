@@ -122,6 +122,9 @@ if LINUX
 noinst_PROGRAMS += utilities/nlmon
 utilities_nlmon_SOURCES = utilities/nlmon.c
 utilities_nlmon_LDADD = lib/libopenvswitch.la
+noinst_PROGRAMS += utilities/devlink
+utilities_devlink_SOURCES = utilities/devlink.c
+utilities_devlink_LDADD = lib/libopenvswitch.la
 endif
 
 FLAKE8_PYFILES += utilities/ovs-pcap.in \

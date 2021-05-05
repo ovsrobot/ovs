@@ -30,6 +30,9 @@
 /system-offloads-testsuite
 /system-offloads-testsuite.dir/
 /system-offloads-testsuite.log
+/system-devlink-testsuite
+/system-devlink-testsuite.dir/
+/system-devlink-testsuite.log
 /test-aes128
 /test-atomic
 /test-bundle
