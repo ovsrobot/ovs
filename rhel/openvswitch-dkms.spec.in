@@ -27,6 +27,8 @@ BuildRoot:        %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 # conflicts with the openvswitch-debuginfo package for OVS userspace).
 %undefine _enable_debug_packages
 
+# Exclude input files from mangling
+%global __brp_mangle_shebangs_exclude_from ^/usr/src/.*$
 
 %description
 Open vSwitch Linux kernel module.
