@@ -186,6 +186,14 @@ struct eth_addr64 {
 #define ETH_ADDR64_C(A,B,C,D,E,F,G,H) \
     { { { 0x##A, 0x##B, 0x##C, 0x##D, 0x##E, 0x##F, 0x##G, 0x##H } } }
 
+/* Similar to struct eth_addr, for InfiniBand addresses. */
+struct ib_addr {
+    union {
+        uint8_t ea[20];
+        ovs_be16 be16[10];
+    };
+};
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,0 +1,9 @@
+AT_BANNER([devlink info])
+
+AT_SETUP([devlink - dump info])
+NETDEVSIM_START()
+AT_CHECK([netdevsim_add_device 10 1])
+AT_CHECK([$abs_top_builddir/utilities/devlink dump > devlink-dump-info.out 2>&1])
+AT_SKIP_IF([ ! (grep -q driver_name devlink-dump-info.out)])
+AT_CHECK([grep -q driver_name.*netdevsim devlink-dump-info.out])
+AT_CLEANUP

@@ -1,5 +1,6 @@
 /Makefile
 /Makefile.in
+/devlink
 /nlmon
 /ovs-appctl
 /ovs-appctl.8
