@@ -7,6 +7,9 @@ CFLAGS_FOR_OVS="-g -O2"
 SPARSE_FLAGS=""
 EXTRA_OPTS="--enable-Werror"
 
+[ -z "$DPDK_EXPERIMENTAL" ] || DPDK=1
+[ -z "$DPDK_SHARED" ] || DPDK=1
+
 on_exit() {
     if [ $? = 0 ]; then
         exit
@@ -214,7 +217,7 @@ if [ "$KERNEL" ]; then
     install_kernel $KERNEL
 fi
 
-if [ "$DPDK" ] || [ "$DPDK_SHARED" ]; then
+if [ "$DPDK" ]; then
     if [ -z "$DPDK_VER" ]; then
         DPDK_VER="20.11.1"
     fi
@@ -222,6 +225,9 @@ if [ "$DPDK" ] || [ "$DPDK_SHARED" ]; then
     if [ "$CC" = "clang" ]; then
         # Disregard cast alignment errors until DPDK is fixed
         CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} -Wno-cast-align"
+    fi
+    if [ -n "$DPDK_EXPERIMENTAL" ]; then
+        CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} -DALLOW_EXPERIMENTAL_API"
     fi
 fi
 
