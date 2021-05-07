@@ -588,6 +588,28 @@ NXT_FLOW_MOD: ADD ip actions=ct(commit,exec(load:0x1->NXM_NX_CT_LABEL[[0..63]],l
 ])
 AT_CLEANUP
 
+AT_SETUP([ovs-ofctl -F nxm parse-flows mpls actions])
+AT_DATA([flows.txt], [
+# comment
+actions=set_mpls_label(10)
+actions=set_mpls_label(0x10)
+actions=set_mpls_tc(4)
+actions=set_mpls_ttl(200)
+])
+AT_CHECK([ovs-ofctl -F nxm parse-flows flows.txt], [0], [stdout])
+# The substitution for fec0:0: is because some libcs (e.g. MUSL)
+# abbreviate a single zero and others (e.g. glibc) don't.
+AT_CHECK([[sed 's/ (xid=0x[0-9a-fA-F]*)//
+s/fec0:0:/fec0::/g' stdout]], [0], [dnl
+usable protocols: OpenFlow10,NXM
+chosen protocol: NXM-table_id
+NXT_FLOW_MOD: ADD actions=set_mpls_label(10)
+NXT_FLOW_MOD: ADD actions=set_mpls_label(16)
+NXT_FLOW_MOD: ADD actions=set_mpls_tc(4)
+NXT_FLOW_MOD: ADD actions=set_mpls_ttl(200)
+])
+AT_CLEANUP
+
 AT_SETUP([ovs-ofctl -F nxm -mmm parse-flows])
 AT_DATA([flows.txt], [[
 # comment

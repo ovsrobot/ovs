@@ -3775,13 +3775,19 @@ encode_SET_MPLS_LABEL(const struct ofpact_mpls_label *label,
 static char * OVS_WARN_UNUSED_RESULT
 parse_SET_MPLS_LABEL(char *arg, const struct ofpact_parse_params *pp)
 {
+    char* error;
+    uint32_t label;
     struct ofpact_mpls_label *mpls_label
         = ofpact_put_SET_MPLS_LABEL(pp->ofpacts);
     if (*arg == '\0') {
         return xstrdup("set_mpls_label: expected label.");
     }
 
-    mpls_label->label = htonl(atoi(arg));
+    error = str_to_u32(arg, &label);
+    if (error) {
+        return error;
+    }
+    mpls_label->label = htonl(label);
     return NULL;
 }
 
@@ -3850,7 +3856,7 @@ static void
 format_SET_MPLS_TC(const struct ofpact_mpls_tc *a,
                    const struct ofpact_format_params *fp)
 {
-    ds_put_format(fp->s, "%sset_mpls_ttl(%s%"PRIu8"%s)%s",
+    ds_put_format(fp->s, "%sset_mpls_tc(%s%"PRIu8"%s)%s",
                   colors.paren, colors.end, a->tc,
                   colors.paren, colors.end);
 }
