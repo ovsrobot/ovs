@@ -21,8 +21,8 @@ make -j4 HAVE_LLVM= HAVE_SQLITE= install
 cd ..
 
 pip3 install --disable-pip-version-check --user \
-    flake8 hacking sphinx pyOpenSSL wheel setuptools
-pip3 install --user --upgrade docutils
+    flake8 hacking 'sphinx<4.0' pyOpenSSL wheel setuptools
+pip3 install --user --upgrade 'docutils<0.17,>=0.12'
 pip3 install --user  'meson==0.47.1'
 
 if [ "$M32" ]; then
