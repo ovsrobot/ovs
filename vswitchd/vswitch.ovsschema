@@ -1,6 +1,6 @@
 {"name": "Open_vSwitch",
- "version": "8.2.0",
- "cksum": "1076640191 26427",
+ "version": "8.2.1",
+ "cksum": "4051567316 27206",
  "tables": {
    "Open_vSwitch": {
      "columns": {
@@ -418,8 +418,18 @@
      "columns": {
        "name": {
          "type": "string"},
+       "mirror_tunnel_addr": {
+         "type": "string"},
        "select_all": {
          "type": "boolean"},
+       "mirror_offload": {
+         "type": "boolean"},
+       "flow_src_mac": {
+         "type": {"key": {"type": "string"},
+                  "min": 0, "max": "unlimited"}},
+       "flow_dst_mac": {
+         "type": {"key": {"type": "string"},
+                  "min": 0, "max": "unlimited"}},
        "select_src_port": {
          "type": {"key": {"type": "uuid",
                           "refTable": "Port",
@@ -440,6 +450,16 @@
                           "refTable": "Port",
                           "refType": "weak"},
                   "min": 0, "max": 1}},
+       "output_src_vlan": {
+         "type": {"key": {"type": "integer",
+                          "minInteger": 0,
+                          "maxInteger": 4294967295},
+                  "min": 0, "max": 4096}},
+       "output_dst_vlan": {
+         "type": {"key": {"type": "integer",
+                          "minInteger": 0,
+                          "maxInteger": 4294967295},
+                  "min": 0, "max": 4096}},
        "output_vlan": {
          "type": {"key": {"type": "integer",
                           "minInteger": 1,

@@ -4869,9 +4869,33 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         selected VLANs.
       </p>
 
+      <column name="mirror_tunnel_addr">
+        BDF string of the tunnel device on which mirrored traffic will be
+        transmitted.
+      </column>
+
       <column name="select_all">
         If true, every packet arriving or departing on any port is
         selected for mirroring.
+      </column>
+
+      <column name="mirror_offload">
+        If true, a hw-assisted port mirroring is configured instead
+        default mirroring.
+      </column>
+
+      <column name="flow_src_mac">
+        The source MAC address(es) for per-flow mirroring. Each MAC
+        address is separate by ','. This parametr is paired with
+        select_dst_port. A '0' MAC address indicates the requested mirror
+        is a per-port mirroring, otherwise it's a per-flow mirroring
+      </column>
+
+      <column name="flow_dst_mac">
+        The destination MAC address(es) for per-flow mirroring. Each MAC
+        address is separate by ','. This parametr is paired with
+        select_src_port. A '0' MAC address indicates the requested mirror
+        is a per-port mirroring, otherwise it's a per-flow mirroring
       </column>
 
       <column name="select_dst_port">
@@ -4952,6 +4976,32 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         <p>
           Mirroring to a GRE tunnel has fewer caveats than mirroring to a
           VLAN and should generally be preferred.
+        </p>
+      </column>
+
+      <column name="output_src_vlan">
+        <p>Output VLAN for selected source port packets, if nonempty.</p>
+        <p>
+          <em>Please note:</em> This is different than
+          <ref column="output-vlan"/> This vlan is used to add an additional
+          vlan tag on the mirror traffic, regardless it contains vlan or not.
+          The receive end could choose to filter out this additional vlan.
+          This option is provided so the mirrored traffic could maintain its
+          original vlan informaiton, and this mirror can be used to filter
+          out un-wanted traffic such as in <ref column="mirror_offload"/>.
+        </p>
+      </column>
+
+      <column name="output_dst_vlan">
+        <p>Output VLAN for selected destination port packets, if nonempty.</p>
+        <p>
+          <em>Please note:</em> This is different than
+          <ref column="output-vlan"/> This vlan is used to add an additional
+          vlan tag on the mirror traffic, regardless it contains vlan or not.
+          The receive end could choose to filter out this additional vlan.
+          This option is provided so the mirrored traffic could maintain its
+          original vlan informaiton, and this mirror cab be used to filter
+          out un-wanted traffic such as in <ref column="mirror_offload"/>.
         </p>
       </column>
 

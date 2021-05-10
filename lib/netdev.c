@@ -69,6 +69,8 @@ COVERAGE_DEFINE(netdev_get_stats);
 COVERAGE_DEFINE(netdev_send_prepare_drops);
 COVERAGE_DEFINE(netdev_push_header_drops);
 
+#define MIRROR_DB_INIT_SIZE 8
+
 struct netdev_saved_flags {
     struct netdev *netdev;
     struct ovs_list node;           /* In struct netdev's saved_flags_list. */
@@ -2296,4 +2298,388 @@ netdev_free_custom_stats_counters(struct netdev_custom_stats *custom_stats)
             custom_stats->size = 0;
         }
     }
+}
+
+
+struct netdev_mirror_offload_item {
+    struct mirror_offload_info info;
+
+    struct ovs_list node;
+};
+
+struct netdev_mirror_offload {
+    struct ovs_mutex mutex;
+    struct ovs_list list;
+    pthread_cond_t cond;
+};
+
+static struct netdev_mirror_offload netdev_mirror_offload = {
+    .mutex = OVS_MUTEX_INITIALIZER,
+    .list  = OVS_LIST_INITIALIZER(&netdev_mirror_offload.list),
+};
+
+static struct ovsthread_once offload_thread_once
+    = OVSTHREAD_ONCE_INITIALIZER;
+
+static void *netdev_mirror_offload_main(void *data);
+
+/*
+ * Re-size mirror_db when it's out of space.
+ * Always double the buffer when it's needed
+ */
+static int
+netdev_mirror_db_resize(struct netdev_mirror_offload_item ***old_db,
+    int *old_db_size)
+{
+    struct netdev_mirror_offload_item **new_db;
+    int cur_size = *old_db_size;
+    int new_size;
+
+    if (!cur_size) {
+        new_size = MIRROR_DB_INIT_SIZE;
+    } else {
+        new_size = 2 * cur_size;
+    }
+
+    new_db = xzalloc(sizeof(struct netdev_mirror_offload_item *) * new_size);
+
+    if (!new_db) {
+        VLOG_ERR("Out of memory!!!");
+        return -1;
+    }
+    memset(new_db, 0, sizeof(struct netdev_mirror_offload_item *) * new_size);
+
+    if (cur_size) {
+        int i;
+
+        for (i = 0; i < cur_size; i++) {
+            new_db[i] = (*old_db)[i];
+        }
+        free(*old_db);
+    }
+
+    *old_db = new_db;
+    *old_db_size = new_size;
+
+    return 0;
+}
+
+static void
+netdev_free_mirror_offload(struct netdev_mirror_offload_item *offload)
+{
+    if (!offload) {
+        return;
+    }
+
+    if (offload->info.src) {
+        free(offload->info.src);
+    }
+    if (offload->info.dst) {
+        free(offload->info.dst);
+    }
+    if (offload->info.flow_dst_mac) {
+        free(offload->info.flow_dst_mac);
+    }
+    if (offload->info.flow_src_mac) {
+        free(offload->info.flow_src_mac);
+    }
+    if (offload->info.output_src_tags) {
+        free(offload->info.output_src_tags);
+    }
+    if (offload->info.output_dst_tags) {
+        free(offload->info.output_dst_tags);
+    }
+    if (offload->info.name) {
+        free(offload->info.name);
+    }
+    if (offload->info.mirror_tunnel_addr) {
+        free(offload->info.mirror_tunnel_addr);
+    }
+
+    free(offload);
+}
+
+static struct
+netdev_mirror_offload_item *
+netdev_alloc_mirror_offload(struct mirror_offload_info *info)
+{
+    struct netdev_mirror_offload_item *offload;
+    int i;
+
+    offload = xzalloc(sizeof(*offload));
+    memcpy(&offload->info, info, sizeof(struct mirror_offload_info));
+
+    if (info->name) {
+        offload->info.name = xzalloc(strlen(info->name) + 1);
+        if (offload->info.name) {
+            ovs_strzcpy(offload->info.name, info->name, strlen(info->name));
+        }
+    }
+
+    if (info->mirror_tunnel_addr) {
+        offload->info.mirror_tunnel_addr =
+            xzalloc(strlen(info->mirror_tunnel_addr) + 1);
+        if (offload->info.mirror_tunnel_addr) {
+            ovs_strzcpy(offload->info.mirror_tunnel_addr,
+                        info->mirror_tunnel_addr,
+                        strlen(info->mirror_tunnel_addr));
+        }
+    }
+
+    /* only add_mirror request include valid configuration */
+    if (info->n_src_port) {
+        offload->info.src = xzalloc(sizeof(struct netdev *)*info->n_src_port);
+        offload->info.flow_dst_mac = xzalloc(sizeof(struct eth_addr)*
+            info->n_src_port);
+        offload->info.output_src_tags = xzalloc(sizeof(uint16_t)*
+            info->n_src_port);
+        if (!offload->info.src || !offload->info.flow_dst_mac ||
+            !offload->info.output_src_tags) {
+            VLOG_ERR("Out of memory!!!");
+            netdev_free_mirror_offload(offload);
+            return NULL;
+        }
+
+        for (i = 0; i < info->n_src_port; i++) {
+            offload->info.src[i] = info->src[i];
+            offload->info.output_src_tags[i] = info->output_src_tags[i];
+            memcpy(&offload->info.flow_dst_mac[i], &info->flow_dst_mac[i],
+                sizeof(struct eth_addr));
+        }
+    }
+
+    if (info->n_dst_port) {
+        offload->info.dst = xzalloc(sizeof(struct netdev *)*info->n_dst_port);
+        offload->info.flow_src_mac = xzalloc(sizeof(struct eth_addr)*
+            info->n_dst_port);
+        offload->info.output_dst_tags = xzalloc(sizeof(uint16_t)*
+            info->n_dst_port);
+        if (!offload->info.dst || !offload->info.flow_src_mac ||
+            !offload->info.output_dst_tags) {
+            VLOG_ERR("Out of memory!!!");
+            netdev_free_mirror_offload(offload);
+            return NULL;
+        }
+
+        for (i = 0; i < info->n_dst_port; i++) {
+            offload->info.dst[i] = info->dst[i];
+            offload->info.output_dst_tags[i] = info->output_dst_tags[i];
+            memcpy(&offload->info.flow_src_mac[i], &info->flow_src_mac[i],
+                sizeof(struct eth_addr));
+        }
+    }
+
+    return offload;
+}
+
+static void
+netdev_append_mirror_offload(struct netdev_mirror_offload_item *offload)
+{
+    ovs_mutex_lock(&netdev_mirror_offload.mutex);
+    ovs_list_push_back(&netdev_mirror_offload.list, &offload->node);
+    xpthread_cond_signal(&netdev_mirror_offload.cond);
+    ovs_mutex_unlock(&netdev_mirror_offload.mutex);
+}
+
+void
+netdev_mirror_offload_put(struct mirror_offload_info *info)
+{
+    struct netdev_mirror_offload_item *offload;
+    /* only support tunnel port for traffic mirroring */
+    if (info->add_mirror && !info->mirror_tunnel_addr) {
+        return;
+    }
+
+    if (ovsthread_once_start(&offload_thread_once)) {
+        xpthread_cond_init(&netdev_mirror_offload.cond, NULL);
+        ovs_thread_create("netdev_mirror_offload",
+                          netdev_mirror_offload_main, NULL);
+        ovsthread_once_done(&offload_thread_once);
+    }
+
+    offload = netdev_alloc_mirror_offload(info);
+    netdev_append_mirror_offload(offload);
+}
+
+static int
+netdev_mirror_offload_configue(struct mirror_offload_info *info,
+    bool add_mirror)
+{
+    int un_support_count = 0;
+    int ret;
+
+    if (info->n_src_port) {
+        for (int i = 0; i < info->n_src_port; i++) {
+            const struct netdev_class *class =
+                info->src[i]->netdev_class;
+            if (!class) {
+                return -1;
+            }
+            if (class->mirror_offload) {
+                ret = class->mirror_offload(
+                    info->src[i],
+                    &info->flow_dst_mac[i],
+                    info->output_src_tags[i],
+                    info->mirror_tunnel_addr,
+                    add_mirror, false);
+                if (ret) {
+                    VLOG_ERR("Fail to %s mirror-offload"
+                        " configuration %s\n",
+                        add_mirror ? "add" : "remove",
+                        info->name);
+                    return ret;
+                }
+            } else {
+                un_support_count++;
+            }
+        }
+    }
+
+    if (info->n_dst_port) {
+        for (int i = 0; i < info->n_dst_port; i++) {
+            const struct netdev_class *class =
+                info->dst[i]->netdev_class;
+            if (!class) {
+                return -1;
+            }
+            if (class->mirror_offload) {
+                ret = class->mirror_offload(
+                    info->dst[i],
+                    &info->flow_src_mac[i],
+                    info->output_dst_tags[i],
+                    info->mirror_tunnel_addr,
+                    add_mirror, true);
+                if (ret) {
+                    VLOG_ERR("Fail to %s mirror-offload"
+                        " configuration %s\n",
+                        add_mirror ? "add" : "remove",
+                        info->name);
+                    return ret;
+                }
+            } else {
+                un_support_count++;
+            }
+        }
+    }
+
+    return un_support_count;
+}
+
+static void *
+netdev_mirror_offload_main(void *data OVS_UNUSED)
+{
+    struct netdev_mirror_offload_item *offload;
+    struct mirror_offload_info *info;
+    struct ovs_list *list;
+    struct netdev_mirror_offload_item **offload_db = NULL;
+    int offload_used_count = 0;
+    int offload_db_size = 0;
+    int ret, i, ind;
+
+    /* continue polling to check if there is an outstanding request */
+    for (;;) {
+        ovs_mutex_lock(&netdev_mirror_offload.mutex);
+        if (ovs_list_is_empty(&netdev_mirror_offload.list)) {
+            ovsrcu_quiesce_start();
+            ovs_mutex_cond_wait(&netdev_mirror_offload.cond,
+                                &netdev_mirror_offload.mutex);
+            ovsrcu_quiesce_end();
+        }
+        list = ovs_list_pop_front(&netdev_mirror_offload.list);
+        offload = CONTAINER_OF(list, struct netdev_mirror_offload_item,
+            node);
+        ovs_mutex_unlock(&netdev_mirror_offload.mutex);
+
+        if (!offload_db_size &&
+            netdev_mirror_db_resize(&offload_db, &offload_db_size)){
+            return NULL;
+        }
+
+        ind = offload_db_size;
+        for (i = 0; i < offload_db_size; i++) {
+            if (offload_db[i] &&
+                !strncmp(offload_db[i]->info.name, offload->info.name,
+                strlen(offload->info.name) + 1)) {
+                ind = i;
+                break;
+            }
+        }
+
+        if (!offload->info.add_mirror) {
+            /* remove mirror offload setup */
+            if (ind == offload_db_size) {
+                VLOG_WARN("Mirror offload remove configuration, %s, "
+                    "not found; clear mirror offload operation"
+                    " aborted\n", offload->info.name);
+                continue;
+            }
+        } else {
+            /* add mirror offload */
+            if (ind < offload_db_size) {
+                netdev_free_mirror_offload(offload);
+                VLOG_WARN("Attempt adding an existing mirror-offload "
+                    "configuration; request aborted\n");
+                continue;
+            }
+
+            if (offload_used_count == offload_db_size &&
+                netdev_mirror_db_resize(&offload_db, &offload_db_size)) {
+                return NULL;
+            }
+        }
+
+        info = offload->info.add_mirror ? &offload->info :
+            &offload_db[ind]->info;
+        ret = netdev_mirror_offload_configue(info, offload->info.add_mirror);
+
+        if (ret) {
+            VLOG_ERR("%s mirror configuration fails due to %s\n",
+                offload->info.add_mirror ? "Add" : "Remove",
+                ret > 0 ? "unsupport source traffic type" :
+                "device is not ready");
+            netdev_free_mirror_offload(offload);
+            continue;
+        } else {
+            VLOG_INFO("Succeed %s mirror-offload configuration: %s",
+                offload->info.add_mirror ? "adding" : "removing",
+                offload->info.name);
+        }
+
+        if (offload->info.add_mirror) {
+            for (i = 0; i < offload_db_size; i++) {
+                if (offload_db[i] == NULL) {
+                    offload_db[i] = offload;
+                    offload_used_count++;
+                    break;
+                }
+            }
+        } else {
+            /* remove the prior "add" request */
+            netdev_free_mirror_offload(offload_db[ind]);
+            offload_db[ind] = NULL;
+
+            /* remove the current("remove") request */
+            netdev_free_mirror_offload(offload);
+            offload_used_count--;
+        }
+
+        /* free db when the used count drop to 0 */
+        if (!offload_used_count) {
+            free(offload_db);
+            offload_db = NULL;
+            offload_db_size = 0;
+        }
+    }
+
+    /* clean up memory */
+    for (i = 0; i < offload_db_size; i++) {
+        if (offload_db[i]) {
+            netdev_free_mirror_offload(offload_db[i]);
+        }
+    }
+    if (offload_db) {
+        free(offload_db);
+    }
+
+    return NULL;
 }

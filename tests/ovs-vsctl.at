@@ -1364,7 +1364,9 @@ _uuid               : <1>
 name                : eth1
 _uuid               : <2>
 name                : mymirror
+output_dst_vlan     : []
 output_port         : <1>
+output_src_vlan     : []
 output_vlan         : []
 select_all          : false
 select_dst_port     : [<0>]

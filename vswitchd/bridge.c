@@ -38,6 +38,7 @@
 #include "mac-learning.h"
 #include "mcast-snooping.h"
 #include "netdev.h"
+#include "netdev-provider.h"
 #include "netdev-offload.h"
 #include "nx-match.h"
 #include "ofproto/bond.h"
@@ -330,6 +331,9 @@ static void mirror_destroy(struct mirror *);
 static bool mirror_configure(struct mirror *);
 static void mirror_refresh_stats(struct mirror *);
 
+static void mirror_offload_destroy(struct mirror *);
+static bool mirror_offload_configure(struct mirror *);
+
 static void iface_configure_lacp(struct iface *,
                                  struct lacp_member_settings *);
 static bool iface_create(struct bridge *, const struct ovsrec_interface *,
@@ -423,6 +427,35 @@ if_notifier_changed(struct if_notifier *notifier OVS_UNUSED)
     seq_wait(ifaces_changed, last_ifaces_changed);
     return changed;
 }
+
+static struct port *
+port_lookup_all(const char *port_name)
+{
+    struct bridge *br;
+    struct port *port = NULL;
+    int found = 0;
+
+    HMAP_FOR_EACH (br, node, &all_bridges) {
+        struct port *temp_port = NULL;
+        temp_port = port_lookup(br, port_name);
+        if (temp_port) {
+            if (!port) {
+                port = temp_port;
+            }
+            found++;
+        }
+    }
+
+    if (found) {
+        if (found > 1) {
+            VLOG_INFO("More than one bridge owns port with name:%s\n",
+                port_name);
+        }
+        return port;
+    }
+    return NULL;
+}
+
 
 /* Public functions. */
 
@@ -5055,14 +5088,228 @@ mirror_create(struct bridge *br, const struct ovsrec_mirror *cfg)
     return m;
 }
 
+static struct netdev *get_netdev_from_port(struct mirror *m,
+    struct port **port, const char *name)
+{
+    struct port *temp_port;
+    struct iface *iface;
+
+    *port = NULL;
+    temp_port = port_lookup(m->bridge, name);
+    if (temp_port) {
+        LIST_FOR_EACH (iface, port_elem, &temp_port->ifaces) {
+            if (iface) {
+                *port = temp_port;
+                return iface->netdev;
+            }
+        }
+    }
+    /* try different bridges */
+    temp_port = port_lookup_all(name);
+    if (temp_port) {
+        LIST_FOR_EACH (iface, port_elem, &temp_port->ifaces) {
+            if (iface) {
+                *port = temp_port;
+                return iface->netdev;
+            }
+        }
+    }
+    return NULL;
+}
+
+static void
+release_mirror_offload_info(struct mirror_offload_info *info)
+{
+    if (info->src) {
+        free(info->src);
+    }
+    if (info->dst) {
+        free(info->dst);
+    }
+    if (info->flow_dst_mac) {
+        free(info->flow_dst_mac);
+    }
+    if (info->flow_src_mac) {
+        free(info->flow_src_mac);
+    }
+    if (info->output_src_tags) {
+        free(info->output_src_tags);
+    }
+    if (info->output_dst_tags) {
+        free(info->output_dst_tags);
+    }
+    if (info->name) {
+        free(info->name);
+    }
+    if (info->mirror_tunnel_addr) {
+        free(info->mirror_tunnel_addr);
+    }
+}
+
+static int
+set_mirror_offload_info(struct mirror *m, struct mirror_offload_info *info)
+{
+    const struct ovsrec_mirror *cfg = m->cfg;
+    struct port *port = NULL;
+    int i;
+
+    if (m->name) {
+        info->name = xmalloc(strlen(m->name) + 1);
+        ovs_strzcpy(info->name, m->name, strlen(m->name));
+    }
+
+    if (cfg->mirror_tunnel_addr) {
+        info->mirror_tunnel_addr = xmalloc(strlen(cfg->mirror_tunnel_addr)
+            + 1);
+        ovs_strzcpy(info->mirror_tunnel_addr, cfg->mirror_tunnel_addr,
+                    strlen(cfg->mirror_tunnel_addr));
+    } else {
+        VLOG_ERR("mirror-offload configuration fails because"
+            " lack of tunnel device\n");
+        return -1;
+    }
+
+    /* source port */
+    info->n_src_port = cfg->n_select_src_port;
+    if (info->n_src_port) {
+        info->src = xmalloc(sizeof(struct netdev *)*info->n_src_port);
+        info->flow_dst_mac = xmalloc(sizeof(struct eth_addr)*
+            info->n_src_port);
+        if (info->n_src_port != cfg->n_output_src_vlan) {
+            VLOG_ERR("src port count:%d ouput src vlan count:%lu",
+                info->n_src_port, (unsigned long) cfg->n_output_src_vlan);
+            return -1;
+        }
+        info->output_src_tags = xmalloc(sizeof(uint16_t)*info->n_src_port);
+    }
+
+    if (info->n_src_port) {
+        /* find netdev instance for each port */
+        for (i = 0; i < info->n_src_port; i++) {
+            info->src[i] = get_netdev_from_port(m, &port,
+                cfg->select_src_port[i]->name);
+            if (!info->src[i]) {
+                VLOG_ERR("src-port: %s is not a netdev device\n",
+                    cfg->select_src_port[i]->name);
+                return -1;
+            }
+        }
+        memset(info->flow_dst_mac, 0, sizeof(struct eth_addr)*
+            info->n_src_port);
+
+        /*
+         * for source port, flow is separated by
+         * different dst mac addr
+         */
+        if (cfg->n_flow_dst_mac) {
+            int dst_count = (info->n_src_port > cfg->n_flow_dst_mac)?
+                cfg->n_flow_dst_mac:info->n_src_port;
+            for (i = 0; i < dst_count; i++) {
+                eth_addr_from_string(cfg->flow_dst_mac[i],
+                    &info->flow_dst_mac[i]);
+            }
+        }
+
+        if (cfg->n_output_src_vlan) {
+            int count = (cfg->n_output_src_vlan > info->n_src_port)?
+                info->n_src_port:cfg->n_output_src_vlan;
+            for (i = 0; i < count; i++) {
+                info->output_src_tags[i] = cfg->output_src_vlan[i] & 0xFFF;
+            }
+        }
+    }
+
+    /* dst ports */
+    info->n_dst_port = cfg->n_select_dst_port;
+    if (info->n_dst_port) {
+        info->dst = xmalloc(sizeof(struct netdev *)*info->n_dst_port);
+        info->flow_src_mac = xmalloc(sizeof(struct eth_addr)*
+            info->n_dst_port);
+        if (info->n_dst_port != cfg->n_output_dst_vlan) {
+            VLOG_ERR("dst port count:%d ouput dst vlan count:%lu\n",
+                info->n_dst_port, (unsigned long) cfg->n_output_dst_vlan);
+            return -1;
+        }
+        info->output_dst_tags = xmalloc(sizeof(uint16_t)*info->n_dst_port);
+    }
+
+    if (info->n_dst_port) {
+        for (i = 0; i < info->n_dst_port; i++) {
+            info->dst[i] = get_netdev_from_port(m, &port,
+                cfg->select_dst_port[i]->name);
+            if (!info->dst[i]) {
+                VLOG_ERR("dst-port: %s is not a netdev device\n",
+                    cfg->select_dst_port[i]->name);
+                return -1;
+            }
+        }
+        memset(info->flow_src_mac, 0, sizeof(struct eth_addr)*
+            info->n_dst_port);
+
+        /*
+         * for destination port, flow is separated by
+         * different src mac addr
+         */
+        if (cfg->n_flow_src_mac) {
+            int src_count = (info->n_dst_port > cfg->n_flow_src_mac)?
+                cfg->n_flow_src_mac:info->n_dst_port;
+            for (i = 0; i < src_count; i++) {
+                eth_addr_from_string(cfg->flow_src_mac[i],
+                    &info->flow_src_mac[i]);
+            }
+        }
+
+        if (cfg->n_output_dst_vlan) {
+            int count = (cfg->n_output_dst_vlan > info->n_dst_port)?
+                info->n_dst_port:cfg->n_output_dst_vlan;
+            for (i = 0; i < count; i++) {
+                info->output_dst_tags[i] = cfg->output_dst_vlan[i] & 0xFFF;
+            }
+        }
+    }
+
+    VLOG_INFO("sucess creating mirror-offload(%s): with %d src-port"
+        " streams %d dst-port streams to tunnel %s\n",
+        cfg->name, info->n_src_port, info->n_dst_port,
+        info->mirror_tunnel_addr?info->mirror_tunnel_addr:"none");
+    return 0;
+}
+
+static void
+mirror_offload_destroy(struct mirror *m)
+{
+    struct mirror_offload_info info;
+
+    memset(&info, 0, sizeof(struct mirror_offload_info));
+    info.add_mirror = false;
+    if (m->name) {
+        info.name = xmalloc(strlen(m->name) + 1);
+        if (info.name) {
+            ovs_strzcpy(info.name, m->name, strlen(m->name));
+        }
+    }
+
+    netdev_mirror_offload_put(&info);
+    if (info.name) {
+        free(info.name);
+    }
+    if (info.mirror_tunnel_addr) {
+        free(info.mirror_tunnel_addr);
+    }
+}
+
 static void
 mirror_destroy(struct mirror *m)
 {
     if (m) {
         struct bridge *br = m->bridge;
 
-        if (br->ofproto) {
-            ofproto_mirror_unregister(br->ofproto, m);
+        if (m->cfg && m->cfg->mirror_offload) {
+            mirror_offload_destroy(m);
+        } else {
+            if (br->ofproto) {
+                ofproto_mirror_unregister(br->ofproto, m);
+            }
         }
 
         hmap_remove(&br->mirrors, &m->hmap_node);
@@ -5095,11 +5342,31 @@ mirror_collect_ports(struct mirror *m,
 }
 
 static bool
+mirror_offload_configure(struct mirror *m)
+{
+    struct mirror_offload_info info;
+
+    memset(&info, 0, sizeof(struct mirror_offload_info));
+    info.add_mirror = true;
+    if (set_mirror_offload_info(m, &info)) {
+        release_mirror_offload_info(&info);
+        return false;
+    }
+
+    netdev_mirror_offload_put(&info);
+    release_mirror_offload_info(&info);
+    return true;
+}
+
+static bool
 mirror_configure(struct mirror *m)
 {
     const struct ovsrec_mirror *cfg = m->cfg;
     struct ofproto_mirror_settings s;
 
+    if (cfg->mirror_offload) {
+        return mirror_offload_configure(m);
+    }
     /* Set name. */
     if (strcmp(cfg->name, m->name)) {
         free(m->name);

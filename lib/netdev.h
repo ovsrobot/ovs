@@ -201,6 +201,22 @@ int netdev_send(struct netdev *, int qid, struct dp_packet_batch *,
                 bool concurrent_txq);
 void netdev_send_wait(struct netdev *, int qid);
 
+/* Hardware assisted mirror offloading*/
+struct mirror_offload_info {
+    struct netdev **src;
+    struct netdev **dst;
+    int n_src_port;
+    int n_dst_port;
+    struct eth_addr *flow_src_mac;
+    struct eth_addr *flow_dst_mac;
+    uint16_t *output_src_tags;
+    uint16_t *output_dst_tags;
+    bool add_mirror;
+    char *mirror_tunnel_addr;
+    char *name;
+};
+void netdev_mirror_offload_put(struct mirror_offload_info *);
+
 /* native tunnel APIs */
 /* Structure to pass parameters required to build a tunnel header. */
 struct netdev_tnl_build_header_params {
