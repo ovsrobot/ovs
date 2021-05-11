@@ -445,7 +445,7 @@ udpif_create(struct dpif_backer *backer, struct dpif *dpif)
 
     udpif->dpif = dpif;
     udpif->backer = backer;
-    atomic_init(&udpif->flow_limit, MIN(ofproto_flow_limit, 10000));
+    atomic_init(&udpif->flow_limit, ofproto_flow_limit);
     udpif->reval_seq = seq_create();
     udpif->dump_seq = seq_create();
     latch_init(&udpif->exit_latch);
@@ -963,13 +963,13 @@ udpif_revalidator(void *arg)
 
             duration = MAX(time_msec() - start_time, 1);
             udpif->dump_duration = duration;
-            if (duration > 2000) {
+
+            /* Use duration as a reference, adjust the number of flow_limit,
+             * when the duration is small, increase the flow-limit, and vice versa */
+            if (duration >= 1000) {
                 flow_limit /= duration / 1000;
-            } else if (duration > 1300) {
-                flow_limit = flow_limit * 3 / 4;
-            } else if (duration < 1000 &&
-                       flow_limit < n_flows * 1000 / duration) {
-                flow_limit += 1000;
+            } else {
+                flow_limit *= 1000 / duration;
             }
             flow_limit = MIN(ofproto_flow_limit, MAX(flow_limit, 1000));
             atomic_store_relaxed(&udpif->flow_limit, flow_limit);
