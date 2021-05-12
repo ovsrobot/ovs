@@ -56,8 +56,6 @@ VLOG_DEFINE_THIS_MODULE(ovs_numa);
  * TODO: Fix ovs-numa when cpu hotplug is used.
  */
 
-#define MAX_NUMA_NODES 128
-
 /* numa node. */
 struct numa_node {
     struct hmap_node hmap_node;     /* In the 'all_numa_nodes'. */
@@ -229,7 +227,7 @@ discover_numa_and_core(void)
         }
 
         free(path);
-        if (!dir || !numa_supported) {
+        if (!numa_supported) {
             break;
         }
     }

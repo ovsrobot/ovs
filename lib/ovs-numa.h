@@ -25,6 +25,7 @@
 
 #define OVS_CORE_UNSPEC INT_MAX
 #define OVS_NUMA_UNSPEC INT_MAX
+#define MAX_NUMA_NODES 128
 
 /* Dump of a list of 'struct ovs_numa_info'. */
 struct ovs_numa_dump {
