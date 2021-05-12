@@ -8121,13 +8121,14 @@ dummy@br1
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([ofproto-dpif - ovs-appctl dpif/show])
-OVS_VSWITCHD_START([add-br br1 -- set bridge br1 datapath-type=dummy], [], [],
-                   [--dummy-numa="0,0,0,0,1,1,1,1"])
-add_pmd_of_ports br0 1 2
-add_of_ports br1 3
+m4_define([OFPROTO_DPIF_APPCTL_SHOW],
+  [AT_SETUP([ofproto-dpif - ovs-appctl dpif/show $1])
+   OVS_VSWITCHD_START([add-br br1 -- set bridge br1 datapath-type=dummy], [], [],
+     [m4_if([$1], [(consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,1,1,1,1"], [$1], [(non-consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,8,8,8,8"], [])])
+   add_pmd_of_ports br0 1 2
+   add_of_ports br1 3
 
-AT_CHECK([ovs-appctl dpif/show | sed 's/\(dummy-pmd: \).*)/\1<cleared>)/'], [0], [dnl
+   AT_CHECK([ovs-appctl dpif/show | sed 's/\(dummy-pmd: \).*)/\1<cleared>)/'], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
     br0 65534/100: (dummy-internal)
@@ -8137,51 +8138,58 @@ dummy@ovs-dummy: hit:0 missed:0
     br1 65534/101: (dummy-internal)
     p3 3/3: (dummy)
 ])
-OVS_VSWITCHD_STOP
-AT_CLEANUP
+   OVS_VSWITCHD_STOP
+   AT_CLEANUP])
 
-AT_SETUP([ofproto-dpif - ovs-appctl dpif/dump-flows])
-# bump max-idle to avoid the flows being reclaimed behind us
-OVS_VSWITCHD_START([add-br br1 -- \
+OFPROTO_DPIF_APPCTL_SHOW([(consecutive NUMA nodes)])
+OFPROTO_DPIF_APPCTL_SHOW([(non-consecutive NUMA nodes)])
+
+m4_define([OFPROTO_DPIF_APPCTL_DUMP_FLOWS],
+  [AT_SETUP([ofproto-dpif - ovs-appctl dpif/dump-flows $1])
+   # bump max-idle to avoid the flows being reclaimed behind us
+   OVS_VSWITCHD_START([add-br br1 -- \
                     set bridge br1 datapath-type=dummy fail-mode=secure -- \
                     set Open_vSwitch . other_config:max-idle=10000], [], [],
-                    [--dummy-numa="0,0,0,0,1,1,1,1"])
-add_of_ports br0 1
-add_pmd_of_ports br0 2
-add_of_ports br1 3
+     [m4_if([$1], [(consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,1,1,1,1"], [$1], [(non-consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,8,8,8,8"], [])])
+   add_of_ports br0 1
+   add_pmd_of_ports br0 2
+   add_of_ports br1 3
 
-AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
-AT_CHECK([ovs-appctl netdev-dummy/receive p2 'in_port(2),eth(src=50:54:00:00:00:07,dst=50:54:00:00:00:05),eth_type(0x0800),ipv4(src=192.168.0.2,dst=192.168.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=0,code=0)'])
-AT_CHECK([ovs-appctl netdev-dummy/receive p3 'in_port(3),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
-ovs-appctl revalidator/wait
-AT_CHECK([ovs-appctl dpif/dump-flows br0 | strip_ufid | strip_used | sort], [0], [dnl
+   AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+   AT_CHECK([ovs-appctl netdev-dummy/receive p2 'in_port(2),eth(src=50:54:00:00:00:07,dst=50:54:00:00:00:05),eth_type(0x0800),ipv4(src=192.168.0.2,dst=192.168.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=0,code=0)'])
+   AT_CHECK([ovs-appctl netdev-dummy/receive p3 'in_port(3),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+   ovs-appctl revalidator/wait
+   AT_CHECK([ovs-appctl dpif/dump-flows br0 | strip_ufid | strip_used | sort], [0], [dnl
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
 recirc_id(0),in_port(2),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
 ])
 
-AT_CHECK([ovs-appctl dpif/dump-flows br1 | strip_ufid | strip_used | sort], [0], [dnl
+   AT_CHECK([ovs-appctl dpif/dump-flows br1 | strip_ufid | strip_used | sort], [0], [dnl
 recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:drop
 ])
 
-AT_CHECK([ovs-appctl dpif/dump-flows -m br0 | strip_ufid | strip_used | sort], [0], [dnl
+   AT_CHECK([ovs-appctl dpif/dump-flows -m br0 | strip_ufid | strip_used | sort], [0], [dnl
 skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:05/00:00:00:00:00:00,dst=50:54:00:00:00:07/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=8/0,code=0/0), packets:0, bytes:0, used:never, actions:drop
 skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p2),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:07/00:00:00:00:00:00,dst=50:54:00:00:00:05/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=0/0,code=0/0), packets:0, bytes:0, used:never, actions:drop
 ])
 
-AT_CHECK([ovs-appctl dpif/dump-flows -m br1 | strip_ufid | strip_used | sort], [0], [dnl
+   AT_CHECK([ovs-appctl dpif/dump-flows -m br1 | strip_ufid | strip_used | sort], [0], [dnl
 skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(p3),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09/00:00:00:00:00:00,dst=50:54:00:00:00:0a/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=10.0.0.2/0.0.0.0,dst=10.0.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no),icmp(type=8/0,code=0/0), packets:0, bytes:0, used:never, actions:drop
 ])
 
-OVS_VSWITCHD_STOP
-AT_CLEANUP
+   OVS_VSWITCHD_STOP
+   AT_CLEANUP])
+
+OFPROTO_DPIF_APPCTL_DUMP_FLOWS([(consecutive NUMA nodes)])
+OFPROTO_DPIF_APPCTL_DUMP_FLOWS([(non-consecutive NUMA nodes)])
 
 m4_define([OFPROTO_DPIF_GET_FLOW],
-  [AT_SETUP([ofproto-dpif - ovs-appctl dpif/get-flow$1])
+  [AT_SETUP([ofproto-dpif - ovs-appctl dpif/get-flow$1 $2])
 
    OVS_VSWITCHD_START([add-br br1 -- \
                        set bridge br1 datapath-type=dummy fail-mode=secure -- \
                        set Open_vSwitch . other_config:max-idle=10000], [], [],
-                       [m4_if([$1], [], [], [--dummy-numa="0,0,0,0,1,1,1,1"])])
+                       [m4_if([$1], [], [], [m4_if([$2], [(consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,1,1,1,1"], [$2], [(non-consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,8,8,8,8"], [])])])
 
    func=`printf '%s_' "$1" | cut -c 4-`
    add_${func}of_ports br0 1 2
@@ -8198,8 +8206,9 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), p
    OVS_VSWITCHD_STOP
    AT_CLEANUP])
 
-OFPROTO_DPIF_GET_FLOW([])
-OFPROTO_DPIF_GET_FLOW([ - pmd])
+OFPROTO_DPIF_GET_FLOW([], [])
+OFPROTO_DPIF_GET_FLOW([ - pmd], [(consecutive NUMA nodes)])
+OFPROTO_DPIF_GET_FLOW([ - pmd], [(non-consecutive NUMA nodes)])
 
 AT_SETUP([ofproto-dpif - MPLS actions that result in a userspace action])
 OVS_VSWITCHD_START([dnl
@@ -8512,8 +8521,9 @@ OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 m4_define([OFPROTO_DPIF_MEGAFLOW_NORMAL],
-  [AT_SETUP([ofproto-dpif megaflow - normal$1])
-   OVS_VSWITCHD_START([], [], [], [m4_if([$1], [], [], [--dummy-numa="0,0,0,0,1,1,1,1"])])
+  [AT_SETUP([ofproto-dpif megaflow - normal$1 $2])
+   OVS_VSWITCHD_START([], [], [], [m4_if([$1], [], [],
+     [m4_if([$1], [(consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,1,1,1,1"], [$1], [(non-consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,8,8,8,8"], [])])])
    AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
    func=`printf '%s_' "$1" | cut -c 4-`
    add_${func}of_ports br0 1 2
@@ -8528,8 +8538,9 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:
    OVS_VSWITCHD_STOP
    AT_CLEANUP])
 
-OFPROTO_DPIF_MEGAFLOW_NORMAL([])
-OFPROTO_DPIF_MEGAFLOW_NORMAL([ - pmd])
+OFPROTO_DPIF_MEGAFLOW_NORMAL([], [])
+OFPROTO_DPIF_MEGAFLOW_NORMAL([ - pmd], [(consecutive NUMA nodes)])
+OFPROTO_DPIF_MEGAFLOW_NORMAL([ - pmd], [(non-consecutive NUMA nodes)])
 
 AT_SETUP([ofproto-dpif megaflow - mpls])
 OVS_VSWITCHD_START
@@ -8587,13 +8598,15 @@ CHECK_MEGAFLOW_NETFLOW([[[::1]]], [IPv6])
 AT_CLEANUP
 
 m4_define([OFPROTO_DPIF_MEGAFLOW_NORMAL_ACB_BOND],
-  [AT_SETUP([ofproto-dpif megaflow - normal, active-backup bonding - $1])
+  [AT_SETUP([ofproto-dpif megaflow - normal, active-backup bonding - $1 $2])
    OVS_VSWITCHD_START(
      [add-port br0 p1 -- set Interface p1 type=$1 ofport_request=1 -- \
       add-bond br0 bond0 p2 p3 bond_mode=active-backup -- \
       set interface p2 type=$1 ofport_request=2 -- \
       set interface p3 type=$1 ofport_request=3], [], [],
-      [m4_if([$1], [dummy-pmd], [--dummy-numa="0,0,0,0,1,1,1,1"], [])])
+      [m4_if([$1], [dummy-pmd],
+        [m4_if([$2], [(consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,1,1,1,1"], [$2], [(non-consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,8,8,8,8"], [])],
+        [])])
    AT_CHECK([ovs-appctl netdev-dummy/set-admin-state up], 0, [OK
 ])
    AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
@@ -8609,8 +8622,9 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:
    OVS_VSWITCHD_STOP
    AT_CLEANUP])
 
-OFPROTO_DPIF_MEGAFLOW_NORMAL_ACB_BOND([dummy])
-OFPROTO_DPIF_MEGAFLOW_NORMAL_ACB_BOND([dummy-pmd])
+OFPROTO_DPIF_MEGAFLOW_NORMAL_ACB_BOND([dummy], [])
+OFPROTO_DPIF_MEGAFLOW_NORMAL_ACB_BOND([dummy-pmd], [(consecutive NUMA nodes)])
+OFPROTO_DPIF_MEGAFLOW_NORMAL_ACB_BOND([dummy-pmd], [(non-consecutive NUMA nodes)])
 
 AT_SETUP([ofproto-dpif megaflow - normal, balance-slb bonding])
 OVS_VSWITCHD_START(
@@ -8938,8 +8952,9 @@ OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 m4_define([OFPROTO_DPIF_MEGAFLOW_DISABLED],
-  [AT_SETUP([ofproto-dpif megaflow - disabled$1])
-   OVS_VSWITCHD_START([], [], [], [m4_if([$1], [], [], [--dummy-numa="0,0,0,0,1,1,1,1"])])
+  [AT_SETUP([ofproto-dpif megaflow - disabled$1 $2])
+   OVS_VSWITCHD_START([], [], [],
+     [m4_if([$1], [], [], [m4_if([$2], [(consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,1,1,1,1"], [$2], [(non-consecutive NUMA nodes)], [--dummy-numa="0,0,0,0,8,8,8,8"])])])
    AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
    func=`printf '%s_' "$1" | cut -c 4-`
    add_${func}of_ports br0 1 2
@@ -8972,8 +8987,9 @@ skb_priority(0),skb_mark(0),ct_state(0/0xff),ct_zone(0),ct_mark(0),ct_label(0),r
    OVS_VSWITCHD_STOP
    AT_CLEANUP])
 
-OFPROTO_DPIF_MEGAFLOW_DISABLED([])
-OFPROTO_DPIF_MEGAFLOW_DISABLED([ - pmd])
+OFPROTO_DPIF_MEGAFLOW_DISABLED([], [])
+OFPROTO_DPIF_MEGAFLOW_DISABLED([ - pmd], [(consecutive NUMA nodes)])
+OFPROTO_DPIF_MEGAFLOW_DISABLED([ - pmd], [(non-consecutive NUMA nodes)])
 
 AT_SETUP([ofproto-dpif - datapath port number change])
 OVS_VSWITCHD_START([set Bridge br0 fail-mode=standalone])

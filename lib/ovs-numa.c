@@ -128,8 +128,8 @@ insert_new_cpu_core(struct numa_node *n, unsigned core_id)
  * - "0,0,0,0": four cores on numa socket 0.
  * - "0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1": 16 cores on two numa sockets.
  * - "0,0,0,0,1,1,1,1": 8 cores on two numa sockets.
- *
- * The different numa ids must be consecutives or the function will abort. */
+ * - "0,0,0,0,8,8,8,8": 8 cores on two numa sockets, non-contiguous.
+ */
 static void
 discover_numa_and_core_dummy(void)
 {
@@ -166,10 +166,6 @@ discover_numa_and_core_dummy(void)
     }
 
     free(conf);
-
-    if (max_numa_id + 1 != hmap_count(&all_numa_nodes)) {
-        ovs_fatal(0, "dummy numa contains non consecutive numa ids");
-    }
 }
 
 /* Discovers all numa nodes and the corresponding cpu cores.

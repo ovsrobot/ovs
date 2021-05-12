@@ -357,83 +357,87 @@ icmp,vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,nw_src=10
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([PMD - change numa node])
-OVS_VSWITCHD_START(
-  [add-port br0 p1 -- set Interface p1 type=dummy-pmd ofport_request=1 options:n_rxq=2 -- \
-   add-port br0 p2 -- set Interface p2 type=dummy-pmd ofport_request=2 options:n_rxq=2 -- \
-   set Open_vSwitch . other_config:pmd-cpu-mask=3
-], [], [], [--dummy-numa 0,1])
-AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
+m4_define([PMD_CHANGE_NUMA_NODE],
+  [AT_SETUP([PMD - change numa node - $1])
+   OVS_VSWITCHD_START(
+     [add-port br0 p1 -- set Interface p1 type=dummy-pmd ofport_request=1 options:n_rxq=2 -- \
+      add-port br0 p2 -- set Interface p2 type=dummy-pmd ofport_request=2 options:n_rxq=2 -- \
+      set Open_vSwitch . other_config:pmd-cpu-mask=3
+], [], [], [--dummy-numa 0,$2])
+   AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
 
-AT_CHECK([ovs-ofctl add-flow br0 action=controller])
+   AT_CHECK([ovs-ofctl add-flow br0 action=controller])
 
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
 p1 0 0 0
 p1 1 0 0
 p2 0 0 0
 p2 1 0 0
 ])
 
-AT_CAPTURE_FILE([ofctl_monitor.log])
-AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
+   AT_CAPTURE_FILE([ofctl_monitor.log])
+   AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
 
-AT_CHECK([ovs-appctl netdev-dummy/receive p1 --qid 0 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+   AT_CHECK([ovs-appctl netdev-dummy/receive p1 --qid 0 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
 
-OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
-OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
+   OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
+   OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
 
-AT_CHECK([cat ofctl_monitor.log], [0], [dnl
+   AT_CHECK([cat ofctl_monitor.log], [0], [dnl
 NXT_PACKET_IN2 (xid=0x0): cookie=0x0 total_len=106 in_port=1 (via action) data_len=106 (unbuffered)
 icmp,vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,nw_src=10.0.0.2,nw_dst=10.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,icmp_type=8,icmp_code=0 icmp_csum:13fc
 ])
 
-AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
+   AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
 
-AT_CHECK([ovs-appctl netdev-dummy/receive p2 --qid 1 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+   AT_CHECK([ovs-appctl netdev-dummy/receive p2 --qid 1 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
 
-OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
-OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
+   OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
+   OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
 
-AT_CHECK([cat ofctl_monitor.log], [0], [dnl
+   AT_CHECK([cat ofctl_monitor.log], [0], [dnl
 NXT_PACKET_IN2 (xid=0x0): cookie=0x0 total_len=106 in_port=2 (via action) data_len=106 (unbuffered)
 icmp,vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,nw_src=10.0.0.2,nw_dst=10.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,icmp_type=8,icmp_code=0 icmp_csum:13fc
 ])
 
-AT_CHECK([ovs-vsctl set Interface p2 options:numa_id=1])
+   AT_CHECK([ovs-vsctl set Interface p2 options:numa_id=$2])
 
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
 p1 0 0 0
 p1 1 0 0
-p2 0 1 1
-p2 1 1 1
+p2 0 $2 1
+p2 1 $2 1
 ])
 
-AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
+   AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
 
-AT_CHECK([ovs-appctl netdev-dummy/receive p1 --qid 1 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+   AT_CHECK([ovs-appctl netdev-dummy/receive p1 --qid 1 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
 
-OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
-OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
+   OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
+   OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
 
-AT_CHECK([cat ofctl_monitor.log], [0], [dnl
+   AT_CHECK([cat ofctl_monitor.log], [0], [dnl
 NXT_PACKET_IN2 (xid=0x0): cookie=0x0 total_len=106 in_port=1 (via action) data_len=106 (unbuffered)
 icmp,vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,nw_src=10.0.0.2,nw_dst=10.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,icmp_type=8,icmp_code=0 icmp_csum:13fc
 ])
 
-AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
+   AT_CHECK([ovs-ofctl monitor br0 65534 invalid_ttl --detach --no-chdir --pidfile 2> ofctl_monitor.log])
 
-AT_CHECK([ovs-appctl netdev-dummy/receive p2 --qid 0 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
+   AT_CHECK([ovs-appctl netdev-dummy/receive p2 --qid 0 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'])
 
-OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
-OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
+   OVS_WAIT_UNTIL([test `wc -l < ofctl_monitor.log` -ge 2])
+   OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
 
-AT_CHECK([cat ofctl_monitor.log], [0], [dnl
+   AT_CHECK([cat ofctl_monitor.log], [0], [dnl
 NXT_PACKET_IN2 (xid=0x0): cookie=0x0 total_len=106 in_port=2 (via action) data_len=106 (unbuffered)
 icmp,vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,nw_src=10.0.0.2,nw_dst=10.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,icmp_type=8,icmp_code=0 icmp_csum:13fc
 ])
 
-OVS_VSWITCHD_STOP
-AT_CLEANUP
+   OVS_VSWITCHD_STOP
+   AT_CLEANUP])
+
+PMD_CHANGE_NUMA_NODE([consecutive NUMA nodes], [1])
+PMD_CHANGE_NUMA_NODE([non-consecutive NUMA nodes], [8])
 
 AT_SETUP([PMD - non pmd device])
 OVS_VSWITCHD_START(
@@ -582,61 +586,65 @@ p1 3 0 2
 OVS_VSWITCHD_STOP(["/dpif_netdev|WARN|There is no PMD thread on core/d"])
 AT_CLEANUP
 
-AT_SETUP([PMD - rxq affinity - NUMA])
-OVS_VSWITCHD_START(
-  [], [], [], [--dummy-numa 0,0,0,1,1])
-AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
+m4_define([PMD_RXQ_AFFINITY_NUMA],
+  [AT_SETUP([PMD - rxq affinity - $1])
+   OVS_VSWITCHD_START(
+     [], [], [], [--dummy-numa 0,0,0,$2,$2])
+   AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
 
-AT_CHECK([ovs-ofctl add-flow br0 actions=controller])
+   AT_CHECK([ovs-ofctl add-flow br0 actions=controller])
 
-AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=7e])
+   AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=7e])
 
-AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dummy-pmd ofport_request=1 options:n_rxq=2 options:numa_id=0 other_config:pmd-rxq-affinity="0:1,1:2"])
+   AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dummy-pmd ofport_request=1 options:n_rxq=2 options:numa_id=0 other_config:pmd-rxq-affinity="0:1,1:2"])
 
 dnl The rxqs should be on the requested cores.
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
 p1 0 0 1
 p1 1 0 2
 ])
 
-AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity="0:3,1:4"])
+   AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity="0:3,1:4"])
 
 dnl We moved the queues to different numa node. Expecting threads on
-dnl NUMA node 1 to be created.
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
-p1 0 1 3
-p1 1 1 4
+dnl the second NUMA node to be created.
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 $2 3
+p1 1 $2 4
 ])
 
-AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity="0:3,1:1"])
+   AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity="0:3,1:1"])
 
 dnl Queues splitted between NUMA nodes.
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
-p1 0 1 3
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 $2 3
 p1 1 0 1
 ])
 
-AT_CHECK([ovs-vsctl remove Interface p1 other_config pmd-rxq-affinity])
+   AT_CHECK([ovs-vsctl remove Interface p1 other_config pmd-rxq-affinity])
 
 dnl We removed the rxq-affinity request.  dpif-netdev should assign queues
 dnl in a round robin fashion.  We just make sure that every rxq is being
 dnl polled again.
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 1,2 -d ' ' | sort], [0], [dnl
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 1,2 -d ' ' | sort], [0], [dnl
 p1 0
 p1 1
 ])
 
-AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity='0:3'])
+   AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity='0:3'])
 
-dnl We explicitly requesting NUMA node 1 for queue 0.
+dnl We explicitly request the second NUMA node for queue 0.
 dnl Queue 1 should be polled by thread from NUMA node 0.
-AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 1,2,3 -d ' '], [0], [dnl
-p1 0 1
+   AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 1,2,3 -d ' '], [0], [dnl
+p1 0 $2
 p1 1 0
 ])
 
-OVS_VSWITCHD_STOP
-AT_CLEANUP
+   OVS_VSWITCHD_STOP
+   AT_CLEANUP])
+
+PMD_RXQ_AFFINITY_NUMA([consecutive NUMA nodes], [1])
+PMD_RXQ_AFFINITY_NUMA([non-consecutive NUMA nodes], [8])
 
 AT_SETUP([PMD - monitor threads])
 OVS_VSWITCHD_START(
