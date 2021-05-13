@@ -1448,7 +1448,7 @@ stream_ssl_set_ca_cert_file__(const char *file_name,
 
 /* Sets 'file_name' as the name of the file from which to read the CA
  * certificate used to verify the peer within SSL connections.  If 'bootstrap'
- * is false, the file must exist.  If 'bootstrap' is false, then the file is
+ * is false, the file must exist.  If 'bootstrap' is true, then the file is
  * read if it is exists; if it does not, then it will be created from the CA
  * certificate received from the peer on the first SSL connection. */
 void
