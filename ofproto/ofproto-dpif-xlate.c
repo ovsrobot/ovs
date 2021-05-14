@@ -396,6 +396,9 @@ struct xlate_ctx {
      * state from the datapath should be honored after thawing. */
     bool conntracked;
 
+    /* True if the current action set processed contains a ct_clear action. */
+    bool conntrack_ct_clear;
+
     /* Pointer to an embedded NAT action in a conntrack action, or NULL. */
     struct ofpact_nat *ct_nat_action;
 
@@ -7127,7 +7130,10 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_CT_CLEAR:
-            compose_ct_clear_action(ctx);
+            if (!ctx->conntrack_ct_clear) {
+                compose_ct_clear_action(ctx);
+                ctx->conntrack_ct_clear = true;
+            }
             break;
 
         case OFPACT_NAT:
@@ -7514,6 +7520,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
 
         .was_mpls = false,
         .conntracked = false,
+        .conntrack_ct_clear = false,
 
         .ct_nat_action = NULL,
 
@@ -7577,6 +7584,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         if (!state->conntracked) {
             clear_conntrack(&ctx);
         }
+        ctx.conntrack_ct_clear = false;
 
         /* Restore pipeline metadata. May change flow's in_port and other
          * metadata to the values that existed when freezing was triggered. */
