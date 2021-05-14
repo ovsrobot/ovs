@@ -4754,7 +4754,10 @@ OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([ofproto - flow monitoring with out_port])
+dnl Flow monitoring tests verified across all supported protocols
+dnl CHECK_FLOW_MONITORING(label, option, format)
+m4_define([CHECK_FLOW_MONITORING], [
+AT_SETUP([ofproto - flow monitoring with out_port - (OpenFlow $1)])
 AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
 
@@ -4763,13 +4766,13 @@ ovs-ofctl add-flow br0 in_port=0,dl_vlan=122,actions=output:1
 ovs-ofctl add-flow br0 in_port=0,dl_vlan=123,actions=output:2
 
 # Start a monitor watching the flow table and check the initial reply.
-ovs-ofctl monitor br0 watch:out_port=2 --detach --no-chdir --pidfile >monitor.log 2>&1
+ovs-ofctl -O $2 monitor br0 watch:out_port=2 --detach --no-chdir --pidfile >monitor.log 2>&1
 AT_CAPTURE_FILE([monitor.log])
 ovs-appctl -t ovs-ofctl ofctl/barrier
 AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0],
-  [NXST_FLOW_MONITOR reply:
+  [NXST_FLOW_MONITOR reply$3:
  event=ADDED table=0 cookie=0 in_port=0,dl_vlan=123 actions=output:2
-OFPT_BARRIER_REPLY:
+OFPT_BARRIER_REPLY$3:
 ])
 
 ovs-appctl -t ovs-ofctl ofctl/set-output-file monitor.log
@@ -4788,25 +4791,25 @@ ovs-ofctl mod-flows br0 dl_vlan=123,actions=output:2
 ovs-appctl -t ovs-ofctl ofctl/barrier
 
 AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0],
-[NXST_FLOW_MONITOR reply (xid=0x0):
+[NXST_FLOW_MONITOR reply$3 (xid=0x0):
  event=MODIFIED table=0 cookie=0 in_port=0,dl_vlan=122 actions=output:1,output:2
-OFPT_BARRIER_REPLY:
-NXST_FLOW_MONITOR reply (xid=0x0):
+OFPT_BARRIER_REPLY$3:
+NXST_FLOW_MONITOR reply$3 (xid=0x0):
  event=MODIFIED table=0 cookie=0 in_port=0,dl_vlan=123 actions=output:1,output:2
-OFPT_BARRIER_REPLY:
-NXST_FLOW_MONITOR reply (xid=0x0):
+OFPT_BARRIER_REPLY$3:
+NXST_FLOW_MONITOR reply$3 (xid=0x0):
  event=MODIFIED table=0 cookie=0 in_port=0,dl_vlan=122 actions=output:1
-OFPT_BARRIER_REPLY:
-NXST_FLOW_MONITOR reply (xid=0x0):
+OFPT_BARRIER_REPLY$3:
+NXST_FLOW_MONITOR reply$3 (xid=0x0):
  event=MODIFIED table=0 cookie=0 in_port=0,dl_vlan=123 actions=output:2
-OFPT_BARRIER_REPLY:
+OFPT_BARRIER_REPLY$3:
 ])
 
 OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([ofproto - flow monitoring pause and resume])
+AT_SETUP([ofproto - flow monitoring pause and resume - (OpenFlow $1)])
 AT_KEYWORDS([monitor])
 
 # The maximum socket receive buffer size is important for this test, which
@@ -4837,7 +4840,7 @@ OVS_VSWITCHD_START
 
 # Start a monitor watching the flow table, then make it block.
 on_exit 'kill `cat ovs-ofctl.pid`'
-ovs-ofctl monitor br0 watch: --detach --no-chdir --pidfile >monitor.log 2>&1
+ovs-ofctl -O $2 monitor br0 watch: --detach --no-chdir --pidfile >monitor.log 2>&1
 AT_CAPTURE_FILE([monitor.log])
 ovs-appctl -t ovs-ofctl ofctl/block
 
@@ -4891,46 +4894,58 @@ AT_CHECK([test $adds = $deletes])
 AT_CHECK([ofctl_strip < monitor.log | sed -n -e '
 /reg1=0x22$/p
 /cookie=0x[[23]]/p
-/NXT_FLOW_MONITOR_PAUSED:/p
-/NXT_FLOW_MONITOR_RESUMED:/p
+/NXT_FLOW_MONITOR_PAUSED$3:/p
+/NXT_FLOW_MONITOR_RESUMED$3:/p
 ' > monitor.log.subset])
 AT_CHECK([grep -v MODIFIED monitor.log.subset], [0], [dnl
  event=ADDED table=0 cookie=0x1 reg1=0x22
-NXT_FLOW_MONITOR_PAUSED:
+NXT_FLOW_MONITOR_PAUSED$3:
  event=DELETED reason=delete table=0 cookie=0x1 reg1=0x22
  event=ADDED table=0 cookie=0x3 in_port=1
-NXT_FLOW_MONITOR_RESUMED:
+NXT_FLOW_MONITOR_RESUMED$3:
 ])
 AT_CHECK([grep -v ADDED monitor.log.subset], [0], [dnl
-NXT_FLOW_MONITOR_PAUSED:
+NXT_FLOW_MONITOR_PAUSED$3:
  event=DELETED reason=delete table=0 cookie=0x1 reg1=0x22
  event=MODIFIED table=0 cookie=0x2 in_port=2 actions=output:2
-NXT_FLOW_MONITOR_RESUMED:
+NXT_FLOW_MONITOR_RESUMED$3:
 ])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([ofproto - flow monitoring usable protocols])
+# Test to show flow monitoring support on different OpenFlow protocols
+AT_SETUP([ofproto - flow monitoring usable protocols (OpenFlow $1)])
 AT_KEYWORDS([monitor])
 
 OVS_VSWITCHD_START
 
 on_exit 'kill `cat ovs-ofctl.pid`'
-ovs-ofctl -OOpenFlow14 monitor br0 watch:udp,udp_dst=8 --detach --no-chdir --pidfile >monitor.log 2>&1
+ovs-ofctl -O $2 monitor br0 watch:udp,udp_dst=8 --detach --no-chdir --pidfile >monitor.log 2>&1
 AT_CAPTURE_FILE([monitor.log])
 
-# ovs-ofctl should exit because monitor is not supported in OpenFlow 1.4
-OVS_WAIT_UNTIL([grep "ovs-ofctl: none of the usable flow formats (OpenFlow10,NXM) is among the allowed flow formats (OXM-OpenFlow14)" monitor.log])
+# Wait till reply comes backs with OF Version
+OVS_WAIT_UNTIL([grep "NXST_FLOW_MONITOR reply$3" monitor.log])
+ovs-appctl -t ovs-ofctl exit
 
-# check that only NXM flag is returned as usable protocols for sctp_dst
-# and ovs-ofctl should exit since monitor is not supported in OpenFlow 1.4
-ovs-ofctl -OOpenFlow14 monitor br0 watch:sctp,sctp_dst=9 --detach --no-chdir --pidfile >monitor.log 2>&1
-OVS_WAIT_UNTIL([grep "ovs-ofctl: none of the usable flow formats (NXM) is among the allowed flow formats (OXM-OpenFlow14)" monitor.log])
+# Make sure protocol type in messages from vswitchd, matches that of requested protocol
+ovs-ofctl -O $2 monitor br0 watch:sctp,sctp_dst=9 --detach --no-chdir --pidfile >monitor.log 2>&1
+ovs-ofctl add-flow br0 sctp,sctp_dst=9,action=normal
 
+OVS_WAIT_UNTIL([grep "event=ADDED " monitor.log])
+AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0], [dnl
+NXST_FLOW_MONITOR reply$3:
+NXST_FLOW_MONITOR reply$3 (xid=0x0):
+ event=ADDED table=0 cookie=0 sctp,tp_dst=9 actions=NORMAL
+])
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
-
+])
+CHECK_FLOW_MONITORING([1.0], [OpenFlow10], [])
+CHECK_FLOW_MONITORING([1.1], [OpenFlow11], [ (OF1.1)])
+CHECK_FLOW_MONITORING([1.2], [OpenFlow12], [ (OF1.2)])
+CHECK_FLOW_MONITORING([1.3], [OpenFlow13], [ (OF1.3)])
 
 AT_SETUP([ofproto - event filtering (OpenFlow 1.3)])
 AT_KEYWORDS([monitor])
