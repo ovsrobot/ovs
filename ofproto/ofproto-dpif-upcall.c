@@ -963,14 +963,20 @@ udpif_revalidator(void *arg)
 
             duration = MAX(time_msec() - start_time, 1);
             udpif->dump_duration = duration;
-            if (duration > 2000) {
-                flow_limit /= duration / 1000;
-            } else if (duration > 1300) {
-                flow_limit = flow_limit * 3 / 4;
-            } else if (duration < 1000 &&
-                       flow_limit < n_flows * 1000 / duration) {
-                flow_limit += 1000;
+
+            /* Use duration as a reference, adjust the value of flow_limit,
+             * when the duration is short, increase the flow_limit, and vice
+             * versa. The purpose of using multiple conversions between int
+             * and float is to make the flow_limit change more linear. */ 
+
+            if (duration >= 1000) {
+                flow_limit = (int) ((float) (flow_limit) / (duration / 1000.0));
+            } else if (flow_limit * (1000.0 / duration) >= UINT_MAX) {
+                flow_limit = ofproto_flow_limit;
+            } else {
+                flow_limit = (int) (flow_limit * (1000.0 / duration));
             }
+
             flow_limit = MIN(ofproto_flow_limit, MAX(flow_limit, 1000));
             atomic_store_relaxed(&udpif->flow_limit, flow_limit);
 
