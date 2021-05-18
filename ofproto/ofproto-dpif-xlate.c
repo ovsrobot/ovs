@@ -40,6 +40,7 @@
 #include "mac-learning.h"
 #include "mcast-snooping.h"
 #include "multipath.h"
+#include "netdev-offload.h"
 #include "netdev-vport.h"
 #include "netlink.h"
 #include "nx-match.h"
@@ -4840,9 +4841,12 @@ xlate_controller_action(struct xlate_ctx *ctx, int len,
                         enum ofp_packet_in_reason reason,
                         uint16_t controller_id,
                         uint32_t provider_meter_id,
-                        const uint8_t *userdata, size_t userdata_len)
+                        const uint8_t *userdata, size_t userdata_len,
+                        bool commit)
 {
-    xlate_commit_actions(ctx);
+    if (commit) {
+        xlate_commit_actions(ctx);
+    }
 
     /* A packet sent by an action in a table-miss rule is considered an
      * explicit table miss.  OpenFlow before 1.3 doesn't have that concept so
@@ -5075,10 +5079,6 @@ compose_dec_ttl(struct xlate_ctx *ctx, struct ofpact_cnt_ids *ids)
 {
     struct flow *flow = &ctx->xin->flow;
 
-    if (!is_ip_any(flow)) {
-        return false;
-    }
-
     ctx->wc->masks.nw_ttl = 0xff;
     if (flow->nw_ttl > 1) {
         flow->nw_ttl--;
@@ -5088,7 +5088,8 @@ compose_dec_ttl(struct xlate_ctx *ctx, struct ofpact_cnt_ids *ids)
 
         for (i = 0; i < ids->n_controllers; i++) {
             xlate_controller_action(ctx, UINT16_MAX, OFPR_INVALID_TTL,
-                                    ids->cnt_ids[i], UINT32_MAX, NULL, 0);
+                                    ids->cnt_ids[i], UINT32_MAX, NULL, 0,
+                                    true);
         }
 
         /* Stop processing for current table. */
@@ -5129,7 +5130,7 @@ compose_dec_nsh_ttl_action(struct xlate_ctx *ctx)
             return false;
         } else {
             xlate_controller_action(ctx, UINT16_MAX, OFPR_INVALID_TTL,
-                                    0, UINT32_MAX, NULL, 0);
+                                    0, UINT32_MAX, NULL, 0, true);
         }
     }
 
@@ -5162,7 +5163,7 @@ compose_dec_mpls_ttl_action(struct xlate_ctx *ctx)
             return false;
         } else {
             xlate_controller_action(ctx, UINT16_MAX, OFPR_INVALID_TTL, 0,
-                                    UINT32_MAX, NULL, 0);
+                                    UINT32_MAX, NULL, 0, true);
         }
     }
 
@@ -5184,6 +5185,40 @@ xlate_delete_field(struct xlate_ctx *ctx,
     ds_put_format(&s, "delete %s", odf->field->name);
     xlate_report(ctx, OFT_DETAIL, "%s", ds_cstr(&s));
     ds_destroy(&s);
+}
+
+/* New handling for dec_ttl action. */
+static bool
+xlate_dec_ttl_action(struct xlate_ctx *ctx, struct ofpact_cnt_ids *ids)
+{
+    struct flow *flow = &ctx->xin->flow;
+    size_t offset, offset_actions;
+    size_t i;
+
+    if (!is_ip_any(flow)) {
+        return false;
+    }
+
+    if (!ctx->xbridge->support.dec_ttl_action
+        || netdev_is_flow_api_enabled()) {
+        return compose_dec_ttl(ctx, ids);
+    }
+
+    xlate_commit_actions(ctx);
+    offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_DEC_TTL);
+    offset_actions = nl_msg_start_nested(ctx->odp_actions,
+                                         OVS_DEC_TTL_ATTR_ACTION);
+
+    for (i = 0; i < ids->n_controllers; i++) {
+        xlate_controller_action(ctx, UINT16_MAX, OFPR_INVALID_TTL,
+                                ids->cnt_ids[i], UINT32_MAX, NULL, 0, false);
+    }
+
+    nl_msg_end_nested(ctx->odp_actions, offset_actions);
+    nl_msg_end_nested(ctx->odp_actions, offset);
+
+    xlate_commit_actions(ctx);
+    return false;
 }
 
 /* Emits an action that outputs to 'port', within 'ctx'.
@@ -5236,7 +5271,7 @@ xlate_output_action(struct xlate_ctx *ctx, ofp_port_t port,
                                  : group_bucket_action ? OFPR_GROUP
                                  : ctx->in_action_set ? OFPR_ACTION_SET
                                  : OFPR_ACTION),
-                                0, UINT32_MAX, NULL, 0);
+                                0, UINT32_MAX, NULL, 0, true);
         break;
     case OFPP_NONE:
         break;
@@ -6797,7 +6832,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                                         controller->controller_id,
                                         controller->provider_meter_id,
                                         controller->userdata,
-                                        controller->userdata_len);
+                                        controller->userdata_len, true);
             }
             break;
 
@@ -7005,8 +7040,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_DEC_TTL:
-            wc->masks.nw_ttl = 0xff;
-            if (compose_dec_ttl(ctx, ofpact_get_DEC_TTL(a))) {
+            if (xlate_dec_ttl_action(ctx, ofpact_get_DEC_TTL(a))) {
                 return;
             }
             break;
