@@ -58,6 +58,22 @@ AC_DEFUN([OVS_ENABLE_WERROR],
    fi
    AC_SUBST([SPARSE_WERROR])])
 
+dnl OVS_ENABLE_ASAN
+AC_DEFUN([OVS_ENABLE_ASAN],
+  [AC_ARG_ENABLE(
+    [asan],
+    [AC_HELP_STRING([--enable-asan],
+                    [Enable the Address Sanitizer])],
+    [ASAN_ENABLED=yes], [ASAN_ENABLED=no])
+   AC_SUBST([ASAN_ENABLED])
+   AC_CONFIG_COMMANDS_PRE([
+     if test "$ASAN_ENABLED" = "yes"; then
+         OVS_CFLAGS="$OVS_CFLAGS -fno-omit-frame-pointer"
+         OVS_CFLAGS="$OVS_CFLAGS -fno-common -fsanitize=address"
+     fi
+   ])
+  ])
+
 dnl OVS_CHECK_LINUX
 dnl
 dnl Configure linux kernel source tree
