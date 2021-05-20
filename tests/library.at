@@ -261,6 +261,39 @@ AT_KEYWORDS([rcu])
 AT_CHECK([ovstest test-rcu], [0], [])
 AT_CLEANUP
 
+AT_SETUP([rcu quiesce use-after-free detection])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+AT_SKIP_IF([test "$ASAN_ENABLED" = "no"])
+# SIGABRT + 128
+exit_status=134
+AT_KEYWORDS([rcu asan])
+AT_CHECK([ovstest test-rcu-uaf quiesce], [$exit_status], [ignore], [ignore])
+# ASAN report is expected on success.
+rm asan.*
+AT_CLEANUP
+
+AT_SETUP([rcu try-quiesce use-after-free detection])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+AT_SKIP_IF([test "$ASAN_ENABLED" = "no"])
+# SIGABRT + 128
+exit_status=134
+AT_KEYWORDS([rcu asan])
+AT_CHECK([ovstest test-rcu-uaf try-quiesce], [$exit_status], [ignore], [ignore])
+# ASAN report is expected on success.
+rm asan.*
+AT_CLEANUP
+
+AT_SETUP([rcu quiesce-start-end use-after-free detection])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+AT_SKIP_IF([test "$ASAN_ENABLED" = "no"])
+AT_KEYWORDS([rcu asan])
+# SIGABRT + 128
+exit_status=134
+AT_CHECK([ovstest test-rcu-uaf quiesce-start-end], [$exit_status], [ignore], [ignore])
+# ASAN report is expected on success.
+rm asan.*
+AT_CLEANUP
+
 AT_SETUP([stopwatch module])
 AT_CHECK([ovstest test-stopwatch], [0], [......
 ], [ignore])
