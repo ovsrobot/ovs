@@ -155,6 +155,37 @@
  *         port_delete(id);
  *     }
  *
+ * Debugging
+ * ---------
+ *
+ * Deferred release of resources can prevent memory error detection.
+ * For example, keeping references to objects protected by RCU across quiescing
+ * periods creates a race condition.  The reference can either remain available
+ * or be released, depending on how the RCU thread is scheduled.  It can make
+ * tools such as an Address Sanitizer (ASAN) less effective.
+ *
+ * A special mode of operation is proposed making the RCU blocking.  In this
+ * mode, a user thread having postponed callbacks will wait for their
+ * execution at the end of their quiescent period.  If a reference was
+ * scheduled for release at some point, this mode will ensure that the release
+ * is executed deterministically.
+ *
+ *     1| void foo()
+ *     2| {
+ *     3|     char *var = xmalloc(1);
+ *     4|
+ *     5|     var[0] = 'a';
+ *     6|     ovsrcu_postpone(free, var);
+ *     7|     ovsrcu_quiesce();
+ *     8|     var[0] = 'b';
+ *     9| }
+ *
+ * If this mode is enabled, the user thread will stop line 7, until the RCU
+ * thread executed 'free(var)'.  If ASAN is in use, it will immediately
+ * detect the use-after-free line 8.
+ *
+ * This mode is enabled during configure by '--enable-rcu-blocking'. It should
+ * be used in conjunction with '--enable-asan'.
  */
 
 #include "compiler.h"

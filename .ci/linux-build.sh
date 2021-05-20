@@ -235,6 +235,10 @@ if [ "$ASAN" ]; then
     CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} -O1"
 fi
 
+if [ "$RCU_BLOCK" ]; then
+    EXTRA_OPTS="$EXTRA_OPTS --enable-rcu-blocking"
+fi
+
 save_OPTS="${OPTS} $*"
 OPTS="${EXTRA_OPTS} ${save_OPTS}"
 

@@ -23,6 +23,7 @@ jobs:
       M32:         ${{ matrix.m32 }}
       OPTS:        ${{ matrix.opts }}
       TESTSUITE:   ${{ matrix.testsuite }}
+      RCU_BLOCK:   ${{ matrix.rcu_blocking }}
 
     name: linux ${{ join(matrix.*, ' ') }}
     runs-on: ubuntu-18.04
@@ -108,6 +109,12 @@ jobs:
 
           - compiler:     gcc
             deb_package:  deb
+
+          - compiler:     clang
+            testsuite:    test
+            kernel:       3.16
+            asan:         asan
+            rcu_blocking: rcu-blocking
 
     steps:
     - name: checkout

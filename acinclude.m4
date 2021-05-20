@@ -1386,6 +1386,21 @@ AC_DEFUN([OVS_ENABLE_SPARSE],
      [], [enable_sparse=no])
    AM_CONDITIONAL([ENABLE_SPARSE_BY_DEFAULT], [test $enable_sparse = yes])])
 
+dnl OVS_ENABLE_RCU_BLOCKING
+AC_DEFUN([OVS_ENABLE_RCU_BLOCKING],
+  [AC_ARG_ENABLE(
+    [rcu-blocking],
+    [AC_HELP_STRING([--enable-rcu-blocking],
+                    [Enable the blocking RCU mode])],
+    [RCU_BLOCKING=yes], [RCU_BLOCKING=no])
+   AC_SUBST([RCU_BLOCKING])
+   AC_CONFIG_COMMANDS_PRE([
+     if test "$RCU_BLOCKING" = "yes"; then
+         OVS_CFLAGS="$OVS_CFLAGS -DOVS_RCU_BLOCKING=1"
+     fi
+   ])
+  ])
+
 dnl OVS_CTAGS_IDENTIFIERS
 dnl
 dnl ctags ignores symbols with extras identifiers. This is a list of

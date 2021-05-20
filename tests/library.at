@@ -264,6 +264,7 @@ AT_CLEANUP
 AT_SETUP([rcu quiesce use-after-free detection])
 AT_SKIP_IF([test "$IS_WIN32" = "yes"])
 AT_SKIP_IF([test "$ASAN_ENABLED" = "no"])
+AT_SKIP_IF([test "$RCU_BLOCKING" = "no"])
 # SIGABRT + 128
 exit_status=134
 AT_KEYWORDS([rcu asan])
@@ -275,6 +276,7 @@ AT_CLEANUP
 AT_SETUP([rcu try-quiesce use-after-free detection])
 AT_SKIP_IF([test "$IS_WIN32" = "yes"])
 AT_SKIP_IF([test "$ASAN_ENABLED" = "no"])
+AT_SKIP_IF([test "$RCU_BLOCKING" = "no"])
 # SIGABRT + 128
 exit_status=134
 AT_KEYWORDS([rcu asan])
@@ -286,6 +288,7 @@ AT_CLEANUP
 AT_SETUP([rcu quiesce-start-end use-after-free detection])
 AT_SKIP_IF([test "$IS_WIN32" = "yes"])
 AT_SKIP_IF([test "$ASAN_ENABLED" = "no"])
+AT_SKIP_IF([test "$RCU_BLOCKING" = "no"])
 AT_KEYWORDS([rcu asan])
 # SIGABRT + 128
 exit_status=134

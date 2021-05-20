@@ -4,6 +4,7 @@ OPENSSL_SUPPORTS_SNI='@OPENSSL_SUPPORTS_SNI@'
 HAVE_UNBOUND='@HAVE_UNBOUND@'
 EGREP='@EGREP@'
 PYTHON3='@PYTHON3@'
+RCU_BLOCKING='@RCU_BLOCKING@'
 
 # PYTHONCOERCECLOCALE=0 disables the Unicode compatibility warning on
 # stderr that breaks almost any Python3 test (PEP 0538)

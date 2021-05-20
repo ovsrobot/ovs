@@ -71,6 +71,84 @@ static void ovsrcu_unregister__(struct ovsrcu_perthread *);
 static bool ovsrcu_call_postponed(void);
 static void *ovsrcu_postpone_thread(void *arg OVS_UNUSED);
 
+#ifdef OVS_RCU_BLOCKING
+
+static struct seq *postpone_wait;
+DEFINE_STATIC_PER_THREAD_DATA(bool, need_wait, false);
+DEFINE_STATIC_PER_THREAD_DATA(uint64_t, quiescent_seqno, 0);
+
+static void
+ovsrcu_postpone_end(void)
+{
+    if (single_threaded()) {
+        return;
+    }
+    seq_change(postpone_wait);
+}
+
+static bool
+ovsrcu_do_not_block(void)
+{
+    /* Do not wait on the postpone thread if it has been cleared for exit. */
+    return single_threaded() ||
+           (strncmp(get_subprogram_name(), "urcu", strlen("urcu")) == 0) ||
+           latch_is_set(&postpone_exit);
+}
+
+static void
+ovsrcu_postpone_wait_enable(bool seq_locked)
+{
+    if (ovsrcu_do_not_block()) {
+        return;
+    }
+
+    *quiescent_seqno_get() = seq_locked ?
+                             seq_read_protected(postpone_wait) :
+                             seq_read(postpone_wait);
+    *need_wait_get() = true;
+}
+
+static void
+ovsrcu_postpone_wait(void)
+{
+    struct ovsrcu_perthread *perthread;
+
+    if (ovsrcu_do_not_block() || !*need_wait_get()) {
+        return;
+    }
+
+    *need_wait_get() = false;
+
+    /* Unregistering the potential current perthread ensures
+     * this thread is seen as quiescent.
+     *
+     * It is safe to call, as any path taken to reach this function will
+     * have flushed this thread cbset already.
+     */
+    perthread = pthread_getspecific(perthread_key);
+    if (perthread) {
+        ovs_assert(perthread->cbset == NULL);
+        pthread_setspecific(perthread_key, NULL);
+        ovsrcu_unregister__(perthread);
+    }
+
+    /* Flush pollable events to ensure only the RCU wait will
+     * wake the thread. */
+    poll_immediate_wake();
+    poll_block();
+
+    seq_wait(postpone_wait, *quiescent_seqno_get());
+    poll_block();
+}
+
+#else
+
+#define ovsrcu_postpone_end() do { } while (0)
+#define ovsrcu_postpone_wait_enable(b) do { } while (0)
+#define ovsrcu_postpone_wait() do { } while (0)
+
+#endif /* OVS_RCU_BLOCKING */
+
 static struct ovsrcu_perthread *
 ovsrcu_perthread_get(void)
 {
@@ -122,6 +200,7 @@ ovsrcu_quiesced(void)
             ovsthread_once_done(&once);
         }
     }
+    ovsrcu_postpone_wait();
 }
 
 /* Indicates the beginning of a quiescent state.  See "Details" near the top of
@@ -154,6 +233,7 @@ ovsrcu_quiesce(void)
     perthread = ovsrcu_perthread_get();
     perthread->seqno = seq_read(global_seqno);
     if (perthread->cbset) {
+        ovsrcu_postpone_wait_enable(false);
         ovsrcu_flush_cbset(perthread);
     }
     seq_change(global_seqno);
@@ -172,6 +252,7 @@ ovsrcu_try_quiesce(void)
     if (!seq_try_lock()) {
         perthread->seqno = seq_read_protected(global_seqno);
         if (perthread->cbset) {
+            ovsrcu_postpone_wait_enable(true);
             ovsrcu_flush_cbset__(perthread, true);
         }
         seq_change_protected(global_seqno);
@@ -349,6 +430,8 @@ ovsrcu_call_postponed(void)
         free(cbset);
     }
 
+    ovsrcu_postpone_end();
+
     return true;
 }
 
@@ -397,6 +480,7 @@ static void
 ovsrcu_unregister__(struct ovsrcu_perthread *perthread)
 {
     if (perthread->cbset) {
+        ovsrcu_postpone_wait_enable(false);
         ovsrcu_flush_cbset(perthread);
     }
 
@@ -432,6 +516,9 @@ ovsrcu_init_module(void)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     if (ovsthread_once_start(&once)) {
+#ifdef OVS_RCU_BLOCKING
+        postpone_wait = seq_create();
+#endif
         global_seqno = seq_create();
         xpthread_key_create(&perthread_key, ovsrcu_thread_exit_cb);
         fatal_signal_add_hook(ovsrcu_cancel_thread_exit_cb, NULL, NULL, true);
