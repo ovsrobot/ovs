@@ -251,8 +251,14 @@ AT_KEYWORDS([barrier])
 AT_CHECK([ovstest test-barrier], [0], [])
 AT_CLEANUP
 
-AT_SETUP([rcu])
+AT_SETUP([rcu quiescing])
+AT_KEYWORDS([rcu])
 AT_CHECK([ovstest test-rcu-quiesce], [0], [])
+AT_CLEANUP
+
+AT_SETUP([rcu postponing])
+AT_KEYWORDS([rcu])
+AT_CHECK([ovstest test-rcu], [0], [])
 AT_CLEANUP
 
 AT_SETUP([stopwatch module])
