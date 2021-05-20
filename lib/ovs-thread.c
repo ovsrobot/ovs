@@ -180,8 +180,6 @@ XPTHREAD_FUNC1(pthread_cond_destroy, pthread_cond_t *);
 XPTHREAD_FUNC1(pthread_cond_signal, pthread_cond_t *);
 XPTHREAD_FUNC1(pthread_cond_broadcast, pthread_cond_t *);
 
-XPTHREAD_FUNC2(pthread_join, pthread_t, void **);
-
 typedef void destructor_func(void *);
 XPTHREAD_FUNC2(pthread_key_create, pthread_key_t *, destructor_func *);
 XPTHREAD_FUNC1(pthread_key_delete, pthread_key_t);
@@ -190,6 +188,20 @@ XPTHREAD_FUNC2(pthread_setspecific, pthread_key_t, const void *);
 #ifndef _WIN32
 XPTHREAD_FUNC3(pthread_sigmask, int, const sigset_t *, sigset_t *);
 #endif
+
+void
+xpthread_join(pthread_t thread, void **retval)
+{
+    int error;
+
+    ovsrcu_quiesce_start();
+    error = pthread_join(thread, retval);
+    ovsrcu_quiesce_end();
+
+    if (OVS_UNLIKELY(error)) {
+        ovs_abort(error, "%s failed", __func__);
+    }
+}
 
 static void
 ovs_mutex_init__(const struct ovs_mutex *l_, int type)
