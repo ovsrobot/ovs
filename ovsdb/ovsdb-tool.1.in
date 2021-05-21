@@ -25,6 +25,8 @@ ovsdb\-tool \- Open vSwitch database management utility
 .br
 \fBovsdb\-tool \fR[\fIoptions\fR] \fBdb\-cksum \fR[\fIdb\fR]
 .br
+\fBovsdb\-tool \fR[\fIoptions\fR] \fBdb\-set\-election\-timer \fR[\fIdb\fR] \fR[\fIms\fR]
+.br
 \fBovsdb\-tool \fR[\fIoptions\fR] \fBschema\-cksum \fR[\fIschema\fR]
 .br
 \fBovsdb\-tool \fR[\fIoptions\fR] \fBcompare-versions\fI a op b\fR
@@ -220,6 +222,16 @@ will print a blank line.
 The \fBdb\-cksum\fR command is for standalone and active-backup
 databases only.  For clustered databases, use \fBovsdb\-client\fR's
 \fBschema\-cksum\fR command instead.
+.
+.IP "\fBdb\-set\-election\-timer \fR[\fIdb\fR] \fR[\fIms\fR]"
+Sets the leader election timeout base value for a newly created clustered
+database \fIdb\fR.
+.IP
+Leader election will be initiated by a follower if there is no heartbeat
+received from the leader within this time plus a random time within 1 second.
+.IP
+The default value is 1000, if not changed with this command.  The value must be
+between 100ms and 600000ms (10 minutes) inclusive.
 .
 .IP "\fBcompare-versions\fI a op b\fR"
 Compares \fIa\fR and \fIb\fR according to \fIop\fR.  Both \fIa\fR and

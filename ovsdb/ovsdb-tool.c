@@ -167,6 +167,8 @@ usage(void)
            "  db-local-address DB     report local address of clustered DB\n"
            "  db-is-clustered DB      test whether DB is clustered\n"
            "  db-is-standalone DB     test whether DB is standalone\n"
+           "  db-set-election_timer DB ms  sets the leader election timer for\n"
+           "      newly created clustered database DB to ms milliseconds\n"
            "  schema-name [SCHEMA]    report SCHEMA's name\n"
            "  schema-version [SCHEMA] report SCHEMA's schema version\n"
            "  schema-cksum [SCHEMA]   report SCHEMA's checksum\n"
@@ -582,6 +584,68 @@ static void
 do_db_is_standalone(struct ovs_cmdl_context *ctx)
 {
     do_db_has_magic(ctx, OVSDB_MAGIC);
+}
+
+static void
+do_db_set_election_timer(struct ovs_cmdl_context *ctx)
+{
+    const char *db_file_name = ctx->argv[1];
+    const char *timer_ms = ctx->argv[2];
+    uint64_t election_timer = 0;
+
+    election_timer = atoll(timer_ms);
+    /* Election timer smaller than 100ms or bigger than 10min doesn't make
+     * sense. */
+    if (election_timer < 100 || election_timer > 600000) {
+        ovs_fatal(0, "election timer must be between 100 and 600000, "
+                  "in msec.");
+        return;
+    }
+
+    struct ovsdb_log *log = NULL;
+    check_ovsdb_error(ovsdb_log_open(db_file_name, RAFT_MAGIC,
+                                     OVSDB_LOG_READ_WRITE, -1, &log));
+    struct json *json = NULL;
+    check_ovsdb_error(ovsdb_log_read(log, &json));
+    if (!json) {
+        ovs_fatal(0, "failed to find first RAFT record in database.");
+        return;
+    }
+
+    /* Minimally verify the header */
+    struct ovsdb_error *error;
+    struct raft_header h;
+    error = raft_header_from_json(&h, json);
+    raft_header_uninit(&h);
+    json_destroy(json);
+    if (error) {
+        ovs_fatal(0, "failed to read RAFT header: %s",
+                  ovsdb_error_to_string(error));
+        return;
+    }
+
+    /* Ensure there is no second record yet */
+    json = NULL;
+    check_ovsdb_error(ovsdb_log_read(log, &json));
+    if (json) {
+        json_destroy(json);
+        ovs_fatal(0, "election timer can only be changed for new databases.");
+        return;
+    }
+
+    struct raft_record r = {
+        .type = RAFT_REC_ENTRY,
+        .term = 1, /* New databases always start at term 1 */
+        .entry = {
+            .index = 2, /* First log entry after header is index 2 */
+            .data = NULL,
+            .servers = NULL,
+            .election_timer = election_timer,
+            .eid = UUID_ZERO,
+        },
+    };
+    check_ovsdb_error(ovsdb_log_write_and_free(log, raft_record_to_json(&r)));
+    ovsdb_log_close(log);
 }
 
 static void
@@ -1689,6 +1753,8 @@ static const struct ovs_cmdl_command all_commands[] = {
     { "db-local-address", "db", 1, 1, do_db_local_address, OVS_RO },
     { "db-is-clustered", "db", 1, 1, do_db_is_clustered, OVS_RO },
     { "db-is-standalone", "db", 1, 1, do_db_is_standalone, OVS_RO },
+    { "db-set-election-timer", "db ms", 2, 2,
+      do_db_set_election_timer, OVS_RW },
     { "schema-name", "[schema]", 0, 1, do_schema_name, OVS_RO },
     { "schema-version", "[schema]", 0, 1, do_schema_version, OVS_RO },
     { "schema-cksum", "[schema]", 0, 1, do_schema_cksum, OVS_RO },
