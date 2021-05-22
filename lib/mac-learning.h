@@ -57,6 +57,11 @@
  * list starting from the LRU end, deleting each entry that has been idle too
  * long.
  *
+ * Fourth, a mac entry can be configured statically via API or appctl commands.
+ * Static entries are programmed to have a age of MAC_ENTRY_AGE_STATIC_ENTRY.
+ * Age of static entries will not be updated by a receiving packet as part of
+ * regular packet processing.
+ *
  * Finally, the number of MAC learning table entries has a configurable maximum
  * size to prevent memory exhaustion.  When a new entry must be inserted but
  * the table is already full, the implementation uses an eviction strategy
@@ -93,6 +98,9 @@ struct mac_learning;
 
 /* Time, in seconds, before expiring a mac_entry due to inactivity. */
 #define MAC_ENTRY_DEFAULT_IDLE_TIME 300
+
+/* Age value to represent a static entry */
+#define MAC_ENTRY_AGE_STATIC_ENTRY INT_MAX
 
 /* Time, in seconds, to lock an entry updated by a gratuitous ARP to avoid
  * relearning based on a reflection from a bond member. */
@@ -201,6 +209,9 @@ bool mac_learning_set_flood_vlans(struct mac_learning *ml,
     OVS_REQ_WRLOCK(ml->rwlock);
 void mac_learning_set_idle_time(struct mac_learning *ml,
                                 unsigned int idle_time)
+    OVS_REQ_WRLOCK(ml->rwlock);
+void mac_entry_set_idle_time(struct mac_learning *ml, struct eth_addr src,
+                             int vlan, unsigned int idle_time)
     OVS_REQ_WRLOCK(ml->rwlock);
 void mac_learning_set_max_entries(struct mac_learning *ml, size_t max_entries)
     OVS_REQ_WRLOCK(ml->rwlock);

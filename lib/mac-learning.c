@@ -35,12 +35,23 @@ COVERAGE_DEFINE(mac_learning_expired);
 COVERAGE_DEFINE(mac_learning_evicted);
 COVERAGE_DEFINE(mac_learning_moved);
 
-/* Returns the number of seconds since 'e' (within 'ml') was last learned. */
+/*
+ * This function will return age of mac entry in the fdb. It
+ * will return either one of the following:
+ *  1. Number of seconds since 'e' (within 'ml') was last learned.
+ *  2. If the mac entry is a static entry, it returns
+ *  MAC_ENTRY_AGE_STATIC_ENTRY
+ */
 int
 mac_entry_age(const struct mac_learning *ml, const struct mac_entry *e)
 {
-    time_t remaining = e->expires - time_now();
-    return ml->idle_time - remaining;
+    /* For static fdb entries, expires would be MAC_ENTRY_AGE_STATIC_ENTRY */
+    if (MAC_ENTRY_AGE_STATIC_ENTRY == e->expires) {
+        return e->expires;
+    } else {
+        time_t remaining = e->expires - time_now();
+        return ml->idle_time - remaining;
+    }
 }
 
 static uint32_t
@@ -282,6 +293,18 @@ mac_learning_set_idle_time(struct mac_learning *ml, unsigned int idle_time)
     }
 }
 
+/* Changes the MAC aging timeout of a mac_entry to 'idle_time' seconds. */
+void
+mac_entry_set_idle_time(struct mac_learning *ml, struct eth_addr mac,
+        int vlan, unsigned int idle_time)
+{
+    struct mac_entry *e;
+    e = mac_entry_lookup(ml, mac, vlan);
+    if (e) {
+        e->expires = idle_time;
+    }
+}
+
 /* Sets the maximum number of entries in 'ml' to 'max_entries', adjusting it
  * to be within a reasonable range. */
 void
@@ -336,6 +359,7 @@ mac_learning_insert(struct mac_learning *ml,
         e->vlan = vlan;
         e->grat_arp_lock = TIME_MIN;
         e->mlport = NULL;
+        e->expires = 0;
         COVERAGE_INC(mac_learning_learned);
         ml->total_learned++;
     } else {
@@ -348,7 +372,10 @@ mac_learning_insert(struct mac_learning *ml,
         ovs_list_remove(&e->port_lru_node);
         ovs_list_push_back(&e->mlport->port_lrus, &e->port_lru_node);
     }
-    e->expires = time_now() + ml->idle_time;
+    /* Do not update 'expires' for static mac entry */
+    if (e->expires != MAC_ENTRY_AGE_STATIC_ENTRY) {
+        e->expires = time_now() + ml->idle_time;
+    }
 
     return e;
 }
@@ -378,8 +405,14 @@ is_mac_learning_update_needed(const struct mac_learning *ml,
     }
 
     mac = mac_learning_lookup(ml, src, vlan);
-    if (!mac || mac_entry_age(ml, mac)) {
+    /* If mac entry is missing it needs to be added to fdb */
+    if (!mac) {
         return true;
+    }
+
+    /* if mac is a static entry, then there is no need to update */
+    if (mac_entry_age(ml, mac) == MAC_ENTRY_AGE_STATIC_ENTRY) {
+        return false;
     }
 
     if (is_gratuitous_arp) {
@@ -513,13 +546,23 @@ mac_learning_expire(struct mac_learning *ml, struct mac_entry *e)
     free(e);
 }
 
-/* Expires all the mac-learning entries in 'ml'. */
+/* Expires all the dynamic mac-learning entries in 'ml'. */
 void
 mac_learning_flush(struct mac_learning *ml)
 {
-    struct mac_entry *e;
-    while (get_lru(ml, &e)){
-        mac_learning_expire(ml, e);
+    struct mac_entry *e, *first_static_mac = NULL;
+
+    while (get_lru(ml, &e) && (e != first_static_mac)) {
+        /* static-mac should not be evicted */
+        if (MAC_ENTRY_AGE_STATIC_ENTRY == e->expires) {
+            /* Make note of first static-mac encountered, so that this while
+             * loop will break on visting this mac again via get_lru() */
+            if (!first_static_mac) {
+                first_static_mac = e;
+            }
+        } else {
+            mac_learning_expire(ml, e);
+        }
     }
     hmap_shrink(&ml->table);
 }

@@ -5852,15 +5852,91 @@ ofproto_unixctl_fdb_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
     LIST_FOR_EACH (e, lru_node, &ofproto->ml->lrus) {
         struct ofbundle *bundle = mac_entry_get_port(ofproto->ml, e);
         char name[OFP_MAX_PORT_NAME_LEN];
+        int age = mac_entry_age(ofproto->ml, e);
 
         ofputil_port_to_string(ofbundle_get_a_port(bundle)->up.ofp_port,
-                               NULL, name, sizeof name);
-        ds_put_format(&ds, "%5s  %4d  "ETH_ADDR_FMT"  %3d\n",
-                      name, e->vlan, ETH_ADDR_ARGS(e->mac),
-                      mac_entry_age(ofproto->ml, e));
+                NULL, name, sizeof name);
+        ds_put_format(&ds, "%5s  %4d  "ETH_ADDR_FMT"  ",
+                name, e->vlan, ETH_ADDR_ARGS(e->mac));
+        if (MAC_ENTRY_AGE_STATIC_ENTRY == age) {
+            ds_put_format(&ds, "static\n");
+        } else {
+            ds_put_format(&ds, "%3d\n", age);
+        }
     }
     ovs_rwlock_unlock(&ofproto->ml->rwlock);
     unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
+}
+
+static void
+ofproto_unixctl_fdb_update(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                         const char *argv[], void *aux OVS_UNUSED)
+{
+    const char *br_name = argv[1];
+    const char *port_name = argv[2];
+    struct eth_addr mac;
+    uint16_t vlan = atoi(argv[3]);
+    const char *op = (const char *) aux;
+    const struct ofproto_dpif *ofproto;
+    ofp_port_t    in_port = OFPP_NONE;
+    struct ofproto_port ofproto_port;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+
+    ofproto = ofproto_dpif_lookup_by_name(br_name);
+    if (!ofproto) {
+        unixctl_command_reply_error(conn, "no such bridge");
+        return;
+    }
+
+    if (!eth_addr_from_string(argv[4], &mac)) {
+        unixctl_command_reply_error(conn, "bad MAC address");
+        return;
+    }
+
+    if (ofproto_port_query_by_name(&ofproto->up, port_name, &ofproto_port)) {
+        unixctl_command_reply_error(conn,
+                "software error, odp port is present but no ofp port");
+        return;
+    }
+    in_port = ofproto_port.ofp_port;
+    ofproto_port_destroy(&ofproto_port);
+
+    if (!strcmp(op, "add")) {
+        /* Give a bit more information if the entry being added is overriding
+         * an existing entry */
+        const struct mac_entry *mac_entry;
+        const struct ofbundle *bundle = NULL;
+        int age;
+
+        ovs_rwlock_rdlock(&ofproto->ml->rwlock);
+        mac_entry = mac_learning_lookup(ofproto->ml, mac, vlan);
+        if (mac_entry) {
+            bundle = mac_entry ?
+                mac_entry_get_port(ofproto->ml, mac_entry) : NULL;
+            age = mac_entry->expires;
+        }
+        ovs_rwlock_unlock(&ofproto->ml->rwlock);
+
+        if (bundle && ((strcmp(bundle->name, port_name)) ||
+                    (age != MAC_ENTRY_AGE_STATIC_ENTRY))) {
+            char old_port_name[OFP_MAX_PORT_NAME_LEN];
+
+            ofputil_port_to_string(ofbundle_get_a_port(bundle)->up.ofp_port,
+                    NULL, old_port_name, sizeof old_port_name);
+            ds_put_format(&ds, "Overriding already existing %s entry on %s\n",
+                    (age == MAC_ENTRY_AGE_STATIC_ENTRY) ? "static" : "dynamic",
+                    old_port_name);
+        }
+
+        xlate_add_static_mac_entry(ofproto, in_port, mac, vlan);
+        unixctl_command_reply(conn, ds_cstr(&ds));
+    } else if (!strcmp(op, "del")) {
+        xlate_delete_static_mac_entry(ofproto, mac, vlan);
+        unixctl_command_reply(conn, NULL);
+    } else {
+        unixctl_command_reply_error(conn, "software error, unknown op");
+    }
     ds_destroy(&ds);
 }
 
@@ -6415,6 +6491,10 @@ ofproto_unixctl_init(void)
     }
     registered = true;
 
+    unixctl_command_register("fdb/add", "[bridge port vlan mac]", 4, 4,
+                             ofproto_unixctl_fdb_update, "add");
+    unixctl_command_register("fdb/del", "[bridge port vlan mac]", 4, 4,
+                             ofproto_unixctl_fdb_update, "del");
     unixctl_command_register("fdb/flush", "[bridge]", 0, 1,
                              ofproto_unixctl_fdb_flush, NULL);
     unixctl_command_register("fdb/show", "bridge", 1, 1,
