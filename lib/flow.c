@@ -1085,11 +1085,14 @@ parse_dl_type(const void **datap, size_t *sizep)
 
 /* Parses and return the TCP flags in 'packet', converted to host byte order.
  * If 'packet' is not an Ethernet packet embedding TCP, returns 0.
+ * 'dl_type_p' will be set only if 'packet' is an Ethernet packet.
+ * 'nw_frag_p' will be set only if 'packet' is an IP packet.
  *
  * The caller must ensure that 'packet' is at least ETH_HEADER_LEN bytes
  * long.'*/
 uint16_t
-parse_tcp_flags(struct dp_packet *packet)
+parse_tcp_flags(struct dp_packet *packet,
+                ovs_be16 *dl_type_p, uint8_t *nw_frag_p)
 {
     const void *data = dp_packet_data(packet);
     const char *frame = (const char *)data;
@@ -1104,6 +1107,9 @@ parse_tcp_flags(struct dp_packet *packet)
     dp_packet_reset_offsets(packet);
 
     dl_type = parse_dl_type(&data, &size);
+    if (dl_type_p) {
+        *dl_type_p = dl_type;
+    }
     if (OVS_UNLIKELY(eth_type_mpls(dl_type))) {
         packet->l2_5_ofs = (char *)data - frame;
     }
@@ -1142,6 +1148,10 @@ parse_tcp_flags(struct dp_packet *packet)
         }
     } else {
         return 0;
+    }
+
+    if (nw_frag_p) {
+        *nw_frag_p = nw_frag;
     }
 
     packet->l4_ofs = (uint16_t)((char *)data - frame);
