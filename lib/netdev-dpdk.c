@@ -48,6 +48,7 @@
 #include "fatal-signal.h"
 #include "if-notifier.h"
 #include "netdev-provider.h"
+#include "netdev-dpdk-mirror.h"
 #include "netdev-vport.h"
 #include "odp-util.h"
 #include "openvswitch/dynamic-string.h"
@@ -170,6 +171,15 @@ static const struct rte_eth_conf port_conf = {
         .mq_mode = ETH_MQ_TX_NONE,
     },
 };
+
+struct mirror_tunnel_port_info {
+    uint16_t port_id;
+    rte_spinlock_t *locks;
+    uint32_t share_count;
+    uint32_t num_queue;
+    bool port_started;
+    struct mirror_tunnel_port_info *next;
+} *mirror_tunnel_head = NULL;
 
 /*
  * These callbacks allow virtio-net devices to be added to vhost ports when
@@ -443,6 +453,8 @@ struct netdev_dpdk {
         };
         struct dpdk_tx_queue *tx_q;
         struct rte_eth_link link;
+        mirror_fn_cb *rx_cb; /* shared pointer */
+        mirror_fn_cb *tx_cb;
     );
 
     PADDED_MEMBERS_CACHELINE_MARKER(CACHE_LINE_SIZE, cacheline1,
@@ -2417,6 +2429,13 @@ netdev_dpdk_vhost_rxq_recv(struct netdev_rxq *rxq,
     nb_rx = rte_vhost_dequeue_burst(vid, qid, dev->dpdk_mp->mp,
                                     (struct rte_mbuf **) batch->packets,
                                     NETDEV_MAX_BURST);
+
+    if (dev->rx_cb && dev->rx_cb[qid].direct->fn.rx) {
+        dev->rx_cb[qid].direct->fn.rx((uint16_t) vid, qid,
+        (struct rte_mbuf **) batch->packets, nb_rx,
+        NETDEV_MAX_BURST, dev->rx_cb[qid].direct->param);
+    }
+
     if (!nb_rx) {
         return EAGAIN;
     }
@@ -2634,6 +2653,10 @@ __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
         int vhost_qid = qid * VIRTIO_QNUM + VIRTIO_RXQ;
         unsigned int tx_pkts;
 
+        if (dev->tx_cb && dev->tx_cb[qid].direct->fn.tx) {
+            dev->tx_cb[qid].direct->fn.tx((uint16_t) vid, qid, cur_pkts, cnt,
+                dev->tx_cb[qid].direct->param);
+        }
         tx_pkts = rte_vhost_enqueue_burst(vid, vhost_qid, cur_pkts, cnt);
         if (OVS_LIKELY(tx_pkts)) {
             /* Packets have been sent.*/
@@ -5291,6 +5314,375 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
     return ret;
 }
 
+/*
+ * mirror tunnel device management routines
+ * mirror tunnel devices are devices reserved solely for
+ * traffic mirroring
+ */
+static void
+netdev_dpdk_update_mt_list(struct mirror_tunnel_port_info *mt_port_info,
+                           bool add_port)
+{
+    struct mirror_tunnel_port_info *ptr = mirror_tunnel_head;
+
+    if (add_port) {
+        if (!ptr) {
+            mirror_tunnel_head = mt_port_info;
+            return;
+        }
+        while (ptr->next) {
+            ptr = ptr->next;
+        }
+        ptr->next = mt_port_info;
+    } else {
+        while (ptr->next &&
+            ptr->next->port_id != mt_port_info->port_id) {
+            ptr = ptr->next;
+        }
+
+        if (ptr->next) {
+            ptr->next = ptr->next->next;
+            free(mt_port_info);
+        } else {
+            if (ptr->port_id == mt_port_info->port_id) {
+                mirror_tunnel_head = NULL;
+                free(mt_port_info);
+            } else {
+                VLOG_ERR("Fail to find %s mirror port (%d) info\n",
+                 add_port?"add":"remove", mt_port_info->port_id);
+            }
+        }
+    }
+}
+
+static struct mirror_tunnel_port_info*
+netdev_dpdk_get_mt_port_info(uint16_t port_id)
+{
+    struct mirror_tunnel_port_info *mt_port_info;
+
+    if (mirror_tunnel_head) {
+        mt_port_info = mirror_tunnel_head;
+        while (mt_port_info) {
+            if (mt_port_info->port_id == port_id)
+                return mt_port_info;
+            mt_port_info = mt_port_info->next;
+        }
+        VLOG_ERR("Could not tunnel port with port-id %d\n",
+            port_id);
+    }
+
+    mt_port_info = xmalloc(sizeof(struct mirror_tunnel_port_info));
+    memset(mt_port_info, 0, sizeof(*mt_port_info));
+    mt_port_info->port_id = port_id;
+    mt_port_info->next = NULL;
+
+    return mt_port_info;
+}
+
+static int
+netdev_dpdk_addr_to_portid(const char *pci_addr_str, uint16_t *port_id)
+{
+    struct rte_pci_device *pci_dev;
+    struct rte_pci_addr pci_addr;
+    int i;
+
+    if (rte_pci_addr_parse(pci_addr_str, &pci_addr)) {
+        VLOG_ERR("Incorrect pci address %s\n", pci_addr_str);
+        return -1;
+    }
+
+    for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
+        struct rte_pci_addr *eth_pci_addr;
+
+        if (!rte_eth_devices[i].device) {
+            continue;
+        }
+
+        pci_dev = RTE_ETH_DEV_TO_PCI(&rte_eth_devices[i]);
+        if (!pci_dev) {
+            continue;
+        }
+
+        eth_pci_addr = &pci_dev->addr;
+
+        if (pci_addr.bus == eth_pci_addr->bus &&
+            pci_addr.devid == eth_pci_addr->devid &&
+            pci_addr.domain == eth_pci_addr->domain &&
+            pci_addr.function == eth_pci_addr->function) {
+            *port_id = i;
+
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static int
+netdev_dpdk_mt_open(uint16_t port_id, struct mirror_param *param)
+{
+    struct rte_eth_dev_info dev_info;
+    struct rte_eth_txconf txq_conf;
+    struct rte_eth_rxconf rxq_conf;
+    struct rte_mempool *pktbuf;
+
+    struct mirror_tunnel_port_info *mt_info;
+
+    uint16_t nb_rxd = NIC_PORT_DEFAULT_RXQ_SIZE;
+    uint16_t nb_txd = NIC_PORT_DEFAULT_TXQ_SIZE;
+    unsigned int i, num_queue;
+
+    struct rte_eth_conf mt_port_conf = {
+        .rxmode = {
+            .split_hdr_size = 0,
+        },
+        .txmode = {
+            .mq_mode = ETH_MQ_TX_NONE,
+        },
+    };
+
+    mt_info = netdev_dpdk_get_mt_port_info(port_id);
+    if (!mt_info) {
+        return -1;
+    }
+
+    if (mt_info->port_started) {
+        param->n_dst_queue = mt_info->num_queue;
+        param->dst_port_id = port_id;
+        param->locks = mt_info->locks;
+        mt_info->share_count++;
+
+        return 0;
+    }
+
+    rte_eth_dev_info_get(port_id, &dev_info);
+    num_queue = param->n_src_queue;
+
+    /* A tunnel device doesn't require mbuf. It's used as
+     * hardware channel, transmit packets with
+     * mbuf provided by source. Need this mbuf creation
+     * to finish port initialization
+     */
+    pktbuf = rte_pktmbuf_pool_create(
+            "tunnel-port",
+            (dev_info.rx_desc_lim.nb_max + dev_info.tx_desc_lim.nb_max),
+            RTE_MEMPOOL_CACHE_MAX_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+            rte_eth_dev_socket_id(port_id));
+
+    mt_port_conf.txmode.offloads |= DEV_TX_OFFLOAD_VLAN_INSERT;
+    if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE) {
+        mt_port_conf.txmode.offloads |= DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+    }
+    rte_eth_dev_configure(port_id, 1, num_queue, &mt_port_conf);
+
+    /* init one Rx queue */
+    rxq_conf = dev_info.default_rxconf;
+    rxq_conf.offloads = mt_port_conf.rxmode.offloads;
+    if (rte_eth_rx_queue_setup(port_id, 0, nb_rxd,
+        rte_eth_dev_socket_id(port_id), &rxq_conf, pktbuf) < 0)
+        VLOG_ERR("fail to setup tunnel port (%d) rx-queue\n", port_id);
+
+    /* init # of Tx queue as part of mirror-tunnel setup */
+    txq_conf = dev_info.default_txconf;
+    txq_conf.offloads |= mt_port_conf.txmode.offloads;
+    for (i = 0; i < num_queue; i++) {
+        if (rte_eth_tx_queue_setup(port_id,
+            i, nb_txd,
+            rte_eth_dev_socket_id(port_id),
+            &txq_conf) < 0) {
+            VLOG_ERR("fail to setup tunnel port (%d) tx queue #%u\n",
+                port_id, i);
+            return -1;
+        }
+    }
+
+    if (rte_eth_dev_start(port_id) < 0) {
+        VLOG_ERR("fail to start tunnel port %d\n", port_id);
+        return -1;
+    }
+
+    mt_info->locks = xmalloc(num_queue * sizeof(rte_spinlock_t));
+    if (mt_info->locks) {
+        for (i = 0; i < mt_info->num_queue; i++) {
+            rte_spinlock_init(&mt_info->locks[i]);
+        }
+    } else {
+        return -1;
+    }
+    mt_info->share_count = 1;
+    mt_info->port_started = true;
+    mt_info->num_queue = num_queue;
+
+    param->n_dst_queue = mt_info->num_queue;
+    param->dst_port_id = port_id;
+    param->locks = mt_info->locks;
+
+    netdev_dpdk_update_mt_list(mt_info, true);
+    return 0;
+}
+
+static void
+netdev_dpdk_mt_close(uint16_t mirror_port_id)
+{
+    struct mirror_tunnel_port_info *mt_port_info =
+        netdev_dpdk_get_mt_port_info(mirror_port_id);
+        
+    if (mt_port_info) {
+        mt_port_info->share_count--;
+        if (!mt_port_info->share_count) {
+            netdev_dpdk_update_mt_list(mt_port_info, false);
+            rte_eth_dev_stop(mirror_port_id);
+            rte_eth_dev_close(mirror_port_id);
+        }
+    }
+}
+
+/* vhost device mirror registration and un-registration routines */
+static int
+netdev_vhost_register_mirror(struct netdev_dpdk *dev,
+    struct mirror_param *param, int tx_cb)
+{
+    uint32_t vid = netdev_dpdk_get_vid(dev);
+    struct mirror_offload_port *port_info = NULL;
+    struct mirror_param *data;
+
+    netdev_mirror_data_proc(vid, mirror_data_add, tx_cb, param, &port_info);
+    if(!port_info) {
+        return -1;
+    }
+
+    data = tx_cb ? &port_info->tx : &port_info->rx;
+    netdev_mirror_cb_set(data, (uint16_t)vid, 0, tx_cb);
+
+    if (tx_cb) {
+        dev->tx_cb = data->mirror_cb;
+    } else {
+        dev->rx_cb = data->mirror_cb;
+    }
+
+    return 0;
+}
+
+static int
+netdev_vhost_unregister_mirror(struct netdev_dpdk *dev, int tx_cb)
+{
+    /* release both cb and pkt_buf */
+    unsigned int i;
+    uint32_t vid = netdev_dpdk_get_vid(dev);
+    struct mirror_offload_port *port_info = NULL;
+    struct mirror_param *data;
+
+    netdev_mirror_data_proc(vid, mirror_data_find, tx_cb, NULL, &port_info);
+    if (port_info == NULL) {
+        VLOG_ERR("Source port %d is not on outstanding port mirror db\n", vid);
+        return -1;
+    }
+    data = tx_cb ? &port_info->tx : &port_info->rx;
+
+    if (tx_cb) {
+        dev->tx_cb = NULL;
+    } else {
+        dev->rx_cb = NULL;
+    }
+
+    for (i = 0; i < data->n_src_queue; i++) {
+        free(data->mirror_cb[i].direct);
+    }
+
+    free(data->mirror_cb);
+
+    if (data->pkt_buf) {
+        free(data->pkt_buf);
+        data->pkt_buf = NULL;
+    }
+
+    if (data->extra_data) {
+        free(data->extra_data);
+        data->extra_data = NULL;
+        data->extra_data_size = 0;
+    }
+
+    netdev_mirror_data_proc(vid,  mirror_data_rem, tx_cb, NULL, NULL);
+    return 0;
+}
+
+static int
+netdev_dpdk_mirror_offload(struct netdev *src, struct eth_addr *flow_addr,
+                           uint16_t vlan_id, char *mirror_tunnel_addr,
+                           bool add_mirror, bool tx_cb) {
+    struct netdev_dpdk *src_dev = netdev_dpdk_cast(src);
+    bool eth_dev = src_dev->type == DPDK_DEV_ETH;
+    uint16_t mirror_port_id;
+    int status = 0;
+
+    if (netdev_dpdk_addr_to_portid(mirror_tunnel_addr, &mirror_port_id)) {
+        VLOG_ERR("Could not find tunnel port with BDF addr %s\n",
+            mirror_tunnel_addr);
+        return -1;
+    }
+
+    if (add_mirror) {
+        uint32_t i;
+        struct mirror_param data;
+        uint64_t mac_addr = 0;
+
+        memset(&data, 0, sizeof(struct mirror_param));
+        data.extra_data_size = 0;
+        data.extra_data = NULL;
+        data.mirror_type = mirror_port;
+        for (i = 0; i < 6; i++) {
+            mac_addr <<= 8;
+            mac_addr |= flow_addr->ea[6 - i - 1];
+        }
+        if (mac_addr) {
+            data.mirror_type = mirror_flow_mac;
+            data.extra_data_size = sizeof(uint64_t);
+            data.extra_data = xmalloc(sizeof(uint64_t));
+            memcpy(data.extra_data, &mac_addr, sizeof(uint64_t));
+        }
+        data.dst_vlan_id = vlan_id;
+        data.n_src_queue = tx_cb?src->n_txq:src->n_rxq;
+        data.max_burst_size = NETDEV_MAX_BURST;
+
+        if (netdev_dpdk_mt_open(mirror_port_id, &data)) {
+            VLOG_ERR("Fail to initialize mirror tunnel port %d\n",
+                mirror_port_id);
+            return -1;
+        }
+
+        VLOG_INFO("register %s device with %s mirror-offload with"
+            "src-port:%d (%s) and output-port:%d (%s) vlan-id=%d flow-mac="
+            "0x%" PRIx64 "\n",
+            eth_dev?"ethdev":"vhost",
+            tx_cb?"ingress":"egress", src_dev->port_id,
+            src->name, mirror_port_id, mirror_tunnel_addr, vlan_id,
+            (uint64_t)__builtin_bswap64(mac_addr));
+
+        if (eth_dev) {
+            status = netdev_eth_register_mirror(src_dev->port_id, &data,
+                tx_cb);
+        } else {
+            status = netdev_vhost_register_mirror(src_dev, &data, tx_cb);
+        }
+    } else {
+        VLOG_INFO("unregister %s device with %s mirror-offload with"
+            " src-port:%d(%s)\n",
+            eth_dev?"ethdev":"vhost",
+            tx_cb?"ingress":"egress", src_dev->port_id,
+            src->name);
+
+        if (eth_dev) {
+            status = netdev_eth_unregister_mirror(src_dev->port_id, tx_cb);
+        } else {
+            status = netdev_vhost_unregister_mirror(src_dev, tx_cb);
+        }
+
+        netdev_dpdk_mt_close(mirror_port_id);
+    }
+
+    return status;
+}
+
 #define NETDEV_DPDK_CLASS_COMMON                            \
     .is_pmd = true,                                         \
     .alloc = netdev_dpdk_alloc,                             \
@@ -5340,6 +5732,7 @@ static const struct netdev_class dpdk_class = {
     .construct = netdev_dpdk_construct,
     .set_config = netdev_dpdk_set_config,
     .send = netdev_dpdk_eth_send,
+    .mirror_offload = netdev_dpdk_mirror_offload,
 };
 
 static const struct netdev_class dpdk_vhost_class = {
@@ -5355,6 +5748,7 @@ static const struct netdev_class dpdk_vhost_class = {
     .reconfigure = netdev_dpdk_vhost_reconfigure,
     .rxq_recv = netdev_dpdk_vhost_rxq_recv,
     .rxq_enabled = netdev_dpdk_vhost_rxq_enabled,
+    .mirror_offload = netdev_dpdk_mirror_offload,
 };
 
 static const struct netdev_class dpdk_vhost_client_class = {
@@ -5371,6 +5765,7 @@ static const struct netdev_class dpdk_vhost_client_class = {
     .reconfigure = netdev_dpdk_vhost_client_reconfigure,
     .rxq_recv = netdev_dpdk_vhost_rxq_recv,
     .rxq_enabled = netdev_dpdk_vhost_rxq_enabled,
+    .mirror_offload = netdev_dpdk_mirror_offload,
 };
 
 void

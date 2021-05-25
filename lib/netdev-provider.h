@@ -834,6 +834,22 @@ struct netdev_class {
     /* Get a block_id from the netdev.
      * Returns the block_id or 0 if none exists for netdev. */
     uint32_t (*get_block_id)(struct netdev *);
+
+    /* Configure a mirror offload setting on a netdev.
+     * 'src': netdev traffic to be mirrored
+     * 'flow_addr': the destination mac address is of source traffic for
+     *  inspection.
+     * 'dst': netdev where mirror traffic is transmitted.
+     * 'vlan_id': vlag to be added to the mirrored packets.
+     * 'mt_pci_addr': mirror tunnel pcie address.
+     * 'add_mirror': true: configure a mirror traffic; false: remove mirror
+     * 'ingress': true: mirror 'src' netdev Rx traffic; false: mirror
+     *  'src' netdev Tx traffic.
+     */
+    int (*mirror_offload)(struct netdev *src, struct eth_addr *flow_addr,
+                          uint16_t vlan_id, char *mt_pci_addr,
+                          bool add_mirror, bool ingress);
+
 };
 
 int netdev_register_provider(const struct netdev_class *);
