@@ -374,6 +374,7 @@ struct dp_netdev {
     struct ovs_mutex tx_qid_pool_mutex;
     /* Use measured cycles for rxq to pmd assignment. */
     enum sched_assignment_type pmd_rxq_assign_cyc;
+    bool pmd_iso;
 
     /* Protects the access of the 'struct dp_netdev_pmd_thread'
      * instance for non-pmd thread. */
@@ -4369,6 +4370,24 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         dp_netdev_request_reconfigure(dp);
     }
 
+    bool pmd_iso = smap_get_bool(other_config, "pmd-rxq-isolate", true);
+
+    if (pmd_rxq_assign_cyc != SCHED_GROUP && pmd_iso == false) {
+        /* Invalid combination*/
+        VLOG_WARN("pmd-rxq-isolate can only be set false "
+                  "when using pmd-rxq-assign=group");
+        pmd_iso = true;
+    }
+    if (dp->pmd_iso != pmd_iso) {
+        dp->pmd_iso = pmd_iso;
+        if (pmd_iso) {
+            VLOG_INFO("pmd-rxq-affinity isolates PMD core");
+        } else {
+            VLOG_INFO("pmd-rxq-affinity does not isolate PMD core");
+        }
+        dp_netdev_request_reconfigure(dp);
+    }
+
     struct pmd_auto_lb *pmd_alb = &dp->pmd_alb;
     bool cur_rebalance_requested = pmd_alb->auto_lb_requested;
     pmd_alb->auto_lb_requested = smap_get_bool(other_config, "pmd-auto-lb",
@@ -5106,7 +5125,7 @@ sched_numa_list_assignments(struct sched_numa_list *numa_list,
 
             sched_pmd = find_sched_pmd_by_pmd(numa_list, rxq->pmd);
             if (sched_pmd) {
-                if (rxq->core_id != OVS_CORE_UNSPEC) {
+                if (rxq->core_id != OVS_CORE_UNSPEC && dp->pmd_iso) {
                     sched_pmd->isolated = true;
                 }
                 sched_add_rxq_to_sched_pmd(sched_pmd, rxq, proc_cycles);
@@ -5416,6 +5435,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
                 struct sched_pmd *sched_pmd = NULL;
                 struct dp_netdev_pmd_thread *pmd;
                 struct sched_numa *numa;
+                bool iso = dp->pmd_iso;
                 uint64_t proc_cycles;
                 char rxq_cyc_log[MAX_RXQ_CYC_STRLEN];
 
@@ -5436,12 +5456,15 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
                             rxq->core_id);
                     continue;
                 }
-                /* Mark PMD as isolated if not done already. */
-                if (sched_pmd->isolated == false) {
-                    sched_pmd->isolated = true;
-                    numa = sched_numa_list_find_numa(numa_list,
-                                                     sched_pmd);
-                    numa->n_iso++;
+                /* Check if isolating PMDs with pinned rxqs.*/
+                if (iso) {
+                    /* Mark PMD as isolated if not done already. */
+                    if (sched_pmd->isolated == false) {
+                        sched_pmd->isolated = true;
+                        numa = sched_numa_list_find_numa(numa_list,
+                                                         sched_pmd);
+                        numa->n_iso++;
+                    }
                 }
                 proc_cycles = dp_netdev_rxq_get_cycles(rxq,
                                                        RXQ_CYCLES_PROC_HIST);
