@@ -305,6 +305,13 @@ struct pmd_auto_lb {
     atomic_uint8_t rebalance_load_thresh;
 };
 
+enum sched_assignment_type {
+    SCHED_ROUNDROBIN,
+    SCHED_CYCLES, /* Default.*/
+    SCHED_GROUP,
+    SCHED_MAX
+};
+
 /* Datapath based on the network device interface from netdev.h.
  *
  *
@@ -366,7 +373,7 @@ struct dp_netdev {
     struct id_pool *tx_qid_pool;
     struct ovs_mutex tx_qid_pool_mutex;
     /* Use measured cycles for rxq to pmd assignment. */
-    bool pmd_rxq_assign_cyc;
+    enum sched_assignment_type pmd_rxq_assign_cyc;
 
     /* Protects the access of the 'struct dp_netdev_pmd_thread'
      * instance for non-pmd thread. */
@@ -1798,7 +1805,7 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
     atomic_init(&dp->tx_flush_interval, DEFAULT_TX_FLUSH_INTERVAL);
 
     cmap_init(&dp->poll_threads);
-    dp->pmd_rxq_assign_cyc = true;
+    dp->pmd_rxq_assign_cyc = SCHED_CYCLES;
 
     ovs_mutex_init(&dp->tx_qid_pool_mutex);
     /* We need 1 Tx queue for each possible core + 1 for non-PMD threads. */
@@ -4222,7 +4229,7 @@ set_pmd_auto_lb(struct dp_netdev *dp, bool always_log)
 
     bool enable_alb = false;
     bool multi_rxq = false;
-    bool pmd_rxq_assign_cyc = dp->pmd_rxq_assign_cyc;
+    enum sched_assignment_type pmd_rxq_assign_cyc = dp->pmd_rxq_assign_cyc;
 
     /* Ensure that there is at least 2 non-isolated PMDs and
      * one of them is polling more than one rxq. */
@@ -4241,8 +4248,8 @@ set_pmd_auto_lb(struct dp_netdev *dp, bool always_log)
         cnt++;
     }
 
-    /* Enable auto LB if it is requested and cycle based assignment is true. */
-    enable_alb = enable_alb && pmd_rxq_assign_cyc &&
+    /* Enable auto LB if requested and not using roundrobin assignment. */
+    enable_alb = enable_alb && pmd_rxq_assign_cyc != SCHED_ROUNDROBIN &&
                     pmd_alb->auto_lb_requested;
 
     if (pmd_alb->is_enabled != enable_alb || always_log) {
@@ -4283,6 +4290,7 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
     uint8_t rebalance_load, cur_rebalance_load;
     uint8_t rebalance_improve;
     bool log_autolb = false;
+    enum sched_assignment_type pmd_rxq_assign_cyc;
 
     tx_flush_interval = smap_get_int(other_config, "tx-flush-interval",
                                      DEFAULT_TX_FLUSH_INTERVAL);
@@ -4341,11 +4349,17 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         }
     }
 
-    bool pmd_rxq_assign_cyc = !strcmp(pmd_rxq_assign, "cycles");
-    if (!pmd_rxq_assign_cyc && strcmp(pmd_rxq_assign, "roundrobin")) {
-        VLOG_WARN("Unsupported Rxq to PMD assignment mode in pmd-rxq-assign. "
-                      "Defaulting to 'cycles'.");
-        pmd_rxq_assign_cyc = true;
+    if (!strcmp(pmd_rxq_assign, "roundrobin")) {
+        pmd_rxq_assign_cyc = SCHED_ROUNDROBIN;
+    } else if (!strcmp(pmd_rxq_assign, "cycles")) {
+        pmd_rxq_assign_cyc = SCHED_CYCLES;
+    } else if (!strcmp(pmd_rxq_assign, "group")) {
+        pmd_rxq_assign_cyc = SCHED_GROUP;
+    } else {
+        /* default */
+        VLOG_WARN("Unsupported rx queue to PMD assignment mode in "
+                  "pmd-rxq-assign. Defaulting to 'cycles'.");
+        pmd_rxq_assign_cyc = SCHED_CYCLES;
         pmd_rxq_assign = "cycles";
     }
     if (dp->pmd_rxq_assign_cyc != pmd_rxq_assign_cyc) {
@@ -5170,6 +5184,63 @@ compare_rxq_cycles(const void *a, const void *b)
     }
 }
 
+static struct sched_pmd *
+get_lowest_num_rxq_pmd(struct sched_numa *numa)
+{
+    struct sched_pmd *lowest_rxqs_sched_pmd = NULL;
+    unsigned lowest_rxqs = UINT_MAX;
+
+    /* find the pmd with lowest number of rxqs */
+    for (unsigned i = 0; i < numa->n_pmds; i++) {
+        struct sched_pmd *sched_pmd;
+        unsigned num_rxqs;
+
+        sched_pmd = &numa->pmds[i];
+        num_rxqs = sched_pmd->n_rxq;
+        if (sched_pmd->isolated) {
+            continue;
+        }
+
+        /* If this current load is higher we can go to the next one */
+        if (num_rxqs > lowest_rxqs) {
+            continue;
+        }
+       if (num_rxqs < lowest_rxqs) {
+           lowest_rxqs = num_rxqs;
+           lowest_rxqs_sched_pmd = sched_pmd;
+        }
+    }
+    return lowest_rxqs_sched_pmd;
+}
+
+static struct sched_pmd *
+get_lowest_proc_pmd(struct sched_numa *numa)
+{
+    struct sched_pmd *lowest_loaded_sched_pmd = NULL;
+    uint64_t lowest_load = UINT64_MAX;
+
+    /* find the pmd with the lowest load */
+    for (unsigned i = 0; i < numa->n_pmds; i++) {
+        struct sched_pmd *sched_pmd;
+        uint64_t pmd_load;
+
+        sched_pmd = &numa->pmds[i];
+        if (sched_pmd->isolated) {
+            continue;
+        }
+        pmd_load = sched_pmd->pmd_proc_cycles;
+        /* If this current load is higher we can go to the next one */
+        if (pmd_load > lowest_load) {
+            continue;
+        }
+       if (pmd_load < lowest_load) {
+           lowest_load = pmd_load;
+           lowest_loaded_sched_pmd = sched_pmd;
+        }
+    }
+    return lowest_loaded_sched_pmd;
+}
+
 /*
  * Returns the next pmd from the numa node.
  *
@@ -5228,28 +5299,52 @@ get_available_rr_pmd(struct sched_numa *numa, bool updown)
 }
 
 static struct sched_pmd *
-get_next_pmd(struct sched_numa *numa, bool algo)
+get_next_pmd(struct sched_numa *numa, enum sched_assignment_type algo,
+             bool has_proc)
 {
-    return get_available_rr_pmd(numa, algo);
+    if (algo == SCHED_GROUP) {
+        struct sched_pmd *sched_pmd = NULL;
+
+        /* Check if the rxq has associated cycles. This is handled differently
+         * as adding an zero cycles rxq to a PMD will mean that the lowest
+         * core would not change on a subsequent call and all zero rxqs would
+         * be assigned to the same PMD. */
+        if (has_proc) {
+            sched_pmd = get_lowest_proc_pmd(numa);
+        } else {
+            sched_pmd = get_lowest_num_rxq_pmd(numa);
+        }
+        /* If there is a pmd selected, return it now. */
+        if (sched_pmd) {
+            return sched_pmd;
+        }
+    }
+
+    /* By default or as a last resort, just RR the PMDs. */
+    return get_available_rr_pmd(numa, algo == SCHED_CYCLES ? true : false);
 }
 
 static const char *
-get_assignment_type_string(bool algo)
+get_assignment_type_string(enum sched_assignment_type algo)
 {
-    if (algo == false) {
-        return "roundrobin";
+    switch (algo) {
+    case SCHED_ROUNDROBIN: return "roundrobin";
+    case SCHED_CYCLES: return "cycles";
+    case SCHED_GROUP: return "group";
+    case SCHED_MAX:
+    /* fall through */
+    default: return "Unknown";
     }
-    return "cycles";
 }
 
 #define MAX_RXQ_CYC_STRLEN (INT_STRLEN(uint64_t) + 40)
 
 static bool
-get_rxq_cyc_log(char *a, bool algo, uint64_t cycles)
+get_rxq_cyc_log(char *a, enum sched_assignment_type algo, uint64_t cycles)
 {
     int ret = 0;
 
-    if (algo) {
+    if (algo != SCHED_ROUNDROBIN) {
         ret = snprintf(a, MAX_RXQ_CYC_STRLEN,
                  " (measured processing cycles %"PRIu64").",
                  cycles);
@@ -5260,7 +5355,7 @@ get_rxq_cyc_log(char *a, bool algo, uint64_t cycles)
 static void
 sched_numa_list_schedule(struct sched_numa_list *numa_list,
                          struct dp_netdev *dp,
-                         bool algo,
+                         enum sched_assignment_type algo,
                          enum vlog_level level)
     OVS_REQUIRES(dp->port_mutex)
 {
@@ -5284,7 +5379,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
             rxqs = xrealloc(rxqs, (n_rxqs + 1) * sizeof *rxqs);
             rxqs[n_rxqs++] = rxq;
 
-            if (algo == true) {
+            if (algo != SCHED_ROUNDROBIN) {
                 uint64_t cycle_hist = 0;
 
                 /* Sum the queue intervals and store the cycle history. */
@@ -5340,7 +5435,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         }
     }
 
-    if (n_rxqs > 1 && algo) {
+    if (n_rxqs > 1 && algo != SCHED_ROUNDROBIN) {
         /* Sort the queues in order of the processing cycles
          * they consumed during their last pmd interval. */
         qsort(rxqs, n_rxqs, sizeof *rxqs, compare_rxq_cycles);
@@ -5400,7 +5495,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         sched_pmd = NULL;
         if (numa) {
             /* Select the PMD that should be used for this rxq. */
-            sched_pmd = get_next_pmd(numa, algo);
+            sched_pmd = get_next_pmd(numa, algo, proc_cycles ? true : false);
             if (sched_pmd) {
                 VLOG(level, "Core %2u on numa node %d assigned port \'%s\' "
                             "rx queue %d.%s",
@@ -5430,7 +5525,7 @@ static void
 rxq_scheduling(struct dp_netdev *dp) OVS_REQUIRES(dp->port_mutex)
 {
     struct sched_numa_list *numa_list;
-    bool algo = dp->pmd_rxq_assign_cyc;
+    enum sched_assignment_type algo = dp->pmd_rxq_assign_cyc;
 
     numa_list = xzalloc(sizeof *numa_list);
 
