@@ -5026,6 +5026,27 @@ find_sched_pmd_by_pmd(struct sched_numa_list *numa_list,
     return NULL;
 }
 
+static struct sched_pmd *
+find_sched_pmd_by_rxq(struct sched_numa_list *numa_list,
+                      struct dp_netdev_rxq *rxq)
+{
+    struct sched_numa *numa;
+
+    HMAP_FOR_EACH (numa, node, &numa_list->numas) {
+        for (unsigned i = 0; i < numa->n_pmds; i++) {
+            struct sched_pmd *sched_pmd;
+
+            sched_pmd = &numa->pmds[i];
+            for (int k = 0; k < sched_pmd->n_rxq; k++) {
+                if (sched_pmd->rxqs[k] == rxq) {
+                    return sched_pmd;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
 static struct sched_numa *
 sched_numa_list_find_numa(struct sched_numa_list *numa_list,
                            struct sched_pmd *sched_pmd)
@@ -5407,7 +5428,8 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
                     VLOG(level == VLL_DBG ? VLL_DBG : VLL_WARN,
                             "Core %2u cannot be pinned with "
                             "port \'%s\' rx queue %d. Use pmd-cpu-mask to "
-                            "enable a pmd on core %u.",
+                            "enable a pmd on core %u. An alternative core "
+                            "will be assigned.",
                             rxq->core_id,
                             netdev_rxq_get_name(rxq->rx),
                             netdev_rxq_get_queue_id(rxq->rx),
@@ -5452,7 +5474,11 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         char rxq_cyc_log[MAX_RXQ_CYC_STRLEN];
 
         if (rxq->core_id != OVS_CORE_UNSPEC) {
-            continue;
+             /* This rxq should have been pinned, check it was. */
+            sched_pmd = find_sched_pmd_by_rxq(numa_list, rxq);
+            if (sched_pmd && sched_pmd->pmd->core_id == rxq->core_id) {
+                continue;
+            }
         }
 
         if (start_logged == false && level != VLL_DBG) {
