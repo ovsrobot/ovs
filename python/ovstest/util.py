@@ -26,7 +26,7 @@ import socket
 import struct
 import subprocess
 
-import exceptions
+import builtins as exceptions
 
 import xmlrpc.client
 

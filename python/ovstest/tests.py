@@ -10,12 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-
 import math
 import time
 
-import ovstest.util as util
+import util
 
 DEFAULT_TEST_BRIDGE = "ovstestbr0"
 DEFAULT_TEST_PORT = "ovstestport0"
