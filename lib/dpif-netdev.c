@@ -51,6 +51,7 @@
 #include "hmapx.h"
 #include "id-pool.h"
 #include "ipf.h"
+#include "mov-avg.h"
 #include "netdev.h"
 #include "netdev-offload.h"
 #include "netdev-provider.h"
@@ -431,6 +432,7 @@ struct dp_offload_thread_item {
     struct match match;
     struct nlattr *actions;
     size_t actions_len;
+    long long int timestamp;
 
     struct ovs_list node;
 };
@@ -438,12 +440,18 @@ struct dp_offload_thread_item {
 struct dp_offload_thread {
     struct ovs_mutex mutex;
     struct ovs_list list;
+    uint64_t enqueued_item;
+    struct mov_avg_cma cma;
+    struct mov_avg_ema ema;
     pthread_cond_t cond;
 };
 
 static struct dp_offload_thread dp_offload_thread = {
     .mutex = OVS_MUTEX_INITIALIZER,
     .list  = OVS_LIST_INITIALIZER(&dp_offload_thread.list),
+    .enqueued_item = 0,
+    .cma = MOV_AVG_CMA_INITIALIZER,
+    .ema = MOV_AVG_EMA_INITIALIZER(100),
 };
 
 static struct ovsthread_once offload_thread_once
@@ -2632,6 +2640,7 @@ dp_netdev_append_flow_offload(struct dp_offload_thread_item *offload)
 {
     ovs_mutex_lock(&dp_offload_thread.mutex);
     ovs_list_push_back(&dp_offload_thread.list, &offload->node);
+    dp_offload_thread.enqueued_item++;
     xpthread_cond_signal(&dp_offload_thread.cond);
     ovs_mutex_unlock(&dp_offload_thread.mutex);
 }
@@ -2736,6 +2745,7 @@ dp_netdev_flow_offload_main(void *data OVS_UNUSED)
 {
     struct dp_offload_thread_item *offload;
     struct ovs_list *list;
+    long long int latency_us;
     const char *op;
     int ret;
 
@@ -2748,6 +2758,7 @@ dp_netdev_flow_offload_main(void *data OVS_UNUSED)
             ovsrcu_quiesce_end();
         }
         list = ovs_list_pop_front(&dp_offload_thread.list);
+        dp_offload_thread.enqueued_item--;
         offload = CONTAINER_OF(list, struct dp_offload_thread_item, node);
         ovs_mutex_unlock(&dp_offload_thread.mutex);
 
@@ -2767,6 +2778,10 @@ dp_netdev_flow_offload_main(void *data OVS_UNUSED)
         default:
             OVS_NOT_REACHED();
         }
+
+        latency_us = time_usec() - offload->timestamp;
+        mov_avg_cma_update(&dp_offload_thread.cma, latency_us);
+        mov_avg_ema_update(&dp_offload_thread.ema, latency_us);
 
         VLOG_DBG("%s to %s netdev flow "UUID_FMT,
                  ret == 0 ? "succeed" : "failed", op,
@@ -2792,6 +2807,7 @@ queue_netdev_flow_del(struct dp_netdev_pmd_thread *pmd,
 
     offload = dp_netdev_alloc_flow_offload(pmd, flow,
                                            DP_NETDEV_FLOW_OFFLOAD_OP_DEL);
+    offload->timestamp = pmd->ctx.now;
     dp_netdev_append_flow_offload(offload);
 }
 
@@ -2824,6 +2840,7 @@ queue_netdev_flow_put(struct dp_netdev_pmd_thread *pmd,
     memcpy(offload->actions, actions, actions_len);
     offload->actions_len = actions_len;
 
+    offload->timestamp = pmd->ctx.now;
     dp_netdev_append_flow_offload(offload);
 }
 
@@ -4207,6 +4224,77 @@ dpif_netdev_operate(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
             break;
         }
     }
+}
+
+static int
+dpif_netdev_offload_stats_get(struct dpif *dpif,
+                              struct netdev_custom_stats *stats)
+{
+    enum {
+        DP_NETDEV_HW_OFFLOADS_STATS_ENQUEUED,
+        DP_NETDEV_HW_OFFLOADS_STATS_INSERTED,
+        DP_NETDEV_HW_OFFLOADS_STATS_LAT_CMA_MEAN,
+        DP_NETDEV_HW_OFFLOADS_STATS_LAT_CMA_STDDEV,
+        DP_NETDEV_HW_OFFLOADS_STATS_LAT_EMA_MEAN,
+        DP_NETDEV_HW_OFFLOADS_STATS_LAT_EMA_STDDEV,
+    };
+    const char *names[] = {
+        [DP_NETDEV_HW_OFFLOADS_STATS_ENQUEUED] =
+            "                Enqueued offloads",
+        [DP_NETDEV_HW_OFFLOADS_STATS_INSERTED] =
+            "                Inserted offloads",
+        [DP_NETDEV_HW_OFFLOADS_STATS_LAT_CMA_MEAN] =
+            "  Cumulative Average latency (us)",
+        [DP_NETDEV_HW_OFFLOADS_STATS_LAT_CMA_STDDEV] =
+            "   Cumulative Latency stddev (us)",
+        [DP_NETDEV_HW_OFFLOADS_STATS_LAT_EMA_MEAN] =
+            " Exponential Average latency (us)",
+        [DP_NETDEV_HW_OFFLOADS_STATS_LAT_EMA_STDDEV] =
+            "  Exponential Latency stddev (us)",
+    };
+    struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_port *port;
+    uint64_t nb_offloads;
+    size_t i;
+
+    if (!netdev_is_flow_api_enabled()) {
+        return EINVAL;
+    }
+
+    stats->size = ARRAY_SIZE(names);
+    stats->counters = xcalloc(stats->size, sizeof *stats->counters);
+
+    nb_offloads = 0;
+
+    ovs_mutex_lock(&dp->port_mutex);
+    HMAP_FOR_EACH (port, node, &dp->ports) {
+        uint64_t port_nb_offloads = 0;
+
+        /* Do not abort on read error from a port, just report 0. */
+        if (!netdev_flow_get_n_flows(port->netdev, &port_nb_offloads)) {
+            nb_offloads += port_nb_offloads;
+        }
+    }
+    ovs_mutex_unlock(&dp->port_mutex);
+
+    stats->counters[DP_NETDEV_HW_OFFLOADS_STATS_ENQUEUED].value =
+        dp_offload_thread.enqueued_item;
+    stats->counters[DP_NETDEV_HW_OFFLOADS_STATS_INSERTED].value = nb_offloads;
+    stats->counters[DP_NETDEV_HW_OFFLOADS_STATS_LAT_CMA_MEAN].value =
+        mov_avg_cma(&dp_offload_thread.cma);
+    stats->counters[DP_NETDEV_HW_OFFLOADS_STATS_LAT_CMA_STDDEV].value =
+        mov_avg_cma_std_dev(&dp_offload_thread.cma);
+    stats->counters[DP_NETDEV_HW_OFFLOADS_STATS_LAT_EMA_MEAN].value =
+        mov_avg_ema(&dp_offload_thread.ema);
+    stats->counters[DP_NETDEV_HW_OFFLOADS_STATS_LAT_EMA_STDDEV].value =
+        mov_avg_ema_std_dev(&dp_offload_thread.ema);
+
+    for (i = 0; i < ARRAY_SIZE(names); i++) {
+        snprintf(stats->counters[i].name, sizeof(stats->counters[i].name),
+                 "%s", names[i]);
+    }
+
+    return 0;
 }
 
 /* Enable or Disable PMD auto load balancing. */
@@ -8483,7 +8571,7 @@ const struct dpif_class dpif_netdev_class = {
     dpif_netdev_flow_dump_thread_destroy,
     dpif_netdev_flow_dump_next,
     dpif_netdev_operate,
-    NULL,                       /* offload_stats_get */
+    dpif_netdev_offload_stats_get,
     NULL,                       /* recv_set */
     NULL,                       /* handlers_set */
     dpif_netdev_set_config,
