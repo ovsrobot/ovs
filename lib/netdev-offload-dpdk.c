@@ -65,6 +65,7 @@ struct ufid_to_rte_flow_data {
 
 struct netdev_offload_dpdk_data {
     struct cmap ufid_to_rte_flow;
+    uint64_t rte_flow_counter;
 };
 
 static int
@@ -644,6 +645,12 @@ netdev_offload_dpdk_flow_create(struct netdev *netdev,
 
     flow = netdev_dpdk_rte_flow_create(netdev, attr, items, actions, error);
     if (flow) {
+        struct netdev_offload_dpdk_data *data;
+
+        data = (struct netdev_offload_dpdk_data *)
+            ovsrcu_get(void *, &netdev->hw_info.offload_data);
+        data->rte_flow_counter++;
+
         if (!VLOG_DROP_DBG(&rl)) {
             dump_flow(&s, &s_extra, attr, items, actions);
             extra_str = ds_cstr(&s_extra);
@@ -1524,6 +1531,12 @@ netdev_offload_dpdk_flow_destroy(struct ufid_to_rte_flow_data *rte_flow_data)
     ret = netdev_dpdk_rte_flow_destroy(netdev, rte_flow, &error);
 
     if (ret == 0) {
+        struct netdev_offload_dpdk_data *data;
+
+        data = (struct netdev_offload_dpdk_data *)
+            ovsrcu_get(void *, &netdev->hw_info.offload_data);
+        data->rte_flow_counter--;
+
         ufid_to_rte_flow_disassociate(rte_flow_data);
         VLOG_DBG_RL(&rl, "%s: rte_flow 0x%"PRIxPTR
                     " flow destroy %d ufid " UUID_FMT,
@@ -1680,6 +1693,23 @@ netdev_offload_dpdk_flow_flush(struct netdev *netdev)
     return 0;
 }
 
+static int
+netdev_offload_dpdk_get_n_flows(struct netdev *netdev,
+                                uint64_t *n_flows)
+{
+    struct netdev_offload_dpdk_data *data;
+
+    data = (struct netdev_offload_dpdk_data *)
+        ovsrcu_get(void *, &netdev->hw_info.offload_data);
+    if (!data) {
+        return -1;
+    }
+
+    *n_flows = data->rte_flow_counter;
+
+    return 0;
+}
+
 const struct netdev_flow_api netdev_offload_dpdk = {
     .type = "dpdk_flow_api",
     .flow_put = netdev_offload_dpdk_flow_put,
@@ -1688,4 +1718,5 @@ const struct netdev_flow_api netdev_offload_dpdk = {
     .uninit_flow_api = netdev_offload_dpdk_uninit_flow_api,
     .flow_get = netdev_offload_dpdk_flow_get,
     .flow_flush = netdev_offload_dpdk_flow_flush,
+    .flow_get_n_flows = netdev_offload_dpdk_get_n_flows,
 };
