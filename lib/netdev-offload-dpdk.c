@@ -65,7 +65,7 @@ struct ufid_to_rte_flow_data {
 
 struct netdev_offload_dpdk_data {
     struct cmap ufid_to_rte_flow;
-    uint64_t rte_flow_counter;
+    uint64_t *rte_flow_counters;
 };
 
 static int
@@ -75,6 +75,8 @@ offload_data_init(struct netdev *netdev)
 
     data = xzalloc(sizeof *data);
     cmap_init(&data->ufid_to_rte_flow);
+    data->rte_flow_counters = xcalloc(netdev_offload_thread_nb(),
+                                      sizeof *data->rte_flow_counters);
 
     ovsrcu_set(&netdev->hw_info.offload_data, (void *) data);
 
@@ -84,6 +86,7 @@ offload_data_init(struct netdev *netdev)
 static void
 offload_data_destroy__(struct netdev_offload_dpdk_data *data)
 {
+    free(data->rte_flow_counters);
     free(data);
 }
 
@@ -646,10 +649,11 @@ netdev_offload_dpdk_flow_create(struct netdev *netdev,
     flow = netdev_dpdk_rte_flow_create(netdev, attr, items, actions, error);
     if (flow) {
         struct netdev_offload_dpdk_data *data;
+        unsigned int tid = netdev_offload_thread_id();
 
         data = (struct netdev_offload_dpdk_data *)
             ovsrcu_get(void *, &netdev->hw_info.offload_data);
-        data->rte_flow_counter++;
+        data->rte_flow_counters[tid]++;
 
         if (!VLOG_DROP_DBG(&rl)) {
             dump_flow(&s, &s_extra, attr, items, actions);
@@ -1532,10 +1536,11 @@ netdev_offload_dpdk_flow_destroy(struct ufid_to_rte_flow_data *rte_flow_data)
 
     if (ret == 0) {
         struct netdev_offload_dpdk_data *data;
+        unsigned int tid = netdev_offload_thread_id();
 
         data = (struct netdev_offload_dpdk_data *)
             ovsrcu_get(void *, &netdev->hw_info.offload_data);
-        data->rte_flow_counter--;
+        data->rte_flow_counters[tid]--;
 
         ufid_to_rte_flow_disassociate(rte_flow_data);
         VLOG_DBG_RL(&rl, "%s: rte_flow 0x%"PRIxPTR
@@ -1698,6 +1703,7 @@ netdev_offload_dpdk_get_n_flows(struct netdev *netdev,
                                 uint64_t *n_flows)
 {
     struct netdev_offload_dpdk_data *data;
+    unsigned int tid;
 
     data = (struct netdev_offload_dpdk_data *)
         ovsrcu_get(void *, &netdev->hw_info.offload_data);
@@ -1705,7 +1711,9 @@ netdev_offload_dpdk_get_n_flows(struct netdev *netdev,
         return -1;
     }
 
-    *n_flows = data->rte_flow_counter;
+    for (tid = 0; tid < netdev_offload_thread_nb(); tid++) {
+        n_flows[tid] = data->rte_flow_counters[tid];
+    }
 
     return 0;
 }
