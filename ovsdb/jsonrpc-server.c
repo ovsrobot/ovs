@@ -60,7 +60,8 @@ static struct ovsdb_jsonrpc_session *ovsdb_jsonrpc_session_create(
     struct ovsdb_jsonrpc_remote *, struct jsonrpc_session *, bool);
 static void ovsdb_jsonrpc_session_preremove_db(struct ovsdb_jsonrpc_remote *,
                                                struct ovsdb *);
-static void ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *);
+static void ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *,
+                                          uint64_t limit);
 static void ovsdb_jsonrpc_session_wait_all(struct ovsdb_jsonrpc_remote *);
 static void ovsdb_jsonrpc_session_get_memory_usage_all(
     const struct ovsdb_jsonrpc_remote *, struct simap *usage);
@@ -128,6 +129,8 @@ struct ovsdb_jsonrpc_server {
     bool read_only;            /* This server is does not accept any
                                   transactions that can modify the database. */
     struct shash remotes;      /* Contains "struct ovsdb_jsonrpc_remote *"s. */
+    struct ovsdb_jsonrpc_remote *skip_to;
+    bool yield_immediately;
 };
 
 /* A configured remote.  This is either a passive stream listener plus a list
@@ -137,6 +140,7 @@ struct ovsdb_jsonrpc_remote {
     struct ovsdb_jsonrpc_server *server;
     struct pstream *listener;   /* Listener, if passive. */
     struct ovs_list sessions;   /* List of "struct ovsdb_jsonrpc_session"s. */
+    struct ovsdb_jsonrpc_session *skip_to;
     uint8_t dscp;
     bool read_only;
     char *role;
@@ -159,6 +163,8 @@ ovsdb_jsonrpc_server_create(bool read_only)
     ovsdb_server_init(&server->up);
     shash_init(&server->remotes);
     server->read_only = read_only;
+    server->yield_immediately = false;
+    server->skip_to = NULL;
     return server;
 }
 
@@ -279,6 +285,7 @@ ovsdb_jsonrpc_server_add_remote(struct ovsdb_jsonrpc_server *svr,
     remote->dscp = options->dscp;
     remote->read_only = options->read_only;
     remote->role = nullable_xstrdup(options->role);
+    remote->skip_to = NULL;
     shash_add(&svr->remotes, name, remote);
 
     if (!listener) {
@@ -378,12 +385,26 @@ ovsdb_jsonrpc_server_set_read_only(struct ovsdb_jsonrpc_server *svr,
 }
 
 void
-ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *svr)
+ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *svr, uint64_t limit)
 {
     struct shash_node *node;
+    uint64_t elapsed = 0, start_time = 0;
+
+    if (limit) {
+        start_time = time_now();
+    }
+
+    svr->yield_immediately = false;
 
     SHASH_FOR_EACH (node, &svr->remotes) {
         struct ovsdb_jsonrpc_remote *remote = node->data;
+        if (svr->skip_to) {
+            if (remote != svr->skip_to) {
+                continue;
+            } else {
+                svr->skip_to = NULL;
+            }
+        }
 
         if (remote->listener) {
             struct stream *stream;
@@ -403,7 +424,16 @@ ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *svr)
             }
         }
 
-        ovsdb_jsonrpc_session_run_all(remote);
+        ovsdb_jsonrpc_session_run_all(remote, limit - elapsed);
+
+        if (limit) {
+            elapsed = start_time - time_now();
+            if (elapsed >= limit) {
+                svr->yield_immediately = true;
+                svr->skip_to = remote;
+                break;
+            }
+        }
     }
 }
 
@@ -411,6 +441,12 @@ void
 ovsdb_jsonrpc_server_wait(struct ovsdb_jsonrpc_server *svr)
 {
     struct shash_node *node;
+
+    if (svr->yield_immediately) {
+        poll_immediate_wake();
+        svr->yield_immediately = false;
+        return;
+    }
 
     SHASH_FOR_EACH (node, &svr->remotes) {
         struct ovsdb_jsonrpc_remote *remote = node->data;
@@ -583,14 +619,50 @@ ovsdb_jsonrpc_session_set_options(struct ovsdb_jsonrpc_session *session,
 }
 
 static void
-ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *remote)
+ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *remote,
+                              uint64_t limit)
 {
     struct ovsdb_jsonrpc_session *s, *next;
+    uint64_t start_time;
+
+    if (limit) {
+        start_time = time_msec();
+    }
 
     LIST_FOR_EACH_SAFE (s, next, node, &remote->sessions) {
+        if ((remote->skip_to) && (s != remote->skip_to)) {
+            /* processing was interrupted, we skip to the point
+             * where we had to interrupt it
+             * we cannot use the _CONTINUE macro as it is not safe
+             * if the list has been changed in the meantime.
+             */
+            continue;
+        }
+
+        /* set next as skip point if we need to restart processing */
+        remote->skip_to = next;
+
         int error = ovsdb_jsonrpc_session_run(s);
+
         if (error) {
             ovsdb_jsonrpc_session_close(s);
+        }
+
+        if (limit) {
+            if (time_msec() - start_time > limit) {
+                /* we bail leaving skip_to set. Next processing iteration
+                 * will skip everything up to skip_to
+                 */
+                break;
+            } else {
+                /* We are within time constraints, zero
+                 * the session we need to skip to in order to
+                 * restart processing.
+                 */
+                remote->skip_to = NULL;
+            }
+        } else {
+            remote->skip_to = NULL;
         }
     }
 }
