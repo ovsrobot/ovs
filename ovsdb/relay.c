@@ -32,6 +32,7 @@
 #include "row.h"
 #include "table.h"
 #include "transaction.h"
+#include "transaction-forward.h"
 #include "util.h"
 
 VLOG_DEFINE_THIS_MODULE(relay);
@@ -298,6 +299,7 @@ ovsdb_relay_run(void)
         struct relay_ctx *ctx = node->data;
         struct ovs_list events;
 
+        ovsdb_txn_forward_run(ctx->db, ctx->cs);
         ovsdb_cs_run(ctx->cs, &events);
 
         struct ovsdb_cs_event *event;
@@ -309,7 +311,9 @@ ovsdb_relay_run(void)
 
             switch (event->type) {
             case OVSDB_CS_EVENT_TYPE_RECONNECT:
-                /* Nothing to do. */
+                /* Cancelling all the transactions that was already sent but
+                 * not replied yet as they might be lost. */
+                ovsdb_txn_forward_cancel_all(ctx->db, true);
                 break;
 
             case OVSDB_CS_EVENT_TYPE_UPDATE:
@@ -317,6 +321,9 @@ ovsdb_relay_run(void)
                 break;
 
             case OVSDB_CS_EVENT_TYPE_TXN_REPLY:
+                ovsdb_txn_forward_complete(ctx->db, event->txn_reply);
+                break;
+
             case OVSDB_CS_EVENT_TYPE_LOCKED:
                 /* Not expected. */
                 break;
@@ -335,5 +342,6 @@ ovsdb_relay_wait(void)
         struct relay_ctx *ctx = node->data;
 
         ovsdb_cs_wait(ctx->cs);
+        ovsdb_txn_forward_wait(ctx->db, ctx->cs);
     }
 }
