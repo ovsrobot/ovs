@@ -63,3 +63,46 @@ m4_define([OVS_DPDK_START],
    AT_CAPTURE_FILE([ovs-vswitchd.log])
    on_exit "kill_ovs_vswitchd `cat ovs-vswitchd.pid`"
 ])
+
+
+# NEGOTIATION_TEST_TSO([testpmd], [ovs])
+#
+# Test whether TSO is being enabled for OVS and TestPMD. The arguments denote whether
+# TSO is enabled for testpmd and ovs or not, respectively.
+#
+m4_define([NEGOTIATION_TEST_TSO],
+  [
+   OVS_DPDK_START()
+   AS_IF([test $1 -eq 1], [AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:userspace-tso-enable=true])], [AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:userspace-tso-enable=false])])
+   AS_IF([test $1 -eq 1], [OVS_WAIT_UNTIL([grep 'Userspace TCP Segmentation Offloading support enabled' ovs-vswitchd.log])], [])
+   AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+   AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface dpdkvhostuserclient0 type=dpdkvhostuserclient options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [], [stdout], [stderr])
+   AT_CHECK([ovs-vsctl show], [], [stdout])
+   on_exit "pkill -f -x -9 'tail -f /dev/null'"
+   AT_CHECK([echo "show device info all" > CMDFILE])
+   AT_CHECK([echo "stop" >> CMDFILE])
+   AT_CHECK([echo "port stop 0" >> CMDFILE])
+   AS_IF([test $2 -eq 1], [AT_CHECK([echo "tso set 1500 0" >> CMDFILE], [])], [])
+   AS_IF([test $2 -eq 1], [AT_CHECK([echo "csum set tcp hw 0" >> CMDFILE], [])], [])
+   AT_CHECK([echo "port start 0" >> CMDFILE])
+   AT_CHECK([echo "start" >> CMDFILE])
+   AT_CHECK([echo "show port 0 tx_offload capabilities" >> CMDFILE])
+   AT_CHECK([echo "show port 0 tx_offload configuration" >> CMDFILE])
+   AT_CHECK([lscpu], [], [stdout])
+   AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+   tail -f /dev/null | dpdk-testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+   --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1" \
+   --vdev="net_tap0,iface=tap0" --file-prefix page0 \
+   --single-file-segments -- --cmdline-file=CMDFILE \
+   -a >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+   sleep 10
+   pkill -f -x -9 'tail -f /dev/null'
+
+   sleep 1
+   AT_CHECK([awk '/negotiated Virtio features/ {a=$NF} END{print a}' ovs-vswitchd.log],[],[stdout])
+
+   AS_IF([test $1 -eq 1 && test $2 -eq 1], [AT_CHECK([printf "%X" $(( $(cat stdout) & ((1<<0)|(1<<11)|(1<<12)) ))],[],[1801])], [AT_CHECK([printf "%X" $(( $(cat stdout) & ((1<<0)|(1<<11)|(1<<12)) ))],[],[0])])
+   AS_IF([test $2 -eq 1], [AT_CHECK([grep "Port : TCP_CKSUM TCP_TSO" $OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log], [0], [stdout], [stderr])], [])
+   AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+   ])

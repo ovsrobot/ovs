@@ -232,3 +232,74 @@ OVS_VSWITCHD_STOP(["\@does not exist. The Open vSwitch kernel module is probably
 \@EAL: No free hugepages reported in hugepages-1048576kB@d"])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
+
+
+dnl --------------------------------------------------------------------------
+dnl Negotiation tests for TSO - both OVS and TestPMD have TSO turned on
+
+AT_SETUP([NEGOTIATION TEST FOR TSO ENABLED FOR TESTPMD AND OVS])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DB_START()
+NEGOTIATION_TEST_TSO([1],[1])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d"])
+AT_CLEANUP
+
+dnl --------------------------------------------------------------------------
+
+
+
+dnl --------------------------------------------------------------------------
+dnl Negotiation tests - TSO enabled for OVS, disabled for TestPMD
+
+AT_SETUP([NEGOTIATION TEST FOR TSO ENABLED FOR OVS, DISABLED FOR TESTPMD])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DB_START()
+NEGOTIATION_TEST_TSO([1],[0])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d"])
+AT_CLEANUP
+
+dnl --------------------------------------------------------------------------
+
+
+
+dnl --------------------------------------------------------------------------
+dnl Negotiation tests - TSO enabled for TestPMD, disabled for OVS
+
+AT_SETUP([NEGOTIATION TEST FOR TSO ENABLED FOR TESTPMD, DISABLED FOR OVS])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DB_START()
+NEGOTIATION_TEST_TSO([0],[1])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d"])
+AT_CLEANUP
+
+dnl --------------------------------------------------------------------------
+
+
+
+dnl --------------------------------------------------------------------------
+dnl Negotiation tests - both OVS and TestPMD have TSO turned off
+
+AT_SETUP([NEGOTIATION TEST FOR TSO DISABLED FOR BOTH OVS AND TESTPMD])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DB_START()
+NEGOTIATION_TEST_TSO([0],[0])
+OVS_VSWITCHD_STOP(["
+\@EAL: No available hugepages reported in hugepages-1048576kB@d
+\@EAL:   Invalid NUMA socket, default to 0@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d"])
+AT_CLEANUP
+
+dnl --------------------------------------------------------------------------
