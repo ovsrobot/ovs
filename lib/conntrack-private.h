@@ -29,6 +29,7 @@
 #include "openvswitch/list.h"
 #include "openvswitch/types.h"
 #include "packets.h"
+#include "mpsc-queue.h"
 #include "unaligned.h"
 #include "dp-packet.h"
 
@@ -86,9 +87,42 @@ struct alg_exp_node {
     bool nat_rpl_dst;
 };
 
+/* Timeouts: all the possible timeout states passed to update_expiration()
+ * are listed here. The name will be prefix by CT_TM_ and the value is in
+ * milliseconds */
+#define CT_TIMEOUTS \
+    CT_TIMEOUT(TCP_FIRST_PACKET) \
+    CT_TIMEOUT(TCP_OPENING) \
+    CT_TIMEOUT(TCP_ESTABLISHED) \
+    CT_TIMEOUT(TCP_CLOSING) \
+    CT_TIMEOUT(TCP_FIN_WAIT) \
+    CT_TIMEOUT(TCP_CLOSED) \
+    CT_TIMEOUT(OTHER_FIRST) \
+    CT_TIMEOUT(OTHER_MULTIPLE) \
+    CT_TIMEOUT(OTHER_BIDIR) \
+    CT_TIMEOUT(ICMP_FIRST) \
+    CT_TIMEOUT(ICMP_REPLY)
+
+enum ct_timeout {
+#define CT_TIMEOUT(NAME) CT_TM_##NAME,
+    CT_TIMEOUTS
+#undef CT_TIMEOUT
+    N_CT_TM
+};
+
 enum OVS_PACKED_ENUM ct_conn_type {
     CT_CONN_TYPE_DEFAULT,
     CT_CONN_TYPE_UN_NAT,
+};
+
+struct conn_expire {
+    struct mpsc_queue_node node;
+    /* Timeout state of the connection.
+     * It follows the connection state updates.
+     */
+    enum ct_timeout tm;
+    atomic_flag reschedule;
+    struct ovs_refcount refcount;
 };
 
 struct conn {
@@ -96,11 +130,13 @@ struct conn {
     struct conn_key key;
     struct conn_key rev_key;
     struct conn_key parent_key; /* Only used for orig_tuple support. */
-    struct ovs_list exp_node;
     struct cmap_node cm_node;
     struct nat_action_info_t *nat_info;
     char *alg;
     struct conn *nat_conn; /* The NAT 'conn' context, if there is one. */
+
+    /* Inserted once by a PMD, then managed by the 'ct_clean' thread. */
+    struct conn_expire exp;
 
     /* Mutable data. */
     struct ovs_mutex lock; /* Guards all mutable fields. */
@@ -132,33 +168,10 @@ enum ct_update_res {
     CT_UPDATE_VALID_NEW,
 };
 
-/* Timeouts: all the possible timeout states passed to update_expiration()
- * are listed here. The name will be prefix by CT_TM_ and the value is in
- * milliseconds */
-#define CT_TIMEOUTS \
-    CT_TIMEOUT(TCP_FIRST_PACKET) \
-    CT_TIMEOUT(TCP_OPENING) \
-    CT_TIMEOUT(TCP_ESTABLISHED) \
-    CT_TIMEOUT(TCP_CLOSING) \
-    CT_TIMEOUT(TCP_FIN_WAIT) \
-    CT_TIMEOUT(TCP_CLOSED) \
-    CT_TIMEOUT(OTHER_FIRST) \
-    CT_TIMEOUT(OTHER_MULTIPLE) \
-    CT_TIMEOUT(OTHER_BIDIR) \
-    CT_TIMEOUT(ICMP_FIRST) \
-    CT_TIMEOUT(ICMP_REPLY)
-
-enum ct_timeout {
-#define CT_TIMEOUT(NAME) CT_TM_##NAME,
-    CT_TIMEOUTS
-#undef CT_TIMEOUT
-    N_CT_TM
-};
-
 struct conntrack {
     struct ovs_mutex ct_lock; /* Protects 2 following fields. */
     struct cmap conns OVS_GUARDED;
-    struct ovs_list exp_lists[N_CT_TM] OVS_GUARDED;
+    struct mpsc_queue exp_lists[N_CT_TM];
     struct hmap zone_limits OVS_GUARDED;
     struct hmap timeout_policies OVS_GUARDED;
     uint32_t hash_basis; /* Salt for hashing a connection key. */
@@ -203,5 +216,26 @@ struct ct_l4_proto {
     void (*conn_get_protoinfo)(const struct conn *,
                                struct ct_dpif_protoinfo *);
 };
+
+static inline void
+conn_expire_push_back(struct conntrack *ct, struct conn *conn)
+{
+    if (ovs_refcount_try_ref_rcu(&conn->exp.refcount)) {
+        atomic_flag_clear(&conn->exp.reschedule);
+        mpsc_queue_insert(&ct->exp_lists[conn->exp.tm], &conn->exp.node);
+    }
+}
+
+static inline void
+conn_expire_push_front(struct conntrack *ct, struct conn *conn)
+    OVS_REQUIRES(ct->exp_lists[conn->exp.tm].read_lock)
+{
+    if (ovs_refcount_try_ref_rcu(&conn->exp.refcount)) {
+        /* Do not change 'reschedule' state, if this expire node is put
+         * at the tail of the list, it will be next to be read from the queue.
+         */
+        mpsc_queue_push_front(&ct->exp_lists[conn->exp.tm], &conn->exp.node);
+    }
+}
 
 #endif /* conntrack-private.h */

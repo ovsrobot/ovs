@@ -306,7 +306,7 @@ conntrack_init(void)
     ovs_mutex_lock(&ct->ct_lock);
     cmap_init(&ct->conns);
     for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
-        ovs_list_init(&ct->exp_lists[i]);
+        mpsc_queue_init(&ct->exp_lists[i]);
     }
     hmap_init(&ct->zone_limits);
     ct->zone_limit_seq = 0;
@@ -457,6 +457,17 @@ conn_clean_cmn(struct conntrack *ct, struct conn *conn)
     }
 }
 
+static inline bool
+conn_unref(struct conn *conn)
+{
+    ovs_assert(conn->conn_type == CT_CONN_TYPE_DEFAULT);
+    if (ovs_refcount_unref(&conn->exp.refcount) == 1) {
+        ovsrcu_postpone(delete_conn, conn);
+        return true;
+    }
+    return false;
+}
+
 /* Must be called with 'conn' of 'conn_type' CT_CONN_TYPE_DEFAULT.  Also
  * removes the associated nat 'conn' from the lookup datastructures. */
 static void
@@ -470,10 +481,19 @@ conn_clean(struct conntrack *ct, struct conn *conn)
         uint32_t hash = conn_key_hash(&conn->nat_conn->key, ct->hash_basis);
         cmap_remove(&ct->conns, &conn->nat_conn->cm_node, hash);
     }
-    ovs_list_remove(&conn->exp_node);
     conn->cleaned = true;
-    ovsrcu_postpone(delete_conn, conn);
+    conn_unref(conn);
     atomic_count_dec(&ct->n_conn);
+}
+
+static inline bool
+conn_unref_one(struct conn *conn)
+{
+    if (ovs_refcount_unref(&conn->exp.refcount) == 1) {
+        ovsrcu_postpone(delete_conn_one, conn);
+        return true;
+    }
+    return false;
 }
 
 static void
@@ -482,11 +502,10 @@ conn_clean_one(struct conntrack *ct, struct conn *conn)
 {
     conn_clean_cmn(ct, conn);
     if (conn->conn_type == CT_CONN_TYPE_DEFAULT) {
-        ovs_list_remove(&conn->exp_node);
         conn->cleaned = true;
         atomic_count_dec(&ct->n_conn);
     }
-    ovsrcu_postpone(delete_conn_one, conn);
+    conn_unref_one(conn);
 }
 
 /* Destroys the connection tracker 'ct' and frees all the allocated memory.
@@ -501,6 +520,19 @@ conntrack_destroy(struct conntrack *ct)
     latch_destroy(&ct->clean_thread_exit);
 
     ovs_mutex_lock(&ct->ct_lock);
+
+    for (unsigned i = 0; i < N_CT_TM; i++) {
+        struct mpsc_queue_node *node;
+
+        mpsc_queue_acquire(&ct->exp_lists[i]);
+        MPSC_QUEUE_FOR_EACH_POP (node, &ct->exp_lists[i]) {
+            conn = CONTAINER_OF(node, struct conn, exp.node);
+            conn_unref(conn);
+        }
+        mpsc_queue_release(&ct->exp_lists[i]);
+        mpsc_queue_destroy(&ct->exp_lists[i]);
+    }
+
     CMAP_FOR_EACH (conn, cm_node, &ct->conns) {
         conn_clean_one(ct, conn);
     }
@@ -1059,6 +1091,7 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
         ovs_mutex_init_adaptive(&nc->lock);
         nc->conn_type = CT_CONN_TYPE_DEFAULT;
         cmap_insert(&ct->conns, &nc->cm_node, ctx->hash);
+        conn_expire_push_back(ct, nc);
         atomic_count_inc(&ct->n_conn);
         ctx->conn = nc; /* For completeness. */
         if (zl) {
@@ -1079,7 +1112,6 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
      * can limit DoS impact. */
 nat_res_exhaustion:
     free(nat_conn);
-    ovs_list_remove(&nc->exp_node);
     delete_conn_cmn(nc);
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
     VLOG_WARN_RL(&rl, "Unable to NAT due to tuple space exhaustion - "
@@ -1496,29 +1528,72 @@ set_label(struct dp_packet *pkt, struct conn *conn,
  * if 'limit' is reached */
 static long long
 ct_sweep(struct conntrack *ct, long long now, size_t limit)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
 {
-    struct conn *conn, *next;
+    struct conn *conn;
     long long min_expiration = LLONG_MAX;
+    struct mpsc_queue_node *node;
     size_t count = 0;
 
     ovs_mutex_lock(&ct->ct_lock);
 
     for (unsigned i = 0; i < N_CT_TM; i++) {
-        LIST_FOR_EACH_SAFE (conn, next, exp_node, &ct->exp_lists[i]) {
+        struct conn *end_of_queue = NULL;
+
+        MPSC_QUEUE_FOR_EACH_POP (node, &ct->exp_lists[i]) {
+            long long int expiration;
+
+            conn = CONTAINER_OF(node, struct conn, exp.node);
+            if (conn_unref(conn)) {
+                continue;
+            }
+
             ovs_mutex_lock(&conn->lock);
-            if (now < conn->expiration || count >= limit) {
-                min_expiration = MIN(min_expiration, conn->expiration);
-                ovs_mutex_unlock(&conn->lock);
-                if (count >= limit) {
-                    /* Do not check other lists. */
-                    COVERAGE_INC(conntrack_long_cleanup);
-                    goto out;
-                }
+            expiration = conn->expiration;
+            ovs_mutex_unlock(&conn->lock);
+
+            if (conn == end_of_queue) {
+                /* If we already re-enqueued this conn during this sweep,
+                 * stop iterating this list and skip to the next.
+                 */
+                min_expiration = MIN(min_expiration, expiration);
+                conn_expire_push_front(ct, conn);
                 break;
+            }
+
+            if (count >= limit) {
+                min_expiration = MIN(min_expiration, expiration);
+                conn_expire_push_front(ct, conn);
+                COVERAGE_INC(conntrack_long_cleanup);
+                /* Do not check other lists. */
+                goto out;
+            }
+
+            if (now < expiration) {
+                if (atomic_flag_test_and_set(&conn->exp.reschedule)) {
+                    /* Reschedule was true, another thread marked
+                     * this conn to be enqueued back.
+                     * The conn is not yet expired, still valid, and
+                     * this list should still be iterated.
+                     */
+                    conn_expire_push_back(ct, conn);
+                    if (end_of_queue == NULL) {
+                        end_of_queue = conn;
+                    }
+                } else {
+                    /* This connection is still valid, while no other thread
+                     * modified it: it means this list iteration is finished
+                     * for now. Put back the connection within the list.
+                     */
+                    atomic_flag_clear(&conn->exp.reschedule);
+                    min_expiration = MIN(min_expiration, expiration);
+                    conn_expire_push_front(ct, conn);
+                    break;
+                }
             } else {
-                ovs_mutex_unlock(&conn->lock);
                 conn_clean(ct, conn);
             }
+
             count++;
         }
     }
@@ -1570,8 +1645,13 @@ conntrack_clean(struct conntrack *ct, long long now)
 
 static void *
 clean_thread_main(void *f_)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     struct conntrack *ct = f_;
+
+    for (unsigned i = 0; i < N_CT_TM; i++) {
+        mpsc_queue_acquire(&ct->exp_lists[i]);
+    }
 
     while (!latch_is_set(&ct->clean_thread_exit)) {
         long long next_wake;
@@ -1585,6 +1665,10 @@ clean_thread_main(void *f_)
         }
         latch_wait(&ct->clean_thread_exit);
         poll_block();
+    }
+
+    for (unsigned i = 0; i < N_CT_TM; i++) {
+        mpsc_queue_release(&ct->exp_lists[i]);
     }
 
     return NULL;
