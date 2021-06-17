@@ -6025,6 +6025,68 @@ AT_CHECK([ovs-ofctl dump-flows br0 | grep table=2, | OFPROTO_CLEAR_DURATION_IDLE
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([conntrack - Out of order TCP state transition])
+dnl This can happen due to buggy TCP implementations that reuse ephemeral
+dnl ports - this test will check that some invalid parameters don't advance
+dnl the state machine
+CHECK_CONNTRACK()
+OVS_TRAFFIC_VSWITCHD_START()
+OVS_CHECK_CT_CLEAR()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24", "f0:00:00:01:01:01")
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24", "f0:00:00:01:01:02")
+
+dnl setup ct flows
+AT_DATA([flows.txt], [dnl
+table=0,priority=10  arp action=normal
+table=0,priority=10  ip,tcp,ct_state=-trk action=ct(table=1)
+table=0,priority=1   action=drop
+dnl dst ns2
+table=1,priority=20  ip,ct_state=+new+trk,nw_dst=10.1.1.2 action=ct(commit),output:ovs-p1
+table=1,priority=20  ip,ct_state=+est+trk,nw_dst=10.1.1.2 action=output:ovs-p1
+dnl dst ns1
+table=1,priority=10  ip,ct_state=+trk+est,nw_dst=10.1.1.1 action=output:ovs-p0
+table=1,priority=10  ip,ct_state=+trk+new,nw_dst=10.1.1.1 action=output:ovs-p0
+table=1,priority=1   ip,ct_state=+trk+inv action=drop
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+
+dnl kill tcp packets - this will suppress RST/RST-ACK messages
+NS_CHECK_EXEC([at_ns0], [iptables -I INPUT 1 -p tcp --sport 6667 -j DROP])
+NS_CHECK_EXEC([at_ns1], [iptables -I INPUT 1 -p tcp --dport 6667 -j DROP])
+
+dnl Send TCP SYN
+NS_CHECK_EXEC([at_ns0], [$PYTHON3 $srcdir/sendpkt.py p0 f0 00 00 01 01 02 f0 00 00 01 01 01 08 00 45 00 00 3c c9 c8 40 00 40 06 5a ef 0a 01 01 01 0a 01 01 02 b2 2a 1a 0b d3 78 6f 81 00 00 00 00 a0 02 fa f0 7a 0b 00 00 02 04 05 b4 04 02 08 0a 6d 35 40 9a 00 00 00 00 01 03 03 07 > /dev/null])
+
+dnl Send TCP PSH|URG
+NS_CHECK_EXEC([at_ns1], [$PYTHON3 $srcdir/sendpkt.py p1 f0 00 00 01 01 01 f0 00 00 01 01 02 08 00 45 00 00 34 c9 c9 40 00 40 06 5a f6 0a 01 01 02 0a 01 01 01 b2 2a 1a 0b d3 78 6f 82 0a 0b d5 33 80 28 01 f6 72 bb 00 00 01 01 08 0a 6d 35 40 9a 11 90 3e 20 > /dev/null])
+
+dnl Check that we haven't advanced the ct state machine
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "dst=10.1.1.1" | sort | uniq], [0], [dnl
+tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=45610,dport=6667),reply=(src=10.1.1.2,dst=10.1.1.1,sport=6667,dport=45610),protoinfo=(state=SYN_SENT)
+])
+
+dnl Send TCP ACK without syn, and with garbage ack values
+NS_CHECK_EXEC([at_ns1], [$PYTHON3 $srcdir/sendpkt.py p1 f0 00 00 01 01 01 f0 00 00 01 01 02 08 00 45 00 00 34 73 7a 40 00 40 06 b1 45 0a 01 01 02 0a 01 01 01 1a 0b b2 2a 0a 0b e5 33 d3 78 6f 87 80 10 01 fe 4b fa 00 00 01 01 08 0a 11 90 49 86 6d 35 4c 00 > /dev/null])
+
+dnl Check that we haven't advanced the ct state machine
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "dst=10.1.1.1" | sort | uniq], [0], [dnl
+tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=45610,dport=6667),reply=(src=10.1.1.2,dst=10.1.1.1,sport=6667,dport=45610),protoinfo=(state=SYN_SENT)
+])
+
+dnl Now send a valid SYN|ACK
+NS_CHECK_EXEC([at_ns1], [$PYTHON3 $srcdir/sendpkt.py p1 f0 00 00 01 01 01 f0 00 00 01 01 02 08 00 45 00 00 3c 00 00 40 00 40 06 24 b8 0a 01 01 02 0a 01 01 01 1a 0b b2 2a 0a 0b d5 32 d3 78 6f 82 a0 12 fe 88 47 74 00 00 02 04 05 b4 04 02 08 0a 11 90 3e 20 6d 35 40 9a 01 03 03 07 > /dev/null])
+
+dnl Now check that we are in ESTABLISHED
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "dst=10.1.1.1" | sort | uniq], [0], [dnl
+tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=45610,dport=6667),reply=(src=10.1.1.2,dst=10.1.1.1,sport=6667,dport=45610),protoinfo=(state=ESTABLISHED)
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_BANNER([802.1ad])
 
 AT_SETUP([802.1ad - vlan_limit])

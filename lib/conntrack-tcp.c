@@ -224,6 +224,7 @@ tcp_conn_update(struct conntrack *ct, struct conn *conn_,
 
         end = seq + p_len;
         if (tcp_flags & TCP_SYN) {
+            src->state = CT_DPIF_TCPS_SYN_SENT; /* SYN_SENT by src */
             end++;
             if (dst->wscale & CT_WSCALE_FLAG) {
                 src->wscale = tcp_get_wscale(tcp);
@@ -245,7 +246,6 @@ tcp_conn_update(struct conntrack *ct, struct conn *conn_,
         }
 
         src->seqlo = seq;
-        src->state = CT_DPIF_TCPS_SYN_SENT;
         /*
          * May need to slide the window (seqhi may have been set by
          * the crappy stack check or if we picked up the connection
@@ -329,7 +329,10 @@ tcp_conn_update(struct conntrack *ct, struct conn *conn_,
         }
         if (tcp_flags & TCP_ACK) {
             if (dst->state == CT_DPIF_TCPS_SYN_SENT) {
-                dst->state = CT_DPIF_TCPS_ESTABLISHED;
+                if (src->state == CT_DPIF_TCPS_SYN_SENT) {
+                    /* Move to EST only once SRC things this is okay */
+                    dst->state = CT_DPIF_TCPS_ESTABLISHED;
+                }
             } else if (dst->state == CT_DPIF_TCPS_CLOSING) {
                 dst->state = CT_DPIF_TCPS_FIN_WAIT_2;
             }
