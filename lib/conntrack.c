@@ -1163,7 +1163,7 @@ check_orig_tuple(struct conntrack *ct, struct dp_packet *pkt,
          !pkt->md.ct_orig_tuple.ipv4.ipv4_proto) ||
         (ctx_in->key.dl_type == htons(ETH_TYPE_IPV6) &&
          !pkt->md.ct_orig_tuple.ipv6.ipv6_proto) ||
-        nat_action_info) {
+        !nat_action_info) {
         return false;
     }
 
