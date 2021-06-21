@@ -5080,8 +5080,7 @@ group_setup_dp_hash_table(struct group_dpif *group, size_t max_hash)
              min_weight, total_weight);
 
     uint64_t min_slots = DIV_ROUND_UP(total_weight, min_weight);
-    uint64_t min_slots2 = ROUND_UP_POW2(min_slots);
-    uint64_t n_hash = MAX(16, min_slots2);
+    uint64_t n_hash = ROUND_UP_POW2(min_slots);
     if (n_hash > MAX_SELECT_GROUP_HASH_VALUES ||
         (max_hash != 0 && n_hash > max_hash)) {
         VLOG_DBG("  Too many hash values required: %"PRIu64, n_hash);

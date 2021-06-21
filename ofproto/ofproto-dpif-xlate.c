@@ -4612,6 +4612,11 @@ pick_hash_fields_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
 static struct ofputil_bucket *
 pick_dp_hash_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
 {
+    /* Skip dp_hash recirculation in the special case of a single bucket */
+    if (group->up.n_buckets == 1) {
+        return group_first_live_bucket(ctx, group, 0);
+    }
+
     uint32_t dp_hash = ctx->xin->flow.dp_hash;
 
     /* dp_hash value 0 is special since it means that the dp_hash has not been
