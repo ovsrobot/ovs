@@ -330,6 +330,14 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
     uint32_t upcall_pid;
     int error;
 
+    /* "bonding_masters" is a reserved interface name under Linux,
+     * since bonding module creates /sys/class/net/bonding_masters
+     * and so no interface can be called "bonding_masters".
+     */
+    if (!strcmp(name, "bonding_masters")) {
+        return EINVAL;
+    }
+
     error = dpif_netlink_init();
     if (error) {
         return error;
