@@ -184,6 +184,7 @@ main_loop(struct server_config *config,
     char *remotes_error, *ssl_error;
     struct shash_node *node;
     long long int status_timer = LLONG_MIN;
+    uint64_t limit = UINT64_MAX;
 
     *exiting = false;
     ssl_error = NULL;
@@ -215,7 +216,7 @@ main_loop(struct server_config *config,
             reconfigure_remotes(jsonrpc, all_dbs, remotes),
             &remotes_error);
         report_error_if_changed(reconfigure_ssl(all_dbs), &ssl_error);
-        ovsdb_jsonrpc_server_run(jsonrpc);
+        ovsdb_jsonrpc_server_run(jsonrpc, limit);
 
         if (*is_backup) {
             replication_run();
@@ -225,11 +226,32 @@ main_loop(struct server_config *config,
             }
         }
 
+        /* figure out current processing time limit */
+
+        bool first_db = true;
+        SHASH_FOR_EACH (node, all_dbs) {
+            struct db *db = node->data;
+            uint64_t db_limit;
+
+            db_limit = max_processing_time(db->db->storage);
+            if (first_db) {
+                /* reset the limit */
+                limit = db_limit;
+                first_db = false;
+            }
+            limit = MIN(db_limit, limit);
+        }
+        if (ovs_replay_is_active()) {
+            limit = UINT64_MAX;
+        }
+
         struct shash_node *next;
         SHASH_FOR_EACH_SAFE (node, next, all_dbs) {
             struct db *db = node->data;
+
             ovsdb_txn_history_run(db->db);
             ovsdb_storage_run(db->db->storage);
+
             read_db(config, db);
             /* Run triggers after storage_run and read_db to make sure new raft
              * updates are utilized in current iteration. */

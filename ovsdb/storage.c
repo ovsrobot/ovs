@@ -640,3 +640,14 @@ ovsdb_storage_peek_last_eid(struct ovsdb_storage *storage)
     }
     return raft_current_eid(storage->raft);
 }
+
+uint64_t max_processing_time(struct ovsdb_storage *storage)
+{
+    if (!storage->raft) {
+        return UINT64_MAX;
+    }
+    if (raft_election_timer_value(storage->raft) > 2) {
+        return raft_election_timer_value(storage->raft) / 2;
+    }
+    return 1;
+}

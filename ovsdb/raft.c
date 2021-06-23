@@ -407,6 +407,11 @@ raft_make_address_passive(const char *address_)
     }
 }
 
+uint64_t raft_election_timer_value(const struct raft *raft)
+{
+    return raft->election_timer;
+}
+
 static struct raft *
 raft_alloc(void)
 {
