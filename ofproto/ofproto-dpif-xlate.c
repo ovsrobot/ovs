@@ -3603,9 +3603,10 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     struct netdev_tnl_build_header_params tnl_params;
     struct ovs_action_push_tnl tnl_push_data;
     struct xport *out_dev = NULL;
-    ovs_be32 s_ip = 0, d_ip = 0;
+    ovs_be32 s_ip = 0, d_ip = 0, o_ip = 0;
     struct in6_addr s_ip6 = in6addr_any;
     struct in6_addr d_ip6 = in6addr_any;
+    struct in6_addr o_ip6 = in6addr_any;
     struct eth_addr smac;
     struct eth_addr dmac;
     int err;
@@ -3627,7 +3628,14 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
         in6_addr_set_mapped_ipv4(&s_ip6, flow->tunnel.ip_src);
     }
 
-    err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
+    if (!ipv6_addr_is_set(&s_ip6)) {
+        err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
+    } else {
+        /* o_ip6/o_ip means the output_bridge netdev's ip. */
+        o_ip6 = s_ip6;
+        err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &o_ip6, &out_dev);
+    }
+
     if (err) {
         xlate_report(ctx, OFT_WARN, "native tunnel routing failed");
         return err;
@@ -3648,6 +3656,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     d_ip = in6_addr_get_mapped_ipv4(&d_ip6);
     if (d_ip) {
         s_ip = in6_addr_get_mapped_ipv4(&s_ip6);
+        o_ip = in6_addr_get_mapped_ipv4(&o_ip6);
     }
 
     err = tnl_neigh_lookup(out_dev->xbridge->name, &d_ip6, &dmac);
@@ -3656,10 +3665,22 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
                      "neighbor cache miss for %s on bridge %s, "
                      "sending %s request",
                      buf_dip6, out_dev->xbridge->name, d_ip ? "ARP" : "ND");
-        if (d_ip) {
-            tnl_send_arp_request(ctx, out_dev, smac, s_ip, d_ip);
+        if (!ipv6_addr_is_set(&o_ip6) || ipv6_addr_equals(&o_ip6, &s_ip6)) {
+            if (d_ip) {
+                tnl_send_arp_request(ctx, out_dev, smac, s_ip, d_ip);
+            } else {
+                tnl_send_nd_request(ctx, out_dev, smac, &s_ip6, &d_ip6);
+            }
         } else {
-            tnl_send_nd_request(ctx, out_dev, smac, &s_ip6, &d_ip6);
+            /*
+             * s_ip and d_ip is not on the same subnet, we need to using
+             * output_bridge netdev's ip as the arp sender or nd sender.
+             */
+            if (local_ip) {
+                tnl_send_arp_request(ctx, out_dev, smac, o_ip, d_ip);
+            } else {
+                tnl_send_nd_request(ctx, out_dev, smac, &o_ip6, &d_ip6);
+            }
         }
         return err;
     }
