@@ -132,7 +132,7 @@ ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
 
         ovs_strlcpy(output_bridge, p->output_bridge, IFNAMSIZ);
         *gw = p->gw;
-        if (src && !ipv6_addr_is_set(src)) {
+        if (src) {
             *src = p->src_addr;
         }
         return true;
