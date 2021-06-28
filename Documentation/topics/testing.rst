@@ -416,45 +416,89 @@ You should invoke scan-view to view analysis results. The last line of output
 from ``clang-analyze`` will list the command (containing results directory)
 that you should invoke to view the results on a browser.
 
-Continuous Integration with Travis CI
--------------------------------------
+Continuous Integration
+----------------------
 
-A .travis.yml file is provided to automatically build Open vSwitch with various
-build configurations and run the testsuite using Travis CI. Builds will be
-performed with gcc, sparse and clang with the -Werror compiler flag included,
-therefore the build will fail if a new warning has been introduced.
+The Open vSwitch project can make use of multiple public CI services to help
+developers ensure their patches don't introduce additional regressions.  Each
+service requires different forms of configuration, and for the supported
+services the configuration file(s) to automatically build Open vSwitch with
+various build configurations and run the testsuites is/are available. For
+example, the GitHub Actions builds will be performed with gcc, sparse and clang
+with the -Werror compiler flag included, therefore the build will fail if a new
+warning has been introduced.
 
-The CI build is triggered via git push (regardless of the specific branch) or
-pull request against any Open vSwitch GitHub repository that is linked to
-travis-ci.
+Each ci system uses a different method of enablement, but most are available
+from the GitHub settings page.  By default, Open vSwitch includes a GitHub
+actions running configuration, and this will automatically email the repository
+owner.
 
-Instructions to setup travis-ci for your GitHub repository:
+Currently, Open vSwitch project enables the following public CI services along
+with the appropriate configuration settings::
 
-1. Go to https://travis-ci.org/ and sign in using your GitHub ID.
-2. Go to the "Repositories" tab and enable the ovs repository. You may disable
-   builds for pushes or pull requests.
-3. In order to avoid forks sending build failures to the upstream mailing list,
-   the notification email recipient is encrypted. If you want to receive email
-   notification for build failures, replace the encrypted string:
+ - AppVeyor: appveyor.yml
+ - Cirrus-CI: .cirrus.yml
+ - GitHub Actions: .github/workflows
+ - Travis-CI: .travis.yml
 
-   1. Install the travis-ci CLI (Requires ruby >=2.0): gem install travis
-   2. In your Open vSwitch repository: travis encrypt mylist@mydomain.org
-   3. Add/replace the notifications section in .travis.yml and fill in the
-      secure string as returned by travis encrypt::
+GitHub Actions is available without any additional configuration.
 
-          notifications:
-            email:
-              recipients:
-                - secure: "....."
+Additionally, as each patch is posted to the mailing list, the public CI
+machinery will run additional tests on the patches and report results.
 
-  .. note::
-    You may remove/omit the notifications section to fall back to default
-    notification behaviour which is to send an email directly to the author and
-    committer of the failing commit. Note that the email is only sent if the
-    author/committer have commit rights for the particular GitHub repository.
+Bring Your Own Lab
+------------------
 
-4. Pushing a commit to the repository which breaks the build or the
-   testsuite will now trigger a email sent to mylist@mydomain.org
+The Open vSwitch project makes use of the ozlabs patchwork instance for
+patch status and management.  This patch tracking tool provides information
+on the state of changes proposed for Open vSwitch.  One feature that the
+patchwork instance offers is for the concept of 'Checks' to be reported.
+These are sets of test functionality that can be executed and present
+status 'at-a-glance' with the ability to drill deeper into why a particular
+test failed.
+
+To this end, the Open vSwitch "0-day Robot" will accept emails sent to
+ovs-build@openvswitch.org formatted in the right way to be reflected on this
+page.  This allows any lab to contribute to the testing and validation of
+patches.
+
+To report a test status to a particular patch, send exactly one email to
+the mailing formatted as such::
+
+  From: your email <address@server.com>
+  To: ovs-build@openvswitch.org
+  Date: Mon, 28 Jun 2021 00:00:00 +0000
+  Subject: |STATUS| pwPATCHID commit subject
+
+  Test-Label: your-robot-or-test-name
+  Test-Status: STATUS
+  http://patchwork.ozlabs.org/api/patches/PATCHID/
+
+  _ONE LINE DESCRIPTION_
+
+  Addtional details
+
+In the above example, the STATUS is one of "success" "warning" "fail" depending
+on the outcome of the test.  This value is case-sensitive.  PATCHID should be the
+patch for which the test was executed, and ONE LINE DESCRIPTION should be a simple
+one line result description, ex: "robot-test: success"
+
+It is strongly recommended that if the patch is reporting a failure case, one
+of the patch authors is cc'd as well.
+
+Example::
+
+  From: 0-Day Robot <robot@bytheb.org>
+  To: ovs-build@openvswitch.org
+  Date: Fri, 25 Jun 2021 14:30:37 +0400
+  Subject: |success| pw1497375 [ovs-dev] [PATCH v2] checkpatch: Ignore macro definitions of FOR_EACH
+
+  Test-Label: github-robot
+  Test-Status: success
+  http://patchwork.ozlabs.org/api/patches/1497375/
+
+  _github build: passed_
+  Build URL: https://github.com/ovsrobot/ovs/actions/runs/972188336
 
 vsperf
 ------
