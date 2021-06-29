@@ -4922,12 +4922,6 @@ struct rr_numa {
     bool idx_inc;
 };
 
-static size_t
-rr_numa_list_count(struct rr_numa_list *rr)
-{
-    return hmap_count(&rr->numas);
-}
-
 static struct rr_numa *
 rr_numa_list_lookup(struct rr_numa_list *rr, int numa_id)
 {
@@ -5075,9 +5069,11 @@ compare_rxq_cycles(const void *a, const void *b)
  * pmds to unpinned queues.
  *
  * The function doesn't touch the pmd threads, it just stores the assignment
- * in the 'pmd' member of each rxq. */
+ * in the 'pmd' member of each rxq. Skip logging in the case of an auto
+ * load-balancing dry_run. */
 static void
-rxq_scheduling(struct dp_netdev *dp, bool pinned) OVS_REQUIRES(dp->port_mutex)
+rxq_scheduling(struct dp_netdev *dp, bool pinned, bool dry_run)
+    OVS_REQUIRES(dp->port_mutex)
 {
     struct dp_netdev_port *port;
     struct rr_numa_list rr;
@@ -5152,38 +5148,44 @@ rxq_scheduling(struct dp_netdev *dp, bool pinned) OVS_REQUIRES(dp->port_mutex)
                Round robin on the NUMA nodes that do have pmds. */
             non_local_numa = rr_numa_list_next(&rr, non_local_numa);
             if (!non_local_numa) {
-                VLOG_ERR("There is no available (non-isolated) pmd "
-                         "thread for port \'%s\' queue %d. This queue "
-                         "will not be polled. Is pmd-cpu-mask set to "
-                         "zero? Or are all PMDs isolated to other "
-                         "queues?", netdev_rxq_get_name(rxqs[i]->rx),
-                         netdev_rxq_get_queue_id(rxqs[i]->rx));
+                if (!dry_run) {
+                    VLOG_ERR("There is no available (non-isolated) pmd "
+                             "thread for port \'%s\' queue %d. This queue "
+                             "will not be polled. Is pmd-cpu-mask set to "
+                             "zero? Or are all PMDs isolated to other "
+                             "queues?", netdev_rxq_get_name(rxqs[i]->rx),
+                             netdev_rxq_get_queue_id(rxqs[i]->rx));
+                }
                 continue;
             }
             rxqs[i]->pmd = rr_numa_get_pmd(non_local_numa, assign_cyc);
-            VLOG_WARN("There's no available (non-isolated) pmd thread "
-                      "on numa node %d. Queue %d on port \'%s\' will "
-                      "be assigned to the pmd on core %d "
-                      "(numa node %d). Expect reduced performance.",
-                      numa_id, netdev_rxq_get_queue_id(rxqs[i]->rx),
-                      netdev_rxq_get_name(rxqs[i]->rx),
-                      rxqs[i]->pmd->core_id, rxqs[i]->pmd->numa_id);
+            if (!dry_run) {
+                VLOG_WARN("There's no available (non-isolated) pmd thread "
+                          "on numa node %d. Queue %d on port \'%s\' will "
+                          "be assigned to the pmd on core %d "
+                          "(numa node %d). Expect reduced performance.",
+                          numa_id, netdev_rxq_get_queue_id(rxqs[i]->rx),
+                          netdev_rxq_get_name(rxqs[i]->rx),
+                          rxqs[i]->pmd->core_id, rxqs[i]->pmd->numa_id);
+            }
         } else {
             rxqs[i]->pmd = rr_numa_get_pmd(numa, assign_cyc);
-            if (assign_cyc) {
-                VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
-                          "rx queue %d "
-                          "(measured processing cycles %"PRIu64").",
-                          rxqs[i]->pmd->core_id, numa_id,
-                          netdev_rxq_get_name(rxqs[i]->rx),
-                          netdev_rxq_get_queue_id(rxqs[i]->rx),
-                          dp_netdev_rxq_get_cycles(rxqs[i],
-                                                   RXQ_CYCLES_PROC_HIST));
-            } else {
-                VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
-                          "rx queue %d.", rxqs[i]->pmd->core_id, numa_id,
-                          netdev_rxq_get_name(rxqs[i]->rx),
-                          netdev_rxq_get_queue_id(rxqs[i]->rx));
+            if (!dry_run) {
+                if (assign_cyc) {
+                    VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
+                              "rx queue %d "
+                              "(measured processing cycles %"PRIu64").",
+                              rxqs[i]->pmd->core_id, numa_id,
+                              netdev_rxq_get_name(rxqs[i]->rx),
+                              netdev_rxq_get_queue_id(rxqs[i]->rx),
+                              dp_netdev_rxq_get_cycles(rxqs[i],
+                                                       RXQ_CYCLES_PROC_HIST));
+                } else {
+                    VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
+                              "rx queue %d.", rxqs[i]->pmd->core_id, numa_id,
+                              netdev_rxq_get_name(rxqs[i]->rx),
+                              netdev_rxq_get_queue_id(rxqs[i]->rx));
+                }
             }
         }
     }
@@ -5441,10 +5443,10 @@ reconfigure_datapath(struct dp_netdev *dp)
     }
 
     /* Add pinned queues and mark pmd threads isolated. */
-    rxq_scheduling(dp, true);
+    rxq_scheduling(dp, true, false);
 
     /* Add non-pinned queues. */
-    rxq_scheduling(dp, false);
+    rxq_scheduling(dp, false, false);
 
     /* Step 5: Remove queues not compliant with new scheduling. */
 
@@ -5547,7 +5549,7 @@ ports_require_restart(const struct dp_netdev *dp)
 }
 
 /* Calculates variance in the values stored in array 'a'. 'n' is the number
- * of elements in array to be considered for calculating vairance.
+ * of elements in array to be considered for calculating variance.
  * Usage example: data array 'a' contains the processing load of each pmd and
  * 'n' is the number of PMDs. It returns the variance in processing load of
  * PMDs*/
@@ -5575,133 +5577,9 @@ variance(uint64_t a[], int n)
             sqDiff += (a[i] - mean)*(a[i] - mean);
         }
     }
-    return (sqDiff ? (sqDiff / n) : 0);
+    return sqDiff / n;
 }
 
-
-/* Returns the variance in the PMDs usage as part of dry run of rxqs
- * assignment to PMDs. */
-static bool
-get_dry_run_variance(struct dp_netdev *dp, uint32_t *core_list,
-                     uint32_t num_pmds, uint64_t *predicted_variance)
-    OVS_REQUIRES(dp->port_mutex)
-{
-    struct dp_netdev_port *port;
-    struct dp_netdev_pmd_thread *pmd;
-    struct dp_netdev_rxq **rxqs = NULL;
-    struct rr_numa *numa = NULL;
-    struct rr_numa_list rr;
-    int n_rxqs = 0;
-    bool ret = false;
-    uint64_t *pmd_usage;
-
-    if (!predicted_variance) {
-        return ret;
-    }
-
-    pmd_usage = xcalloc(num_pmds, sizeof(uint64_t));
-
-    HMAP_FOR_EACH (port, node, &dp->ports) {
-        if (!netdev_is_pmd(port->netdev)) {
-            continue;
-        }
-
-        for (int qid = 0; qid < port->n_rxq; qid++) {
-            struct dp_netdev_rxq *q = &port->rxqs[qid];
-            uint64_t cycle_hist = 0;
-
-            if (q->pmd->isolated) {
-                continue;
-            }
-
-            if (n_rxqs == 0) {
-                rxqs = xmalloc(sizeof *rxqs);
-            } else {
-                rxqs = xrealloc(rxqs, sizeof *rxqs * (n_rxqs + 1));
-            }
-
-            /* Sum the queue intervals and store the cycle history. */
-            for (unsigned i = 0; i < PMD_RXQ_INTERVAL_MAX; i++) {
-                cycle_hist += dp_netdev_rxq_get_intrvl_cycles(q, i);
-            }
-            dp_netdev_rxq_set_cycles(q, RXQ_CYCLES_PROC_HIST,
-                                         cycle_hist);
-            /* Store the queue. */
-            rxqs[n_rxqs++] = q;
-        }
-    }
-    if (n_rxqs > 1) {
-        /* Sort the queues in order of the processing cycles
-         * they consumed during their last pmd interval. */
-        qsort(rxqs, n_rxqs, sizeof *rxqs, compare_rxq_cycles);
-    }
-    rr_numa_list_populate(dp, &rr);
-
-    for (int i = 0; i < n_rxqs; i++) {
-        int numa_id = netdev_get_numa_id(rxqs[i]->port->netdev);
-        numa = rr_numa_list_lookup(&rr, numa_id);
-        /* If there is no available pmd on the local numa but there is only one
-         * numa for cross-numa polling, we can estimate the dry run. */
-        if (!numa && rr_numa_list_count(&rr) == 1) {
-            numa = rr_numa_list_next(&rr, NULL);
-        }
-        if (!numa) {
-            VLOG_DBG("PMD auto lb dry run: "
-                     "There's no available (non-isolated) PMD thread on NUMA "
-                     "node %d for port '%s' and there are PMD threads on more "
-                     "than one NUMA node available for cross-NUMA polling. "
-                     "Aborting.", numa_id, netdev_rxq_get_name(rxqs[i]->rx));
-            goto cleanup;
-        }
-
-        pmd = rr_numa_get_pmd(numa, true);
-        VLOG_DBG("PMD auto lb dry run. Predicted: Core %d on numa node %d "
-                  "to be assigned port \'%s\' rx queue %d "
-                  "(measured processing cycles %"PRIu64").",
-                  pmd->core_id, numa_id,
-                  netdev_rxq_get_name(rxqs[i]->rx),
-                  netdev_rxq_get_queue_id(rxqs[i]->rx),
-                  dp_netdev_rxq_get_cycles(rxqs[i], RXQ_CYCLES_PROC_HIST));
-
-        for (int id = 0; id < num_pmds; id++) {
-            if (pmd->core_id == core_list[id]) {
-                /* Add the processing cycles of rxq to pmd polling it. */
-                pmd_usage[id] += dp_netdev_rxq_get_cycles(rxqs[i],
-                                        RXQ_CYCLES_PROC_HIST);
-            }
-        }
-    }
-
-    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
-        uint64_t total_cycles = 0;
-
-        if ((pmd->core_id == NON_PMD_CORE_ID) || pmd->isolated) {
-            continue;
-        }
-
-        /* Get the total pmd cycles for an interval. */
-        atomic_read_relaxed(&pmd->intrvl_cycles, &total_cycles);
-        /* Estimate the cycles to cover all intervals. */
-        total_cycles *= PMD_RXQ_INTERVAL_MAX;
-        for (int id = 0; id < num_pmds; id++) {
-            if (pmd->core_id == core_list[id]) {
-                if (pmd_usage[id]) {
-                    pmd_usage[id] = (pmd_usage[id] * 100) / total_cycles;
-                }
-                VLOG_DBG("PMD auto lb dry run. Predicted: Core %d, "
-                         "usage %"PRIu64"", pmd->core_id, pmd_usage[id]);
-            }
-        }
-    }
-    *predicted_variance = variance(pmd_usage, num_pmds);
-    ret = true;
-
-cleanup:
-    rr_numa_list_destroy(&rr);
-    free(rxqs);
-    free(pmd_usage);
-    return ret;
-}
 
 /* Does the dry run of Rxq assignment to PMDs and returns true if it gives
  * better distribution of load on PMDs. */
@@ -5710,81 +5588,132 @@ pmd_rebalance_dry_run(struct dp_netdev *dp)
     OVS_REQUIRES(dp->port_mutex)
 {
     struct dp_netdev_pmd_thread *pmd;
+    struct dp_netdev_port *port;
+    struct dp_netdev_rxq *q;
     uint64_t *curr_pmd_usage;
-
+    uint64_t *pred_pmd_usage;
     uint64_t curr_variance;
-    uint64_t new_variance;
+    uint64_t pred_variance;
     uint64_t improvement = 0;
     uint32_t num_pmds;
-    uint32_t *pmd_corelist;
+    uint32_t pmd_idx;
     struct rxq_poll *poll;
-    bool ret;
+    bool ret = false;
 
     num_pmds = cmap_count(&dp->poll_threads);
 
-    if (num_pmds > 1) {
-        curr_pmd_usage = xcalloc(num_pmds, sizeof(uint64_t));
-        pmd_corelist = xcalloc(num_pmds, sizeof(uint32_t));
-    } else {
+    if (num_pmds <= 1) {
         return false;
     }
 
-    num_pmds = 0;
-    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
-        uint64_t total_cycles = 0;
-        uint64_t total_proc = 0;
+    curr_pmd_usage = xcalloc(num_pmds, sizeof(uint64_t));
+    pred_pmd_usage = xcalloc(num_pmds, sizeof(uint64_t));
 
+    /* Perform a dry-run rxq allocation of non-pinned rxqs.
+     * This will refresh each rxq's processing cycle history count.
+     * The dry-run will temporarily update the pmd pointer of non-pinned
+     * rxqs, but that will be restored from the actual polling lists
+     * further down. This is safe as the pmd pointer is not used outside
+     * the dp->port_mutex. */
+    rxq_scheduling(dp, false, true);
+
+    /* Calculate the current and predicted PMD loads. */
+    pmd_idx = 0;
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+
+        /* Skip non-DPDK and isolated pmds. */
         if ((pmd->core_id == NON_PMD_CORE_ID) || pmd->isolated) {
             continue;
         }
 
         /* Get the total pmd cycles for an interval. */
+        uint64_t total_cycles;
         atomic_read_relaxed(&pmd->intrvl_cycles, &total_cycles);
         /* Estimate the cycles to cover all intervals. */
         total_cycles *= PMD_RXQ_INTERVAL_MAX;
 
+        /* Sum up predicted pmd load from all rxqs assigned to the pmd
+         * in the dry-run. */
+        uint64_t pred_proc = 0;
+        HMAP_FOR_EACH (port, node, &dp->ports) {
+            if (!netdev_is_pmd(port->netdev)) {
+                continue;
+            }
+            for (int qid = 0; qid < port->n_rxq; qid++) {
+                q = &port->rxqs[qid];
+                if (q->pmd != pmd) {
+                    continue;
+                }
+                uint64_t cycles =
+                    dp_netdev_rxq_get_cycles(q, RXQ_CYCLES_PROC_HIST);
+                pred_proc += cycles;
+                VLOG_DBG("PMD auto lb dry run. Predicted: Core %d on numa "
+                          "node %d to be assigned port \'%s\' rx queue %d "
+                          "(measured processing cycles %"PRIu64").",
+                          pmd->core_id, pmd->numa_id,
+                          netdev_rxq_get_name(q->rx),
+                          netdev_rxq_get_queue_id(q->rx),
+                          cycles);
+            }
+        }
+
+        /* Sum up the current pmd load from the currently polled rxqs. */
+        uint64_t curr_proc = 0;
         ovs_mutex_lock(&pmd->port_mutex);
         HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
-            for (unsigned i = 0; i < PMD_RXQ_INTERVAL_MAX; i++) {
-                total_proc += dp_netdev_rxq_get_intrvl_cycles(poll->rxq, i);
-            }
+            q = poll->rxq;
+            curr_proc += dp_netdev_rxq_get_cycles(q, RXQ_CYCLES_PROC_HIST);
         }
         ovs_mutex_unlock(&pmd->port_mutex);
 
-        if (total_proc) {
-            curr_pmd_usage[num_pmds] = (total_proc * 100) / total_cycles;
+        if (total_cycles > 0) {
+            pred_pmd_usage[pmd_idx] = (pred_proc * 100) / total_cycles;
+            curr_pmd_usage[pmd_idx] = (curr_proc * 100) / total_cycles;
+        } else {
+            pred_pmd_usage[pmd_idx] = 0;
+            curr_pmd_usage[pmd_idx] = 0;
         }
 
         VLOG_DBG("PMD auto lb dry run. Current: Core %d, usage %"PRIu64"",
-                  pmd->core_id, curr_pmd_usage[num_pmds]);
+                  pmd->core_id, curr_pmd_usage[pmd_idx]);
+        VLOG_DBG("PMD auto lb dry run. Predicted: Core %d, usage %"PRIu64"",
+                  pmd->core_id, curr_pmd_usage[pmd_idx]);
 
+        /* Reset the PMD overload indication. */
         if (atomic_count_get(&pmd->pmd_overloaded)) {
             atomic_count_set(&pmd->pmd_overloaded, 0);
         }
 
-        pmd_corelist[num_pmds] = pmd->core_id;
-        num_pmds++;
+        pmd_idx++;
+    }
+
+    /* Restore the original pmd from before the dry-run. */
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        /* Skip non-DPDK and isolated pmds. */
+        if ((pmd->core_id == NON_PMD_CORE_ID) || pmd->isolated) {
+            continue;
+        }
+        HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
+            poll->rxq->pmd = pmd;
+        }
     }
 
     curr_variance = variance(curr_pmd_usage, num_pmds);
-    ret = get_dry_run_variance(dp, pmd_corelist, num_pmds, &new_variance);
+    pred_variance = variance(pred_pmd_usage, num_pmds);
 
-    if (ret) {
-        VLOG_DBG("PMD auto lb dry run. Current PMD variance: %"PRIu64","
-                  " Predicted PMD variance: %"PRIu64"",
-                  curr_variance, new_variance);
+    VLOG_DBG("PMD auto lb dry run. Current PMD variance: %"PRIu64","
+              " Predicted PMD variance: %"PRIu64"",
+              curr_variance, pred_variance);
 
-        if (new_variance < curr_variance) {
-            improvement =
-                ((curr_variance - new_variance) * 100) / curr_variance;
-        }
-        if (improvement < dp->pmd_alb.rebalance_improve_thresh) {
+    if (pred_variance < curr_variance) {
+        improvement =
+            ((curr_variance - pred_variance) * 100) / curr_variance;
+        if (improvement < dp->pmd_alb.rebalance_improve_thresh)
             ret = false;
-        }
     }
 
     free(curr_pmd_usage);
-    free(pmd_corelist);
+    free(pred_pmd_usage);
     return ret;
 }
 
