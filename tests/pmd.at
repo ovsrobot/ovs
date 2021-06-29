@@ -579,6 +579,31 @@ p1 2 0 2
 p1 3 0 2
 ])
 
+AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity='0:1,no-isol'])
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=2])
+
+dnl Queue 0 is pinned to core 1 without isolation.  The remaining queues are
+dnl distributed over both cores.  When removing core 2, all queues are
+dnl assignned to core 1.
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 0 1
+p1 1 0 1
+p1 2 0 1
+p1 3 0 1
+])
+
+dnl Remove no-isol flag by requesting core 1 for queue 0. So Core 1 becomes
+dnl isolated and every other queue goes to core 2.
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=6])
+AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity='0:1'])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 0 1
+p1 1 0 2
+p1 2 0 2
+p1 3 0 2
+])
+
 OVS_VSWITCHD_STOP(["/dpif_netdev|WARN|There is no PMD thread on core/d"])
 AT_CLEANUP
 

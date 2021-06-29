@@ -3230,7 +3230,8 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         <p>
           <ul>
             <li>
-              &lt;rxq-affinity-list&gt; ::= NULL | &lt;non-empty-list&gt;
+              &lt;rxq-affinity-list&gt; ::= NULL | &lt;non-empty-list&gt; |
+                      &lt;non-empty-list&gt; , no-isol
             </li>
             <li>
               &lt;non-empty-list&gt; ::= &lt;affinity-pair&gt; |
@@ -3240,6 +3241,14 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
               &lt;affinity-pair&gt; ::= &lt;queue-id&gt; : &lt;core-id&gt;
             </li>
           </ul>
+        </p>
+        <p>
+          By default CPU cores with pinned RX queues are isolated and not
+          used for polling non-pinned RX queues. This can be overriden with
+          the no-isol option to let CPU cores poll both pinned and non-pinned
+          RX queues.
+          Note: A single pinned RX queue without the no-isol option suffices
+          to isolate a CPU core.
         </p>
       </column>
 

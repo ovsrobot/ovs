@@ -453,6 +453,8 @@ struct dp_netdev_rxq {
     unsigned intrvl_idx;               /* Write index for 'cycles_intrvl'. */
     struct dp_netdev_pmd_thread *pmd;  /* pmd thread that polls this queue. */
     bool is_vhost;                     /* Is rxq of a vhost port. */
+    bool isolate;                      /* Isolate the core to which this queue
+                                          is pinned.*/
 
     /* Counters of cycles spent successfully polling and processing pkts. */
     atomic_ullong cycles[RXQ_N_CYCLES];
@@ -4447,7 +4449,8 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
 
 /* Parses affinity list and returns result in 'core_ids'. */
 static int
-parse_affinity_list(const char *affinity_list, unsigned *core_ids, int n_rxq)
+parse_affinity_list(const char *affinity_list, unsigned *core_ids, int n_rxq,
+                    bool *isolate)
 {
     unsigned i;
     char *list, *copy, *key, *value;
@@ -4465,6 +4468,11 @@ parse_affinity_list(const char *affinity_list, unsigned *core_ids, int n_rxq)
 
     while (ofputil_parse_key_value(&list, &key, &value)) {
         int rxq_id, core_id;
+
+        if (strcmp(key, "no-isol") == 0) {
+            *isolate = false;
+            continue;
+        }
 
         if (!str_to_int(key, 0, &rxq_id) || rxq_id < 0
             || !str_to_int(value, 0, &core_id) || core_id < 0) {
@@ -4488,15 +4496,19 @@ dpif_netdev_port_set_rxq_affinity(struct dp_netdev_port *port,
 {
     unsigned *core_ids, i;
     int error = 0;
+    bool isolate = true;
 
     core_ids = xmalloc(port->n_rxq * sizeof *core_ids);
-    if (parse_affinity_list(affinity_list, core_ids, port->n_rxq)) {
+    if (parse_affinity_list(affinity_list, core_ids, port->n_rxq, &isolate)) {
         error = EINVAL;
         goto exit;
     }
 
     for (i = 0; i < port->n_rxq; i++) {
         port->rxqs[i].core_id = core_ids[i];
+        if (core_ids[i] != OVS_CORE_UNSPEC) {
+            port->rxqs[i].isolate = isolate;
+        }
     }
 
 exit:
@@ -5140,7 +5152,7 @@ prepare_rxq_scheduling(struct dp_netdev *dp)
                               q->core_id, qid, netdev_get_name(port->netdev));
                 } else {
                     q->pmd = pmd;
-                    pmd->isolated = true;
+                    pmd->isolated = pmd->isolated || q->isolate;
                     pmd->ll_n_rxq++;
                     pmd->ll_cycles += cycles;
                     VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
@@ -6569,6 +6581,7 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     pmd->numa_id = numa_id;
     pmd->need_reload = false;
     pmd->n_output_batches = 0;
+    pmd->isolated = false;
 
     ovs_refcount_init(&pmd->ref_cnt);
     atomic_init(&pmd->exit, false);

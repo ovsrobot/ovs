@@ -101,8 +101,18 @@ like so:
 - Queue #2 not pinned
 - Queue #3 pinned to core 8
 
-PMD threads on cores where Rx queues are *pinned* will become *isolated*. This
-means that this thread will only poll the *pinned* Rx queues.
+By default PMD threads on cores where Rx queues are *pinned* will become
+*isolated*.This means that these threads will only poll the *pinned* Rx queues.
+If this isolation of PMD threads is not wanted, it can be skipped by adding
+the ``no-isol`` option to the ``<rxq-affinity-list>``, e.g.
+
+    $ ovs-vsctl set interface dpdk-p0 options:n_rxq=4 \
+        other_config:pmd-rxq-affinity="0:3,1:7,3:8,no-isol"
+
+.. note::
+
+   A single Rx queue pinned to a CPU core without the ``no-isol`` option
+   suffices to isolate the PMD thread.
 
 .. warning::
 
@@ -111,8 +121,8 @@ means that this thread will only poll the *pinned* Rx queues.
    ``<core-id>`` is not in ``pmd-cpu-mask``), the RX queue will not be polled
    by any PMD thread.
 
-If ``pmd-rxq-affinity`` is not set for Rx queues, they will be assigned to PMDs
-(cores) automatically.
+If ``pmd-rxq-affinity`` is not set for Rx queues, they will be assigned to
+non-isolated PMDs (cores) automatically.
 
 The algorithm used to automatically assign Rxqs to PMDs can be set by::
 
