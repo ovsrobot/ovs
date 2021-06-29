@@ -325,6 +325,20 @@ class Reconnect(object):
                           Reconnect.Idle):
             self._transition(now, Reconnect.Reconnect)
 
+    def graceful_reconnect(self, now):
+        """If this FSM is enabled and currently connected (or attempting to
+        connect), forces self.run() to return ovs.reconnect.DISCONNECT the next
+        time it is called, which should cause the client to drop the connection
+        (or attempt), back off, and then reconnect.
+
+        Unlike self.force_reconnect(), this also updates backoff for long
+        lived sessions."""
+        if self.state in (Reconnect.ConnectInProgress,
+                          Reconnect.Active,
+                          Reconnect.Idle):
+            self._reset_backoff()
+            self._transition(now, Reconnect.Reconnect)
+
     def disconnected(self, now, error):
         """Tell this FSM that the connection dropped or that a connection
         attempt failed.  'error' specifies the reason: a positive value
@@ -377,14 +391,7 @@ class Reconnect(object):
             if self.backoff_free_tries > 1:
                 self.backoff_free_tries -= 1
                 self.backoff = 0
-            elif (self.state in (Reconnect.Active, Reconnect.Idle) and
-                (self.last_activity - self.last_connected >= self.backoff or
-                 self.passive)):
-                if self.passive:
-                    self.backoff = 0
-                else:
-                    self.backoff = self.min_backoff
-            else:
+            elif not self._reset_backoff():
                 if self.backoff < self.min_backoff:
                     self.backoff = self.min_backoff
                 elif self.backoff < self.max_backoff / 2:
@@ -623,3 +630,14 @@ class Reconnect(object):
             return True
         else:
             return False
+
+    def _reset_backoff(self):
+        if (self.state in (Reconnect.Active, Reconnect.Idle) and
+            (self.last_activity - self.last_connected >= self.backoff or
+             self.passive)):
+            if self.passive:
+                self.backoff = 0
+            else:
+                self.backoff = self.min_backoff
+            return True
+        return False

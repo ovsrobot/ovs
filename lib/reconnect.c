@@ -77,6 +77,7 @@ static void reconnect_transition__(struct reconnect *, long long int now,
                                    enum state state);
 static long long int reconnect_deadline__(const struct reconnect *);
 static bool reconnect_may_retry(struct reconnect *);
+static bool reconnect_reset_backoff__(struct reconnect *);
 
 static const char *
 reconnect_state_name__(enum state state)
@@ -330,6 +331,23 @@ reconnect_force_reconnect(struct reconnect *fsm, long long int now)
     }
 }
 
+/* If 'fsm' is enabled and currently connected (or attempting to connect),
+ * forces reconnect_run() for 'fsm' to return RECONNECT_DISCONNECT the next
+ * time it is called, which should cause the client to drop the connection (or
+ * attempt), back off, and then reconnect.
+ *
+ * Unlike reconnect_force_reconnect(), this also resets the backoff for
+ * connections that were active long enough.
+ * */
+void
+reconnect_graceful_reconnect(struct reconnect *fsm, long long int now)
+{
+    if (fsm->state & (S_CONNECTING | S_ACTIVE | S_IDLE)) {
+        reconnect_reset_backoff__(fsm);
+        reconnect_transition__(fsm, now, S_RECONNECT);
+    }
+}
+
 /* Tell 'fsm' that the connection dropped or that a connection attempt failed.
  * 'error' specifies the reason: a positive value represents an errno value,
  * EOF indicates that the connection was closed by the peer (e.g. read()
@@ -385,11 +403,7 @@ reconnect_disconnected(struct reconnect *fsm, long long int now, int error)
         if (fsm->backoff_free_tries > 1) {
             fsm->backoff_free_tries--;
             fsm->backoff = 0;
-        } else if (fsm->state & (S_ACTIVE | S_IDLE)
-                   && (fsm->last_activity - fsm->last_connected >= fsm->backoff
-                       || fsm->passive)) {
-            fsm->backoff = fsm->passive ? 0 : fsm->min_backoff;
-        } else {
+        } else if (!reconnect_reset_backoff__(fsm)) {
             if (fsm->backoff < fsm->min_backoff) {
                 fsm->backoff = fsm->min_backoff;
             } else if (fsm->backoff < fsm->max_backoff / 2) {
@@ -744,4 +758,16 @@ reconnect_may_retry(struct reconnect *fsm)
         fsm->max_tries--;
     }
     return may_retry;
+}
+
+static bool
+reconnect_reset_backoff__(struct reconnect *fsm)
+{
+    if (fsm->state & (S_ACTIVE | S_IDLE)
+        && (fsm->last_activity - fsm->last_connected >= fsm->backoff
+            || fsm->passive)) {
+        fsm->backoff = fsm->passive ? 0 : fsm->min_backoff;
+        return true;
+    }
+    return false;
 }

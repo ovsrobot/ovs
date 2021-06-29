@@ -276,7 +276,7 @@ class Idl(object):
                                         tables=self.server_tables)
                     self.change_seqno = initial_change_seqno
                     if not self.__check_server_db():
-                        self.force_reconnect()
+                        self.graceful_reconnect()
                         break
                 else:
                     self.__parse_update(msg.params[1], OVSDB_UPDATE)
@@ -441,6 +441,12 @@ class Idl(object):
         """Forces the IDL to drop its connection to the database and reconnect.
         In the meantime, the contents of the IDL will not change."""
         self._session.force_reconnect()
+
+    def graceful_reconnect(self):
+        """Makes the IDL to gracefully drop its connection to the database and
+        reconnect.  In the meantime, the contents of the IDL will not
+        change."""
+        self._session.graceful_reconnect()
 
     def session_name(self):
         return self._session.get_name()

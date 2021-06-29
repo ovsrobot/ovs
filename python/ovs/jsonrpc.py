@@ -612,5 +612,8 @@ class Session(object):
     def force_reconnect(self):
         self.reconnect.force_reconnect(ovs.timeval.msec())
 
+    def graceful_reconnect(self):
+        self.reconnect.graceful_reconnect(ovs.timeval.msec())
+
     def get_num_of_remotes(self):
         return len(self.remotes)

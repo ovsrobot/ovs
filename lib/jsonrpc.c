@@ -1267,6 +1267,13 @@ jsonrpc_session_force_reconnect(struct jsonrpc_session *s)
     reconnect_force_reconnect(s->reconnect, time_msec());
 }
 
+/* Makes 's' gracefully drop its connection (if any) and reconnect. */
+void
+jsonrpc_session_graceful_reconnect(struct jsonrpc_session *s)
+{
+    reconnect_graceful_reconnect(s->reconnect, time_msec());
+}
+
 /* Sets 'max_backoff' as the maximum time, in milliseconds, to wait after a
  * connection attempt fails before attempting to connect again. */
 void

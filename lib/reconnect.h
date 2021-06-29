@@ -67,6 +67,7 @@ void reconnect_enable(struct reconnect *, long long int now);
 void reconnect_disable(struct reconnect *, long long int now);
 
 void reconnect_force_reconnect(struct reconnect *, long long int now);
+void reconnect_graceful_reconnect(struct reconnect *, long long int now);
 void reconnect_skip_backoff(struct reconnect *);
 
 bool reconnect_is_connected(const struct reconnect *);

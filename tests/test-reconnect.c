@@ -108,6 +108,12 @@ do_force_reconnect(struct ovs_cmdl_context *ctx OVS_UNUSED)
     reconnect_force_reconnect(reconnect, now);
 }
 
+static void
+do_graceful_reconnect(struct ovs_cmdl_context *ctx OVS_UNUSED)
+{
+    reconnect_graceful_reconnect(reconnect, now);
+}
+
 static int
 error_from_string(const char *s)
 {
@@ -293,6 +299,7 @@ static const struct ovs_cmdl_command all_commands[] = {
     { "enable", NULL, 0, 0, do_enable, OVS_RO },
     { "disable", NULL, 0, 0, do_disable, OVS_RO },
     { "force-reconnect", NULL, 0, 0, do_force_reconnect, OVS_RO },
+    { "graceful-reconnect", NULL, 0, 0, do_graceful_reconnect, OVS_RO },
     { "disconnected", NULL, 0, 1, do_disconnected, OVS_RO },
     { "connecting", NULL, 0, 0, do_connecting, OVS_RO },
     { "connect-failed", NULL, 0, 1, do_connect_failed, OVS_RO },

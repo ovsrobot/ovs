@@ -230,8 +230,10 @@ static void ovsdb_cs_transition_at(struct ovsdb_cs *, enum ovsdb_cs_state,
 #define ovsdb_cs_transition(CS, STATE) \
     ovsdb_cs_transition_at(CS, STATE, OVS_SOURCE_LOCATOR)
 
-static void ovsdb_cs_retry_at(struct ovsdb_cs *, const char *where);
-#define ovsdb_cs_retry(CS) ovsdb_cs_retry_at(CS, OVS_SOURCE_LOCATOR)
+static void ovsdb_cs_retry_at(struct ovsdb_cs *, bool graceful,
+                              const char *where);
+#define ovsdb_cs_retry(CS, GRACEFUL) \
+    ovsdb_cs_retry_at((CS), (GRACEFUL), OVS_SOURCE_LOCATOR)
 
 static struct vlog_rate_limit syntax_rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
@@ -400,9 +402,21 @@ ovsdb_cs_send_request(struct ovsdb_cs *cs, struct jsonrpc_msg *request)
 }
 
 static void
-ovsdb_cs_retry_at(struct ovsdb_cs *cs, const char *where)
+ovsdb_cs_reconnect(struct ovsdb_cs *cs, bool graceful)
 {
-    ovsdb_cs_force_reconnect(cs);
+    if (cs->session) {
+        if (graceful) {
+            jsonrpc_session_graceful_reconnect(cs->session);
+        } else {
+            jsonrpc_session_force_reconnect(cs->session);
+        }
+    }
+}
+
+static void
+ovsdb_cs_retry_at(struct ovsdb_cs *cs, bool graceful, const char *where)
+{
+    ovsdb_cs_reconnect(cs, graceful);
     ovsdb_cs_transition_at(cs, CS_S_RETRY, where);
 }
 
@@ -438,7 +452,7 @@ ovsdb_cs_process_response(struct ovsdb_cs *cs, struct jsonrpc_msg *msg)
                      ovsdb_cs_state_to_string(cs->state),
                      s);
         free(s);
-        ovsdb_cs_retry(cs);
+        ovsdb_cs_retry(cs, false);
         return;
     }
 
@@ -711,9 +725,7 @@ ovsdb_cs_enable_reconnect(struct ovsdb_cs *cs)
 void
 ovsdb_cs_force_reconnect(struct ovsdb_cs *cs)
 {
-    if (cs->session) {
-        jsonrpc_session_force_reconnect(cs->session);
-    }
+    ovsdb_cs_reconnect(cs, false);
 }
 
 /* Drops 'cs''s current connection and the cached session.  This is useful if
@@ -722,7 +734,7 @@ void
 ovsdb_cs_flag_inconsistency(struct ovsdb_cs *cs)
 {
     cs->data.last_id = UUID_ZERO;
-    ovsdb_cs_retry(cs);
+    ovsdb_cs_retry(cs, false);
 }
 
 /* Returns true if 'cs' is currently connected or will eventually try to
@@ -1951,7 +1963,7 @@ ovsdb_cs_check_server_db(struct ovsdb_cs *cs)
 {
     bool ok = ovsdb_cs_check_server_db__(cs);
     if (!ok) {
-        ovsdb_cs_retry(cs);
+        ovsdb_cs_retry(cs, true);
     }
     return ok;
 }

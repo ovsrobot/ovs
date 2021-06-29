@@ -33,6 +33,10 @@ def do_force_reconnect(_):
     r.force_reconnect(now)
 
 
+def do_graceful_reconnect(_):
+    r.graceful_reconnect(now)
+
+
 def error_from_string(s):
     if not s:
         return 0
@@ -176,6 +180,7 @@ def main():
         "enable": do_enable,
         "disable": do_disable,
         "force-reconnect": do_force_reconnect,
+        "graceful-reconnect": do_graceful_reconnect,
         "disconnected": do_disconnected,
         "connecting": do_connecting,
         "connect-failed": do_connect_failed,
