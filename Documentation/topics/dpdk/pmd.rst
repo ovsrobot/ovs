@@ -78,8 +78,27 @@ To show port/Rx queue assignment::
 
     $ ovs-appctl dpif-netdev/pmd-rxq-show
 
-Rx queues may be manually pinned to cores. This will change the default Rx
-queue assignment to PMD threads::
+Normally, Rx queues are assigned to PMD threads automatically.  By default
+OVS only assigns Rx queues to PMD threads executing on the same NUMA
+node in order to avoid unnecessary latency for accessing packet buffers
+across the NUMA boundary.  Typically this overhead is higher for vhostuser
+ports than for physical ports due to the packet copy that is done for all
+rx packets.
+
+On NUMA servers with physical ports only on one NUMA node, the NUMA-local
+polling policy can lead to an under-utilization of the PMD threads on the
+remote NUMA node.  For the overall OVS performance it may in such cases be
+beneficial to utilize the spare capacity and allow polling of a physical
+port's rxqs across NUMA nodes despite the overhead involved.
+The policy can be set per port with the following configuration option::
+
+    $ ovs-vsctl set Interface <iface> \
+        other_config:cross-numa-polling=true|false
+
+The default value is false.
+
+Rx queues may also be manually pinned to cores. This will change the default
+Rx queue assignment to PMD threads::
 
     $ ovs-vsctl set Interface <iface> \
         other_config:pmd-rxq-affinity=<rxq-affinity-list>
@@ -193,6 +212,11 @@ or can be triggered by using::
    In addition, the output of ``pmd-rxq-show`` was modified to include
    Rx queue utilization of the PMD as a percentage. Prior to this, tracking of
    stats was not available.
+
+.. versionchanged:: 2.15.0
+
+   Added the interface parameter ``other_config:cross-numa-polling`` and the
+   ``no-isol`` option for ``pmd-rxq-affinity``.
 
 Automatic assignment of Port/Rx Queue to PMD Threads (experimental)
 -------------------------------------------------------------------

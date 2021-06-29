@@ -478,6 +478,7 @@ struct dp_netdev_port {
     bool emc_enabled;           /* If true EMC will be used. */
     char *type;                 /* Port type as requested by user. */
     char *rxq_affinity_list;    /* Requested affinity of rx queues. */
+    bool cross_numa_polling;    /* If true cross polling will be enabled */
 };
 
 /* Contained by struct dp_netdev_flow's 'stats' member.  */
@@ -4548,11 +4549,17 @@ dpif_netdev_port_set_config(struct dpif *dpif, odp_port_t port_no,
     int error = 0;
     const char *affinity_list = smap_get(cfg, "pmd-rxq-affinity");
     bool emc_enabled = smap_get_bool(cfg, "emc-enable", true);
+    bool cross_numa_polling = smap_get_bool(cfg, "cross-numa-polling", false);
 
     ovs_mutex_lock(&dp->port_mutex);
     error = get_port_by_number(dp, port_no, &port);
     if (error) {
         goto unlock;
+    }
+
+    if (cross_numa_polling != port->cross_numa_polling) {
+        port->cross_numa_polling = cross_numa_polling;
+        dp_netdev_request_reconfigure(dp);
     }
 
     if (emc_enabled != port->emc_enabled) {
@@ -5173,8 +5180,8 @@ rxq_scheduling(struct dp_netdev *dp, bool dry_run)
     struct dp_netdev_port *port;
     struct dp_netdev_rxq ** rxqs = NULL;
     struct rr_numa_list rr;
-    struct rr_numa *numa = NULL;
-    struct rr_numa *non_local_numa = NULL;
+    struct rr_numa *local_numa = NULL;
+    struct rr_numa *next_numa = NULL;
     int n_rxqs = 0;
     int numa_id;
     bool assign_cyc = dp->pmd_rxq_assign_cyc;
@@ -5214,12 +5221,20 @@ rxq_scheduling(struct dp_netdev *dp, bool dry_run)
         numa_id = netdev_get_numa_id(rxqs[i]->port->netdev);
         cycles = dp_netdev_rxq_get_cycles(rxqs[i], RXQ_CYCLES_PROC_HIST);
 
-        numa = rr_numa_list_lookup(&rr, numa_id);
-        if (!numa) {
-            /* There are no pmds on the queue's local NUMA node.
-               Round robin on the NUMA nodes that do have pmds. */
-            non_local_numa = rr_numa_list_next(&rr, non_local_numa);
-            if (!non_local_numa) {
+        if (!(rxqs[i]->port->cross_numa_polling)) {
+            /* Try to find a local pmd. */
+            local_numa = rr_numa_list_lookup(&rr, numa_id);
+        } else {
+            /* Allow polling by any pmd. */
+            local_numa = NULL;
+        }
+
+        if (!local_numa) {
+            /* Port configured for cross-NUMA polling or there are no pmds
+             * on the queue's local NUMA node.
+             * Round robin on the NUMA nodes that do have pmds. */
+            next_numa = rr_numa_list_next(&rr, next_numa);
+            if (!next_numa) {
                 if (!dry_run) {
                     VLOG_ERR("There is no available (non-isolated) pmd "
                              "thread for port \'%s\' queue %d. This queue "
@@ -5231,7 +5246,7 @@ rxq_scheduling(struct dp_netdev *dp, bool dry_run)
                 continue;
             }
             rxqs[i]->pmd =
-                    rr_numa_assign_least_loaded_pmd(non_local_numa, cycles);
+                    rr_numa_assign_least_loaded_pmd(next_numa, cycles);
             if (!dry_run) {
                 VLOG_WARN("There's no available (non-isolated) pmd thread "
                           "on numa node %d. Queue %d on port \'%s\' will "
@@ -5242,7 +5257,7 @@ rxq_scheduling(struct dp_netdev *dp, bool dry_run)
                           rxqs[i]->pmd->core_id, rxqs[i]->pmd->numa_id);
             }
         } else {
-            rxqs[i]->pmd = rr_numa_assign_least_loaded_pmd(numa, cycles);
+            rxqs[i]->pmd = rr_numa_assign_least_loaded_pmd(local_numa, cycles);
             if (!dry_run) {
                 if (assign_cyc) {
                     VLOG_INFO("Core %d on numa node %d assigned port \'%s\' "
