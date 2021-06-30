@@ -24,6 +24,8 @@ Post-v2.15.0
        Available only if DPDK experimantal APIs enabled during the build.
      * EAL option --socket-mem is no longer configured by default upon
        start-up.
+     * EAL option --socket-limit no longer takes on the value of --socket-mem
+       by default.
    - ovsdb-tool:
      * New option '--election-timer' to the 'create-cluster' command to set the
        leader election timer during cluster creation.

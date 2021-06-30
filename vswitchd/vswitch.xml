@@ -381,14 +381,13 @@
           <code>0</code> will disable the limit for a particular socket.
         </p>
         <p>
-          If not specified, OVS will configure limits equal to the amount of
-          preallocated memory specified by <ref column="other_config"
+          If not specified, OVS will not configure limits by default.
+          Limits can be configured with <ref column="other_config"
           key="dpdk-socket-mem"/> or <code>--socket-mem</code> in
           <ref column="other_config" key="dpdk-extra"/>. If none of the above
-          options specified or <code>--legacy-mem</code> provided in
+          options are specified or <code>--legacy-mem</code> is provided in
           <ref column="other_config" key="dpdk-extra"/>, limits will not be
-          applied.
-          Changing this value requires restarting the daemon.
+          applied. Changing this value requires restarting the daemon.
         </p>
       </column>
 
