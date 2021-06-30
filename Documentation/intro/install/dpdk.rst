@@ -290,8 +290,7 @@ listed below. Defaults will be provided for all values not explicitly set.
 
 ``dpdk-socket-mem``
   Comma separated list of memory to pre-allocate from hugepages on specific
-  sockets. If not specified, 1024 MB will be set for each numa node by
-  default.
+  sockets. If not specified, this option will not be set by default.
 
 ``dpdk-hugepage-dir``
   Directory where hugetlbfs is mounted

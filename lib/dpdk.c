@@ -167,7 +167,7 @@ construct_dpdk_mutex_options(const struct smap *ovs_other_config,
         {"memory type",
          {"dpdk-alloc-mem", "dpdk-socket-mem", NULL,},
          {"-m",             "--socket-mem",    NULL,},
-         default_dpdk_socket_mem, 1
+          NULL, 0
         },
     };
 
