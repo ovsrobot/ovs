@@ -1303,6 +1303,23 @@ netdev_linux_batch_rxq_recv_sock(struct netdev_rxq_linux *rx, int mtu,
             continue;
         }
 
+        if (mmsgs[i].msg_hdr.msg_flags & MSG_TRUNC) {
+            /* Data is truncated, so the packet is corrupted, and needs to be
+             * dropped. This can happen if TSO/GRO is enabled in the kernel,
+             * but not in userspace, i.e. there is no dp buffer to store the
+             * full packet. */
+                struct netdev *netdev_ = netdev_rxq_get_netdev(&rx->up);
+                struct netdev_linux *netdev = netdev_linux_cast(netdev_);
+
+                dp_packet_delete(buffers[i]);
+                dp_packet_delete(rx->aux_bufs[i]);
+                netdev->rx_dropped += 1;
+                VLOG_WARN_RL(&rl,
+                             "%s: Dropped packet: Too big. GRO/TSO enabled?",
+                             netdev_get_name(netdev_));
+                continue;
+        }
+
         if (mmsgs[i].msg_len > std_len) {
             /* Build a single linear TSO packet by prepending the data from
              * std_len buffer to the aux_buf. */
