@@ -62,7 +62,7 @@ uint16_t tnl_udp_port_max = 61000;
 
 void *
 netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
-                  unsigned int *hlen)
+                             unsigned int *hlen)
 {
     void *nh;
     struct ip_header *ip;
@@ -96,7 +96,8 @@ netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
         }
 
         if (ntohs(ip->ip_tot_len) > l3_size) {
-            VLOG_WARN_RL(&err_rl, "ip packet is truncated (IP length %d, actual %d)",
+            VLOG_WARN_RL(&err_rl,
+                         "ip packet is truncated (IP length %d, actual %d)",
                          ntohs(ip->ip_tot_len), l3_size);
             return NULL;
         }
@@ -147,7 +148,7 @@ netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
  * Return pointer to the L4 header added to 'packet'. */
 void *
 netdev_tnl_push_ip_header(struct dp_packet *packet,
-               const void *header, int size, int *ip_tot_size)
+                          const void *header, int size, int *ip_tot_size)
 {
     struct eth_header *eth;
     struct ip_header *ip;
@@ -245,7 +246,8 @@ netdev_tnl_push_udp_header(const struct netdev *netdev OVS_UNUSED,
     struct udp_header *udp;
     int ip_tot_size;
 
-    udp = netdev_tnl_push_ip_header(packet, data->header, data->header_len, &ip_tot_size);
+    udp = netdev_tnl_push_ip_header(packet, data->header, data->header_len,
+                                    &ip_tot_size);
 
     /* set udp src port */
     udp->udp_src = netdev_tnl_get_src_port(packet);
@@ -294,8 +296,8 @@ netdev_tnl_ip_build_header(struct ovs_action_push_tnl *data,
         put_16aligned_be32(&ip->ip_src, ip_src);
         put_16aligned_be32(&ip->ip_dst, params->flow->tunnel.ip_dst);
 
-        ip->ip_frag_off = (params->flow->tunnel.flags & FLOW_TNL_F_DONT_FRAGMENT) ?
-                          htons(IP_DF) : 0;
+        ip->ip_frag_off = (params->flow->tunnel.flags
+                           & FLOW_TNL_F_DONT_FRAGMENT) ? htons(IP_DF) : 0;
 
         /* Checksum has already been zeroed by eth_build_header. */
         ip->ip_csum = csum(ip, sizeof *ip);
@@ -312,7 +314,8 @@ netdev_tnl_ip_build_header(struct ovs_action_push_tnl *data,
         ip6->ip6_hlim = params->flow->tunnel.ip_ttl;
         ip6->ip6_nxt = next_proto;
         memcpy(&ip6->ip6_src, params->s_ip, sizeof(ovs_be32[4]));
-        memcpy(&ip6->ip6_dst, &params->flow->tunnel.ipv6_dst, sizeof(ovs_be32[4]));
+        memcpy(&ip6->ip6_dst, &params->flow->tunnel.ipv6_dst,
+               sizeof(ovs_be32[4]));
 
         data->header_len += IPV6_HEADER_LEN;
         return ip6 + 1;
@@ -385,8 +388,8 @@ parse_gre_header(struct dp_packet *packet,
         ovs_be16 pkt_csum;
 
         pkt_csum = csum(greh, dp_packet_size(packet) -
-                              ((const unsigned char *)greh -
-                               (const unsigned char *)dp_packet_eth(packet)));
+                        ((const unsigned char *)greh -
+                         (const unsigned char *)dp_packet_eth(packet)));
         if (pkt_csum) {
             return -EINVAL;
         }
@@ -456,7 +459,8 @@ netdev_gre_push_header(const struct netdev *netdev,
     struct gre_base_hdr *greh;
     int ip_tot_size;
 
-    greh = netdev_tnl_push_ip_header(packet, data->header, data->header_len, &ip_tot_size);
+    greh = netdev_tnl_push_ip_header(packet, data->header, data->header_len,
+                                     &ip_tot_size);
 
     if (greh->flags & htons(GRE_CSUM)) {
         ovs_be16 *csum_opt = (ovs_be16 *) (greh + 1);
@@ -669,8 +673,8 @@ netdev_erspan_build_header(const struct netdev *netdev,
         set_sid(ersh, sid);
 
         uint32_t erspan_idx = (tnl_cfg->erspan_idx_flow
-                          ? params->flow->tunnel.erspan_idx
-                          : tnl_cfg->erspan_idx);
+                               ? params->flow->tunnel.erspan_idx
+                               : tnl_cfg->erspan_idx);
         put_16aligned_be32(ALIGNED_CAST(ovs_16aligned_be32 *, ersh + 1),
                            htonl(erspan_idx));
 
@@ -982,7 +986,8 @@ netdev_geneve_pop_header(struct dp_packet *packet)
 
     pkt_metadata_init_tnl(md);
     if (GENEVE_BASE_HLEN > dp_packet_l4_size(packet)) {
-        VLOG_WARN_RL(&err_rl, "geneve packet too small: min header=%u packet size=%"PRIuSIZE"\n",
+        VLOG_WARN_RL(&err_rl, "geneve packet too small: "
+                     "min header=%u packet size=%"PRIuSIZE"\n",
                      (unsigned int)GENEVE_BASE_HLEN, dp_packet_l4_size(packet));
         goto err;
     }
@@ -995,7 +1000,8 @@ netdev_geneve_pop_header(struct dp_packet *packet)
     opts_len = gnh->opt_len * 4;
     hlen = ulen + GENEVE_BASE_HLEN + opts_len;
     if (hlen > dp_packet_size(packet)) {
-        VLOG_WARN_RL(&err_rl, "geneve packet too small: header len=%u packet size=%u\n",
+        VLOG_WARN_RL(&err_rl, "geneve packet too small: "
+                     "header len=%u packet size=%u\n",
                      hlen, dp_packet_size(packet));
         goto err;
     }
@@ -1045,7 +1051,8 @@ netdev_geneve_build_header(const struct netdev *netdev,
 
     gnh = udp_build_header(tnl_cfg, data, params);
 
-    put_16aligned_be32(&gnh->vni, htonl(ntohll(params->flow->tunnel.tun_id) << 8));
+    put_16aligned_be32(&gnh->vni,
+                       htonl(ntohll(params->flow->tunnel.tun_id) << 8));
 
     ovs_mutex_unlock(&dev->mutex);
 
@@ -1072,7 +1079,8 @@ netdev_tnl_egress_port_range(struct unixctl_conn *conn, int argc,
     if (argc < 3) {
         struct ds ds = DS_EMPTY_INITIALIZER;
 
-        ds_put_format(&ds, "Tunnel UDP source port range: %"PRIu16"-%"PRIu16"\n",
+        ds_put_format(&ds, "Tunnel UDP source port range: "
+                            "%"PRIu16"-%"PRIu16"\n",
                             tnl_udp_port_min, tnl_udp_port_max);
 
         unixctl_command_reply(conn, ds_cstr(&ds));
