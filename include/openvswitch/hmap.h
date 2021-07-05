@@ -410,4 +410,6 @@ hmap_next(const struct hmap *hmap, const struct hmap_node *node)
 }
 #endif
 
+#define OVS_HAS_PARALLEL_HMAP 1
+
 #endif /* hmap.h */
