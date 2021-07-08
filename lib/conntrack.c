@@ -298,8 +298,8 @@ conntrack_init(void)
     hindex_init(&ct->alg_expectation_refs);
     ovs_rwlock_unlock(&ct->resources_lock);
 
-    ovs_mutex_init_adaptive(&ct->ct_lock);
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_init(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     cmap_init(&ct->conns);
     for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
         ovs_list_init(&ct->exp_lists[i]);
@@ -307,7 +307,7 @@ conntrack_init(void)
     hmap_init(&ct->zone_limits);
     ct->zone_limit_seq = 0;
     timeout_policy_init(ct);
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
 
     ct->hash_basis = random_uint32();
     atomic_count_init(&ct->n_conn, 0);
@@ -364,13 +364,13 @@ zone_limit_lookup_or_default(struct conntrack *ct, int32_t zone)
 struct conntrack_zone_limit
 zone_limit_get(struct conntrack *ct, int32_t zone)
 {
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     struct conntrack_zone_limit czl = {DEFAULT_ZONE, 0, 0, 0};
     struct zone_limit *zl = zone_limit_lookup_or_default(ct, zone);
     if (zl) {
         czl = zl->czl;
     }
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return czl;
 }
 
@@ -395,7 +395,7 @@ int
 zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
 {
     int err = 0;
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     struct zone_limit *zl = zone_limit_lookup(ct, zone);
     if (zl) {
         zl->czl.limit = limit;
@@ -409,7 +409,7 @@ zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
                       zone);
         }
     }
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return err;
 }
 
@@ -424,7 +424,7 @@ zone_limit_clean(struct conntrack *ct, struct zone_limit *zl)
 int
 zone_limit_delete(struct conntrack *ct, uint16_t zone)
 {
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     struct zone_limit *zl = zone_limit_lookup(ct, zone);
     if (zl) {
         zone_limit_clean(ct, zl);
@@ -433,7 +433,7 @@ zone_limit_delete(struct conntrack *ct, uint16_t zone)
         VLOG_INFO("Attempted delete of non-existent zone limit: zone %d",
                   zone);
     }
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return 0;
 }
 
@@ -497,7 +497,7 @@ conntrack_destroy(struct conntrack *ct)
     pthread_join(ct->clean_thread, NULL);
     latch_destroy(&ct->clean_thread_exit);
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     CMAP_FOR_EACH (conn, cm_node, &ct->conns) {
         conn_clean_one(ct, conn);
     }
@@ -515,8 +515,8 @@ conntrack_destroy(struct conntrack *ct)
     }
     hmap_destroy(&ct->timeout_policies);
 
-    ovs_mutex_unlock(&ct->ct_lock);
-    ovs_mutex_destroy(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
+    ovs_spin_destroy(&ct->ct_lock);
 
     ovs_rwlock_wrlock(&ct->resources_lock);
     struct alg_exp_node *alg_exp_node;
@@ -1116,11 +1116,11 @@ conn_update_state(struct conntrack *ct, struct dp_packet *pkt,
             pkt->md.ct_state = CS_INVALID;
             break;
         case CT_UPDATE_NEW:
-            ovs_mutex_lock(&ct->ct_lock);
+            ovs_spin_lock(&ct->ct_lock);
             if (conn_lookup(ct, &conn->key, now, NULL, NULL)) {
                 conn_clean(ct, conn);
             }
-            ovs_mutex_unlock(&ct->ct_lock);
+            ovs_spin_unlock(&ct->ct_lock);
             create_new_conn = true;
             break;
         case CT_UPDATE_VALID_NEW:
@@ -1302,11 +1302,11 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
 
     /* Delete found entry if in wrong direction. 'force' implies commit. */
     if (OVS_UNLIKELY(force && ctx->reply && conn)) {
-        ovs_mutex_lock(&ct->ct_lock);
+        ovs_spin_lock(&ct->ct_lock);
         if (conn_lookup(ct, &conn->key, now, NULL, NULL)) {
             conn_clean(ct, conn);
         }
-        ovs_mutex_unlock(&ct->ct_lock);
+        ovs_spin_unlock(&ct->ct_lock);
         conn = NULL;
     }
 
@@ -1370,12 +1370,12 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
         }
         ovs_rwlock_unlock(&ct->resources_lock);
 
-        ovs_mutex_lock(&ct->ct_lock);
+        ovs_spin_lock(&ct->ct_lock);
         if (!conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
             conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
                                   helper, alg_exp, ct_alg_ctl, tp_id);
         }
-        ovs_mutex_unlock(&ct->ct_lock);
+        ovs_spin_unlock(&ct->ct_lock);
     }
 
     write_ct_md(pkt, zone, conn, &ctx->key, alg_exp);
@@ -1498,7 +1498,7 @@ ct_sweep(struct conntrack *ct, long long now, size_t limit)
     long long min_expiration = LLONG_MAX;
     size_t count = 0;
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
 
     for (unsigned i = 0; i < N_CT_TM; i++) {
         LIST_FOR_EACH_SAFE (conn, next, exp_node, &ct->exp_lists[i]) {
@@ -1523,7 +1523,7 @@ ct_sweep(struct conntrack *ct, long long now, size_t limit)
 out:
     VLOG_DBG("conntrack cleanup %"PRIuSIZE" entries in %lld msec", count,
              time_msec() - now);
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return min_expiration;
 }
 
@@ -2583,13 +2583,13 @@ conntrack_flush(struct conntrack *ct, const uint16_t *zone)
 {
     struct conn *conn;
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     CMAP_FOR_EACH (conn, cm_node, &ct->conns) {
         if (!zone || *zone == conn->key.zone) {
             conn_clean_one(ct, conn);
         }
     }
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
 
     return 0;
 }
@@ -2604,7 +2604,7 @@ conntrack_flush_tuple(struct conntrack *ct, const struct ct_dpif_tuple *tuple,
 
     memset(&key, 0, sizeof(key));
     tuple_to_conn_key(tuple, zone, &key);
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     conn_lookup(ct, &key, time_msec(), &conn, NULL);
 
     if (conn && conn->conn_type == CT_CONN_TYPE_DEFAULT) {
@@ -2614,7 +2614,7 @@ conntrack_flush_tuple(struct conntrack *ct, const struct ct_dpif_tuple *tuple,
         error = ENOENT;
     }
 
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return error;
 }
 
