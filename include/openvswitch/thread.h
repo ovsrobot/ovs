@@ -38,6 +38,8 @@ struct OVS_LOCKABLE ovs_spin {
     pthread_spinlock_t lock;
     const char *where;          /* NULL if and only if uninitialized. */
 };
+#else
+#define ovs_spin ovs_mutex
 #endif
 
 /* "struct ovs_mutex" initializer. */
@@ -78,7 +80,6 @@ int ovs_mutex_trylock_at(const struct ovs_mutex *mutex, const char *where)
 void ovs_mutex_cond_wait(pthread_cond_t *, const struct ovs_mutex *mutex)
     OVS_REQUIRES(mutex);
 
-#ifdef HAVE_PTHREAD_SPIN_LOCK
 void ovs_spin_init(const struct ovs_spin *);
 void ovs_spin_destroy(const struct ovs_spin *);
 void ovs_spin_unlock(const struct ovs_spin *spin) OVS_RELEASES(spin);
@@ -91,7 +92,6 @@ int ovs_spin_trylock_at(const struct ovs_spin *spin, const char *where)
     OVS_TRY_LOCK(0, spin);
 #define ovs_spin_trylock(spin) \
         ovs_spin_trylock_at(spin, OVS_SOURCE_LOCATOR)
-#endif
 
 /* Convenient once-only execution.
  *

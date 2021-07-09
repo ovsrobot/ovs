@@ -77,6 +77,11 @@ LOCK_FUNCTION(rwlock, rdlock);
 LOCK_FUNCTION(rwlock, wrlock);
 #ifdef HAVE_PTHREAD_SPIN_LOCK
 LOCK_FUNCTION(spin, lock);
+#else
+void ovs_spin_lock_at(const struct ovs_spin *lock, const char *where)
+{
+   while (ovs_mutex_trylock_at(lock, where));
+}
 #endif
 
 #define TRY_LOCK_FUNCTION(TYPE, FUN) \
@@ -108,6 +113,11 @@ TRY_LOCK_FUNCTION(rwlock, tryrdlock);
 TRY_LOCK_FUNCTION(rwlock, trywrlock);
 #ifdef HAVE_PTHREAD_SPIN_LOCK
 TRY_LOCK_FUNCTION(spin, trylock);
+#else
+int ovs_spin_trylock_at(const struct ovs_spin *spin, const char *where)
+{
+    return ovs_mutex_trylock_at(spin, where);
+}
 #endif
 
 #define UNLOCK_FUNCTION(TYPE, FUN, WHERE) \
@@ -134,6 +144,15 @@ UNLOCK_FUNCTION(rwlock, destroy, NULL);
 #ifdef HAVE_PTHREAD_SPIN_LOCK
 UNLOCK_FUNCTION(spin, unlock, "<unlocked>");
 UNLOCK_FUNCTION(spin, destroy, NULL);
+#else
+void ovs_spin_unlock(const struct ovs_spin *lock)
+{
+    ovs_mutex_unlock(lock);
+}
+void ovs_spin_destroy(const struct ovs_spin *lock)
+{
+    ovs_mutex_destroy(lock);
+}
 #endif
 
 #define XPTHREAD_FUNC1(FUNCTION, PARAM1)                \
@@ -296,6 +315,12 @@ void
 ovs_spin_init(const struct ovs_spin *spin)
 {
     ovs_spin_init__(spin, PTHREAD_PROCESS_PRIVATE);
+}
+#else
+void
+ovs_spin_init(const struct ovs_spin *spin)
+{
+    ovs_mutex_init(spin);
 }
 #endif
 
