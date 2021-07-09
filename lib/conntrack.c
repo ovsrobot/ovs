@@ -1156,15 +1156,13 @@ handle_nat(struct dp_packet *pkt, struct conn *conn,
 static bool
 check_orig_tuple(struct conntrack *ct, struct dp_packet *pkt,
                  struct conn_lookup_ctx *ctx_in, long long now,
-                 struct conn **conn,
-                 const struct nat_action_info_t *nat_action_info)
+                 struct conn **conn)
 {
     if (!(pkt->md.ct_state & (CS_SRC_NAT | CS_DST_NAT)) ||
         (ctx_in->key.dl_type == htons(ETH_TYPE_IP) &&
          !pkt->md.ct_orig_tuple.ipv4.ipv4_proto) ||
         (ctx_in->key.dl_type == htons(ETH_TYPE_IPV6) &&
-         !pkt->md.ct_orig_tuple.ipv6.ipv6_proto) ||
-        nat_action_info) {
+         !pkt->md.ct_orig_tuple.ipv6.ipv6_proto)) {
         return false;
     }
 
@@ -1343,7 +1341,7 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
             handle_nat(pkt, conn, zone, ctx->reply, ctx->icmp_related);
         }
 
-    } else if (check_orig_tuple(ct, pkt, ctx, now, &conn, nat_action_info)) {
+    } else if (check_orig_tuple(ct, pkt, ctx, now, &conn)) {
         create_new_conn = conn_update_state(ct, pkt, ctx, conn, now);
     } else {
         if (ctx->icmp_related) {
