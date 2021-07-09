@@ -156,7 +156,7 @@ enum ct_timeout {
 };
 
 struct conntrack {
-    struct ovs_mutex ct_lock; /* Protects 2 following fields. */
+    struct ovs_spin ct_lock; /* Protects 2 following fields. */
     struct cmap conns OVS_GUARDED;
     struct ovs_list exp_lists[N_CT_TM] OVS_GUARDED;
     struct hmap zone_limits OVS_GUARDED;

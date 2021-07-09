@@ -67,14 +67,14 @@ timeout_policy_get(struct conntrack *ct, int32_t tp_id)
 {
     struct timeout_policy *tp;
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     tp = timeout_policy_lookup(ct, tp_id);
     if (!tp) {
-        ovs_mutex_unlock(&ct->ct_lock);
+        ovs_spin_unlock(&ct->ct_lock);
         return NULL;
     }
 
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return tp;
 }
 
@@ -158,9 +158,9 @@ timeout_policy_delete(struct conntrack *ct, uint32_t tp_id)
 {
     int err;
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     err = timeout_policy_delete__(ct, tp_id);
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return err;
 }
 
@@ -185,13 +185,13 @@ timeout_policy_update(struct conntrack *ct,
     int err = 0;
     uint32_t tp_id = new_tp->policy.id;
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     struct timeout_policy *tp = timeout_policy_lookup(ct, tp_id);
     if (tp) {
         err = timeout_policy_delete__(ct, tp_id);
     }
     timeout_policy_create(ct, new_tp);
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
     return err;
 }
 
@@ -238,7 +238,7 @@ conn_update_expiration__(struct conntrack *ct, struct conn *conn,
 {
     ovs_mutex_unlock(&conn->lock);
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     ovs_mutex_lock(&conn->lock);
     if (!conn->cleaned) {
         conn->expiration = now + tp_value * 1000;
@@ -246,7 +246,7 @@ conn_update_expiration__(struct conntrack *ct, struct conn *conn,
         ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
     }
     ovs_mutex_unlock(&conn->lock);
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
 
     ovs_mutex_lock(&conn->lock);
 }
@@ -262,7 +262,7 @@ conn_update_expiration(struct conntrack *ct, struct conn *conn,
 
     ovs_mutex_unlock(&conn->lock);
 
-    ovs_mutex_lock(&ct->ct_lock);
+    ovs_spin_lock(&ct->ct_lock);
     ovs_mutex_lock(&conn->lock);
     tp = timeout_policy_lookup(ct, conn->tp_id);
     if (tp) {
@@ -271,7 +271,7 @@ conn_update_expiration(struct conntrack *ct, struct conn *conn,
         val = ct_dpif_netdev_tp_def[tm_to_ct_dpif_tp(tm)];
     }
     ovs_mutex_unlock(&conn->lock);
-    ovs_mutex_unlock(&ct->ct_lock);
+    ovs_spin_unlock(&ct->ct_lock);
 
     ovs_mutex_lock(&conn->lock);
     VLOG_DBG_RL(&rl, "Update timeout %s zone=%u with policy id=%d "
