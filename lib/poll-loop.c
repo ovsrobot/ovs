@@ -53,6 +53,7 @@ struct poll_loop {
      * wake up immediately, or LLONG_MAX to wait forever. */
     long long int timeout_when; /* In msecs as returned by time_msec(). */
     const char *timeout_where;  /* Where 'timeout_when' was set. */
+    bool immediate_wake;
 };
 
 static struct poll_loop *poll_loop(void);
@@ -106,6 +107,13 @@ poll_create_node(int fd, HANDLE wevent, short int events, const char *where)
     struct poll_node *node;
 
     COVERAGE_INC(poll_create_node);
+
+    if (loop->immediate_wake) {
+        /* We have been asked to bail out of this poll loop.
+         * There is no point to engage in yack shaving a poll hmap.
+         */
+        return;
+    }
 
     /* Both 'fd' and 'wevent' cannot be set. */
     ovs_assert(!fd != !wevent);
@@ -181,8 +189,15 @@ poll_wevent_wait_at(HANDLE wevent, const char *where)
 void
 poll_timer_wait_at(long long int msec, const char *where)
 {
-    long long int now = time_msec();
+    long long int now;
     long long int when;
+    struct poll_loop *loop = poll_loop();
+
+    if (loop->immediate_wake) {
+        return;
+    }
+
+    now = time_msec();
 
     if (msec <= 0) {
         /* Wake up immediately. */
@@ -229,7 +244,9 @@ poll_timer_wait_until_at(long long int when, const char *where)
 void
 poll_immediate_wake_at(const char *where)
 {
+    struct poll_loop *loop = poll_loop();
     poll_timer_wait_at(0, where);
+    loop->immediate_wake = true;
 }
 
 /* Logs, if appropriate, that the poll loop was awakened by an event
@@ -320,10 +337,10 @@ poll_block(void)
 {
     struct poll_loop *loop = poll_loop();
     struct poll_node *node;
-    struct pollfd *pollfds;
+    struct pollfd *pollfds = NULL;
     HANDLE *wevents = NULL;
     int elapsed;
-    int retval;
+    int retval = 0;
     int i;
 
     /* Register fatal signal events before actually doing any real work for
@@ -335,34 +352,36 @@ poll_block(void)
     }
 
     timewarp_run();
-    pollfds = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *pollfds);
+    if (!loop->immediate_wake) {
+        pollfds = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *pollfds);
 
 #ifdef _WIN32
-    wevents = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *wevents);
+        wevents = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *wevents);
 #endif
 
-    /* Populate with all the fds and events. */
-    i = 0;
-    HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
-        pollfds[i] = node->pollfd;
+        /* Populate with all the fds and events. */
+        i = 0;
+        HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
+            pollfds[i] = node->pollfd;
 #ifdef _WIN32
-        wevents[i] = node->wevent;
-        if (node->pollfd.fd && node->wevent) {
-            short int wsa_events = 0;
-            if (node->pollfd.events & POLLIN) {
-                wsa_events |= FD_READ | FD_ACCEPT | FD_CLOSE;
+            wevents[i] = node->wevent;
+            if (node->pollfd.fd && node->wevent) {
+                short int wsa_events = 0;
+                if (node->pollfd.events & POLLIN) {
+                    wsa_events |= FD_READ | FD_ACCEPT | FD_CLOSE;
+                }
+                if (node->pollfd.events & POLLOUT) {
+                    wsa_events |= FD_WRITE | FD_CONNECT | FD_CLOSE;
+                }
+                WSAEventSelect(node->pollfd.fd, node->wevent, wsa_events);
             }
-            if (node->pollfd.events & POLLOUT) {
-                wsa_events |= FD_WRITE | FD_CONNECT | FD_CLOSE;
-            }
-            WSAEventSelect(node->pollfd.fd, node->wevent, wsa_events);
+#endif
+            i++;
         }
-#endif
-        i++;
-    }
 
-    retval = time_poll(pollfds, hmap_count(&loop->poll_nodes), wevents,
-                       loop->timeout_when, &elapsed);
+        retval = time_poll(pollfds, hmap_count(&loop->poll_nodes), wevents,
+                           loop->timeout_when, &elapsed);
+    }
     if (retval < 0) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
         VLOG_ERR_RL(&rl, "poll: %s", ovs_strerror(-retval));
@@ -381,6 +400,7 @@ poll_block(void)
     free_poll_nodes(loop);
     loop->timeout_when = LLONG_MAX;
     loop->timeout_where = NULL;
+    loop->immediate_wake = false;
     free(pollfds);
     free(wevents);
 
@@ -417,6 +437,7 @@ poll_loop(void)
         loop = xzalloc(sizeof *loop);
         loop->timeout_when = LLONG_MAX;
         hmap_init(&loop->poll_nodes);
+        loop->immediate_wake = false;
         xpthread_setspecific(key, loop);
     }
     return loop;
