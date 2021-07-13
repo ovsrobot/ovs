@@ -848,6 +848,24 @@ struct sctp_header {
 };
 BUILD_ASSERT_DECL(SCTP_HEADER_LEN == sizeof(struct sctp_header));
 
+#define SCTP_CHUNK_HEADER_LEN 4
+struct sctp_chunk_header {
+    uint8_t type;
+    uint8_t flags;
+    ovs_be16 length;
+};
+BUILD_ASSERT_DECL(SCTP_CHUNK_HEADER_LEN == sizeof(struct sctp_chunk_header));
+
+#define SCTP_NEXT_CHUNK(sh, off) \
+    ALIGNED_CAST(struct sctp_chunk_header *, (uint8_t *) sh + off)
+
+#define FOR_EACH_SCTP_CHUNK(sh, sch, offset, size) \
+    for (offset = sizeof(struct sctp_header), \
+         sch = SCTP_NEXT_CHUNK(sh, offset); \
+         offset < size; \
+         offset += ROUND_UP(ntohs(sch->length), 4), \
+         sch = SCTP_NEXT_CHUNK(sh, offset))
+
 #define UDP_HEADER_LEN 8
 struct udp_header {
     ovs_be16 udp_src;
