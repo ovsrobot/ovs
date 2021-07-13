@@ -415,13 +415,6 @@ dpdk_init__(const struct smap *ovs_other_config)
                 break;
             }
         }
-        if (i < args.n - 1) {
-            svec_add(&args, "--socket-limit");
-            svec_add(&args, args.names[i + 1]);
-            VLOG_INFO("Using default value for '--socket-limit. OVS will no "
-                      "longer provide a default for this argument starting "
-                      "from 2.17 release. DPDK defaults will be used instead.");
-        }
     }
 
     if (args_contains(&args, "-c") || args_contains(&args, "-l")) {
