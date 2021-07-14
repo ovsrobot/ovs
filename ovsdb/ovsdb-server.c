@@ -676,9 +676,6 @@ open_db(struct server_config *config, const char *filename)
         return error;
     }
 
-    db = xzalloc(sizeof *db);
-    db->filename = xstrdup(filename);
-
     struct ovsdb_schema *schema;
     if (ovsdb_storage_is_clustered(storage)) {
         schema = NULL;
@@ -691,6 +688,9 @@ open_db(struct server_config *config, const char *filename)
         }
         ovs_assert(schema && !txn_json);
     }
+
+    db = xzalloc(sizeof *db);
+    db->filename = xstrdup(filename);
     db->db = ovsdb_create(schema, storage);
     ovsdb_jsonrpc_server_add_db(config->jsonrpc, db->db);
 
