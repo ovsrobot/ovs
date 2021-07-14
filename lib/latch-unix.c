@@ -23,6 +23,9 @@
 #include "openvswitch/poll-loop.h"
 #include "socket-util.h"
 
+/* All writes to latch are zero sized. Even 16 bytes are an overkill */
+static char latch_buffer[16];
+
 /* Initializes 'latch' as initially unset. */
 void
 latch_init(struct latch *latch)
@@ -43,9 +46,7 @@ latch_destroy(struct latch *latch)
 bool
 latch_poll(struct latch *latch)
 {
-    char buffer[_POSIX_PIPE_BUF];
-
-    return read(latch->fds[0], buffer, sizeof buffer) > 0;
+    return read(latch->fds[0], &latch_buffer, sizeof latch_buffer) > 0;
 }
 
 /* Sets 'latch'.
