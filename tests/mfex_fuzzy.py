@@ -2,7 +2,7 @@
 try:
     from scapy.all import RandMAC, RandIP, PcapWriter, RandIP6, RandShort, fuzz
     from scapy.all import IPv6, Dot1Q, IP, Ether, UDP, TCP
-except ModuleNotFoundError as err:
+except ImportError as err:
     print(err + ": Scapy")
 import sys
 
