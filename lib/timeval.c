@@ -323,7 +323,13 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
         }
 
 #ifndef _WIN32
-        retval = poll(pollfds, n_pollfds, time_left);
+        /* n_pollfds is 0 only if we are doing a immediate_wake
+         * shortcut. Otherwise there is at least one fd for
+         * the signals pipe.
+         */
+        if (n_pollfds != 0) {
+            retval = poll(pollfds, n_pollfds, time_left);
+        }
         if (retval < 0) {
             retval = -errno;
         }
@@ -331,6 +337,9 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
         if (n_pollfds > MAXIMUM_WAIT_OBJECTS) {
             VLOG_ERR("Cannot handle more than maximum wait objects\n");
         } else if (n_pollfds != 0) {
+            /* If we are doing an immediate_wake shortcut n_pollfds is
+             * zero, so we skip the actual call.
+             */
             retval = WaitForMultipleObjects(n_pollfds, handles, FALSE,
                                             time_left);
         }

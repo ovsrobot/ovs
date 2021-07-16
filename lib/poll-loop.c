@@ -107,6 +107,16 @@ poll_create_node(int fd, HANDLE wevent, short int events, const char *where)
 
     COVERAGE_INC(poll_create_node);
 
+    if (loop->timeout_when <= 0) {
+        /* There was a previous request to bail out of this poll loop.
+         * 0 - explicit time_poll_wait()
+         * LLONG_MIN - timeout computation resulted in a request
+         * to wake immediately.
+         * There is no point to engage in yack shaving a poll hmap.
+         */
+        return;
+    }
+
     /* Both 'fd' and 'wevent' cannot be set. */
     ovs_assert(!fd != !wevent);
 
@@ -181,8 +191,21 @@ poll_wevent_wait_at(HANDLE wevent, const char *where)
 void
 poll_timer_wait_at(long long int msec, const char *where)
 {
-    long long int now = time_msec();
+    long long int now;
     long long int when;
+    struct poll_loop *loop = poll_loop();
+
+    /* We have an outstanding request for an immediate wake -
+     * either explicit (from poll_immediate_wake()) or as a
+     * result of a previous timeout calculation which gave
+     * a negative timeout.
+     * No point trying to recalculate the timeout.
+     */
+    if (loop->timeout_when <= 0) {
+        return;
+    }
+
+    now = time_msec();
 
     if (msec <= 0) {
         /* Wake up immediately. */
@@ -320,10 +343,10 @@ poll_block(void)
 {
     struct poll_loop *loop = poll_loop();
     struct poll_node *node;
-    struct pollfd *pollfds;
+    struct pollfd *pollfds = NULL;
     HANDLE *wevents = NULL;
     int elapsed;
-    int retval;
+    int retval = 0;
     int i;
 
     /* Register fatal signal events before actually doing any real work for
@@ -335,34 +358,38 @@ poll_block(void)
     }
 
     timewarp_run();
-    pollfds = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *pollfds);
+    if (loop->timeout_when > 0) {
+        pollfds = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *pollfds);
 
 #ifdef _WIN32
-    wevents = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *wevents);
+        wevents = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *wevents);
 #endif
 
-    /* Populate with all the fds and events. */
-    i = 0;
-    HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
-        pollfds[i] = node->pollfd;
+        /* Populate with all the fds and events. */
+        i = 0;
+        HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
+            pollfds[i] = node->pollfd;
 #ifdef _WIN32
-        wevents[i] = node->wevent;
-        if (node->pollfd.fd && node->wevent) {
-            short int wsa_events = 0;
-            if (node->pollfd.events & POLLIN) {
-                wsa_events |= FD_READ | FD_ACCEPT | FD_CLOSE;
+            wevents[i] = node->wevent;
+            if (node->pollfd.fd && node->wevent) {
+                short int wsa_events = 0;
+                if (node->pollfd.events & POLLIN) {
+                    wsa_events |= FD_READ | FD_ACCEPT | FD_CLOSE;
+                }
+                if (node->pollfd.events & POLLOUT) {
+                    wsa_events |= FD_WRITE | FD_CONNECT | FD_CLOSE;
+                }
+                WSAEventSelect(node->pollfd.fd, node->wevent, wsa_events);
             }
-            if (node->pollfd.events & POLLOUT) {
-                wsa_events |= FD_WRITE | FD_CONNECT | FD_CLOSE;
-            }
-            WSAEventSelect(node->pollfd.fd, node->wevent, wsa_events);
+#endif
+            i++;
         }
-#endif
-        i++;
-    }
 
-    retval = time_poll(pollfds, hmap_count(&loop->poll_nodes), wevents,
-                       loop->timeout_when, &elapsed);
+        retval = time_poll(pollfds, hmap_count(&loop->poll_nodes), wevents,
+                           loop->timeout_when, &elapsed);
+    } else {
+        retval = time_poll(NULL, 0, NULL, loop->timeout_when, &elapsed);
+    }
     if (retval < 0) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
         VLOG_ERR_RL(&rl, "poll: %s", ovs_strerror(-retval));
