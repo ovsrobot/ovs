@@ -1,9 +1,6 @@
 #!/usr/bin/python3
-try:
-    from scapy.all import RandMAC, RandIP, PcapWriter, RandIP6, RandShort, fuzz
-    from scapy.all import IPv6, Dot1Q, IP, Ether, UDP, TCP
-except ModuleNotFoundError as err:
-    print(err + ": Scapy")
+from scapy.all import RandMAC, RandIP, PcapWriter, RandIP6, RandShort, fuzz
+from scapy.all import IPv6, Dot1Q, IP, Ether, UDP, TCP
 import sys
 
 path = str(sys.argv[1]) + "/pcap/fuzzy.pcap"
