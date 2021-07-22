@@ -97,4 +97,6 @@ struct ovsdb_schema *ovsdb_storage_read_schema(struct ovsdb_storage *);
 
 const struct uuid *ovsdb_storage_peek_last_eid(struct ovsdb_storage *);
 
+uint64_t ovsdb_storage_max_processing_time(struct ovsdb_storage *);
+
 #endif /* ovsdb/storage.h */
