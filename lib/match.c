@@ -1556,8 +1556,6 @@ match_format(const struct match *match,
                 skip_proto = true;
                 if (f->nw_proto == IPPROTO_ICMP) {
                     ds_put_format(s, "%sicmp%s,", colors.value, colors.end);
-                } else if (f->nw_proto == IPPROTO_IGMP) {
-                    ds_put_format(s, "%sigmp%s,", colors.value, colors.end);
                 } else if (f->nw_proto == IPPROTO_TCP) {
                     ds_put_format(s, "%stcp%s,", colors.value, colors.end);
                 } else if (f->nw_proto == IPPROTO_UDP) {

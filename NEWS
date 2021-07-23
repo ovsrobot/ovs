@@ -90,6 +90,8 @@ v2.16.0 - xx xxx xxxx
        space in order to resolve a number of issues with per-vport dispatch.
      * New vswitchd unixctl command `dpif-netlink/dispatch-mode` will return
        the current dispatch mode for each datapath.
+   - ovs-ofctl dump-flows no longer prints "igmp". Instead the flag
+       "ip,nw_proto=2" is used.
 
 
 v2.15.0 - 15 Feb 2021
