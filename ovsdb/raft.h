@@ -188,4 +188,7 @@ void raft_take_leadership(struct raft *);
 void raft_transfer_leadership(struct raft *, const char *reason);
 
 const struct uuid *raft_current_eid(const struct raft *);
+
+uint64_t raft_get_election_timer(const struct raft *);
+
 #endif /* lib/raft.h */
