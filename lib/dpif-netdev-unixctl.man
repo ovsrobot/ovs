@@ -247,3 +247,13 @@ Lists the DPIF implementations that are available.
 .
 .IP "\fBdpif-netdev/dpif-impl-set\fR \fIdpif_impl\fR"
 Sets the DPIF to be used to \fIdpif_impl\fR. By default "dpif_scalar" is used.
+.
+.IP "\fBdpif-netdev/miniflow-parser-get\fR
+Lists the miniflow extract implementations that are available.
+.
+.IP "\fBdpif-netdev/miniflow-parser-set\fR [\fB-pmd\fR \fIcore\fR] \
+\fIminiflow_impl\fR [\fIstudy_cnt\fR]"
+Sets the miniflow extract to be used for one or all pmd threads to
+\fIminiflow_impl\fR.  By default "scalar" is used. \fIstudy_cnt\fR defaults to
+128 and indicates the number of packets that the "study" miniflow
+implementation must parse before choosing an optimal implementation.
