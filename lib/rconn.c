@@ -40,6 +40,8 @@ COVERAGE_DEFINE(rconn_discarded);
 COVERAGE_DEFINE(rconn_overflow);
 COVERAGE_DEFINE(rconn_queued);
 COVERAGE_DEFINE(rconn_sent);
+COVERAGE_DEFINE(rconn_run);
+COVERAGE_DEFINE(rconn_retry);
 
 /* The connection states have the following meanings:
  *
@@ -624,6 +626,8 @@ rconn_run(struct rconn *rc)
     int old_state;
     size_t i;
 
+    COVERAGE_INC(rconn_run);
+
     ovs_mutex_lock(&rc->mutex);
     if (rc->vconn) {
         int error;
@@ -1132,6 +1136,8 @@ try_send(struct rconn *rc)
         if (retval != EAGAIN) {
             report_error(rc, retval);
             disconnect(rc, retval);
+        } else {
+            COVERAGE_INC(rconn_retry);
         }
         return retval;
     }
