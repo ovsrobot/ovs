@@ -22,6 +22,8 @@ ovsdb_libovsdb_la_SOURCES = \
 	ovsdb/ovsdb.h \
 	ovsdb/monitor.c \
 	ovsdb/monitor.h \
+	ovsdb/parallel-json.c \
+	ovsdb/parallel-json.h \
 	ovsdb/query.c \
 	ovsdb/query.h \
 	ovsdb/raft.c \

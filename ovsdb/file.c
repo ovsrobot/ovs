@@ -37,6 +37,8 @@
 #include "unixctl.h"
 #include "uuid.h"
 #include "util.h"
+#include "parallel-hmap.h"
+#include "parallel-json.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(ovsdb_file);
@@ -367,23 +369,125 @@ ovsdb_file_change_cb(const struct ovsdb_row *old,
     return true;
 }
 
+/* Workload descriptor for parallel processing */
+
+struct snapshot_info {
+     struct ovsdb_file_txn *ftxn;
+     struct shash *tables;
+};
+
+/* Parallel processing thread */
+
+static void *
+build_ftxn_thread(void *arg)
+{
+    struct worker_control *control = (struct worker_control *) arg;
+    struct worker_pool *workload;
+    struct snapshot_info *si;
+    struct ovsdb_row *row;
+    int bnum;
+
+    while (!stop_parallel_processing()) {
+        wait_for_work(control);
+        workload = (struct worker_pool *) control->workload;
+        si = (struct snapshot_info *) control->data;
+        if (stop_parallel_processing()) {
+            return NULL;
+        }
+        if (si && workload) {
+            struct shash_node *node;
+
+            SHASH_FOR_EACH (node, si->tables) {
+                const struct ovsdb_table *table = node->data;
+
+                for (bnum = control->id;
+                        bnum <= table->rows.mask;
+                        bnum += workload->size)
+                {
+                    HMAP_FOR_EACH_IN_PARALLEL (row, hmap_node, bnum, &table->rows) {
+                        if (stop_parallel_processing()) {
+                            return NULL;
+                        }
+                        ovsdb_file_txn_add_row(si->ftxn, NULL, row, NULL);
+                    }
+                }
+            }
+        }
+        post_completed_work(control);
+    }
+    return NULL;
+}
+
+static struct worker_pool *snapshot_pool = NULL;
+static bool pool_init_done = false;
+
+static void
+init_snapshot_thread_pool(void)
+{
+    if (!pool_init_done) {
+        if (can_parallelize_hashes(false)) {
+            snapshot_pool = add_worker_pool(build_ftxn_thread);
+            if (snapshot_pool) {
+                int i;
+                for (i = 0; i < snapshot_pool->size; i++) {
+                   snapshot_pool->controls[i].workload = snapshot_pool;
+                }
+            }
+        }
+    }
+    pool_init_done = true;
+}
+
+static void
+ftxn_merge_cb(struct worker_pool *pool OVS_UNUSED,
+              void *fin_result,
+              void *result_frags,
+              int index)
+{
+    struct ovsdb_file_txn *result = fin_result;
+    struct ovsdb_file_txn *frags = result_frags;
+
+    parallel_json_merge_tables(&result->json, frags[index].json);
+
+}
+
+
+
 struct json *
 ovsdb_to_txn_json(const struct ovsdb *db, const char *comment)
 {
     struct ovsdb_file_txn ftxn;
 
     ovsdb_file_txn_init(&ftxn);
+    init_snapshot_thread_pool();
 
-    struct shash_node *node;
-    SHASH_FOR_EACH (node, &db->tables) {
-        const struct ovsdb_table *table = node->data;
-        const struct ovsdb_row *row;
+    if (snapshot_pool) {
+        /* System supports parallel processing. */
+        struct ovsdb_file_txn *ftxns =
+            xcalloc(sizeof(struct ovsdb_file_txn), snapshot_pool->size);
+        struct snapshot_info *sis =
+            xcalloc(sizeof(struct snapshot_info), snapshot_pool->size);
+        int i;
+        for (i = 0; i < snapshot_pool->size; i++) {
+            ovsdb_file_txn_init(&ftxns[i]);
+            sis[i].ftxn = &ftxns[i];
+            sis[i].tables = (struct shash *) &db->tables;
+            snapshot_pool->controls[i].data = &sis[i];
+        }
+        run_pool_callback(snapshot_pool, &ftxn, ftxns, ftxn_merge_cb);
+        free(ftxns);
+        free(sis);
+    } else {
+        struct shash_node *node;
+        SHASH_FOR_EACH (node, &db->tables) {
+            const struct ovsdb_table *table = node->data;
+            const struct ovsdb_row *row;
 
-        HMAP_FOR_EACH (row, hmap_node, &table->rows) {
-            ovsdb_file_txn_add_row(&ftxn, NULL, row, NULL);
+            HMAP_FOR_EACH (row, hmap_node, &table->rows) {
+                ovsdb_file_txn_add_row(&ftxn, NULL, row, NULL);
+            }
         }
     }
-
     return ovsdb_file_txn_annotate(ftxn.json, comment);
 }
 
