@@ -788,6 +788,7 @@ free_flow_patterns(struct flow_patterns *patterns)
             free(CONST_CAST(void *, patterns->items[i].mask));
         }
     }
+    ds_destroy(&patterns->s_tnl);
     free(patterns->items);
     patterns->items = NULL;
     patterns->cnt = 0;
@@ -1334,6 +1335,7 @@ netdev_offload_dpdk_mark_rss(struct flow_patterns *patterns,
     struct rte_flow_error error;
     struct rte_flow *flow;
 
+    ds_cstr(&actions.s_tnl);
     add_flow_mark_rss_actions(&actions, flow_mark, netdev);
 
     flow = netdev_offload_dpdk_flow_create(netdev, &flow_attr, patterns,
@@ -1814,6 +1816,7 @@ netdev_offload_dpdk_actions(struct netdev *netdev,
     struct rte_flow_error error;
     int ret;
 
+    ds_cstr(&actions.s_tnl);
     ret = parse_flow_actions(netdev, &actions, nl_actions, actions_len);
     if (ret) {
         goto out;
@@ -1838,6 +1841,7 @@ netdev_offload_dpdk_add_flow(struct netdev *netdev,
     bool actions_offloaded = true;
     struct rte_flow *flow;
 
+    ds_cstr(&patterns.s_tnl);
     if (parse_flow_match(netdev, info->orig_in_port, &patterns, match)) {
         VLOG_DBG_RL(&rl, "%s: matches of ufid "UUID_FMT" are not supported",
                     netdev_get_name(netdev), UUID_ARGS((struct uuid *) ufid));
