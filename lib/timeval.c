@@ -305,6 +305,7 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
     for (;;) {
         long long int now = time_msec();
         int time_left;
+        retval = 0;
 
         if (now >= timeout_when) {
             time_left = 0;
@@ -323,14 +324,24 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
         }
 
 #ifndef _WIN32
-        retval = poll(pollfds, n_pollfds, time_left);
+        /* If timeout_when is LLONG_MIN, we should skip the poll().
+         * We do not skip on time_left == 0, because we may have
+         * ended up with time_left = 0 after a poll with valid
+         * pollfds was interrupted and restarted.
+         */
+        if (timeout_when != LLONG_MIN) {
+            retval = poll(pollfds, n_pollfds, time_left);
+        }
         if (retval < 0) {
             retval = -errno;
         }
 #else
         if (n_pollfds > MAXIMUM_WAIT_OBJECTS) {
             VLOG_ERR("Cannot handle more than maximum wait objects\n");
-        } else if (n_pollfds != 0) {
+        } else if (n_pollfds != 0 && timeout_when != LLONG_MIN) {
+            /* If there is a request for an immediate_wake, timeout_when
+             * is LLONG_MIN. In this case we skip the actual call.
+             */
             retval = WaitForMultipleObjects(n_pollfds, handles, FALSE,
                                             time_left);
         }
