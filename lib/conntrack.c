@@ -27,6 +27,7 @@
 #include "conntrack-private.h"
 #include "conntrack-tp.h"
 #include "coverage.h"
+#include "crc32c.h"
 #include "csum.h"
 #include "ct-dpif.h"
 #include "dp-packet.h"
@@ -40,6 +41,7 @@
 #include "openvswitch/poll-loop.h"
 #include "random.h"
 #include "timeval.h"
+#include "unaligned.h"
 
 VLOG_DEFINE_THIS_MODULE(conntrack);
 
@@ -731,6 +733,9 @@ pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             struct udp_header *uh = dp_packet_l4(pkt);
             packet_set_udp_port(pkt, conn->rev_key.dst.port, uh->udp_dst);
+        } else if (conn->key.nw_proto == IPPROTO_SCTP) {
+            struct sctp_header *sh = dp_packet_l4(pkt);
+            packet_set_sctp_port(pkt, conn->rev_key.dst.port, sh->sctp_dst);
         }
     } else if (conn->nat_info->nat_action & NAT_ACTION_DST) {
         if (conn->key.nw_proto == IPPROTO_TCP) {
@@ -739,6 +744,9 @@ pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             packet_set_udp_port(pkt, conn->rev_key.dst.port,
                                 conn->rev_key.src.port);
+        } else if (conn->key.nw_proto == IPPROTO_SCTP) {
+            packet_set_sctp_port(pkt, conn->rev_key.dst.port,
+                                 conn->rev_key.src.port);
         }
     }
 }
@@ -789,12 +797,17 @@ un_pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             struct udp_header *uh = dp_packet_l4(pkt);
             packet_set_udp_port(pkt, uh->udp_src, conn->key.src.port);
+        } else if (conn->key.nw_proto == IPPROTO_SCTP) {
+            struct sctp_header *sh = dp_packet_l4(pkt);
+            packet_set_sctp_port(pkt, sh->sctp_src, conn->key.src.port);
         }
     } else if (conn->nat_info->nat_action & NAT_ACTION_DST) {
         if (conn->key.nw_proto == IPPROTO_TCP) {
             packet_set_tcp_port(pkt, conn->key.dst.port, conn->key.src.port);
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             packet_set_udp_port(pkt, conn->key.dst.port, conn->key.src.port);
+        } else if (conn->key.nw_proto == IPPROTO_SCTP) {
+            packet_set_sctp_port(pkt, conn->key.dst.port, conn->key.src.port);
         }
     }
 }
@@ -811,6 +824,10 @@ reverse_pat_packet(struct dp_packet *pkt, const struct conn *conn)
             struct udp_header *uh_in = dp_packet_l4(pkt);
             packet_set_udp_port(pkt, conn->key.src.port,
                                 uh_in->udp_dst);
+        } else if (conn->key.nw_proto == IPPROTO_SCTP) {
+            struct sctp_header *sh_in = dp_packet_l4(pkt);
+            packet_set_sctp_port(pkt, conn->key.src.port,
+                                 sh_in->sctp_dst);
         }
     } else if (conn->nat_info->nat_action & NAT_ACTION_DST) {
         if (conn->key.nw_proto == IPPROTO_TCP) {
@@ -819,6 +836,9 @@ reverse_pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             packet_set_udp_port(pkt, conn->key.src.port,
                                 conn->key.dst.port);
+        } else if (conn->key.nw_proto == IPPROTO_SCTP) {
+            packet_set_sctp_port(pkt, conn->key.src.port,
+                                 conn->key.dst.port);
         }
     }
 }
@@ -1720,6 +1740,26 @@ checksum_valid(const struct conn_key *key, const void *data, size_t size,
 }
 
 static inline bool
+sctp_checksum_valid(const void *data, size_t size)
+{
+    struct sctp_header *sctp = (struct sctp_header *) data;
+    ovs_be32 rcvd_csum, csum;
+    bool ret;
+
+    rcvd_csum = get_16aligned_be32(&sctp->sctp_csum);
+    put_16aligned_be32(&sctp->sctp_csum, 0);
+    csum = crc32c(data, size);
+    put_16aligned_be32(&sctp->sctp_csum, rcvd_csum);
+
+    ret = (rcvd_csum == csum);
+    if (!ret) {
+        COVERAGE_INC(conntrack_l4csum_err);
+    }
+
+    return ret;
+}
+
+static inline bool
 check_l4_tcp(const struct conn_key *key, const void *data, size_t size,
              const void *l3, bool validate_checksum)
 {
@@ -1753,6 +1793,39 @@ check_l4_udp(const struct conn_key *key, const void *data, size_t size,
     /* Validation must be skipped if checksum is 0 on IPv4 packets */
     return (udp->udp_csum == 0 && key->dl_type == htons(ETH_TYPE_IP))
            || (validate_checksum ? checksum_valid(key, data, size, l3) : true);
+}
+
+static inline bool
+sctp_check_len(const struct sctp_header *sh, size_t size)
+{
+    const struct sctp_chunk_header *sch;
+    size_t s;
+
+    if (size < SCTP_HEADER_LEN) {
+        return false;
+    }
+
+    FOR_EACH_SCTP_CHUNK(sh, sch, s, size) {
+        /* This value represents the size of the chunk in bytes, including
+         * the Chunk Type, Chunk Flags, Chunk Length, and Chunk Value fields.
+         * Therefore, if the Chunk Value field is zero-length, the Length
+         * field will be set to 4. */
+        if (ntohs(sch->length) < sizeof(*sch)) {
+            return false;
+        }
+    }
+
+    return (s == size);
+}
+
+static inline bool
+check_l4_sctp(const void *data, size_t size, bool validate_checksum)
+{
+    if (OVS_UNLIKELY(!sctp_check_len(data, size))) {
+        return false;
+    }
+
+    return validate_checksum ? sctp_checksum_valid(data, size) : true;
 }
 
 static inline bool
@@ -1802,6 +1875,21 @@ extract_l4_udp(struct conn_key *key, const void *data, size_t size,
     key->dst.port = udp->udp_dst;
 
     /* Port 0 is invalid */
+    return key->src.port && key->dst.port;
+}
+
+static inline bool
+extract_l4_sctp(struct conn_key *key, const void *data, size_t size,
+                size_t *chk_len)
+{
+    if (OVS_UNLIKELY(size < (chk_len ? *chk_len : SCTP_HEADER_LEN))) {
+        return false;
+    }
+
+    const struct sctp_header *sctp = data;
+    key->src.port = sctp->sctp_src;
+    key->dst.port = sctp->sctp_dst;
+
     return key->src.port && key->dst.port;
 }
 
@@ -2020,6 +2108,9 @@ extract_l4(struct conn_key *key, const void *data, size_t size, bool *related,
         return (!related || check_l4_udp(key, data, size, l3,
                 validate_checksum))
                && extract_l4_udp(key, data, size, chk_len);
+    } else if (key->nw_proto == IPPROTO_SCTP) {
+        return (!related || check_l4_sctp(data, size, validate_checksum))
+               && extract_l4_sctp(key, data, size, chk_len);
     } else if (key->dl_type == htons(ETH_TYPE_IP)
                && key->nw_proto == IPPROTO_ICMP) {
         return (!related || check_l4_icmp(data, size, validate_checksum))
@@ -2411,7 +2502,8 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
                   guard_addr = {0};
     uint32_t hash = nat_range_hash(conn, ct->hash_basis);
     bool pat_proto = conn->key.nw_proto == IPPROTO_TCP ||
-                     conn->key.nw_proto == IPPROTO_UDP;
+                     conn->key.nw_proto == IPPROTO_UDP ||
+                     conn->key.nw_proto == IPPROTO_SCTP;
     uint16_t min_dport, max_dport, curr_dport;
     uint16_t min_sport, max_sport, curr_sport;
 
