@@ -287,7 +287,7 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
           long long int timeout_when, int *elapsed)
 {
     long long int *last_wakeup = last_wakeup_get();
-    long long int start;
+    long long int start, now;
     bool quiescent;
     int retval = 0;
 
@@ -297,13 +297,12 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
     if (*last_wakeup && !thread_is_pmd()) {
         log_poll_interval(*last_wakeup);
     }
-    start = time_msec();
+    now = start = time_msec();
 
     timeout_when = MIN(timeout_when, deadline);
     quiescent = ovsrcu_is_quiescent();
 
     for (;;) {
-        long long int now = time_msec();
         int time_left;
         retval = 0;
 
@@ -357,7 +356,8 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
             ovsrcu_quiesce_end();
         }
 
-        if (deadline <= time_msec()) {
+        now = time_msec();
+        if (deadline <= now) {
 #ifndef _WIN32
             fatal_signal_handler(SIGALRM);
 #else
@@ -374,7 +374,7 @@ time_poll(struct pollfd *pollfds, int n_pollfds, HANDLE *handles OVS_UNUSED,
             break;
         }
     }
-    *last_wakeup = time_msec();
+    *last_wakeup = now;
     refresh_rusage();
     *elapsed = *last_wakeup - start;
     return retval;
