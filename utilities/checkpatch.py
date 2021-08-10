@@ -749,6 +749,14 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
     is_gerrit_change_id = re.compile(r'(\s*(change-id: )(.*))$',
                                      re.I | re.M | re.S)
 
+    tags_typos = {
+        r'^Reported by:':  'Reported-by:',
+        r'^Requested by:': 'Requested-by:',
+        r'^Suggested by:': 'Suggested-by:',
+        r'^Reported at:':  'Reported-at:',
+        r'^Submitted at:': 'Submitted-at:'
+    }
+
     reset_counters()
 
     for line in text.splitlines():
@@ -838,6 +846,11 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
                 print("%d: %s\n" % (lineno, line))
             elif spellcheck:
                 check_spelling(line, False)
+            for typo, correct in tags_typos.items():
+                m = re.match(typo, line, re.I)
+                if m:
+                    print_error("%s tag is malformed." % (correct[:-1]))
+                    print("%d: %s\n" % (lineno, line))
 
         elif parse == PARSE_STATE_CHANGE_BODY:
             newfile = hunks.match(line)
