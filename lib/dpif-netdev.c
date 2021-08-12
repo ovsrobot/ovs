@@ -960,12 +960,13 @@ dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
     }
 
     ovs_mutex_lock(&dp_netdev_mutex);
+
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
     SHASH_FOR_EACH (node, &dp_netdevs) {
         struct dp_netdev *dp = node->data;
 
         /* Get PMD threads list, required to get DPCLS instances. */
         size_t n;
-        struct dp_netdev_pmd_thread **pmd_list;
         sorted_poll_thread_list(dp, &pmd_list, &n);
 
         /* take port mutex as HMAP iters over them. */
@@ -996,6 +997,7 @@ dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
         ovs_mutex_unlock(&dp->port_mutex);
     }
     ovs_mutex_unlock(&dp_netdev_mutex);
+    free(pmd_list);
 
     struct ds reply = DS_EMPTY_INITIALIZER;
     ds_put_format(&reply,
@@ -1013,10 +1015,10 @@ dpif_netdev_impl_get(struct unixctl_conn *conn, int argc OVS_UNUSED,
 {
     struct ds reply = DS_EMPTY_INITIALIZER;
     struct shash_node *node;
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
 
     ovs_mutex_lock(&dp_netdev_mutex);
     SHASH_FOR_EACH (node, &dp_netdevs) {
-        struct dp_netdev_pmd_thread **pmd_list;
         struct dp_netdev *dp = node->data;
         size_t n;
 
@@ -1026,6 +1028,8 @@ dpif_netdev_impl_get(struct unixctl_conn *conn, int argc OVS_UNUSED,
         dp_netdev_impl_get(&reply, pmd_list, n);
     }
     ovs_mutex_unlock(&dp_netdev_mutex);
+    free(pmd_list);
+
     unixctl_command_reply(conn, ds_cstr(&reply));
     ds_destroy(&reply);
 }
@@ -1058,12 +1062,12 @@ dpif_netdev_impl_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
         return;
     }
 
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
     SHASH_FOR_EACH (node, &dp_netdevs) {
         struct dp_netdev *dp = node->data;
 
         /* Get PMD threads list, required to get DPCLS instances. */
         size_t n;
-        struct dp_netdev_pmd_thread **pmd_list;
         sorted_poll_thread_list(dp, &pmd_list, &n);
 
         for (size_t i = 0; i < n; i++) {
@@ -1080,6 +1084,7 @@ dpif_netdev_impl_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
         };
     }
     ovs_mutex_unlock(&dp_netdev_mutex);
+    free(pmd_list);
 
     /* Reply with success to command. */
     struct ds reply = DS_EMPTY_INITIALIZER;
@@ -1099,8 +1104,8 @@ dpif_miniflow_extract_impl_get(struct unixctl_conn *conn, int argc OVS_UNUSED,
     struct shash_node *node;
 
     ovs_mutex_lock(&dp_netdev_mutex);
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
     SHASH_FOR_EACH (node, &dp_netdevs) {
-        struct dp_netdev_pmd_thread **pmd_list;
         struct dp_netdev *dp = node->data;
         size_t n;
 
@@ -1110,6 +1115,8 @@ dpif_miniflow_extract_impl_get(struct unixctl_conn *conn, int argc OVS_UNUSED,
         dp_mfex_impl_get(&reply, pmd_list, n);
     }
     ovs_mutex_unlock(&dp_netdev_mutex);
+    free(pmd_list);
+
     unixctl_command_reply(conn, ds_cstr(&reply));
     ds_destroy(&reply);
 }
@@ -1243,8 +1250,8 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
      */
     ovs_mutex_lock(&dp_netdev_mutex);
 
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
     SHASH_FOR_EACH (node, &dp_netdevs) {
-        struct dp_netdev_pmd_thread **pmd_list;
         struct dp_netdev *dp = node->data;
         size_t n;
 
@@ -1269,6 +1276,7 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
     }
 
     ovs_mutex_unlock(&dp_netdev_mutex);
+    free(pmd_list);
 
     /* If PMD thread was specified, but it wasn't found, return error. */
     if (pmd_thread_to_change != NON_PMD_CORE_ID && !pmd_thread_update_done) {
