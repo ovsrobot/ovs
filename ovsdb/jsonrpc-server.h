@@ -67,7 +67,7 @@ void ovsdb_jsonrpc_server_free_remote_status(
 void ovsdb_jsonrpc_server_reconnect(struct ovsdb_jsonrpc_server *, bool force,
                                     char *comment);
 
-void ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *);
+void ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *, uint64_t limit);
 void ovsdb_jsonrpc_server_wait(struct ovsdb_jsonrpc_server *);
 
 void ovsdb_jsonrpc_server_set_read_only(struct ovsdb_jsonrpc_server *,
