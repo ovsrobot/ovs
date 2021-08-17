@@ -26,6 +26,9 @@
 #ifndef __has_extension
   #define __has_extension(x) 0
 #endif
+#ifndef __has_builtin
+#  define __has_builtin(x) 0
+#endif
 
 /* To make OVS_NO_RETURN portable across gcc/clang and MSVC, it should be
  * added at the beginning of the function declaration. */
@@ -229,13 +232,17 @@
  * OVS_PREFETCH_WRITE() should be used when the memory is going to be
  * written to.  Depending on the target CPU, this can generate the same
  * instruction as OVS_PREFETCH(), or bring the data into the cache in an
- * exclusive state. */
-#if __GNUC__
-#define OVS_PREFETCH(addr) __builtin_prefetch((addr))
-#define OVS_PREFETCH_WRITE(addr) __builtin_prefetch((addr), 1)
+ * exclusive state.
+ *
+ * GCC 10 introduced support for __has_builtin preprocessor operator,
+ * however, the old way to define OVS_PREFETCH remains to allow for backwards
+ * compatibility. */
+#if __has_builtin (__builtin_prefetch) || __GNUC__
+#  define OVS_PREFETCH(addr) __builtin_prefetch((addr))
+#  define OVS_PREFETCH_WRITE(addr) __builtin_prefetch((addr), 1)
 #else
-#define OVS_PREFETCH(addr)
-#define OVS_PREFETCH_WRITE(addr)
+#  define OVS_PREFETCH(addr)
+#  define OVS_PREFETCH_WRITE(addr)
 #endif
 
 /* Since Visual Studio 2015 there has been an effort to make offsetof a
