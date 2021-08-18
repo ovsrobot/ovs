@@ -25,11 +25,27 @@
 #ifndef AES128_H
 #define AES128_H
 
+#include <config.h>
 #include <stdint.h>
+
+#ifdef HAVE_OPENSSL
+
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+#include <string.h>
+
+struct aes128 {
+    EVP_CIPHER_CTX *ctx;
+};
+
+#else
 
 struct aes128 {
     uint32_t rk[128/8 + 28];
 };
+
+#endif
 
 void aes128_schedule(struct aes128 *, const uint8_t key[16]);
 void aes128_encrypt(const struct aes128 *, const void *, void *);

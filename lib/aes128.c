@@ -28,6 +28,39 @@
 
 #include "util.h"
 
+#ifdef HAVE_OPENSSL
+
+
+
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+#include <string.h>
+#include "entropy.h"
+#include "openvswitch/vlog.h"
+
+VLOG_DEFINE_THIS_MODULE(aes);
+
+void aes128_schedule(struct aes128 *aes, const uint8_t key[16])
+{
+    uint8_t iv[16];
+    aes->ctx = EVP_CIPHER_CTX_new();
+    memset(iv, 0, sizeof iv);
+    if (EVP_EncryptInit_ex(aes->ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1) {
+        VLOG_FATAL("Encryption init failed");
+    }
+}
+
+void aes128_encrypt(const struct aes128 *aes, const void *plain, void *cipher)
+{
+    int len;
+    if (1 != EVP_EncryptUpdate(aes->ctx, cipher, &len, plain, 16)) {
+        VLOG_FATAL("Encryption failed");
+    }
+}
+
+#else
+
 static const uint32_t Te0[256] = {
     0xc66363a5U, 0xf87c7c84U, 0xee777799U, 0xf67b7b8dU,
     0xfff2f20dU, 0xd66b6bbdU, 0xde6f6fb1U, 0x91c5c554U,
@@ -507,3 +540,4 @@ aes128_encrypt(const struct aes128 *aes, const void *input_, void *output_)
           ^ rk[3]);
     put_u32(output + 12, s3);
 }
+#endif
