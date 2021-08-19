@@ -28,6 +28,67 @@
 
 #include "util.h"
 
+#ifdef HAVE_OPENSSL
+
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+#include <string.h>
+#include "entropy.h"
+#include "openvswitch/vlog.h"
+
+VLOG_DEFINE_THIS_MODULE(aes);
+
+struct aes128 {
+    EVP_CIPHER_CTX *ctx;
+};
+
+void *aes128_schedule(const uint8_t key[16])
+{
+    uint8_t iv[16];
+
+    struct aes128 *aes = xmalloc(sizeof *aes);
+
+    aes->ctx = EVP_CIPHER_CTX_new();
+    memset(iv, 0, sizeof iv);
+    if (EVP_EncryptInit_ex(aes->ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1) {
+        VLOG_FATAL("Encryption init failed");
+    }
+    return aes;
+}
+
+void aes128_encrypt(void *aes, const void *plain, void *cipher)
+{
+    int len;
+    struct aes128 *aes_ctx = aes;
+
+    if (1 != EVP_EncryptUpdate(aes_ctx->ctx, cipher, &len, plain, 16)) {
+        VLOG_FATAL("Encryption failed");
+    }
+}
+
+#else
+
+struct aes128 {
+    uint32_t rk[128/8 + 28];
+};
+
+void *aes128_schedule(const uint8_t key[16])
+{
+    return ovs_aes128_schedule(key);
+}
+
+void aes128_encrypt(void *aes, const void *input_, void *output_)
+{
+    ovs_aes128_encrypt(aes, input_, output_);
+}
+
+#endif
+
+struct ovs_aes128 {
+    uint32_t rk[128/8 + 28];
+};
+
 static const uint32_t Te0[256] = {
     0xc66363a5U, 0xf87c7c84U, 0xee777799U, 0xf67b7b8dU,
     0xfff2f20dU, 0xd66b6bbdU, 0xde6f6fb1U, 0x91c5c554U,
@@ -390,8 +451,9 @@ put_u32(uint8_t *p, uint32_t x)
 
 /* Expands 128-bit 'key' into the encryption key 'schedule'. */
 void
-aes128_schedule(struct aes128 *aes, const uint8_t key[16])
+*ovs_aes128_schedule(const uint8_t key[16])
 {
+    struct ovs_aes128 *aes = xmalloc(sizeof *aes);
     uint32_t *rk = aes->rk;
     int i;
 
@@ -412,14 +474,16 @@ aes128_schedule(struct aes128 *aes, const uint8_t key[16])
         rk[7] = rk[3] ^ rk[6];
     }
     ovs_assert(rk == &aes->rk[40]);
+    return aes;
 }
 
 void
-aes128_encrypt(const struct aes128 *aes, const void *input_, void *output_)
+ovs_aes128_encrypt(void *aes, const void *input_, void *output_)
 {
     const uint8_t *input = input_;
     uint8_t *output = output_;
-    const uint32_t *rk = aes->rk;
+    struct ovs_aes128 *ovs_aes = aes;
+    const uint32_t *rk = ovs_aes->rk;
     uint32_t s0, s1, s2, s3;
     uint32_t t0, t1, t2, t3;
     int r;
@@ -507,3 +571,4 @@ aes128_encrypt(const struct aes128 *aes, const void *input_, void *output_)
           ^ rk[3]);
     put_u32(output + 12, s3);
 }
+

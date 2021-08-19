@@ -46,7 +46,7 @@ error:
 static void
 test_aes128_main(int argc, char *argv[])
 {
-    struct aes128 aes;
+    void *aes;
     uint8_t plaintext[16];
     uint8_t ciphertext[16];
     uint8_t key[16];
@@ -60,8 +60,8 @@ test_aes128_main(int argc, char *argv[])
     hex_to_uint8(argv[1], key, 16);
     hex_to_uint8(argv[2], plaintext, 16);
 
-    aes128_schedule(&aes, key);
-    aes128_encrypt(&aes, plaintext, ciphertext);
+    aes = ovs_aes128_schedule(key);
+    ovs_aes128_encrypt(aes, plaintext, ciphertext);
     for (i = 0; i < 16; i++) {
         printf("%02x", ciphertext[i]);
     }

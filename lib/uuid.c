@@ -36,7 +36,7 @@
 
 VLOG_DEFINE_THIS_MODULE(uuid);
 
-static struct aes128 key;
+static void *key;
 static uint64_t counter[2];
 BUILD_ASSERT_DECL(sizeof counter == 16);
 
@@ -164,7 +164,7 @@ uuid_generate(struct uuid *uuid)
     ovs_mutex_unlock(&mutex);
 
     /* AES output is exactly 16 bytes, so we encrypt directly into 'uuid'. */
-    aes128_encrypt(&key, copy, uuid);
+    aes128_encrypt(key, copy, uuid);
 
     uuid_set_bits_v4(uuid);
 
@@ -370,7 +370,7 @@ do_init(void)
 
     /* Generate key. */
     BUILD_ASSERT(sizeof sha1 >= 16);
-    aes128_schedule(&key, sha1);
+    key = aes128_schedule(sha1);
 
     /* Generate initial counter. */
     get_entropy_or_die(counter, sizeof counter);
