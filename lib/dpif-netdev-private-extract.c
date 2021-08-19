@@ -303,6 +303,9 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
         pkt_metadata_init(&packet->md, in_port);
         miniflow_extract(packet, &keys[i].mf);
+        keys[i].len = netdev_flow_key_size(miniflow_n_values(&keys[i].mf));
+        keys[i].hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet,
+                                                                &keys[i].mf);
 
         /* Store known good metadata to compare with optimized metadata. */
         good_l2_5_ofs[i] = packet->l2_5_ofs;
@@ -349,6 +352,15 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
                               keys[i].mf.map.bits[1],
                               test_keys[i].mf.map.bits[0],
                               test_keys[i].mf.map.bits[1]);
+                failed = 1;
+            }
+
+            /* Check hashes are equal. */
+            if ((keys[i].hash != test_keys[i].hash) ||
+                (keys[i].len != test_keys[i].len)) {
+                ds_put_format(&log_msg, "Good hash: %d len: %d\tTest hash:%d"
+                              " len:%d\n", keys[i].hash, keys[i].len,
+                              test_keys[i].hash, test_keys[i].len);
                 failed = 1;
             }
 
