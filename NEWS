@@ -8,6 +8,9 @@ Post-v2.16.0
        by default.  'other_config:dpdk-socket-limit' can be set equal to
        the 'other_config:dpdk-socket-mem' to preserve the legacy memory
        limiting behavior.
+   - Userspace datapath:
+     * Add AVX512 optimized profiles to miniflow extract for IPv6/UDP and
+       IPv6/TCP.
 
 
 v2.16.0 - 16 Aug 2021
