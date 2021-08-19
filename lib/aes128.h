@@ -27,11 +27,14 @@
 
 #include <stdint.h>
 
-struct aes128 {
-    uint32_t rk[128/8 + 28];
-};
 
-void aes128_schedule(struct aes128 *, const uint8_t key[16]);
-void aes128_encrypt(const struct aes128 *, const void *, void *);
+void *aes128_schedule(const uint8_t key[16]);
+void aes128_encrypt(void *, const void *, void *);
+
+/* These are exposed for unit test purposes. */
+
+
+void *ovs_aes128_schedule(const uint8_t key[16]);
+void ovs_aes128_encrypt(void *, const void *, void *);
 
 #endif  /* aes128.h */
