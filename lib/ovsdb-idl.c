@@ -4256,3 +4256,28 @@ ovsdb_idl_loop_commit_and_wait(struct ovsdb_idl_loop *loop)
 
     return retval;
 }
+
+bool
+ovsdb_idl_has_table(struct ovsdb_idl *idl, const char *table_name)
+{
+    struct ovsdb_idl_table *table = shash_find_data(&idl->table_by_name,
+                                                    table_name);
+    return table ? true: false;
+}
+
+bool
+ovsdb_idl_has_column_in_table(struct ovsdb_idl *idl, const char *table_name,
+                              const char *column_name)
+{
+    struct ovsdb_idl_table *table = shash_find_data(&idl->table_by_name,
+                                                    table_name);
+    if (!table) {
+        return false;
+    }
+
+    if (shash_find_data(&table->columns, column_name)) {
+        return true;
+    }
+
+    return false;
+}
