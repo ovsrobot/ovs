@@ -2372,3 +2372,20 @@ OVSDB_CHECK_CLUSTER_IDL([simple idl, initially empty, force reconnect],
 [],
 [],
 reconnect.*waiting .* seconds before reconnect)
+
+AT_SETUP([idl table and column presence check])
+AT_KEYWORDS([ovsdb server idl table column check])
+AT_CHECK([ovsdb_start_idltest])
+
+AT_CHECK([test-ovsdb -vconsole:off -t10 idl-table-column-check unix:socket simple5 foo bar simple5:irefmap simple5:foo foo:foocol],
+          [0], [dnl
+table simple5 is present
+table foo is not present
+table bar is not present
+column irefmap in table simple5 is present
+column foo in table simple5 is not present
+table foo is not present
+])
+
+OVSDB_SERVER_SHUTDOWN
+AT_CLEANUP
