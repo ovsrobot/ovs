@@ -60,7 +60,8 @@ static struct ovsdb_jsonrpc_session *ovsdb_jsonrpc_session_create(
     struct ovsdb_jsonrpc_remote *, struct jsonrpc_session *, bool);
 static void ovsdb_jsonrpc_session_preremove_db(struct ovsdb_jsonrpc_remote *,
                                                struct ovsdb *);
-static void ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *);
+static void ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *,
+                                          uint64_t limit);
 static void ovsdb_jsonrpc_session_wait_all(struct ovsdb_jsonrpc_remote *);
 static void ovsdb_jsonrpc_session_get_memory_usage_all(
     const struct ovsdb_jsonrpc_remote *, struct simap *usage);
@@ -128,6 +129,9 @@ struct ovsdb_jsonrpc_server {
     bool read_only;            /* This server is does not accept any
                                   transactions that can modify the database. */
     struct shash remotes;      /* Contains "struct ovsdb_jsonrpc_remote *"s. */
+    struct ovs_list worklist; /* List of remotes to work on. */
+    bool must_wake_up; /* The processing loop must be re-run. It was
+                          interrupted due to exceeding a time constraint. */
 };
 
 /* A configured remote.  This is either a passive stream listener plus a list
@@ -137,6 +141,7 @@ struct ovsdb_jsonrpc_remote {
     struct ovsdb_jsonrpc_server *server;
     struct pstream *listener;   /* Listener, if passive. */
     struct ovs_list sessions;   /* List of "struct ovsdb_jsonrpc_session"s. */
+    struct ovs_list work_node;
     uint8_t dscp;
     bool read_only;
     char *role;
@@ -158,6 +163,7 @@ ovsdb_jsonrpc_server_create(bool read_only)
     struct ovsdb_jsonrpc_server *server = xzalloc(sizeof *server);
     ovsdb_server_init(&server->up);
     shash_init(&server->remotes);
+    ovs_list_init(&server->worklist);
     server->read_only = read_only;
     return server;
 }
@@ -255,6 +261,7 @@ ovsdb_jsonrpc_server_set_remotes(struct ovsdb_jsonrpc_server *svr,
 
         ovsdb_jsonrpc_session_set_all_options(remote, options);
     }
+    ovs_list_init(&svr->worklist); /* Reset any pending work. */
 }
 
 static struct ovsdb_jsonrpc_remote *
@@ -280,6 +287,7 @@ ovsdb_jsonrpc_server_add_remote(struct ovsdb_jsonrpc_server *svr,
     remote->read_only = options->read_only;
     remote->role = nullable_xstrdup(options->role);
     shash_add(&svr->remotes, name, remote);
+    ovs_list_init(&svr->worklist); /* Reset any pending work. */
 
     if (!listener) {
         ovsdb_jsonrpc_session_create(remote, jsonrpc_session_open(name, true),
@@ -292,10 +300,10 @@ static void
 ovsdb_jsonrpc_server_del_remote(struct shash_node *node)
 {
     struct ovsdb_jsonrpc_remote *remote = node->data;
-
     ovsdb_jsonrpc_session_close_all(remote);
     pstream_close(remote->listener);
     shash_delete(&remote->server->remotes, node);
+    ovs_list_init(&remote->server->worklist); /* Reset any pending work. */
     free(remote->role);
     free(remote);
 }
@@ -378,32 +386,55 @@ ovsdb_jsonrpc_server_set_read_only(struct ovsdb_jsonrpc_server *svr,
 }
 
 void
-ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *svr)
+ovsdb_jsonrpc_server_run(struct ovsdb_jsonrpc_server *svr, uint64_t limit)
 {
     struct shash_node *node;
+    uint64_t elapsed = 0;
+    uint64_t start_time = time_msec();
+    struct ovsdb_jsonrpc_remote *work;
 
-    SHASH_FOR_EACH (node, &svr->remotes) {
-        struct ovsdb_jsonrpc_remote *remote = node->data;
+    svr->must_wake_up = false;
 
-        if (remote->listener) {
+    if (ovs_list_is_empty(&svr->worklist)) {
+        SHASH_FOR_EACH (node, &svr->remotes) {
+            struct ovsdb_jsonrpc_remote *remote = node->data;
+            ovs_list_push_back(&svr->worklist, &remote->work_node);
+        }
+    }
+
+    LIST_FOR_EACH_POP (work, work_node, &svr->worklist) {
+        if (work->listener) {
             struct stream *stream;
             int error;
 
-            error = pstream_accept(remote->listener, &stream);
+            error = pstream_accept(work->listener, &stream);
             if (!error) {
                 struct jsonrpc_session *js;
                 js = jsonrpc_session_open_unreliably(jsonrpc_open(stream),
-                                                     remote->dscp);
-                ovsdb_jsonrpc_session_create(remote, js, svr->read_only ||
-                                                         remote->read_only);
+                                                     work->dscp);
+                ovsdb_jsonrpc_session_create(work, js, svr->read_only ||
+                                                         work->read_only);
             } else if (error != EAGAIN) {
                 VLOG_WARN_RL(&rl, "%s: accept failed: %s",
-                             pstream_get_name(remote->listener),
+                             pstream_get_name(work->listener),
                              ovs_strerror(error));
             }
         }
 
-        ovsdb_jsonrpc_session_run_all(remote);
+        /* We assume accept and session creation time to be
+         * negligible for the purposes of computing timeouts.
+         */
+        ovsdb_jsonrpc_session_run_all(work, limit - elapsed);
+
+        elapsed = time_msec() - start_time;
+        if (elapsed > limit) {
+            /* Push the current (timed out) item at the end of the
+             * work queue. This ensures that with multiple remotes
+             * timeouts on one do not starve the others. */
+            ovs_list_push_back(&svr->worklist, &work->work_node);
+            svr->must_wake_up = true;
+            break;
+        }
     }
 }
 
@@ -411,6 +442,16 @@ void
 ovsdb_jsonrpc_server_wait(struct ovsdb_jsonrpc_server *svr)
 {
     struct shash_node *node;
+
+    if (svr->must_wake_up) {
+        /* We have stopped processing due to a time constraint.
+         * In this case there is no point to walk all sessions
+         * and rebuild the poll structure for the poll loop.
+         */
+        poll_immediate_wake();
+        svr->must_wake_up = false;
+        return;
+    }
 
     SHASH_FOR_EACH (node, &svr->remotes) {
         struct ovsdb_jsonrpc_remote *remote = node->data;
@@ -583,14 +624,45 @@ ovsdb_jsonrpc_session_set_options(struct ovsdb_jsonrpc_session *session,
 }
 
 static void
-ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *remote)
+fast_forward_list(struct ovs_list *list, struct ovs_list *element)
+{
+    struct ovs_list temp = OVS_LIST_INITIALIZER(&temp);
+
+    if (ovs_list_is_short(list)) {
+        return;
+    }
+    if (list->prev == element || element == list) {
+        return;
+    }
+    /* Cut the "not yet processed" part out of the list and move it to
+     * temp.
+     */
+    ovs_list_splice(&temp, element, list->prev);
+    /* Push the processed part after the not processed. */
+    ovs_list_push_back_all(&temp, list);
+    /* Swap back the rearranged list. */
+    ovs_list_push_back_all(list, &temp);
+}
+
+static void
+ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *remote,
+                              uint64_t limit)
 {
     struct ovsdb_jsonrpc_session *s, *next;
+    uint64_t start_time = time_msec();
 
     LIST_FOR_EACH_SAFE (s, next, node, &remote->sessions) {
         int error = ovsdb_jsonrpc_session_run(s);
         if (error) {
             ovsdb_jsonrpc_session_close(s);
+        }
+
+        if (time_msec() - start_time > limit) {
+            /* We rotate the session list so that the next processing
+             * iteration restarts from the next element.
+             */
+            fast_forward_list(&remote->sessions, &next->node);
+            break;
         }
     }
 }

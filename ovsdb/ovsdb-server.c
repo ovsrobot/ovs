@@ -216,7 +216,21 @@ main_loop(struct server_config *config,
             reconfigure_remotes(jsonrpc, all_dbs, remotes),
             &remotes_error);
         report_error_if_changed(reconfigure_ssl(all_dbs), &ssl_error);
-        ovsdb_jsonrpc_server_run(jsonrpc);
+
+        /* Figure out current processing time limit. */
+        uint64_t limit = UINT64_MAX;
+        SHASH_FOR_EACH (node, all_dbs) {
+            struct db *db = node->data;
+            uint64_t db_limit;
+
+            db_limit = ovsdb_storage_max_processing_time(db->db->storage);
+            limit = MIN(db_limit, limit);
+        }
+        if (ovs_replay_is_active()) {
+            limit = UINT64_MAX;
+        }
+
+        ovsdb_jsonrpc_server_run(jsonrpc, limit);
 
         if (*is_backup) {
             replication_run();
