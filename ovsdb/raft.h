@@ -132,8 +132,7 @@ bool raft_left(const struct raft *);
 bool raft_failed(const struct raft *);
 
 /* Reading snapshots and log entries. */
-const struct json *raft_next_entry(struct raft *, struct uuid *eid,
-                                   bool *is_snapshot);
+struct json *raft_next_entry(struct raft *, struct uuid *eid);
 bool raft_has_next_entry(const struct raft *);
 
 uint64_t raft_get_applied_index(const struct raft *);
