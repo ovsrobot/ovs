@@ -8418,9 +8418,9 @@ dpif_netdev_ct_get_tcp_seq_chk(struct dpif *dpif, bool *enabled)
 }
 
 static int
-dpif_netdev_ct_set_limits(struct dpif *dpif OVS_UNUSED,
-                           const uint32_t *default_limits,
-                           const struct ovs_list *zone_limits)
+dpif_netdev_ct_set_limits(struct dpif *dpif,
+                          const uint32_t *default_limits,
+                          const struct ovs_list *zone_limits)
 {
     int err = 0;
     struct dp_netdev *dp = get_dp_netdev(dpif);
@@ -8443,10 +8443,10 @@ dpif_netdev_ct_set_limits(struct dpif *dpif OVS_UNUSED,
 }
 
 static int
-dpif_netdev_ct_get_limits(struct dpif *dpif OVS_UNUSED,
-                           uint32_t *default_limit,
-                           const struct ovs_list *zone_limits_request,
-                           struct ovs_list *zone_limits_reply)
+dpif_netdev_ct_get_limits(struct dpif *dpif,
+                          uint32_t *default_limit,
+                          const struct ovs_list *zone_limits_request,
+                          struct ovs_list *zone_limits_reply)
 {
     struct dp_netdev *dp = get_dp_netdev(dpif);
     struct conntrack_zone_limit czl;
@@ -8483,8 +8483,8 @@ dpif_netdev_ct_get_limits(struct dpif *dpif OVS_UNUSED,
 }
 
 static int
-dpif_netdev_ct_del_limits(struct dpif *dpif OVS_UNUSED,
-                           const struct ovs_list *zone_limits)
+dpif_netdev_ct_del_limits(struct dpif *dpif,
+                          const struct ovs_list *zone_limits)
 {
     int err = 0;
     struct dp_netdev *dp = get_dp_netdev(dpif);
