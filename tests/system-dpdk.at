@@ -392,3 +392,57 @@ dnl Clean up
 AT_CHECK([ovs-vsctl del-port br0 p1], [], [stdout], [stderr])
 AT_CLEANUP dnl
 dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+AT_SETUP([OVS-DPDK - DPIF Configuration])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:pmd-cpu-mask=0xC])
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dpdk options:dpdk-devargs=net_pcap1,rx_pcap=$srcdir/pcap/mfex_test.pcap,infinite_rx=1], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-get], [], [stdout])
+
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-set dpif_avx512], [0], [dnl
+DPIF implementation set to dpif_avx512.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-set dpif_scalar], [0], [dnl
+DPIF implementation set to dpif_scalar.
+])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br0 p1], [], [stdout], [stderr])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+AT_SETUP([OVS-DPDK - DPCLS Configuration])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:pmd-cpu-mask=0xC])
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dpdk options:dpdk-devargs=net_pcap1,rx_pcap=$srcdir/pcap/mfex_test.pcap,infinite_rx=1], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get], [], [stdout])
+
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set autovalidator 3], [0], [dnl
+Lookup priority change affected 1 dpcls ports and 2 subtables.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set generic 4], [0], [dnl
+Lookup priority change affected 1 dpcls ports and 2 subtables.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set avx512_gather 5], [0], [dnl
+Lookup priority change affected 1 dpcls ports and 2 subtables.
+])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br0 p1], [], [stdout], [stderr])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------

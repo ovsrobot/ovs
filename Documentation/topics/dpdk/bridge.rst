@@ -249,6 +249,13 @@ implementation ::
 Compile OVS in debug mode to have `ovs_assert` statements error out if
 there is a mis-match in the DPCLS lookup implementation.
 
+The DPCLS commands can also be tested to verify that the DPCLS set command does
+not allow for incorrect parameters. A user can directly run the following
+configuration test-case in tests/system-dpdk.at ::
+
+    make check-dpdk TESTSUITEFLAGS='-k DPCLS'
+    OVS-DPDK - DPCLS Configuration
+
 Datapath Interface Performance
 ------------------------------
 
@@ -290,6 +297,13 @@ The following line should be seen in the configure output when the above option
 is used ::
 
     checking whether DPIF AVX512 is default implementation... yes
+
+The DPIF commands can also be tested to verify that the DPIF set command does
+not allow for incorrect parameters. A user can directly run the following
+configuration test-case in tests/system-dpdk.at ::
+
+    make check-dpdk TESTSUITEFLAGS='-k DPIF'
+    OVS-DPDK - DPIF Configuration
 
 Miniflow Extract
 ----------------
