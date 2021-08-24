@@ -360,6 +360,12 @@ enum MFEX_PROFILES {
 #define HASH_DT1Q_IPV4 \
     30, 34, 27, 38, 0, 0
 
+#define HASH_IPV6 \
+    22, 30, 38, 46, 20, 54
+
+#define HASH_DT1Q_IPV6 \
+    26, 34, 42, 50, 24, 58
+
 /* Static const instances of profiles. These are compile-time constants,
  * and are specialized into individual miniflow-extract functions.
  * NOTE: Order of the fields is significant, any change in the order must be
@@ -451,6 +457,8 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
             0, UINT16_MAX, 14, 54,
         },
         .dp_pkt_min_size = 54,
+
+        .hash_pkt_offs = { HASH_IPV6 },
     },
 
     [PROFILE_ETH_IPV6_TCP] = {
@@ -465,6 +473,8 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
             0, UINT16_MAX, 14, 54,
         },
         .dp_pkt_min_size = 54,
+
+        .hash_pkt_offs = { HASH_IPV6 },
     },
 
     [PROFILE_ETH_VLAN_IPV6_TCP] = {
@@ -481,6 +491,8 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
             14, UINT16_MAX, 18, 58,
         },
         .dp_pkt_min_size = 66,
+
+        .hash_pkt_offs = { HASH_DT1Q_IPV6 },
     },
 
     [PROFILE_ETH_VLAN_IPV6_UDP] = {
@@ -497,6 +509,8 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
             14, UINT16_MAX, 18, 58,
         },
         .dp_pkt_min_size = 66,
+
+        .hash_pkt_offs = { HASH_DT1Q_IPV6 },
     },
 };
 
@@ -564,6 +578,38 @@ mfex_5tuple_hash_ipv4(struct dp_packet *packet, const uint8_t *pkt,
         hash = hash_add(hash, *(uint32_t *) ipv4_dst);
         /* IPv4 proto. */
         hash = hash_add(hash, pkt[pkt_offsets[2]]);
+        /* L4 ports. */
+        hash = hash_add(hash, *(uint32_t *) ports_l4);
+        hash = hash_finish(hash, 42);
+
+        dp_packet_set_rss_hash(packet, hash);
+        key->hash = hash;
+    } else {
+        key->hash = dp_packet_get_rss_hash(packet);
+    }
+    key->len = netdev_flow_key_size(miniflow_n_values(&key->mf));
+}
+
+static inline void
+mfex_5tuple_hash_ipv6(struct dp_packet *packet, const uint8_t *pkt,
+                      struct netdev_flow_key *key,
+                      const uint8_t *pkt_offsets)
+{
+    if (!dp_packet_rss_valid(packet)) {
+        uint32_t hash = 0;
+        void *ipv6_src_lo = (void *) &pkt[pkt_offsets[0]];
+        void *ipv6_src_hi = (void *) &pkt[pkt_offsets[1]];
+        void *ipv6_dst_lo = (void *) &pkt[pkt_offsets[2]];
+        void *ipv6_dst_hi = (void *) &pkt[pkt_offsets[3]];
+        void *ports_l4 = (void *) &pkt[pkt_offsets[5]];
+
+        /* IPv6 Src and Dst. */
+        hash = hash_add64(hash, *(uint64_t *) ipv6_src_lo);
+        hash = hash_add64(hash, *(uint64_t *) ipv6_src_hi);
+        hash = hash_add64(hash, *(uint64_t *) ipv6_dst_lo);
+        hash = hash_add64(hash, *(uint64_t *) ipv6_dst_hi);
+        /* IPv6 proto. */
+        hash = hash_add(hash, pkt[pkt_offsets[4]]);
         /* L4 ports. */
         hash = hash_add(hash, *(uint32_t *) ports_l4);
         hash = hash_finish(hash, 42);
@@ -769,6 +815,9 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                 /* Process UDP header. */
                 mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[9]);
 
+                mfex_5tuple_hash_ipv6(packet, pkt, &keys[i],
+                                      profile->hash_pkt_offs);
+
             } break;
 
         case PROFILE_ETH_IPV6_TCP: {
@@ -785,6 +834,9 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                 mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[10]);
                 const struct tcp_header *tcp = (void *)&pkt[54];
                 mfex_handle_tcp_flags(tcp, &blocks[9]);
+
+                mfex_5tuple_hash_ipv6(packet, pkt, &keys[i],
+                                      profile->hash_pkt_offs);
 
             } break;
 
@@ -806,6 +858,9 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                 const struct tcp_header *tcp = (void *)&pkt[58];
                 mfex_handle_tcp_flags(tcp, &blocks[10]);
 
+                mfex_5tuple_hash_ipv6(packet, pkt, &keys[i],
+                                      profile->hash_pkt_offs);
+
             } break;
 
         case PROFILE_ETH_VLAN_IPV6_UDP: {
@@ -824,6 +879,8 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                 /* Process UDP header. */
                 mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[10]);
 
+                mfex_5tuple_hash_ipv6(packet, pkt, &keys[i],
+                                      profile->hash_pkt_offs);
             } break;
         default:
             break;
