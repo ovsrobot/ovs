@@ -31,12 +31,114 @@
 
 #include <config.h>
 #include "sha1.h"
+
+#ifdef HAVE_OPENSSL
+#include <openssl/sha.h>
+#endif
+
 #include <ctype.h>
 #include <string.h>
 #include "compiler.h"
+#include "openvswitch/vlog.h"
 #include "util.h"
 
-/* a bit faster & bigger, if defined */
+VLOG_DEFINE_THIS_MODULE(sha1);
+
+/*
+ * Initialize the SHA digest.
+ * context: The SHA context to initialize
+ */
+void
+sha1_init(struct sha1_ctx *sha_info)
+{
+#ifdef HAVE_OPENSSL
+    if (!SHA1_Init(&sha_info->ctx)) {
+        VLOG_FATAL("SHA1_Init failed.");
+    }
+#else
+    ovs_sha1_init(sha_info);
+#endif
+}
+
+/*
+ * Update the SHA digest.
+ * context: The SHA1 context to update.
+ * input: The buffer to add to the SHA digest.
+ * inputLen: The length of the input buffer.
+ */
+void
+sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
+{
+#ifdef HAVE_OPENSSL
+    if (!SHA1_Update(&ctx->ctx, buffer_, count)) {
+        VLOG_FATAL("SHA1_Update failed.");
+    }
+#else
+    ovs_sha1_update(ctx, buffer_, count);
+#endif
+}
+
+/*
+ * Finish computing the SHA digest.
+ * digest: the output buffer in which to store the digest.
+ * context: The context to finalize.
+ */
+void
+sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
+{
+#ifdef HAVE_OPENSSL
+    if (!SHA1_Final(digest, &ctx->ctx)) {
+        VLOG_FATAL("SHA1_Final failed.");
+    }
+#else
+    ovs_sha1_final(ctx, digest);
+#endif
+}
+
+/* Computes the hash of 'n' bytes in 'data' into 'digest'. */
+void
+sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
+{
+#ifdef HAVE_OPENSSL
+    SHA1(data, n, digest);
+#else
+    ovs_sha1_bytes(data, n, digest);
+#endif
+}
+
+void
+sha1_to_hex(const uint8_t digest[SHA1_DIGEST_SIZE],
+            char hex[SHA1_HEX_DIGEST_LEN + 1])
+{
+    int i;
+
+    for (i = 0; i < SHA1_DIGEST_SIZE; i++) {
+        *hex++ = "0123456789abcdef"[digest[i] >> 4];
+        *hex++ = "0123456789abcdef"[digest[i] & 15];
+    }
+    *hex = '\0';
+}
+
+bool
+sha1_from_hex(uint8_t digest[SHA1_DIGEST_SIZE], const char *hex)
+{
+    int i;
+
+    for (i = 0; i < SHA1_DIGEST_SIZE; i++) {
+        bool ok;
+
+        digest[i] = hexits_value(hex, 2, &ok);
+        if (!ok) {
+            return false;
+        }
+        hex += 2;
+    }
+    return true;
+}
+
+/* Generic implementation for a case where OpenSSL is not available. */
+
+/* A bit faster & bigger, if defined */
 #define UNROLL_LOOPS
 
 /* SHA f()-functions */
@@ -178,7 +280,7 @@ maybe_byte_reverse(uint32_t *buffer OVS_UNUSED, int count OVS_UNUSED)
  * context: The SHA context to initialize
  */
 void
-sha1_init(struct sha1_ctx *sha_info)
+ovs_sha1_init(struct sha1_ctx *sha_info)
 {
     sha_info->digest[0] = 0x67452301L;
     sha_info->digest[1] = 0xefcdab89L;
@@ -197,7 +299,7 @@ sha1_init(struct sha1_ctx *sha_info)
  * inputLen: The length of the input buffer.
  */
 void
-sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
+ovs_sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
 {
     const uint8_t *buffer = buffer_;
     unsigned int i;
@@ -240,7 +342,7 @@ sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
  * context: The context to finalize.
  */
 void
-sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
+ovs_sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
 {
     int count, i, j;
     uint32_t lo_bit_count, hi_bit_count, k;
@@ -274,7 +376,7 @@ sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
 
 /* Computes the hash of 'n' bytes in 'data' into 'digest'. */
 void
-sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
+ovs_sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
 {
     struct sha1_ctx ctx;
 
@@ -282,34 +384,3 @@ sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
     sha1_update(&ctx, data, n);
     sha1_final(&ctx, digest);
 }
-
-void
-sha1_to_hex(const uint8_t digest[SHA1_DIGEST_SIZE],
-            char hex[SHA1_HEX_DIGEST_LEN + 1])
-{
-    int i;
-
-    for (i = 0; i < SHA1_DIGEST_SIZE; i++) {
-        *hex++ = "0123456789abcdef"[digest[i] >> 4];
-        *hex++ = "0123456789abcdef"[digest[i] & 15];
-    }
-    *hex = '\0';
-}
-
-bool
-sha1_from_hex(uint8_t digest[SHA1_DIGEST_SIZE], const char *hex)
-{
-    int i;
-
-    for (i = 0; i < SHA1_DIGEST_SIZE; i++) {
-        bool ok;
-
-        digest[i] = hexits_value(hex, 2, &ok);
-        if (!ok) {
-            return false;
-        }
-        hex += 2;
-    }
-    return true;
-}
-
