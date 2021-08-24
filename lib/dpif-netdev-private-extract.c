@@ -120,6 +120,29 @@ static struct dpif_miniflow_extract_impl mfex_impls[] = {
         .name = "avx512_ipv6_tcp",
     },
 
+    [MFEX_IMPL_VMBI_DOT1Q_IPv6_TCP] = {
+        .probe = mfex_avx512_vbmi_probe,
+        .extract_func = mfex_avx512_vbmi_dot1q_ipv6_tcp,
+        .name = "avx512_vbmi_avx512_dot1q_ipv6_tcp",
+    },
+
+    [MFEX_IMPL_DOT1Q_IPv6_TCP] = {
+        .probe = mfex_avx512_probe,
+        .extract_func = mfex_avx512_dot1q_ipv6_tcp,
+        .name = "avx512_dot1q_ipv6_tcp",
+    },
+
+    [MFEX_IMPL_VMBI_DOT1Q_IPv6_UDP] = {
+        .probe = mfex_avx512_vbmi_probe,
+        .extract_func = mfex_avx512_vbmi_dot1q_ipv6_udp,
+        .name = "avx512_vbmi_avx512_dot1q_ipv6_udp",
+    },
+
+    [MFEX_IMPL_DOT1Q_IPv6_UDP] = {
+        .probe = mfex_avx512_probe,
+        .extract_func = mfex_avx512_dot1q_ipv6_udp,
+        .name = "avx512_dot1q_ipv6_udp",
+    },
 #endif
 };
 
