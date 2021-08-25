@@ -162,8 +162,10 @@ struct ssl_config_file {
 static struct ssl_config_file private_key;
 static struct ssl_config_file certificate;
 static struct ssl_config_file ca_cert;
-static char *ssl_protocols = "TLSv1,TLSv1.1,TLSv1.2";
-static char *ssl_ciphers = "HIGH:!aNULL:!MD5";
+static char *default_ssl_protocols = "TLSv1,TLSv1.1,TLSv1.2";
+static char *default_ssl_ciphers = "HIGH:!aNULL:!MD5";
+static char *ssl_protocols = NULL;
+static char *ssl_ciphers = NULL;
 
 /* Ordinarily, the SSL client and server verify each other's certificates using
  * a CA certificate.  Setting this to false disables this behavior.  (This is a
@@ -1225,14 +1227,19 @@ stream_ssl_set_key_and_cert(const char *private_key_file,
 void
 stream_ssl_set_ciphers(const char *arg)
 {
-    if (ssl_init() || !arg || !strcmp(ssl_ciphers, arg)) {
+    const char *input = arg ? arg : default_ssl_ciphers;
+
+    if (ssl_init() || !input || (ssl_ciphers && !strcmp(ssl_ciphers, input))) {
         return;
     }
-    if (SSL_CTX_set_cipher_list(ctx,arg) == 0) {
+    if (SSL_CTX_set_cipher_list(ctx, input) == 0) {
         VLOG_ERR("SSL_CTX_set_cipher_list: %s",
                  ERR_error_string(ERR_get_error(), NULL));
     }
-    ssl_ciphers = xstrdup(arg);
+    if (ssl_ciphers) {
+        free(ssl_ciphers);
+    }
+    ssl_ciphers = xstrdup(input);
 }
 
 /* Set SSL protocols based on the string input. Aborts with an error message
@@ -1240,7 +1247,11 @@ stream_ssl_set_ciphers(const char *arg)
 void
 stream_ssl_set_protocols(const char *arg)
 {
-    if (ssl_init() || !arg || !strcmp(arg, ssl_protocols)){
+    const char *input = arg ? arg : default_ssl_protocols;
+
+    if (ssl_init() || !input
+        || (ssl_protocols && !strcmp(input, ssl_protocols)))
+    {
         return;
     }
 
@@ -1253,7 +1264,7 @@ stream_ssl_set_protocols(const char *arg)
 #endif
     long protocol_flags = SSL_OP_NO_SSL_MASK;
 
-    char *s = xstrdup(arg);
+    char *s = xstrdup(input);
     char *save_ptr = NULL;
     char *word = strtok_r(s, " ,\t", &save_ptr);
     if (word == NULL) {
@@ -1281,7 +1292,10 @@ stream_ssl_set_protocols(const char *arg)
     /* Set the actual options. */
     SSL_CTX_set_options(ctx, protocol_flags);
 
-    ssl_protocols = xstrdup(arg);
+    if (ssl_protocols) {
+      free(ssl_protocols);
+    }
+    ssl_protocols = xstrdup(input);
 
 exit:
     free(s);
