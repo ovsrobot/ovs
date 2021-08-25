@@ -257,6 +257,22 @@ OpenFlow connections over SSL will not be supported.
           else
             AC_MSG_ERROR([Cannot find openssl (use --disable-ssl to configure without SSL support)])
           fi])
+       OPENSSL_SUPPORTS_TLS1_2=no
+       if test $HAVE_OPENSSL = yes; then
+          save_CPPFLAGS=$CPPFLAGS
+          CPPFLAGS="$CPPFLAGS $SSL_INCLUDES"
+          AC_CHECK_DECL([TLS1_2_VERSION], [OPENSSL_SUPPORTS_TLS1_2=yes],
+                        [], [#include <openssl/ssl.h>])
+          if test $OPENSSL_SUPPORTS_TLS1_2 = no; then
+            if test "$ssl" = check; then
+              AC_MSG_WARN([Cannot find openssl with TLSv1.2 support. OpenFlow connections over SSL will not be supported. (You may use --disable-ssl to suppress this warning.)])
+              HAVE_OPENSSL=no
+            else
+              AC_MSG_ERROR([Cannot find openssl with TLSv1.2 support. (use --disable-ssl to configure without SSL support)])
+            fi
+          fi
+          CPPFLAGS=$save_CPPFLAGS
+       fi
    else
        HAVE_OPENSSL=no
    fi
