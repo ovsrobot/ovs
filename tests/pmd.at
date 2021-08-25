@@ -1068,3 +1068,39 @@ AT_CHECK([ovs-appctl dpctl/del-dp dummy@dp0], [0], [dnl
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([PMD - DPIF Configuration])
+OVS_VSWITCHD_START(
+  [], [], [], [--dummy-numa 0,0])
+AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
+AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dummy-pmd])
+
+AT_CHECK([ovs-vsctl show], [], [stdout])
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-get], [], [stdout])
+
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-set dpif_scalar], [0], [dnl
+DPIF implementation set to dpif_scalar.
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([PMD - DPCLS Configuration])
+OVS_VSWITCHD_START(
+  [], [], [], [--dummy-numa 0,0])
+AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
+AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dummy-pmd])
+
+AT_CHECK([ovs-vsctl show], [], [stdout])
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get], [], [stdout])
+
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set autovalidator 3], [0], [dnl
+Lookup priority change affected 0 dpcls ports and 0 subtables.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set generic 4], [0], [dnl
+Lookup priority change affected 0 dpcls ports and 0 subtables.
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
