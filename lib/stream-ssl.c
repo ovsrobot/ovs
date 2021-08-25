@@ -162,7 +162,13 @@ struct ssl_config_file {
 static struct ssl_config_file private_key;
 static struct ssl_config_file certificate;
 static struct ssl_config_file ca_cert;
-static char *default_ssl_protocols = "TLSv1,TLSv1.1,TLSv1.2";
+/* RFC 8996 deprecates the use of TLSv1 and TLSv1.1, users may still specify
+ * them in their configuration, but our defaults are in compliance. */
+#if OPENSSL_VERSION_NUMBER < 0x10101000L
+static char *default_ssl_protocols = "TLSv1.2";
+#else
+static char *default_ssl_protocols = "TLSv1.2,TLSv1.3";
+#endif /* OPENSSL_VERSION_NUMBER < 0x10101000L */
 static char *default_ssl_ciphers = "HIGH:!aNULL:!MD5";
 static char *ssl_protocols = NULL;
 static char *ssl_ciphers = NULL;
@@ -1255,9 +1261,18 @@ stream_ssl_set_protocols(const char *arg)
         return;
     }
 
+    /* TODO: Using SSL_CTX_set_options to enable individual protocol versions
+     * is deprecated as of OpenSSL v1.1.0.  Once we can drop support for builds
+     * with OpenSSL pre v1.1.0 we should use SSL_CTX_set_min_proto_version and
+     * SSL_CTX_set_max_proto_version instead. */
+
     /* Start with all the flags off and turn them on as requested. */
 #ifndef SSL_OP_NO_SSL_MASK
-    /* For old OpenSSL without this macro, this is the correct value.  */
+    /* For old OpenSSL without this macro, this is the correct value.
+     *
+     * NOTE: We deliberately did not extend this compatibility macro to
+     * include SSL_OP_NO_TLSv1_3 because if you do have a version of OpenSSL
+     * with TLSv1.3 support this macro would be defined by OpenSSL. */
 #define SSL_OP_NO_SSL_MASK (SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | \
                             SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | \
                             SSL_OP_NO_TLSv1_2)
@@ -1273,11 +1288,18 @@ stream_ssl_set_protocols(const char *arg)
     }
     while (word != NULL) {
         long on_flag;
-        if (!strcasecmp(word, "TLSv1.2")){
+        if (!strcasecmp(word, "TLSv1.3")) {
+            on_flag = SSL_OP_NO_TLSv1_3;
+#if OPENSSL_VERSION_NUMBER < 0x10101000L
+            /* OpenSSL versions prior to 1.1.1 do not have TLSv1.3 */
+            VLOG_ERR("%s: SSL protocol not recognized", word);
+            goto exit;
+#endif /* OPENSSL_VERSION_NUMBER < 0x10101000 */
+        } else if (!strcasecmp(word, "TLSv1.2")) {
             on_flag = SSL_OP_NO_TLSv1_2;
-        } else if (!strcasecmp(word, "TLSv1.1")){
+        } else if (!strcasecmp(word, "TLSv1.1")) {
             on_flag = SSL_OP_NO_TLSv1_1;
-        } else if (!strcasecmp(word, "TLSv1")){
+        } else if (!strcasecmp(word, "TLSv1")) {
             on_flag = SSL_OP_NO_TLSv1;
         } else {
             VLOG_ERR("%s: SSL protocol not recognized", word);

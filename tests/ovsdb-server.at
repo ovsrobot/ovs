@@ -575,7 +575,6 @@ AT_CHECK(
         "row": {"private_key": "'"$PKIDIR/testpki-privkey2.pem"'",
                 "certificate": "'"$PKIDIR/testpki-cert2.pem"'",
                 "ca_cert": "'"$PKIDIR/testpki-cacert.pem"'",
-                "ssl_protocols": "'"TLSv1.2,TLSv1.1"'",
                 "ssl_ciphers": "'"HIGH:!aNULL:!MD5:!ECDHE-ECDSA-AES256-GCM-SHA384"'"}}]']],
   [0], [ignore], [ignore])
 on_exit 'kill `cat *.pid`'
@@ -594,7 +593,6 @@ AT_CHECK(
         --private-key=$PKIDIR/testpki-privkey.pem \
         --certificate=$PKIDIR/testpki-cert.pem \
         --ca-cert=$PKIDIR/testpki-cacert.pem \
-        --ssl-protocols=TLSv1.2,TLSv1.1 \
         --ssl-ciphers=HIGH:!aNULL:!MD5 \
         transact ssl:127.0.0.1:$SSL_PORT \
         '["mydb",
@@ -608,7 +606,7 @@ AT_CHECK_UNQUOTED(
   [cat output], [0],
   [[@<:@{"rows":@<:@{"private_key":"$PKIDIR/testpki-privkey2.pem"}@:>@}@:>@
 ]], [ignore])
-# Check that when the server has TLSv1.1+ and the client has
+# Check that when the server has TLSv1.2+ and the client has
 # TLSv1 that the connection fails.
 AT_CHECK(
   [[ovsdb-client \
@@ -638,7 +636,7 @@ AT_CHECK(
         --private-key=$PKIDIR/testpki-privkey.pem \
         --certificate=$PKIDIR/testpki-cert.pem \
         --ca-cert=$PKIDIR/testpki-cacert.pem \
-        --ssl-protocols=TLSv1.2,TLSv1.1 \
+        --ssl-protocols=TLSv1.2 \
         --ssl-ciphers=ECDHE-ECDSA-AES256-GCM-SHA384 \
         transact ssl:127.0.0.1:$SSL_PORT \
         '["mydb",

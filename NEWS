@@ -8,6 +8,13 @@ Post-v2.16.0
        by default.  'other_config:dpdk-socket-limit' can be set equal to
        the 'other_config:dpdk-socket-mem' to preserve the legacy memory
        limiting behavior.
+   - Update default configuration for enabled TLS protocols:
+     * RFC 8996 deprecates the use of TLSv1 and TLSv1.1 for security reasons.
+     * Add TLSv1.3 to the default list of enabled protocols when the built with
+       OpenSSL v1.1.1 and newer.
+     * The new default is as such: TLSv1.2,TLSv1.3
+     * As a consequence we no longer support building Open vSwitch with OpenSSL
+       versions without TLSv1.2 support.
 
 
 v2.16.0 - 16 Aug 2021
