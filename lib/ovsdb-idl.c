@@ -3082,6 +3082,16 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
     HMAP_FOR_EACH (row, txn_node, &txn->txn_rows) {
         const struct ovsdb_idl_table_class *class = row->table->class_;
 
+        if (!row->table->in_server_schema) {
+            /* The table is not present in the server schema.  Do not
+             * include it in the transaction. */
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
+            VLOG_WARN_RL(&rl, "%s database lacks %s table, excluding from "
+                         "the txn.", row->table->idl->class_->database,
+                         row->table->class_->name);
+            continue;
+        }
+
         if (!row->new_datum) {
             if (class->is_root) {
                 struct json *op = json_object_create();
@@ -3380,6 +3390,12 @@ ovsdb_idl_txn_write__(const struct ovsdb_idl_row *row_,
     }
 
     class = row->table->class_;
+
+    if (!ovsdb_idl_has_column_in_table(row->table->idl, class->name,
+                                       column->name)) {
+        goto discard_datum;
+    }
+
     column_idx = column - class->columns;
     write_only = row->table->modes[column_idx] == OVSDB_IDL_MONITOR;
 
