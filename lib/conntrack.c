@@ -2414,6 +2414,10 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
                      conn->key.nw_proto == IPPROTO_UDP;
     uint16_t min_dport, max_dport, curr_dport, orig_dport;
     uint16_t min_sport, max_sport, curr_sport, orig_sport;
+    static const unsigned int max_attempts = 128;
+    uint16_t range_src, range_dst, range_max;
+    unsigned int attempts;
+    unsigned int i;
 
     min_addr = conn->nat_info->min_addr;
     max_addr = conn->nat_info->max_addr;
@@ -2429,6 +2433,10 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
                     &min_sport, &max_sport);
     set_dport_range(conn->nat_info, &conn->key, hash, &orig_dport,
                     &min_dport, &max_dport);
+
+    range_src = max_sport - min_sport + 1;
+    range_dst = max_dport - min_dport + 1;
+    range_max = range_src > range_dst ? range_src : range_dst;
 
 another_round:
     store_addr_to_key(&curr_addr, &nat_conn->rev_key,
@@ -2446,16 +2454,35 @@ another_round:
     curr_sport = orig_sport;
     curr_dport = orig_dport;
 
+another_port_round:
+    i = 0;
+    attempts = range_max;
+    if (attempts > max_attempts) {
+        attempts = max_attempts;
+    }
+
     FOR_EACH_PORT_IN_RANGE(curr_dport, min_dport, max_dport) {
         nat_conn->rev_key.src.port = htons(curr_dport);
         FOR_EACH_PORT_IN_RANGE(curr_sport, min_sport, max_sport) {
-            nat_conn->rev_key.dst.port = htons(curr_sport);
-            if (!conn_lookup(ct, &nat_conn->rev_key,
-                             time_msec(), NULL, NULL)) {
-                return true;
+            if (i++ < attempts) {
+                nat_conn->rev_key.dst.port = htons(curr_sport);
+                if (!conn_lookup(ct, &nat_conn->rev_key,
+                                 time_msec(), NULL, NULL)) {
+                    return true;
+                }
             }
         }
     }
+
+    if (attempts >= range_max || attempts < 16) {
+        goto next_addr;
+    }
+
+    attempts /= 2;
+    curr_dport = random_uint32() % range_dst;
+    curr_sport = random_uint32() % range_src;
+
+    goto another_port_round;
 
     /* Check if next IP is in range and respin. Otherwise, notify
      * exhaustion to the caller. */
