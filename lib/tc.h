@@ -174,6 +174,7 @@ enum tc_action_type {
     TC_ACT_MPLS_SET,
     TC_ACT_GOTO,
     TC_ACT_CT,
+    TC_ACT_POLICE,
 };
 
 enum nat_type {
@@ -256,6 +257,9 @@ struct tc_action {
             bool force;
             bool commit;
         } ct;
+        struct {
+            uint32_t index;
+        } police;
      };
 
      enum tc_action_type type;
