@@ -1500,10 +1500,17 @@ class Transaction(object):
         the IDL's copy of the database.  If the transaction commits
         successfully, then the database server will send an update and, thus,
         the IDL will be updated with the committed changes."""
+
         # The status can only change if we're the active transaction.
         # (Otherwise, our status will change only in Idl.run().)
         if self != self.idl.txn:
             return self._status
+
+        if self.idl.state != Idl.IDL_S_MONITORING:
+            self._status = Transaction.TRY_AGAIN
+            self.__disassemble()
+            return self._status
+
 
         # If we need a lock but don't have it, give up quickly.
         if self.idl.lock_name and not self.idl.has_lock:
