@@ -27,6 +27,8 @@
 extern "C" {
 #endif
 
+#define MAX_OFFLOAD_METERS 4
+
 struct dp_packet_batch;
 struct dp_packet;
 struct netdev_class;
@@ -77,6 +79,8 @@ struct offload_info {
     bool tc_modify_flow_deleted; /* Indicate the tc modify flow put success
                                   * to delete the original flow. */
     odp_port_t orig_in_port; /* Originating in_port for tnl flows. */
+    uint32_t police_ids[MAX_OFFLOAD_METERS]; /* police ids of the offloaded
+                                              * meters in the flow */
 };
 
 int netdev_flow_flush(struct netdev *);
