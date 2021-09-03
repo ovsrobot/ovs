@@ -105,6 +105,8 @@ dpif_miniflow_extract_init(void)
     atomic_uintptr_t *mfex_func = (void *)&default_mfex_func;
 #ifdef MFEX_AUTOVALIDATOR_DEFAULT
     int mfex_idx = MFEX_IMPL_AUTOVALIDATOR;
+#elif CPU_ISA_OPT_IN
+    int mfex_idx = MFEX_IMPL_STUDY;
 #else
     int mfex_idx = MFEX_IMPL_SCALAR;
 #endif

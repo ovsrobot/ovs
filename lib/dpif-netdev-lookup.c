@@ -45,7 +45,13 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
 
 #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
     /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
-    { .prio = 0,
+    {
+#ifdef CPU_ISA_OPT_IN
+      /* Allow Autovalidator to override, but higher than default scalar. */
+      .prio = 100,
+#else
+      .prio = 0,
+#endif
       .probe = dpcls_subtable_avx512_gather_probe,
       .name = "avx512_gather", },
 #else

@@ -33,6 +33,23 @@ AC_DEFUN([OVS_CHECK_MFEX_AUTOVALIDATOR], [
   fi
 ])
 
+dnl Set OVS DPCLS DPIF and MFEX to AVX512 opt at compile time?
+AC_DEFUN([OVS_CHECK_CPU_ISA_OPT_IN], [
+  AC_ARG_ENABLE([cpu-isa],
+                [AC_HELP_STRING([--enable-cpu-isa],
+                [Enable CPU ISA default enable.])],
+                [isa=yes],[isa=no])
+  AC_MSG_CHECKING([whether CPU ISA should be enabled by default])
+  if test "$isa" != yes; then
+    AC_MSG_RESULT([no])
+  else
+    AC_DEFINE([CPU_ISA_OPT_IN], [1],
+              [DPIF AVX512, DPCLS AVX512, MFEX AVX512 is a
+               default implementation.])
+    AC_MSG_RESULT([yes])
+  fi
+])
+
 dnl Set OVS DPCLS Autovalidator as default subtable search at compile time?
 dnl This enables automatically running all unit tests with all DPCLS
 dnl implementations.

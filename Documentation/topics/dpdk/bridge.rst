@@ -436,3 +436,12 @@ the following test-case in tests/system-dpdk.at ::
 
     make check-dpdk TESTSUITEFLAGS='-k MFEX'
     OVS-DPDK - MFEX Autovalidator Fuzzy
+
+Enabling all AVX512 options
+---------------------------
+
+A user can enable all the three DPIF, Miniflow Extract and DPLCS optimized
+AVX512 options at build time, if the CPU supports the required AVX512 ISA
+by using the following command ::
+
+    ./configure --enable-cpu-isa

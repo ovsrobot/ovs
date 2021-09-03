@@ -68,6 +68,8 @@ v2.16.0 - 16 Aug 2021
      * Add new 'pmd-rxq-isolate' option that can be set to 'false' in order
        that pmd cores which are pinned with rxqs using 'pmd-rxq-affinity'
        are available for assigning other non-pinned rxqs.
+     * Add command and documentation to enable all AVX512 optimized options
+       by default at build time.
    - ovs-ctl:
      * New option '--no-record-hostname' to disable hostname configuration
        in ovsdb on startup.

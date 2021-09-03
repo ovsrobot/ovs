@@ -60,7 +60,7 @@ dp_netdev_impl_get_default(void)
 
 /* Configure-time overriding to run test suite on all implementations. */
 #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
-#ifdef DPIF_AVX512_DEFAULT
+#if defined(DPIF_AVX512_DEFAULT) || defined(CPU_ISA_OPT_IN)
         dp_netdev_input_func_probe probe;
 
         /* Check if the compiled default is compatible. */
