@@ -274,6 +274,10 @@ struct dp_netdev {
     /* Enable the SMC cache from ovsdb config */
     atomic_bool smc_enable_db;
 
+    /* How many iterations of pmd_thread_main() to delay checking for the
+     * completion of deferred work. */
+    OVS_ALIGNED_VAR(CACHE_LINE_SIZE) atomic_uint8_t async_iteration_delay;
+
     /* Protects access to ofproto-dpif-upcall interface during revalidator
      * thread synchronization. */
     struct fat_rwlock upcall_rwlock;
@@ -1752,6 +1756,8 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
 
     atomic_init(&dp->emc_insert_min, DEFAULT_EM_FLOW_INSERT_MIN);
     atomic_init(&dp->tx_flush_interval, DEFAULT_TX_FLUSH_INTERVAL);
+
+    atomic_init(&dp->async_iteration_delay, DEFAULT_ASYNC_ITERATION_DELAY);
 
     cmap_init(&dp->poll_threads);
     dp->pmd_rxq_assign_type = SCHED_CYCLES;
@@ -4215,6 +4221,20 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         dp_netdev_request_reconfigure(dp);
     }
 
+    int async_delay = smap_get_int(other_config, "async-iteration-delay",
+                                   DEFAULT_ASYNC_ITERATION_DELAY);
+    uint8_t cur_async_delay;
+    atomic_read_relaxed(&dp->async_iteration_delay, &cur_async_delay);
+    if (async_delay <= UINT8_MAX && async_delay >= 0) {
+        if (async_delay != cur_async_delay) {
+            atomic_store_relaxed(&dp->async_iteration_delay, async_delay);
+            VLOG_INFO("Asynchronous iteration delay changed to %d.",
+                      async_delay);
+        }
+    } else {
+        VLOG_ERR("Asynchronous delay value must be between 0 and 255.");
+    }
+
     atomic_read_relaxed(&dp->emc_insert_min, &cur_min);
     if (insert_prob <= UINT32_MAX) {
         insert_min = insert_prob == 0 ? 0 : UINT32_MAX / insert_prob;
@@ -4592,6 +4612,21 @@ pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd OVS_UNUSED)
 }
 #endif
 
+/* Check whether a sufficient number of iterations of pmd_thread_main() have
+ * occurred in order to attempt the next work item.  The number of iterations
+ * is equal to async_delay. */
+static inline bool
+iteration_reached(struct dp_defer *defer, uint64_t current_iteration_cnt,
+                  uint8_t async_delay)
+{
+    uint32_t read_idx = defer->read_idx & WORK_RING_MASK;
+    struct dp_defer_work_item *current_work = &defer->work_ring[read_idx];
+    uint64_t item_iteration_cnt = current_work->pmd_iteration_cnt;
+
+    /*return (current_iteration_cnt >= item_iteration_cnt);*/
+    return item_iteration_cnt <= (current_iteration_cnt - async_delay);
+}
+
 /* Try to do one piece of work from the work ring.
  *
  * Returns:
@@ -4691,6 +4726,7 @@ dp_defer_work(struct dp_defer *defer, struct pmd_perf_stats *perf_stats,
     ring_item->attempts = 0;
     ring_item->pkt_cnt = work->pkt_cnt;
     ring_item->output_pkts_rxqs = work->output_pkts_rxqs;
+    ring_item->pmd_iteration_cnt = work->pmd_iteration_cnt;
 
     defer->write_idx++;
 
@@ -4742,6 +4778,7 @@ dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
             .qid = tx_qid,
             .pkt_cnt = output_cnt,
             .output_pkts_rxqs = p->output_pkts_rxqs,
+            .pmd_iteration_cnt = perf_stats->iteration_cnt,
         };
 
         /* Defer the work. */
@@ -6364,10 +6401,14 @@ reload:
             tx_packets = dp_netdev_pmd_flush_output_packets(pmd, false);
         }
 
+        uint8_t async_delay;
+        atomic_read_relaxed(&pmd->dp->async_iteration_delay, &async_delay);
+
         /* Try to clear the work ring. If a piece of work is still in progress,
          * don't attempt to do the remaining work items. They will be postponed
-         * to the next interation of pmd_thread_main(). */
-        while (!dp_defer_do_work(defer, s)) {
+         * to the next iteration of pmd_thread_main(). */
+        while (iteration_reached(defer, s->iteration_cnt, async_delay)
+               && !dp_defer_do_work(defer, s)) {
             continue;
         }
 

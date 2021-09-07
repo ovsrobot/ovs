@@ -39,12 +39,21 @@ struct dp_defer_work_item {
     uint32_t attempts;
     int pkt_cnt;
     struct dp_netdev_rxq **output_pkts_rxqs;
+
+    /* The pmd_iteration_cnt at which to the work item was deferred.  It's used
+     * along with the async-iteration-delay to decide whether to attempt doing
+     * a work item. */
+    uint64_t pmd_iteration_cnt;
 };
 
 #define WORK_RING_SIZE 128
 #define WORK_RING_MASK (WORK_RING_SIZE - 1)
 
 #define ATTEMPT_LIMIT 1000
+
+/* How many iterations of pmd_thread_main() to delay checking for the
+ * completion of deferred work. */
+#define DEFAULT_ASYNC_ITERATION_DELAY 0
 
 /* The read and write indexes are between 0 and 2^32, and we mask their value
  * when we access the work_ring[] array. */
