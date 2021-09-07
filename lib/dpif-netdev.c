@@ -4604,11 +4604,17 @@ static inline unsigned int
 dp_defer_do_work(struct dp_defer *defer, struct pmd_perf_stats *perf_stats)
 {
     struct dp_defer_work_item *work;
+    struct cycle_timer timer;
+    uint64_t cycles;
     uint32_t read_idx;
     int ret;
+    int i;
 
+    cycle_timer_start(perf_stats, &timer);
     /* Check that there's a piece of work in the ring to do. */
     if (dp_defer_work_ring_empty(defer)) {
+        /* Discard cycles. */
+        cycle_timer_stop(perf_stats, &timer);
         return -ENOENT;
     }
 
@@ -4630,17 +4636,31 @@ dp_defer_do_work(struct dp_defer *defer, struct pmd_perf_stats *perf_stats)
                 pmd_perf_update_counter(perf_stats, PMD_STAT_WORK_DONE, 1);
             }
 
-            return 0;
+            ret = 0;
+            goto out;
         }
-
-        return ret;
+        goto out;
     }
 
     defer->read_idx++;
+    ret = 0;
 
     pmd_perf_update_counter(perf_stats, PMD_STAT_WORK_DONE, 1);
 
-    return 0;
+out:
+    /* Distribute send cycles evenly among transmitted packets and assign to
+     * their respective rx queues. */
+    cycles = cycle_timer_stop(perf_stats, &timer);
+
+    if (work->pkt_cnt) {
+        cycles = cycles / work->pkt_cnt;
+    }
+    for (i = 0; i < work->pkt_cnt; i++) {
+        dp_netdev_rxq_add_cycles(work->output_pkts_rxqs[i],
+                                 RXQ_CYCLES_PROC_CURR, cycles);
+    }
+
+    return ret;
 }
 
 static inline void
@@ -4669,6 +4689,8 @@ dp_defer_work(struct dp_defer *defer, struct pmd_perf_stats *perf_stats,
     ring_item->netdev = work->netdev;
     ring_item->qid = work->qid;
     ring_item->attempts = 0;
+    ring_item->pkt_cnt = work->pkt_cnt;
+    ring_item->output_pkts_rxqs = work->output_pkts_rxqs;
 
     defer->write_idx++;
 
@@ -4718,6 +4740,8 @@ dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
             .work_func = p->cached_work_func,
             .netdev = netdev,
             .qid = tx_qid,
+            .pkt_cnt = output_cnt,
+            .output_pkts_rxqs = p->output_pkts_rxqs,
         };
 
         /* Defer the work. */

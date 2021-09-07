@@ -37,6 +37,8 @@ struct dp_defer_work_item {
     void *netdev;
     int qid;
     uint32_t attempts;
+    int pkt_cnt;
+    struct dp_netdev_rxq **output_pkts_rxqs;
 };
 
 #define WORK_RING_SIZE 128
