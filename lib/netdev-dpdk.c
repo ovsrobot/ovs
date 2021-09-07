@@ -2585,7 +2585,7 @@ netdev_dpdk_vhost_update_tx_counters(struct netdev_dpdk *dev,
     }
 }
 
-static void
+static int
 __netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
                          struct dp_packet **pkts, int cnt)
 {
@@ -2667,6 +2667,8 @@ out:
     for (i = 0; i < n_packets_to_free; i++) {
         dp_packet_delete(pkts[i]);
     }
+
+    return 0;
 }
 
 static void
@@ -2774,7 +2776,7 @@ dpdk_copy_dp_packet_to_mbuf(struct rte_mempool *mp, struct dp_packet *pkt_orig)
 }
 
 /* Tx function. Transmit packets indefinitely */
-static void
+static int
 dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
@@ -2793,6 +2795,7 @@ dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
     uint32_t tx_failure = 0;
     uint32_t mtu_drops = 0;
     uint32_t qos_drops = 0;
+    int ret = 0;
 
     if (dev->type != DPDK_DEV_VHOST) {
         /* Check if QoS has been configured for this netdev. */
@@ -2826,7 +2829,7 @@ dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
 
     if (OVS_LIKELY(txcnt)) {
         if (dev->type == DPDK_DEV_VHOST) {
-            __netdev_dpdk_vhost_send(netdev, qid, pkts, txcnt);
+            ret = __netdev_dpdk_vhost_send(netdev, qid, pkts, txcnt);
         } else {
             tx_failure += netdev_dpdk_eth_tx_burst(dev, qid,
                                                    (struct rte_mbuf **)pkts,
@@ -2843,6 +2846,8 @@ dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
         sw_stats->tx_qos_drops += qos_drops;
         rte_spinlock_unlock(&dev->stats_lock);
     }
+
+    return ret;
 }
 
 static int
@@ -2851,14 +2856,15 @@ netdev_dpdk_vhost_send(struct netdev *netdev, int qid,
                        bool concurrent_txq OVS_UNUSED)
 {
 
+    int ret = 0;
     if (OVS_UNLIKELY(batch->packets[0]->source != DPBUF_DPDK)) {
-        dpdk_do_tx_copy(netdev, qid, batch);
+        ret = dpdk_do_tx_copy(netdev, qid, batch);
         dp_packet_delete_batch(batch, true);
     } else {
-        __netdev_dpdk_vhost_send(netdev, qid, batch->packets,
-                                 dp_packet_batch_size(batch));
+        ret = __netdev_dpdk_vhost_send(netdev, qid, batch->packets,
+                                       dp_packet_batch_size(batch));
     }
-    return 0;
+    return ret;
 }
 
 static inline void
@@ -5468,6 +5474,7 @@ static const struct netdev_class dpdk_vhost_class = {
     .construct = netdev_dpdk_vhost_construct,
     .destruct = netdev_dpdk_vhost_destruct,
     .send = netdev_dpdk_vhost_send,
+    .process_async = NULL,
     .get_carrier = netdev_dpdk_vhost_get_carrier,
     .get_stats = netdev_dpdk_vhost_get_stats,
     .get_custom_stats = netdev_dpdk_get_sw_custom_stats,
@@ -5484,6 +5491,7 @@ static const struct netdev_class dpdk_vhost_client_class = {
     .destruct = netdev_dpdk_vhost_destruct,
     .set_config = netdev_dpdk_vhost_client_set_config,
     .send = netdev_dpdk_vhost_send,
+    .process_async = NULL,
     .get_carrier = netdev_dpdk_vhost_get_carrier,
     .get_stats = netdev_dpdk_vhost_get_stats,
     .get_custom_stats = netdev_dpdk_get_sw_custom_stats,
