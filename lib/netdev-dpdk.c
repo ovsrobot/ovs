@@ -5247,9 +5247,7 @@ netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     int ret;
 
-    ovs_mutex_lock(&dev->mutex);
     ret = rte_flow_destroy(dev->port_id, rte_flow, error);
-    ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
 
@@ -5263,9 +5261,7 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
     struct rte_flow *flow;
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
 
-    ovs_mutex_lock(&dev->mutex);
     flow = rte_flow_create(dev->port_id, attr, items, actions, error);
-    ovs_mutex_unlock(&dev->mutex);
     return flow;
 }
 
@@ -5293,9 +5289,7 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
     }
 
     dev = netdev_dpdk_cast(netdev);
-    ovs_mutex_lock(&dev->mutex);
     ret = rte_flow_query(dev->port_id, rte_flow, actions, query, error);
-    ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
 
