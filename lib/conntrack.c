@@ -2409,11 +2409,11 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
 {
     union ct_addr min_addr = {0}, max_addr = {0}, curr_addr = {0},
                   guard_addr = {0};
+    uint16_t min_sport, max_sport, curr_sport, orig_sport;
     uint32_t hash = nat_range_hash(conn, ct->hash_basis);
     bool pat_proto = conn->key.nw_proto == IPPROTO_TCP ||
                      conn->key.nw_proto == IPPROTO_UDP;
     uint16_t min_dport, max_dport, curr_dport;
-    uint16_t min_sport, max_sport, curr_sport;
 
     min_addr = conn->nat_info->min_addr;
     max_addr = conn->nat_info->max_addr;
@@ -2425,7 +2425,7 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
      * we can stop once we reach it. */
     guard_addr = curr_addr;
 
-    set_sport_range(conn->nat_info, &conn->key, hash, &curr_sport,
+    set_sport_range(conn->nat_info, &conn->key, hash, &orig_sport,
                     &min_sport, &max_sport);
     set_dport_range(conn->nat_info, &conn->key, hash, &curr_dport,
                     &min_dport, &max_dport);
@@ -2442,6 +2442,8 @@ another_round:
 
         goto next_addr;
     }
+
+    curr_sport = orig_sport;
 
     FOR_EACH_PORT_IN_RANGE(curr_dport, min_dport, max_dport) {
         nat_conn->rev_key.src.port = htons(curr_dport);
