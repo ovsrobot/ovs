@@ -8,6 +8,7 @@ Post-v2.16.0
        by default.  'other_config:dpdk-socket-limit' can be set equal to
        the 'other_config:dpdk-socket-mem' to preserve the legacy memory
        limiting behavior.
+   - Add sFlow offload support for kernel (netlink) datapath.
 
 
 v2.16.0 - 16 Aug 2021
