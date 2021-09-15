@@ -7381,6 +7381,14 @@ xlate_wc_init(struct xlate_ctx *ctx)
         WC_MASK_FIELD_MASK(ctx->wc, nw_frag, FLOW_NW_FRAG_MASK);
     }
 
+    /* Always check for igmp type in the packet.  This will ensure that
+     * the igmp nw type will properly be set as a match field.  */
+    if (get_dl_type(&ctx->xin->flow) == htons(ETH_TYPE_IP)) {
+        if (ctx->xin->flow.nw_proto == IPPROTO_IGMP && ctx->wc) {
+            WC_MASK_FIELD(ctx->wc, nw_proto);
+        }
+    }
+
     if (ctx->xbridge->support.odp.recirc) {
         /* Always exactly match recirc_id when datapath supports
          * recirculation.  */
