@@ -4229,7 +4229,8 @@ bridge_configure_aa(struct bridge *br)
         union ovsdb_atom atom;
 
         atom.integer = m->isid;
-        if (ovsdb_datum_find_key(mc, &atom, OVSDB_TYPE_INTEGER) == UINT_MAX) {
+        if (ovsdb_datum_find_key(mc, &atom,
+                                 OVSDB_TYPE_INTEGER, NULL) == UINT_MAX) {
             VLOG_INFO("Deleting isid=%"PRIu32", vlan=%"PRIu16,
                       m->isid, m->vlan);
             bridge_aa_mapping_destroy(m);
@@ -4826,7 +4827,8 @@ queue_ids_include(const struct ovsdb_datum *queues, int64_t target)
     union ovsdb_atom atom;
 
     atom.integer = target;
-    return ovsdb_datum_find_key(queues, &atom, OVSDB_TYPE_INTEGER) != UINT_MAX;
+    return ovsdb_datum_find_key(queues, &atom,
+                                OVSDB_TYPE_INTEGER, NULL) != UINT_MAX;
 }
 
 static void
@@ -5020,7 +5022,8 @@ bridge_configure_mirrors(struct bridge *br)
         union ovsdb_atom atom;
 
         atom.uuid = m->uuid;
-        if (ovsdb_datum_find_key(mc, &atom, OVSDB_TYPE_UUID) == UINT_MAX) {
+        if (ovsdb_datum_find_key(mc, &atom,
+                                 OVSDB_TYPE_UUID, NULL) == UINT_MAX) {
             mirror_destroy(m);
         }
     }

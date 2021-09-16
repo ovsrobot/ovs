@@ -321,7 +321,7 @@ get_row_by_id(struct ctl_context *ctx,
             const union ovsdb_atom key_atom
                 = { .string = CONST_CAST(char *, id->key) };
             unsigned int i = ovsdb_datum_find_key(datum, &key_atom,
-                                                  OVSDB_TYPE_STRING);
+                                                  OVSDB_TYPE_STRING, NULL);
             name = i == UINT_MAX ? NULL : &datum->values[i];
         }
         if (!name) {
@@ -820,7 +820,7 @@ check_condition(const struct ovsdb_idl_table_class *table,
         }
 
         idx = ovsdb_datum_find_key(have_datum,
-                                   &want_key, column->type.key.type);
+                                   &want_key, column->type.key.type, NULL);
         if (idx == UINT_MAX && !is_set_operator(operator)) {
             retval = false;
         } else {
@@ -993,7 +993,7 @@ cmd_get(struct ctl_context *ctx)
             }
 
             idx = ovsdb_datum_find_key(datum, &key,
-                                       column->type.key.type);
+                                       column->type.key.type, NULL);
             if (idx == UINT_MAX) {
                 if (must_exist) {
                     ctl_error(
@@ -1375,7 +1375,7 @@ set_column(const struct ovsdb_idl_table_class *table,
         ovsdb_atom_destroy(&value, column->type.value.type);
 
         ovsdb_datum_union(&datum, ovsdb_idl_read(row, column),
-                          &column->type, false);
+                          &column->type);
         ovsdb_idl_txn_verify(row, column);
         ovsdb_idl_txn_write(row, column, &datum);
     } else {
@@ -1514,7 +1514,7 @@ cmd_add(struct ctl_context *ctx)
             ovsdb_datum_destroy(&old, &column->type);
             return;
         }
-        ovsdb_datum_union(&old, &add, type, false);
+        ovsdb_datum_union(&old, &add, type);
         ovsdb_datum_destroy(&add, type);
     }
     if (old.n > type->n_max) {

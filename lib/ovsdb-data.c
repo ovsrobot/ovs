@@ -799,7 +799,8 @@ ovsdb_atom_check_constraints(const union ovsdb_atom *atom,
                              const struct ovsdb_base_type *base)
 {
     if (base->enum_
-        && ovsdb_datum_find_key(base->enum_, atom, base->type) == UINT_MAX) {
+        && ovsdb_datum_find_key(base->enum_, atom,
+                                base->type, NULL) == UINT_MAX) {
         struct ovsdb_error *error;
         struct ds actual = DS_EMPTY_INITIALIZER;
         struct ds valid = DS_EMPTY_INITIALIZER;
@@ -1787,11 +1788,13 @@ ovsdb_datum_compare_3way(const struct ovsdb_datum *a,
 /* If 'key' is one of the keys in 'datum', returns its index within 'datum',
  * otherwise UINT_MAX.  'key.type' must be the type of the atoms stored in the
  * 'keys' array in 'datum'.
+ * If 'key' is not found, index where it should have been returned in '*pos'.
  */
 unsigned int
 ovsdb_datum_find_key(const struct ovsdb_datum *datum,
                      const union ovsdb_atom *key,
-                     enum ovsdb_atomic_type key_type)
+                     enum ovsdb_atomic_type key_type,
+                     unsigned int *pos)
 {
     unsigned int low = 0;
     unsigned int high = datum->n;
@@ -1805,6 +1808,9 @@ ovsdb_datum_find_key(const struct ovsdb_datum *datum,
         } else {
             return idx;
         }
+    }
+    if (pos) {
+        *pos = low;
     }
     return UINT_MAX;
 }
@@ -1821,7 +1827,7 @@ ovsdb_datum_find_key_value(const struct ovsdb_datum *datum,
                            const union ovsdb_atom *value,
                            enum ovsdb_atomic_type value_type)
 {
-    unsigned int idx = ovsdb_datum_find_key(datum, key, key_type);
+    unsigned int idx = ovsdb_datum_find_key(datum, key, key_type, NULL);
     if (idx != UINT_MAX
         && value_type != OVSDB_TYPE_VOID
         && !ovsdb_atom_equals(&datum->values[idx], value, value_type)) {
@@ -1948,38 +1954,64 @@ ovsdb_datum_add_unsafe(struct ovsdb_datum *datum,
     }
 }
 
+/* Adds 'n' atoms starting from index 'start_idx' from 'src' to the end of
+ * 'dst'.  'dst' should have enough memory allocated to hold the additional
+ * 'n' atoms.  Atoms are not cloned, i.e. 'dst' will reference the same data.
+ * Caller also should take care of the result being sorted. */
+static void
+ovsdb_datum_push_unsafe(struct ovsdb_datum *dst,
+                        const struct ovsdb_datum *src,
+                        unsigned int start_idx, unsigned int n,
+                        const struct ovsdb_type *type)
+{
+    memcpy(&dst->keys[dst->n], &src->keys[start_idx], n * sizeof src->keys[0]);
+    if (type->value.type != OVSDB_TYPE_VOID) {
+        memcpy(&dst->values[dst->n], &src->values[start_idx],
+               n * sizeof src->values[0]);
+    }
+    dst->n += n;
+}
+
 void
 ovsdb_datum_union(struct ovsdb_datum *a, const struct ovsdb_datum *b,
-                  const struct ovsdb_type *type, bool replace)
+                  const struct ovsdb_type *type)
 {
-    unsigned int n;
-    size_t bi;
+    struct ovsdb_datum result;
+    unsigned int copied, pos;
+    size_t ai, bi;
 
-    n = a->n;
+    ovsdb_datum_init_empty(&result);
+    ovsdb_datum_reallocate(&result, type, a->n + b->n);
+
+    copied = 0;
     for (bi = 0; bi < b->n; bi++) {
-        unsigned int ai;
-
-        ai = ovsdb_datum_find_key(a, &b->keys[bi], type->key.type);
-        if (ai == UINT_MAX) {
-            if (n == a->n) {
-                ovsdb_datum_reallocate(a, type, a->n + (b->n - bi));
-            }
-            ovsdb_atom_clone(&a->keys[n], &b->keys[bi], type->key.type);
-            if (type->value.type != OVSDB_TYPE_VOID) {
-                ovsdb_atom_clone(&a->values[n], &b->values[bi],
-                                 type->value.type);
-            }
-            n++;
-        } else if (replace && type->value.type != OVSDB_TYPE_VOID) {
-            ovsdb_atom_destroy(&a->values[ai], type->value.type);
-            ovsdb_atom_clone(&a->values[ai], &b->values[bi],
+        ai = ovsdb_datum_find_key(a, &b->keys[bi], type->key.type, &pos);
+        if (ai != UINT_MAX) {
+            /* Atom with the same key already exists. */
+            continue;
+        }
+        if (pos > copied) {
+            /* Need to copy some atoms from 'a' first. */
+            ovsdb_datum_push_unsafe(&result, a, copied, pos - copied, type);
+            copied = pos;
+        }
+        /* Inserting new atom from 'b'. */
+        ovsdb_atom_clone(&result.keys[result.n], &b->keys[bi], type->key.type);
+        if (type->value.type != OVSDB_TYPE_VOID) {
+            ovsdb_atom_clone(&result.values[result.n], &b->values[bi],
                              type->value.type);
         }
+        result.n++;
     }
-    if (n != a->n) {
-        a->n = n;
-        ovs_assert(!ovsdb_datum_sort(a, type->key.type));
+    if (a->n > copied) {
+        /* Copying remaining atoms. */
+        ovsdb_datum_push_unsafe(&result, a, copied, a->n - copied, type);
     }
+    /* All atoms are copied now. */
+    a->n = 0;
+
+    ovsdb_datum_swap(&result, a);
+    ovsdb_datum_destroy(&result, type);
 }
 
 void
