@@ -29,6 +29,7 @@
 #include "openvswitch/vlog.h"
 #include "ovsdb-error.h"
 #include "ovsdb.h"
+#include "ovs-thread.h"
 #include "row.h"
 #include "storage.h"
 #include "table.h"
@@ -95,6 +96,7 @@ struct ovsdb_txn_row {
 static struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 delete_garbage_row(struct ovsdb_txn *txn, struct ovsdb_txn_row *r);
 static void ovsdb_txn_row_prefree(struct ovsdb_txn_row *);
+static void ovsdb_txn_row_log(const struct ovsdb_txn_row *);
 static struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 for_each_txn_row(struct ovsdb_txn *txn,
                       struct ovsdb_error *(*)(struct ovsdb_txn *,
@@ -103,6 +105,11 @@ for_each_txn_row(struct ovsdb_txn *txn,
 /* Used by for_each_txn_row() to track tables and rows that have been
  * processed.  */
 static unsigned int serial;
+
+/* Used by ovsdb_txn_row_log() to avoid reallocating dynamic strings
+ * every time a row operation is logged.
+ */
+DEFINE_STATIC_PER_THREAD_DATA(struct ds, row_log_str, DS_EMPTY_INITIALIZER);
 
 struct ovsdb_txn *
 ovsdb_txn_create(struct ovsdb *db)
@@ -422,6 +429,49 @@ update_ref_counts(struct ovsdb_txn *txn)
     return for_each_txn_row(txn, check_ref_count);
 }
 
+static void
+ovsdb_txn_row_log(const struct ovsdb_txn_row *txn_row)
+{
+    static struct vlog_rate_limit rl_insert = VLOG_RATE_LIMIT_INIT(30, 60);
+    static struct vlog_rate_limit rl_update = VLOG_RATE_LIMIT_INIT(30, 60);
+    static struct vlog_rate_limit rl_delete = VLOG_RATE_LIMIT_INIT(30, 60);
+
+    if (!txn_row->table->log) {
+        return;
+    }
+
+    size_t n_columns = shash_count(&txn_row->table->schema->columns);
+    struct ovsdb_row *log_row;
+    const char *op = NULL;
+
+    if (!txn_row->old && txn_row->new) {
+        if (!vlog_should_drop(&this_module, VLL_INFO, &rl_insert)) {
+            log_row = txn_row->new;
+            op = "inserted";
+        }
+    } else if (txn_row->old && txn_row->new
+               && !bitmap_is_all_zeros(txn_row->changed, n_columns)) {
+        if (!vlog_should_drop(&this_module, VLL_INFO, &rl_update)) {
+            log_row = txn_row->new;
+            op = "updated";
+        }
+    } else if (txn_row->old && !txn_row->new) {
+        if (!vlog_should_drop(&this_module, VLL_INFO, &rl_delete)) {
+            log_row = txn_row->old;
+            op = "deleted";
+        }
+    }
+
+    if (op) {
+        struct ds *ds = row_log_str_get();
+        ds_clear(ds);
+        ds_put_format(ds, "table:%s,op:%s,", txn_row->table->schema->name,
+                      op);
+        ovsdb_row_to_string(log_row, ds);
+        VLOG_INFO("%s", ds_cstr(ds));
+    }
+}
+
 static struct ovsdb_error *
 ovsdb_txn_row_commit(struct ovsdb_txn *txn OVS_UNUSED,
                      struct ovsdb_txn_row *txn_row)
@@ -445,6 +495,7 @@ ovsdb_txn_row_commit(struct ovsdb_txn *txn OVS_UNUSED,
         }
     }
 
+    ovsdb_txn_row_log(txn_row);
     ovsdb_txn_row_prefree(txn_row);
     if (txn_row->new) {
         txn_row->new->n_refs = txn_row->n_refs;

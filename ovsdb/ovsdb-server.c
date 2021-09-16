@@ -115,6 +115,7 @@ static unixctl_cb_func ovsdb_server_list_remotes;
 static unixctl_cb_func ovsdb_server_add_database;
 static unixctl_cb_func ovsdb_server_remove_database;
 static unixctl_cb_func ovsdb_server_list_databases;
+static unixctl_cb_func ovsdb_server_log_db_ops;
 
 static void read_db(struct server_config *, struct db *);
 static struct ovsdb_error *open_db(struct server_config *,
@@ -443,6 +444,8 @@ main(int argc, char *argv[])
                              ovsdb_server_remove_database, &server_config);
     unixctl_command_register("ovsdb-server/list-dbs", "", 0, 0,
                              ovsdb_server_list_databases, &all_dbs);
+    unixctl_command_register("ovsdb-server/log-db-ops", "DB TABLE on|off",
+                             3, 3, ovsdb_server_log_db_ops, &all_dbs);
     unixctl_command_register("ovsdb-server/perf-counters-show", "", 0, 0,
                              ovsdb_server_perf_counters_show, NULL);
     unixctl_command_register("ovsdb-server/perf-counters-clear", "", 0, 0,
@@ -1767,6 +1770,41 @@ ovsdb_server_list_databases(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
     unixctl_command_reply(conn, ds_cstr(&s));
     ds_destroy(&s);
+}
+
+static void
+ovsdb_server_log_db_ops(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                        const char *argv[], void *all_dbs_)
+{
+    struct shash *all_dbs = all_dbs_;
+    const char *db_name = argv[1];
+    const char *tbl_name = argv[2];
+    const char *command = argv[3];
+    bool log;
+
+    if (!strcmp(command, "on")) {
+        log = true;
+    } else if (!strcmp(command, "off")) {
+        log = false;
+    } else {
+        unixctl_command_reply_error(conn, "invalid argument");
+        return;
+    }
+
+    struct db *db = shash_find_data(all_dbs, db_name);
+    if (!db) {
+        unixctl_command_reply_error(conn, "no such database");
+        return;
+    }
+
+    struct ovsdb_table *table = ovsdb_get_table(db->db, tbl_name);
+    if (!table) {
+        unixctl_command_reply_error(conn, "no such table");
+        return;
+    }
+
+    ovsdb_table_log_ops(table, log);
+    unixctl_command_reply(conn, NULL);
 }
 
 static void

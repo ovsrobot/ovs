@@ -63,10 +63,13 @@ struct ovsdb_table {
      * ovsdb_row"s.  Each of the hmap_nodes in indexes[i] are at index 'i' at
      * the end of struct ovsdb_row, following the 'fields' member. */
     struct hmap *indexes;
+
+    bool log; /* True if logging is enabled for this table. */
 };
 
 struct ovsdb_table *ovsdb_table_create(struct ovsdb_table_schema *);
 void ovsdb_table_destroy(struct ovsdb_table *);
+void ovsdb_table_log_ops(struct ovsdb_table *, bool);
 
 const struct ovsdb_row *ovsdb_table_get_row(const struct ovsdb_table *,
                                             const struct uuid *);
