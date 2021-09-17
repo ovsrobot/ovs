@@ -2842,7 +2842,7 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
                     new_datum = map_op_datum(map_op);
                     pos = ovsdb_datum_find_key(old_datum,
                                                &new_datum->keys[0],
-                                               key_type);
+                                               key_type, NULL);
                     if (ovsdb_atom_equals(&new_datum->values[0],
                                           &old_datum->values[pos],
                                           value_type)) {
@@ -2854,7 +2854,7 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
                     unsigned int pos;
                     pos = ovsdb_datum_find_key(old_datum,
                                                &map_op_datum(map_op)->keys[0],
-                                               key_type);
+                                               key_type, NULL);
                     if (pos == UINT_MAX) {
                         /* No key to delete.  Move on to next update. */
                         VLOG_WARN("Trying to delete a key that doesn't "
@@ -2953,7 +2953,7 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
                     unsigned int pos;
                     pos = ovsdb_datum_find_key(old_datum,
                                                &set_op_datum(set_op)->keys[0],
-                                               key_type);
+                                               key_type, NULL);
                     if (pos == UINT_MAX) {
                         /* No key to delete.  Move on to next update. */
                         VLOG_WARN("Trying to delete a key that doesn't "
@@ -4131,7 +4131,7 @@ ovsdb_idl_txn_write_partial_map(const struct ovsdb_idl_row *row_,
     /* Find out if this is an insert or an update. */
     key_type = column->type.key.type;
     old_datum = ovsdb_idl_read(row, column);
-    pos = ovsdb_datum_find_key(old_datum, &datum->keys[0], key_type);
+    pos = ovsdb_datum_find_key(old_datum, &datum->keys[0], key_type, NULL);
     op_type = pos == UINT_MAX ? MAP_OP_INSERT : MAP_OP_UPDATE;
 
     ovsdb_idl_txn_add_map_op(row, column, datum, op_type);
