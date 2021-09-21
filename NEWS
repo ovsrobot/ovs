@@ -1,6 +1,8 @@
 Post-v2.16.0
 ---------------------
    - DPDK:
+     * OVS validated with DPDK 20.11.3. It is recommended to use this version
+       until further releases.
      * EAL argument --socket-mem is no longer configured by default upon
        start-up.  If dpdk-socket-mem and dpdk-alloc-mem are not specified,
        DPDK defaults will be used.
