@@ -143,7 +143,9 @@ do_start_ovsdb () {
         if test X"$SELF_CONFINEMENT" = Xno; then
             set "$@" --no-self-confinement
         fi
-        set "$@" -vconsole:emer -vsyslog:err -vfile:info
+        set "$@" -vconsole:"$VCONSOLE_LEVEL"
+        set "$@" -vsyslog:"$VSYSLOG_LEVEL"
+        set "$@" -vfile:"$VFILE_LEVEL"
         set "$@" --remote=punix:"$DB_SOCK"
         set "$@" --private-key=db:Open_vSwitch,SSL,private_key
         set "$@" --certificate=db:Open_vSwitch,SSL,certificate
@@ -211,7 +213,9 @@ do_start_forwarding () {
 
         # Start ovs-vswitchd.
         set ovs-vswitchd unix:"$DB_SOCK"
-        set "$@" -vconsole:emer -vsyslog:err -vfile:info
+        set "$@" -vconsole:"$VCONSOLE_LEVEL"
+        set "$@" -vsyslog:"$VSYSLOG_LEVEL"
+        set "$@" -vfile:"$VFILE_LEVEL"
         if test X"$MLOCKALL" != Xno; then
             set "$@" --mlockall
         fi
@@ -352,6 +356,10 @@ set_defaults () {
     DPORT=
     SPORT=
 
+    VCONSOLE_LEVEL=emer
+    VSYSLOG_LEVEL=err
+    VFILE_LEVEL=info
+
     IKE_DAEMON=
     RESTART_IKE_DAEMON=yes
 
@@ -440,6 +448,11 @@ Options for "enable-protocol":
   --protocol=PROTOCOL  protocol to enable with iptables (default: gre)
   --sport=PORT       source port to match (for tcp or udp protocol)
   --dport=PORT       ddestination port to match (for tcp or udp protocol)
+
+Log level options, documentation in ovs-appctl.8:
+  --vconsole-level=LEVEL     console logging level (default: $VCONSOLE_LEVEL)
+  --vsyslog-level=LEVEL   syslog logging level (default: $VSYSLOG_LEVEL)
+  --vfile-level=LEVEL   file logging level (default: $VFILE_LEVEL)
 
 Option for "start-ovs-ipsec":
   --ike-daemon=IKE_DAEMON
