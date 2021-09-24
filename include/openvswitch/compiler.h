@@ -37,7 +37,7 @@
 #define OVS_NO_RETURN
 #endif
 
-#if __GNUC__ && !__CHECKER__
+#if (__clang__ || __GNUC__) && !__CHECKER__
 #define OVS_UNUSED __attribute__((__unused__))
 #define OVS_PRINTF_FORMAT(FMT, ARG1) __attribute__((__format__(printf, FMT, ARG1)))
 #define OVS_SCANF_FORMAT(FMT, ARG1) __attribute__((__format__(scanf, FMT, ARG1)))
