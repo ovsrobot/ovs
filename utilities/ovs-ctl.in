@@ -431,6 +431,10 @@ Debugging options for "start", "restart" and "force-reload-kmod":
   --ovs-vswitchd-wrapper=WRAPPER
      run specified daemon under WRAPPER (either 'valgrind' or 'strace')
 
+Additional options:
+  --ovs-vswitchd-options=OPTIONS  additional options for ovs-vswitchd (example: '-vconsole:dbg -vfile:dbg')
+  --ovsdb-server-options=OPTIONS  additional options for ovsdb-server (example: '-vconsole:dbg -vfile:dbg')
+
 File location options:
   --db-file=FILE     database file name (default: $DB_FILE)
   --db-sock=SOCKET   JSON-RPC socket name (default: $DB_SOCK)
