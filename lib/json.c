@@ -30,6 +30,9 @@
 #include "unicode.h"
 #include "util.h"
 #include "uuid.h"
+#include "openvswitch/vlog.h"
+
+VLOG_DEFINE_THIS_MODULE(json);
 
 /* The type of a JSON token. */
 enum json_token_type {
@@ -185,7 +188,11 @@ struct json *
 json_serialized_object_create(const struct json *src)
 {
     struct json *json = json_create(JSON_SERIALIZED_OBJECT);
-    json->string = json_to_string(src, JSSF_SORT);
+    if (VLOG_IS_DBG_ENABLED()) {
+        json->string = json_to_string(src, JSSF_SORT);
+    } else {
+        json->string = json_to_string(src, 0);
+    }
     return json;
 }
 
