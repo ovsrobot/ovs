@@ -802,7 +802,15 @@ jsonrpc_msg_to_string(const struct jsonrpc_msg *m)
 {
     struct jsonrpc_msg *copy = jsonrpc_msg_clone(m);
     struct json *json = jsonrpc_msg_to_json(copy);
-    char *s = json_to_string(json, JSSF_SORT);
+    char *s;
+    if (VLOG_IS_DBG_ENABLED()) {
+        /* We need json sorted only if a human is looking
+         * at it. No point to sort it if debug is not on.
+         */
+        s = json_to_string(json, JSSF_SORT);
+    } else {
+        s = json_to_string(json, 0);
+    }
     json_destroy(json);
     return s;
 }
