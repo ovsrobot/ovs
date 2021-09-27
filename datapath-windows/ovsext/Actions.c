@@ -1122,6 +1122,13 @@ OvsPopFieldInPacketBuf(OvsForwardingContext *ovsFwdCtx,
 
     if (bufferData) {
         *bufferData = bufferStart + shiftLength;
+    } else {
+        /* Currently !bufferData means it should be treated as VLAN;
+         * Adjust layers Offset value as the vlan tag is removed
+         */
+        OVS_PACKET_HDR_INFO *layers = &ovsFwdCtx->layers;
+        layers->l3Offset -= (UINT16)shiftLength;
+        layers->l4Offset -= (UINT16)shiftLength;
     }
 
     return NDIS_STATUS_SUCCESS;
