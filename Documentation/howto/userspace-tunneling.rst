@@ -175,7 +175,7 @@ If the tunnel route is missing, adding it now::
 
     $ ovs-appctl ovs/route/add 172.168.1.1/24 br-phy
 
-Repeat these steps if necessary for `host2`, but using ``192.168.1.1`` and
+Repeat these steps if necessary for `host2`, but using ``192.168.1.2`` and
 ``172.168.1.2`` for the VM and tunnel interface IP addresses, respectively.
 
 Testing
