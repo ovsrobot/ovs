@@ -1151,8 +1151,9 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
 {
     char buf[NETDEV_VPORT_NAME_BUFSIZE];
     const char *name = netdev_vport_get_dpif_port(netdev_, buf, sizeof(buf));
+    const char *type = netdev_get_dpif_type(netdev_);
 
-    return linux_get_ifindex(name);
+    return (strncmp(type, "netdev", 6)) ? linux_get_ifindex(name) : 0;
 }
 
 #define NETDEV_VPORT_GET_IFINDEX netdev_vport_get_ifindex
