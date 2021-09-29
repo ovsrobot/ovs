@@ -22,6 +22,8 @@ enum ct_timeout;
 void timeout_policy_init(struct conntrack *ct);
 int timeout_policy_update(struct conntrack *ct, struct timeout_policy *tp);
 int timeout_policy_delete(struct conntrack *ct, uint32_t tp_id);
+void timeout_policy_dump(const struct ct_dpif_timeout_policy *tp,
+                         struct ds *ds);
 struct timeout_policy *timeout_policy_get(struct conntrack *ct, int32_t tp_id);
 void conn_init_expiration(struct conntrack *ct, struct conn *conn,
                           enum ct_timeout tm, long long now);
