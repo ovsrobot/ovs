@@ -212,12 +212,13 @@ Unsupported packet type
   is not an L3 packet, and ``encap(nsh)`` raises this error if the current
   packet is not Ethernet, IPv4, IPv6, or NSH.
 
+  The ``decap`` action is supported only for packet types ethernet, NSH and
+  MPLS. Openvswitch raises this error for other packet types.
   When a ``decap`` action decapsulates a packet, Open vSwitch raises this error
   if it does not support the type of inner packet.  ``decap`` of an Ethernet
   header raises this error if a VLAN header is present, ``decap`` of a NSH
   packet raises this error if the NSH inner packet is not Ethernet, IPv4, IPv6,
-  or NSH, and ``decap`` of other types of packets is unsupported and also
-  raises this error.
+  or NSH.
 
   This error terminates packet processing, retaining any previous side effects
   (e.g. output actions).  When this error arises within the execution of a
@@ -995,6 +996,7 @@ The ``encap`` action
   | ``encap(nsh([md_type=``\ *md_type*\
                  ``], [tlv(``\ *class*,\ *type*,\ *value*\ ``)]...))``
   | ``encap(ethernet)``
+  | ``encap(mpls(ether_type=``\ *ether_type*\)
 
 The ``encap`` action encapsulates a packet with a specified header.  It has
 variants for different kinds of encapsulation.
@@ -1017,6 +1019,10 @@ The ``encap(ethernet)`` variant encapsulate a bare L3 packet in an Ethernet
 frame.  The Ethernet type is initialized to the L3 packet's type, e.g. 0x0800
 if the L3 packet is IPv4.  The Ethernet source and destination are initially
 zeroed.
+
+The ``encap(mpls(ethertype=....))`` variant encapsulates an ethernet or
+L3 packet with a MPLS header. The ethertype could be MPLS unicast (0x8847) or
+multicast (0x8848) ethertypes.
 
 **Conformance**
   This action is an Open vSwitch extension to OpenFlow 1.3 and later,
@@ -1041,6 +1047,12 @@ Removes an outermost encapsulation from the packet:
     revealing the inner packet.  Open vSwitch supports Ethernet, IPv4, IPv6,
     and NSH inner packet types.  Other types raise unsupported packet type
     errors.
+
+  - Otherwise, if the packet is a MPLS packet, removes the MPLS header
+    and classifies the inner packet as mentioned in the packet type
+    argument of the decap. The packet_type field specifies the type of
+    the packet in the format specified in OpenFlow 1.5 chapter
+    `7.2.3.11 Packet Type Match Field`
 
   - Otherwise, raises an unsupported packet type error.
 
