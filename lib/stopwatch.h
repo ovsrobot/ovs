@@ -36,6 +36,32 @@ struct stopwatch_stats {
                                     (alpha 0.01). */
 };
 
+#define MARKERS 5
+
+/* Number of samples to collect before reporting P-square calculated
+ * percentile
+ */
+#define P_SQUARE_MIN 50
+
+/* The naming of these fields is based on the naming used in the
+ * P-square algorithm paper.
+ */
+struct percentile {
+    int n[MARKERS];
+    double n_prime[MARKERS];
+    double q[MARKERS];
+    double dn[MARKERS];
+    unsigned long long samples[P_SQUARE_MIN];
+    double percentile;
+};
+
+/* Calculate the percentile using the P-square algorithm. For more
+ * information, see https://www1.cse.wustl.edu/~jain/papers/ftp/psqr.pdf
+ */
+void
+calc_percentile(unsigned long long n_samples, struct percentile *pctl,
+                unsigned long long new_sample);
+
 /* Create a new stopwatch.
  * The "units" are not used for any calculations but are printed when
  * statistics are requested.

@@ -35,25 +35,6 @@ struct average {
     double alpha;   /* Weight given to new samples */
 };
 
-#define MARKERS 5
-
-/* Number of samples to collect before reporting P-square calculated
- * percentile
- */
-#define P_SQUARE_MIN 50
-
-/* The naming of these fields is based on the naming used in the
- * P-square algorithm paper.
- */
-struct percentile {
-    int n[MARKERS];
-    double n_prime[MARKERS];
-    double q[MARKERS];
-    double dn[MARKERS];
-    unsigned long long samples[P_SQUARE_MIN];
-    double percentile;
-};
-
 struct stopwatch {
     enum stopwatch_units units;
     unsigned long long n_samples;
@@ -107,10 +88,7 @@ comp_samples(const void *left, const void *right)
     return *right_d > *left_d ? -1 : *right_d < *left_d;
 }
 
-/* Calculate the percentile using the P-square algorithm. For more
- * information, see https://www1.cse.wustl.edu/~jain/papers/ftp/psqr.pdf
- */
-static void
+void
 calc_percentile(unsigned long long n_samples, struct percentile *pctl,
                 unsigned long long new_sample)
 {
