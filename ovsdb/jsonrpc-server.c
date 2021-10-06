@@ -212,6 +212,7 @@ ovsdb_jsonrpc_default_options(const char *target)
 {
     struct ovsdb_jsonrpc_options *options = xzalloc(sizeof *options);
     options->max_backoff = RECONNECT_DEFAULT_MAX_BACKOFF;
+    options->min_backoff = RECONNECT_DEFAULT_MIN_BACKOFF;
     options->probe_interval = (stream_or_pstream_needs_probes(target)
                                ? RECONNECT_DEFAULT_PROBE_INTERVAL
                                : 0);
@@ -577,7 +578,8 @@ static void
 ovsdb_jsonrpc_session_set_options(struct ovsdb_jsonrpc_session *session,
                                   const struct ovsdb_jsonrpc_options *options)
 {
-    jsonrpc_session_set_max_backoff(session->js, options->max_backoff);
+    jsonrpc_session_set_backoff(session->js, options->min_backoff,
+                                options->max_backoff);
     jsonrpc_session_set_probe_interval(session->js, options->probe_interval);
     jsonrpc_session_set_dscp(session->js, options->dscp);
 }

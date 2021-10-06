@@ -551,7 +551,8 @@ reconnect_deadline__(const struct reconnect *fsm)
         return fsm->state_entered + fsm->backoff;
 
     case S_CONNECTING:
-        return fsm->state_entered + MAX(1000, fsm->backoff);
+        return fsm->state_entered + MAX(1000, MAX(fsm->min_backoff,
+                                                  fsm->backoff));
 
     case S_ACTIVE:
         if (fsm->probe_interval) {

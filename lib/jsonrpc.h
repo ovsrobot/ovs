@@ -141,6 +141,8 @@ void jsonrpc_session_reset_backoff(struct jsonrpc_session *);
 
 void jsonrpc_session_set_max_backoff(struct jsonrpc_session *,
                                      int max_backoff);
+void jsonrpc_session_set_backoff(struct jsonrpc_session *,
+                                     int min_backoff, int max_backoff);
 void jsonrpc_session_set_probe_interval(struct jsonrpc_session *,
                                         int probe_interval);
 void jsonrpc_session_set_dscp(struct jsonrpc_session *,

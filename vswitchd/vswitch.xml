@@ -5668,6 +5668,11 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         Default is implementation-specific.
       </column>
 
+      <column name="min_backoff">
+        Minimum number of milliseconds to wait between connection attempts.
+        Default is implementation-specific.
+      </column>
+
       <column name="inactivity_probe">
         Maximum number of milliseconds of idle time on connection to the client
         before sending an inactivity probe message.  If Open vSwitch does not

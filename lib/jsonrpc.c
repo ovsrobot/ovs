@@ -1306,6 +1306,16 @@ jsonrpc_session_set_max_backoff(struct jsonrpc_session *s, int max_backoff)
     reconnect_set_backoff(s->reconnect, 0, max_backoff);
 }
 
+/* Sets 'min_backoff and 'max_backoff' as the minimum and maximum time,
+ * in milliseconds, to wait after a connection attempt fails before attempting
+ * to connect again. */
+void
+jsonrpc_session_set_backoff(struct jsonrpc_session *s, int min_backoff,
+                            int max_backoff)
+{
+    reconnect_set_backoff(s->reconnect, min_backoff, max_backoff);
+}
+
 /* Sets the "probe interval" for 's' to 'probe_interval', in milliseconds.  If
  * this is zero, it disables the connection keepalive feature.  Otherwise, if
  * 's' is idle for 'probe_interval' milliseconds then 's' will send an echo

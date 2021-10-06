@@ -948,7 +948,7 @@ add_manager_options(struct shash *remotes, const struct ovsdb_row *row)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
     struct ovsdb_jsonrpc_options *options;
-    long long int max_backoff, probe_interval;
+    long long int max_backoff, min_backoff, probe_interval;
     bool read_only;
     const char *target, *dscp_string, *role;
 
@@ -961,6 +961,9 @@ add_manager_options(struct shash *remotes, const struct ovsdb_row *row)
     options = add_remote(remotes, target);
     if (ovsdb_util_read_integer_column(row, "max_backoff", &max_backoff)) {
         options->max_backoff = max_backoff;
+    }
+    if (ovsdb_util_read_integer_column(row, "min_backoff", &min_backoff)) {
+        options->min_backoff = min_backoff;
     }
     if (ovsdb_util_read_integer_column(row, "inactivity_probe",
                                        &probe_interval)) {
