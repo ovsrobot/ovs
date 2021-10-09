@@ -2426,7 +2426,11 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
     uint32_t hash = nat_range_hash(conn, ct->hash_basis, nat_info);
     bool pat_proto = conn->key.nw_proto == IPPROTO_TCP ||
                      conn->key.nw_proto == IPPROTO_UDP;
-    uint16_t min_port, max_port, curr_port;
+    uint16_t min_port, max_port, curr_port, orig_port;
+    unsigned int attempts, max_attempts, min_attempts;
+    uint16_t range_port;
+    uint32_t range_addr;
+    unsigned int i;
 
     min_addr = nat_info->min_addr;
     max_addr = nat_info->max_addr;
@@ -2438,8 +2442,24 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
      * we can stop once we reach it. */
     guard_addr = curr_addr;
 
-    set_port_range(nat_info, &conn->key, hash, &curr_port,
+    set_port_range(nat_info, &conn->key, hash, &orig_port,
                    &min_port, &max_port);
+
+    range_port = max_port - min_port + 1;
+    if (conn->key.dl_type == htons(ETH_TYPE_IP)) {
+        range_addr = ntohl(max_addr.ipv4) - ntohl(min_addr.ipv4) + 1;
+    } else {
+        range_addr = nat_ipv6_addrs_delta(&nat_info->min_addr.ipv6,
+                                          &nat_info->max_addr.ipv6) + 1;
+    }
+    max_attempts = 128 / range_addr;
+    if (max_attempts < 1) {
+        max_attempts = 1;
+    }
+    min_attempts = 16 / range_addr;
+    if (min_attempts < 2) {
+        min_attempts = 2;
+    }
 
 another_round:
     store_addr_to_key(&curr_addr, &nat_conn->rev_key,
@@ -2454,15 +2474,37 @@ another_round:
         goto next_addr;
     }
 
+    curr_port = orig_port;
+
+    attempts = range_port;
+    if (attempts > max_attempts) {
+        attempts = max_attempts;
+    }
+
+another_port_round:
+    i = 0;
     FOR_EACH_PORT_IN_RANGE(curr_port, min_port, max_port) {
         if (nat_info->nat_action & NAT_ACTION_SRC) {
             nat_conn->rev_key.dst.port = htons(curr_port);
         } else {
             nat_conn->rev_key.src.port = htons(curr_port);
         }
-        if (!conn_lookup(ct, &nat_conn->rev_key, time_msec(), NULL, NULL)) {
-            return true;
+        if (i++ < attempts) {
+            if (!conn_lookup(ct, &nat_conn->rev_key,
+                time_msec(), NULL, NULL)) {
+                return true;
+            }
+        } else {
+            goto next_attempts;
         }
+    }
+
+next_attempts:
+    if (attempts < range_port && attempts >= min_attempts) {
+        attempts /= 2;
+        curr_port = min_port + (random_uint32() % range_port);
+
+        goto another_port_round;
     }
 
     /* Check if next IP is in range and respin. Otherwise, notify
