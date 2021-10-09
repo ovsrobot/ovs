@@ -1036,6 +1036,17 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
                                                     nat_action_info);
 
                 if (!nat_res) {
+                    if (nat_action_info->nat_action & NAT_ACTION_DST) {
+                        struct nat_action_info_t tmp_nat_info;
+
+                        memset(&tmp_nat_info, 0, sizeof tmp_nat_info);
+                        tmp_nat_info.nat_action = NAT_ACTION_SRC;
+                        nat_res = nat_get_unique_tuple(ct, nc, nat_conn,
+                                                       &tmp_nat_info);
+                        if (!nat_res) {
+                            goto nat_res_exhaustion;
+                        }
+                    }
                     goto nat_res_exhaustion;
                 }
 
@@ -2258,12 +2269,12 @@ nat_range_hash(const struct conn *conn, uint32_t basis,
 
 /* Ports are stored in host byte order for convenience. */
 static void
-set_sport_range(const struct nat_action_info_t *ni, const struct conn_key *k,
-                uint32_t hash, uint16_t *curr, uint16_t *min,
-                uint16_t *max)
+set_port_range(const struct nat_action_info_t *ni, const struct conn_key *k,
+               uint32_t hash, uint16_t *curr, uint16_t *min,
+               uint16_t *max)
 {
-    if (((ni->nat_action & NAT_ACTION_SNAT_ALL) == NAT_ACTION_SRC) ||
-        ((ni->nat_action & NAT_ACTION_DST))) {
+    if ((ni->nat_action & NAT_ACTION_SRC) &&
+        (!(ni->nat_action & NAT_ACTION_SRC_PORT))) {
         *curr = ntohs(k->src.port);
         if (*curr < 512) {
             *min = 1;
@@ -2275,25 +2286,14 @@ set_sport_range(const struct nat_action_info_t *ni, const struct conn_key *k,
             *min = MIN_NAT_EPHEMERAL_PORT;
             *max = MAX_NAT_EPHEMERAL_PORT;
         }
-    } else {
-        *min = ni->min_port;
-        *max = ni->max_port;
-        *curr = *min + (hash % ((*max - *min) + 1));
-    }
-}
-
-static void
-set_dport_range(const struct nat_action_info_t *ni, const struct conn_key *k,
-                uint32_t hash, uint16_t *curr, uint16_t *min,
-                uint16_t *max)
-{
-    if (ni->nat_action & NAT_ACTION_DST_PORT) {
-        *min = ni->min_port;
-        *max = ni->max_port;
-        *curr = *min + (hash % ((*max - *min) + 1));
-    } else {
+    } else if ((ni->nat_action & NAT_ACTION_DST) &&
+               (!(ni->nat_action & NAT_ACTION_DST_PORT))) {
         *curr = ntohs(k->dst.port);
         *min = *max = *curr;
+    } else {
+        *min = ni->min_port;
+        *max = ni->max_port;
+        *curr = *min + (hash % ((*max - *min) + 1));
     }
 }
 
@@ -2426,8 +2426,7 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
     uint32_t hash = nat_range_hash(conn, ct->hash_basis, nat_info);
     bool pat_proto = conn->key.nw_proto == IPPROTO_TCP ||
                      conn->key.nw_proto == IPPROTO_UDP;
-    uint16_t min_dport, max_dport, curr_dport;
-    uint16_t min_sport, max_sport, curr_sport;
+    uint16_t min_port, max_port, curr_port;
 
     min_addr = nat_info->min_addr;
     max_addr = nat_info->max_addr;
@@ -2439,10 +2438,8 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
      * we can stop once we reach it. */
     guard_addr = curr_addr;
 
-    set_sport_range(nat_info, &conn->key, hash, &curr_sport,
-                    &min_sport, &max_sport);
-    set_dport_range(nat_info, &conn->key, hash, &curr_dport,
-                    &min_dport, &max_dport);
+    set_port_range(nat_info, &conn->key, hash, &curr_port,
+                   &min_port, &max_port);
 
 another_round:
     store_addr_to_key(&curr_addr, &nat_conn->rev_key,
@@ -2457,14 +2454,14 @@ another_round:
         goto next_addr;
     }
 
-    FOR_EACH_PORT_IN_RANGE(curr_dport, min_dport, max_dport) {
-        nat_conn->rev_key.src.port = htons(curr_dport);
-        FOR_EACH_PORT_IN_RANGE(curr_sport, min_sport, max_sport) {
-            nat_conn->rev_key.dst.port = htons(curr_sport);
-            if (!conn_lookup(ct, &nat_conn->rev_key,
-                             time_msec(), NULL, NULL)) {
-                return true;
-            }
+    FOR_EACH_PORT_IN_RANGE(curr_port, min_port, max_port) {
+        if (nat_info->nat_action & NAT_ACTION_SRC) {
+            nat_conn->rev_key.dst.port = htons(curr_port);
+        } else {
+            nat_conn->rev_key.src.port = htons(curr_port);
+        }
+        if (!conn_lookup(ct, &nat_conn->rev_key, time_msec(), NULL, NULL)) {
+            return true;
         }
     }
 
