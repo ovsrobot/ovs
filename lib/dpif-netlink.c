@@ -2234,6 +2234,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     info.tunnel_csum_on = csum_on;
     info.recirc_id_shared_with_tc = (dpif->user_features
                                      & OVS_DP_F_TC_RECIRC_SHARING);
+    info.psample_exists = dpif_offload_netlink_psample_exists();
     err = netdev_flow_put(dev, &match,
                           CONST_CAST(struct nlattr *, put->actions),
                           put->actions_len,

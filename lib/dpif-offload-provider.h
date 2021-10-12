@@ -69,6 +69,7 @@ int dpif_offload_sflow_recv(const struct dpif *dpif,
                             struct dpif_offload_sflow *sflow);
 
 #ifdef __linux__
+bool dpif_offload_netlink_psample_exists(void);
 extern const struct dpif_offload_api dpif_offload_netlink;
 #endif
 
