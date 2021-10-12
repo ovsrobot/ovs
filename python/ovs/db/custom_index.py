@@ -18,7 +18,6 @@ OVSDB_INDEX_DESC = "DESC"
 ColumnIndex = collections.namedtuple('ColumnIndex',
                                      ['column', 'direction', 'key'])
 
-
 class MultiColumnIndex(object):
     def __init__(self, name):
         self.name = name
