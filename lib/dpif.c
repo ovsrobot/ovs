@@ -153,6 +153,15 @@ dp_register_provider__(const struct dpif_class *new_class)
         return error;
     }
 
+    if (new_class->offload_api && new_class->offload_api->init) {
+        error = new_class->offload_api->init();
+        if (error) {
+            VLOG_WARN("failed to initialize %s datapath class for offload: %s",
+                      new_class->type, ovs_strerror(error));
+            return error;
+        }
+    }
+
     registered_class = xmalloc(sizeof *registered_class);
     registered_class->dpif_class = new_class;
     registered_class->refcount = 0;
@@ -183,6 +192,7 @@ static int
 dp_unregister_provider__(const char *type)
 {
     struct shash_node *node;
+    const struct dpif_class *dpif_class;
     struct registered_dpif_class *registered_class;
 
     node = shash_find(&dpif_classes, type);
@@ -194,6 +204,11 @@ dp_unregister_provider__(const char *type)
     if (registered_class->refcount) {
         VLOG_WARN("attempted to unregister in use datapath provider: %s", type);
         return EBUSY;
+    }
+
+    dpif_class = registered_class->dpif_class;
+    if (dpif_class->offload_api && dpif_class->offload_api->destroy) {
+        dpif_class->offload_api->destroy();
     }
 
     shash_delete(&dpif_classes, node);
