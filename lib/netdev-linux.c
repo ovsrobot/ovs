@@ -486,10 +486,6 @@ static struct tcmsg *netdev_linux_tc_make_request(const struct netdev *,
                                                   unsigned int flags,
                                                   struct ofpbuf *);
 
-static int tc_add_policer(struct netdev *, uint32_t kbits_rate,
-                          uint32_t kbits_burst, uint32_t kpkts_rate,
-                          uint32_t kpkts_burst);
-
 static int tc_parse_qdisc(const struct ofpbuf *, const char **kind,
                           struct nlattr **options);
 static int tc_parse_class(const struct ofpbuf *, unsigned int *queue_id,
@@ -2662,6 +2658,20 @@ nl_msg_put_act_police(struct ofpbuf *request, struct tc_police police,
     }
 }
 
+/* Adds a policer to 'netdev' with a rate of 'kbits_rate' and a burst size
+ * of 'kbits_burst', with a rate of 'kpkts_rate' and a burst size of
+ * 'kpkts_burst'.
+ *
+ * This function is equivalent to running:
+ *     /sbin/tc filter add dev <devname> parent ffff: protocol all prio 49
+ *              matchall police rate <kbits_rate>kbit burst <kbits_burst>k
+ *              mtu 65535 drop
+ *
+ * The configuration and stats may be seen with the following command:
+ *     /sbin/tc -s filter show dev <devname> parent ffff:
+ *
+ * Returns 0 if successful, otherwise a positive errno value.
+ */
 static int
 tc_add_matchall_policer(struct netdev *netdev, uint32_t kbits_rate,
                         uint32_t kbits_burst, uint32_t kpkts_rate,
@@ -2801,8 +2811,8 @@ netdev_linux_set_policing(struct netdev *netdev_, uint32_t kbits_rate,
             goto out;
         }
 
-        error = tc_add_policer(netdev_, kbits_rate, kbits_burst,
-                               kpkts_rate, kpkts_burst);
+        error = tc_add_matchall_policer(netdev_, kbits_rate, kbits_burst,
+                                        kpkts_rate, kpkts_burst);
         if (error){
             VLOG_WARN_RL(&rl, "%s: adding policing action failed: %s",
                     netdev_name, ovs_strerror(error));
@@ -5587,69 +5597,6 @@ netdev_linux_tc_make_request(const struct netdev *netdev, int type,
     }
 
     return tc_make_request(ifindex, type, flags, request);
-}
-
-/* Adds a policer to 'netdev' with a rate of 'kbits_rate' and a burst size
- * of 'kbits_burst', with a rate of 'kpkts_rate' and a burst size of
- * 'kpkts_burst'.
- *
- * This function is equivalent to running:
- *     /sbin/tc filter add dev <devname> parent ffff: protocol all prio 49
- *              basic police rate <kbits_rate>kbit burst <kbits_burst>k
- *              mtu 65535 drop
- *
- * The configuration and stats may be seen with the following command:
- *     /sbin/tc -s filter show dev <devname> parent ffff:
- *
- * Returns 0 if successful, otherwise a positive errno value.
- */
-static int
-tc_add_policer(struct netdev *netdev, uint32_t kbits_rate,
-               uint32_t kbits_burst, uint32_t kpkts_rate,
-               uint32_t kpkts_burst)
-{
-    size_t basic_offset, police_offset;
-    struct tc_police tc_police;
-    struct ofpbuf request;
-    struct tcmsg *tcmsg;
-    int error;
-    int mtu = 65535;
-
-    memset(&tc_police, 0, sizeof tc_police);
-    tc_police.action = TC_POLICE_SHOT;
-    tc_police.mtu = mtu;
-    tc_fill_rate(&tc_police.rate, ((uint64_t) kbits_rate * 1000)/8, mtu);
-
-    /* The following appears wrong in one way: In networking a kilobit is
-     * usually 1000 bits but this uses 1024 bits.
-     *
-     * However if you "fix" those problems then "tc filter show ..." shows
-     * "125000b", meaning 125,000 bits, when OVS configures it for 1000 kbit ==
-     * 1,000,000 bits, whereas this actually ends up doing the right thing from
-     * tc's point of view.  Whatever. */
-    tc_police.burst = tc_bytes_to_ticks(
-        tc_police.rate.rate, MIN(UINT32_MAX / 1024, kbits_burst) * 1024 / 8);
-    tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWTFILTER,
-                                         NLM_F_EXCL | NLM_F_CREATE, &request);
-    if (!tcmsg) {
-        return ENODEV;
-    }
-    tcmsg->tcm_parent = tc_make_handle(0xffff, 0);
-    tcmsg->tcm_info = tc_make_handle(49,
-                                     (OVS_FORCE uint16_t) htons(ETH_P_ALL));
-    nl_msg_put_string(&request, TCA_KIND, "basic");
-    basic_offset = nl_msg_start_nested(&request, TCA_OPTIONS);
-    police_offset = nl_msg_start_nested(&request, TCA_BASIC_ACT);
-    nl_msg_put_act_police(&request, tc_police, kpkts_rate, kpkts_burst);
-    nl_msg_end_nested(&request, police_offset);
-    nl_msg_end_nested(&request, basic_offset);
-
-    error = tc_transact(&request, NULL);
-    if (error) {
-        return error;
-    }
-
-    return 0;
 }
 
 static void

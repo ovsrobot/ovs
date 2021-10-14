@@ -1670,22 +1670,22 @@ AT_BANNER([set ingress policing test])
 
 AT_SETUP([set ingress_policing_rate and ingress_policing_burst])
 AT_KEYWORDS([ingress_policing])
-OVS_VSCTL_SETUP
+AT_CHECK([ip link add a1 type veth])
+AT_CHECK([ip link set a1 up])
+on_exit 'ip link del a1'
+OVS_VSWITCHD_START([add-port br0 a1])
 AT_CHECK([RUN_OVS_VSCTL_TOGETHER(
-   [add-br a],
-   [add-port a a1],
    [set interface a1 ingress_policing_rate=100],
    [set interface a1 ingress_policing_burst=10],
    [--columns=ingress_policing_burst,ingress_policing_rate list interface a1])],
    [0],
    [
 
-
-
 ingress_policing_burst: 10
 ingress_policing_rate: 100
 ])
-OVS_VSCTL_CLEANUP
+AT_CHECK([grep "adding policing action failed" ovs-vswitchd.log], [1], [], [])
+OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 dnl ----------------------------------------------------------------------
@@ -1693,20 +1693,20 @@ AT_BANNER([set ingress policing(kpkts) test])
 
 AT_SETUP([set ingress_policing_kpkts_rate and ingress_policing_kpkts_burst])
 AT_KEYWORDS([ingress_policing_kpkts])
-OVS_VSCTL_SETUP
+AT_CHECK([ip link add a1 type veth])
+AT_CHECK([ip link set a1 up])
+on_exit 'ip link del a1'
+OVS_VSWITCHD_START([add-port br0 a1])
 AT_CHECK([RUN_OVS_VSCTL_TOGETHER(
-   [add-br a],
-   [add-port a a1],
    [set interface a1 ingress_policing_kpkts_rate=100],
    [set interface a1 ingress_policing_kpkts_burst=10],
    [--columns=ingress_policing_kpkts_burst,ingress_policing_kpkts_rate list interface a1])],
    [0],
    [
 
-
-
 ingress_policing_kpkts_burst: 10
 ingress_policing_kpkts_rate: 100
 ])
-OVS_VSCTL_CLEANUP
+AT_CHECK([grep "adding policing action failed" ovs-vswitchd.log], [1], [], [])
+OVS_VSWITCHD_STOP
 AT_CLEANUP
