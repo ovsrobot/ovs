@@ -2776,8 +2776,7 @@ netdev_linux_set_policing(struct netdev *netdev_, uint32_t kbits_rate,
             error = tc_add_matchall_policer(netdev_, kbits_rate, kbits_burst,
                                             kpkts_rate, kpkts_burst);
         }
-        ovs_mutex_unlock(&netdev->mutex);
-        return error;
+        goto out;
     }
 
     error = get_ifindex(netdev_, &ifindex);
@@ -2803,6 +2802,12 @@ netdev_linux_set_policing(struct netdev *netdev_, uint32_t kbits_rate,
 
         error = tc_add_policer(netdev_, kbits_rate, kbits_burst,
                                kpkts_rate, kpkts_burst);
+        if (error == ENOENT) {
+            /* This error is returned when the basic classifier is missing.
+             * Fall back to the matchall classifier.  */
+            error = tc_add_matchall_policer(netdev_, kbits_rate, kbits_burst,
+                                            kpkts_rate, kpkts_burst);
+        }
         if (error){
             VLOG_WARN_RL(&rl, "%s: adding policing action failed: %s",
                     netdev_name, ovs_strerror(error));
@@ -2810,12 +2815,14 @@ netdev_linux_set_policing(struct netdev *netdev_, uint32_t kbits_rate,
         }
     }
 
-    netdev->kbits_rate = kbits_rate;
-    netdev->kbits_burst = kbits_burst;
-    netdev->kpkts_rate = kpkts_rate;
-    netdev->kpkts_burst = kpkts_burst;
-
 out:
+    if (!error) {
+        netdev->kbits_rate = kbits_rate;
+        netdev->kbits_burst = kbits_burst;
+        netdev->kpkts_rate = kpkts_rate;
+        netdev->kpkts_burst = kpkts_burst;
+    }
+
     if (!error || error == ENODEV) {
         netdev->netdev_policing_error = error;
         netdev->cache_valid |= VALID_POLICING;
