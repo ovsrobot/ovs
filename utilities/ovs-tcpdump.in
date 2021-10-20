@@ -52,7 +52,6 @@ except Exception:
     print("       the correct location.")
     sys.exit(1)
 
-tapdev_fd = None
 _make_taps = {}
 _make_mirror_name = {}
 IFNAMSIZ_LINUX = 15      # this is the max name size, excluding the null byte.
@@ -68,20 +67,10 @@ def _doexec(*args, **kwargs):
 
 
 def _install_tap_linux(tap_name, mtu_value=None):
-    """Uses /dev/net/tun to create a tap device"""
-    global tapdev_fd
+    _doexec(
+        *['ip', 'link', 'add', str(tap_name), 'type', 'dummy']
+        ).wait()
 
-    IFF_TAP = 0x0002
-    IFF_NO_PI = 0x1000
-    TUNSETIFF = 0x400454CA  # This is derived by printf() of TUNSETIFF
-    TUNSETOWNER = TUNSETIFF + 2
-
-    tapdev_fd = os.open('/dev/net/tun', os.O_RDWR)
-    ifr = struct.pack('16sH', tap_name.encode('utf8'), IFF_TAP | IFF_NO_PI)
-    fcntl.ioctl(tapdev_fd, TUNSETIFF, ifr)
-    fcntl.ioctl(tapdev_fd, TUNSETOWNER, os.getegid())
-
-    time.sleep(1)  # required to give the new device settling time
     if mtu_value is not None:
         pipe = _doexec(
             *(['ip', 'link', 'set', 'dev', str(tap_name), 'mtu',
