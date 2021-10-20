@@ -911,21 +911,8 @@ dpif_netdev_subtable_lookup_get(struct unixctl_conn *conn, int argc OVS_UNUSED,
                                 const char *argv[] OVS_UNUSED,
                                 void *aux OVS_UNUSED)
 {
-    /* Get a list of all lookup functions. */
-    struct dpcls_subtable_lookup_info_t *lookup_funcs = NULL;
-    int32_t count = dpcls_subtable_lookup_info_get(&lookup_funcs);
-    if (count < 0) {
-        unixctl_command_reply_error(conn, "error getting lookup names");
-        return;
-    }
-
-    /* Add all lookup functions to reply string. */
     struct ds reply = DS_EMPTY_INITIALIZER;
-    ds_put_cstr(&reply, "Available lookup functions (priority : name)\n");
-    for (int i = 0; i < count; i++) {
-        ds_put_format(&reply, "  %d : %s\n", lookup_funcs[i].prio,
-                      lookup_funcs[i].name);
-    }
+    dp_dpcls_impl_print_stats(&reply);
     unixctl_command_reply(conn, ds_cstr(&reply));
     ds_destroy(&reply);
 }
@@ -8940,6 +8927,10 @@ dpcls_destroy_subtable(struct dpcls *cls, struct dpcls_subtable *subtable)
     pvector_remove(&cls->subtables, subtable);
     cmap_remove(&cls->subtables_map, &subtable->cmap_node,
                 subtable->mask.hash);
+
+    dpcls_subtable_get_best_impl(subtable->mf_bits_set_unit0,
+                                 subtable->mf_bits_set_unit1,
+                                 subtable->lookup_func, 0);
     ovsrcu_postpone(dpcls_subtable_destroy_cb, subtable);
 }
 
@@ -8987,8 +8978,8 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
      * The function is guaranteed to always return a valid implementation, and
      * possibly an ISA optimized, and/or specialized implementation.
      */
-    subtable->lookup_func = dpcls_subtable_get_best_impl(unit0, unit1);
-
+    subtable->lookup_func = dpcls_subtable_get_best_impl(unit0, unit1, NULL,
+                                                         1);
     cmap_insert(&cls->subtables_map, &subtable->cmap_node, mask->hash);
     /* Add the new subtable at the end of the pvector (with no hits yet) */
     pvector_insert(&cls->subtables, subtable, 0);
@@ -9028,8 +9019,11 @@ dpcls_subtable_lookup_reprobe(struct dpcls *cls)
         uint32_t u0_bits = subtable->mf_bits_set_unit0;
         uint32_t u1_bits = subtable->mf_bits_set_unit1;
         void *old_func = subtable->lookup_func;
-        subtable->lookup_func = dpcls_subtable_get_best_impl(u0_bits, u1_bits);
-        subtables_changed += (old_func != subtable->lookup_func);
+        subtable->lookup_func = dpcls_subtable_get_best_impl(u0_bits, u1_bits,
+                                                             old_func, 1);
+        if (old_func != subtable->lookup_func) {
+            subtables_changed += 1;
+        }
     }
     pvector_publish(pvec);
 
