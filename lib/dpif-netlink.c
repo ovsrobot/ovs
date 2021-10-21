@@ -370,6 +370,12 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
 
     if (create) {
         dp_request.cmd = OVS_DP_CMD_NEW;
+        error = dpif_offload_netlink_init();
+        if (error) {
+            VLOG_WARN("Failed to initialize netlink offload datapath: %s",
+                      ovs_strerror(error));
+            return error;
+        }
     } else {
         dp_request.cmd = OVS_DP_CMD_GET;
 
@@ -460,8 +466,8 @@ open_dpif(const struct dpif_netlink_dp *dp, struct dpif **dpifp)
     dpif->port_notifier = NULL;
     fat_rwlock_init(&dpif->upcall_lock);
 
-    dpif_init(&dpif->dpif, &dpif_netlink_class, dp->name,
-              dp->dp_ifindex, dp->dp_ifindex);
+    dpif_init(&dpif->dpif, &dpif_netlink_class, &dpif_offload_netlink,
+              dp->name, dp->dp_ifindex, dp->dp_ifindex);
 
     dpif->dp_ifindex = dp->dp_ifindex;
     dpif->user_features = dp->user_features;
@@ -732,6 +738,7 @@ dpif_netlink_destroy(struct dpif *dpif_)
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     struct dpif_netlink_dp dp;
 
+    dpif_offload_netlink_destroy();
     dpif_netlink_dp_init(&dp);
     dp.cmd = OVS_DP_CMD_DEL;
     dp.dp_ifindex = dpif->dp_ifindex;

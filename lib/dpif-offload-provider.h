@@ -17,12 +17,12 @@
 #ifndef DPIF_OFFLOAD_PROVIDER_H
 #define DPIF_OFFLOAD_PROVIDER_H
 
+#include "dp-packet.h"
 #include "netlink-protocol.h"
 #include "openvswitch/packets.h"
 #include "openvswitch/types.h"
 
 struct dpif;
-struct dpif_offload_sflow;
 
 /* When offloading sample action, userspace creates a unique ID to map
  * sFlow action and tunnel info and passes this ID to datapath instead
@@ -35,6 +35,13 @@ struct dpif_sflow_attr {
     const struct nlattr *userdata;  /* Struct user_action_cookie. */
     struct flow_tnl *tunnel;        /* Tunnel info. */
     ovs_u128 ufid;                  /* Flow ufid. */
+};
+
+/* Parse the specific dpif message to sFlow. So OVS can process it. */
+struct dpif_offload_sflow {
+    struct dp_packet packet;            /* Packet data. */
+    uint32_t iifindex;                  /* Input ifindex. */
+    const struct dpif_sflow_attr *attr; /* SFlow attribute. */
 };
 
 /* Datapath interface offload structure, to be defined by each implementation
@@ -53,5 +60,11 @@ struct dpif_offload_api {
 void dpif_offload_sflow_recv_wait(const struct dpif *dpif);
 int dpif_offload_sflow_recv(const struct dpif *dpif,
                             struct dpif_offload_sflow *sflow);
+
+#ifdef __linux__
+extern const struct dpif_offload_api dpif_offload_netlink;
+int dpif_offload_netlink_init(void);
+void dpif_offload_netlink_destroy(void);
+#endif
 
 #endif /* DPIF_OFFLOAD_PROVIDER_H */
