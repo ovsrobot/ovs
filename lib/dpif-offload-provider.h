@@ -65,6 +65,7 @@ int dpif_offload_sflow_recv(const struct dpif *dpif,
 extern const struct dpif_offload_api dpif_offload_netlink;
 int dpif_offload_netlink_init(void);
 void dpif_offload_netlink_destroy(void);
+bool dpif_offload_netlink_psample_supported(void);
 #endif
 
 #endif /* DPIF_OFFLOAD_PROVIDER_H */
