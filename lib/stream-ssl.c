@@ -267,6 +267,7 @@ new_ssl_stream(char *name, char *server_name, int fd, enum session_type type,
      */
     if (state == STATE_SSL_CONNECTING) {
         setsockopt_tcp_nodelay(fd);
+        setsockopt_tcp_keepalive(fd);
     }
 
     /* Create and configure OpenSSL stream. */
@@ -521,6 +522,7 @@ ssl_connect(struct stream *stream)
         }
         sslv->state = STATE_SSL_CONNECTING;
         setsockopt_tcp_nodelay(sslv->fd);
+        setsockopt_tcp_keepalive(sslv->fd);
         /* Fall through. */
 
     case STATE_SSL_CONNECTING:

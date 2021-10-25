@@ -93,6 +93,7 @@ fd_connect(struct stream *stream)
     int retval = check_connection_completion(s->fd);
     if (retval == 0 && s->fd_type == AF_INET) {
         setsockopt_tcp_nodelay(s->fd);
+        setsockopt_tcp_keepalive(s->fd);
     }
     return retval;
 }

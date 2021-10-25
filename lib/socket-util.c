@@ -114,6 +114,19 @@ setsockopt_tcp_nodelay(int fd)
     }
 }
 
+void
+setsockopt_tcp_keepalive(int fd)
+{
+    int on = 1;
+    int retval;
+
+    retval = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof on);
+    if (retval) {
+        retval = sock_errno();
+        VLOG_ERR("setsockopt(SO_KEEPALIVE): %s", sock_strerror(retval));
+    }
+}
+
 /* Sets the DSCP value of socket 'fd' to 'dscp', which must be 63 or less.
  * 'family' must indicate the socket's address family (AF_INET or AF_INET6, to
  * do anything useful). */
