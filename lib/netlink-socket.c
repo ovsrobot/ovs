@@ -653,6 +653,10 @@ nl_sock_recv__(struct nl_sock *sock, struct ofpbuf *buf, int *nsid, bool wait)
     int *ptr;
     int error;
 
+    if (sock == NULL) {
+        return ECONNRESET;
+    }
+
     ovs_assert(buf->allocated >= sizeof *nlmsghdr);
     ofpbuf_clear(buf);
 
