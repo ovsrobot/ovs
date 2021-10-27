@@ -244,6 +244,7 @@ struct upcall {
     size_t key_len;                /* Datapath flow key length. */
     const struct nlattr *out_tun_key;  /* Datapath output tunnel key. */
 
+    const struct flow *key_as_flow;       /* converted from key. */
     struct user_action_cookie cookie;
 
     uint64_t odp_actions_stub[1024 / 8]; /* Stub for odp_actions. */
@@ -810,6 +811,7 @@ recv_upcalls(struct handler *handler)
     struct dpif_upcall dupcalls[UPCALL_MAX_BATCH];
     struct upcall upcalls[UPCALL_MAX_BATCH];
     struct flow flows[UPCALL_MAX_BATCH];
+    struct flow key_as_flows[UPCALL_MAX_BATCH];
     size_t n_upcalls, i;
 
     n_upcalls = 0;
@@ -818,6 +820,7 @@ recv_upcalls(struct handler *handler)
         struct dpif_upcall *dupcall = &dupcalls[n_upcalls];
         struct upcall *upcall = &upcalls[n_upcalls];
         struct flow *flow = &flows[n_upcalls];
+        struct flow *key_as_flow = &key_as_flows[n_upcalls];
         unsigned int mru = 0;
         uint64_t hash = 0;
         int error;
@@ -830,7 +833,7 @@ recv_upcalls(struct handler *handler)
         }
 
         upcall->fitness = odp_flow_key_to_flow(dupcall->key, dupcall->key_len,
-                                               flow, NULL);
+                                               key_as_flow, NULL);
         if (upcall->fitness == ODP_FIT_ERROR) {
             goto free_dupcall;
         }
@@ -842,7 +845,9 @@ recv_upcalls(struct handler *handler)
         if (dupcall->hash) {
             hash = nl_attr_get_u64(dupcall->hash);
         }
-
+        /* Fill flow with key_as_flow as upcall_receive needs
+         * packet flow info. */
+        *flow = *key_as_flow;
         error = upcall_receive(upcall, udpif->backer, &dupcall->packet,
                                dupcall->type, dupcall->userdata, flow, mru,
                                &dupcall->ufid, PMD_ID_NULL);
@@ -856,20 +861,21 @@ recv_upcalls(struct handler *handler)
                               dupcall->key_len, NULL, 0, NULL, 0,
                               &dupcall->ufid, PMD_ID_NULL, NULL);
                 VLOG_INFO_RL(&rl, "received packet on unassociated datapath "
-                             "port %"PRIu32, flow->in_port.odp_port);
+                             "port %"PRIu32, key_as_flow->in_port.odp_port);
             }
             goto free_dupcall;
         }
 
         upcall->key = dupcall->key;
         upcall->key_len = dupcall->key_len;
+        upcall->key_as_flow = key_as_flow;
         upcall->ufid = &dupcall->ufid;
         upcall->hash = hash;
 
         upcall->out_tun_key = dupcall->out_tun_key;
         upcall->actions = dupcall->actions;
 
-        pkt_metadata_from_flow(&dupcall->packet.md, flow);
+        pkt_metadata_from_flow(&dupcall->packet.md, key_as_flow);
         flow_extract(&dupcall->packet, flow);
 
         error = process_upcall(udpif, upcall,
@@ -1332,6 +1338,21 @@ should_install_flow(struct udpif *udpif, struct upcall *upcall)
         return false;
     }
 
+    /* For linux kernel datapath, the "key" extracted by kernel may be
+    inconsistent with the flow extracted from packet by ovs. If that
+    is the case, twe can't install the datapth flow (key/wc) */
+    if (upcall->key_len) {
+        if (!flow_equal_except(upcall->key_as_flow, upcall->flow,
+                               &upcall->wc)) {
+            VLOG_INFO_RL(&rl, "upcall: inconsistent on datapath key and "
+                         "vswitchd extracted key. Datapath flow will not be "
+                         "installed\n"
+                         "datapath key: %s \nvswitchd extracted key: %s",
+                         flow_to_string(upcall->key_as_flow, NULL),
+                         flow_to_string(upcall->flow, NULL));
+            return false;
+        }
+    }
     return true;
 }
 
