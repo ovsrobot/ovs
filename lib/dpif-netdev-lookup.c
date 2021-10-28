@@ -36,18 +36,21 @@ static struct dpcls_subtable_lookup_info_t subtable_lookups[] = {
     { .prio = 0,
 #endif
       .probe = dpcls_subtable_autovalidator_probe,
-      .name = "autovalidator", },
+      .name = "autovalidator",
+      .usage_cnt.count = 0,},
 
     /* The default scalar C code implementation. */
     { .prio = 1,
       .probe = dpcls_subtable_generic_probe,
-      .name = "generic", },
+      .name = "generic",
+      .usage_cnt.count = 0,},
 
 #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
     /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
     { .prio = 0,
       .probe = dpcls_subtable_avx512_gather_probe,
-      .name = "avx512_gather", },
+      .name = "avx512_gather",
+      .usage_cnt.count = 0,},
 #else
     /* Disabling AVX512 at compile time, as compile time requirements not met.
      * This could be due to a number of reasons:
@@ -93,25 +96,44 @@ dpcls_subtable_set_prio(const char *name, uint8_t priority)
 }
 
 dpcls_subtable_lookup_func
-dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
+dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count,
+                             dpcls_subtable_lookup_func old_func,
+                             bool will_use_result)
 {
     /* Iter over each subtable impl, and get highest priority one. */
     int32_t prio = -1;
+    uint32_t i;
     const char *name = NULL;
+    uint32_t best_idx = 0;
     dpcls_subtable_lookup_func best_func = NULL;
 
-    for (int i = 0; i < ARRAY_SIZE(subtable_lookups); i++) {
+    for (i = 0; i < ARRAY_SIZE(subtable_lookups); i++) {
         int32_t probed_prio = subtable_lookups[i].prio;
-        if (probed_prio > prio) {
-            dpcls_subtable_lookup_func probed_func;
-            probed_func = subtable_lookups[i].probe(u0_bit_count,
-                                    u1_bit_count);
-            if (probed_func) {
-                best_func = probed_func;
-                prio = probed_prio;
-                name = subtable_lookups[i].name;
-            }
+        dpcls_subtable_lookup_func probed_func;
+
+        probed_func = subtable_lookups[i].probe(u0_bit_count,
+                                                u1_bit_count);
+        if (!probed_func) {
+            continue;
         }
+
+        /* Better candidate - track this to return it later. */
+        if (probed_prio > prio) {
+            best_func = probed_func;
+            best_idx = i;
+            prio = probed_prio;
+            name = subtable_lookups[i].name;
+        }
+
+        /* Statistics keeping, reduce old func usage count. */
+        if (probed_func == old_func) {
+            atomic_count_dec(&subtable_lookups[i].usage_cnt);
+        }
+    }
+
+    /* Update stats for usage. */
+    if (will_use_result) {
+        atomic_count_inc(&subtable_lookups[best_idx].usage_cnt);
     }
 
     VLOG_DBG("Subtable lookup function '%s' with units (%d,%d), priority %d\n",
@@ -121,4 +143,28 @@ dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
     ovs_assert(best_func != NULL);
 
     return best_func;
+}
+
+void
+dp_dpcls_impl_print_stats(struct ds *reply)
+{
+    struct dpcls_subtable_lookup_info_t *lookup_funcs = NULL;
+    int32_t count = dpcls_subtable_lookup_info_get(&lookup_funcs);
+
+    /* Add all DPCLS functions to reply string. */
+    ds_put_cstr(reply, "Available dpcls implementations:\n");
+
+    for (int i = 0; i < count; i++) {
+        ds_put_format(reply, "  %s (Use count: %d, Priority: %d",
+                      lookup_funcs[i].name,
+                      atomic_count_get(&lookup_funcs[i].usage_cnt),
+                      lookup_funcs[i].prio);
+
+        if (ds_last(reply) == ' ') {
+            ds_put_cstr(reply, "none");
+        }
+
+        ds_put_cstr(reply, ")\n");
+    }
+
 }
