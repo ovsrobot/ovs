@@ -1434,7 +1434,7 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
  * connection tables.  'setmark', if not NULL, should point to a two
  * elements array containing a value and a mask to set the connection mark.
  * 'setlabel' behaves similarly for the connection label.*/
-int
+bool
 conntrack_execute(struct conntrack *ct, struct dp_packet_batch *pkt_batch,
                   ovs_be16 dl_type, bool force, bool commit, uint16_t zone,
                   const uint32_t *setmark,
@@ -1443,7 +1443,9 @@ conntrack_execute(struct conntrack *ct, struct dp_packet_batch *pkt_batch,
                   const struct nat_action_info_t *nat_action_info,
                   long long now, uint32_t tp_id)
 {
-    ipf_preprocess_conntrack(ct->ipf, pkt_batch, now, dl_type, zone,
+    struct ipf_ctx _ipf_ctx;
+    struct ipf_ctx *ipf_ctx = dp_packet_batch_is_empty(pkt_batch) ? NULL : &_ipf_ctx;
+    ipf_preprocess_conntrack(ct->ipf, pkt_batch, ipf_ctx, now, dl_type, zone,
                              ct->hash_basis);
 
     struct dp_packet *packet;
@@ -1468,9 +1470,7 @@ conntrack_execute(struct conntrack *ct, struct dp_packet_batch *pkt_batch,
         }
     }
 
-    ipf_postprocess_conntrack(ct->ipf, pkt_batch, now, dl_type);
-
-    return 0;
+    return ipf_postprocess_conntrack(ct->ipf, pkt_batch, ipf_ctx, now, dl_type);
 }
 
 void
