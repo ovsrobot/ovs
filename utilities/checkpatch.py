@@ -181,6 +181,8 @@ __regex_added_doc_rst = re.compile(
 __regex_empty_return = re.compile(r'\s*return;')
 __regex_if_macros = re.compile(r'^ +(%s) \([\S]([\s\S]+[\S])*\) { +\\' %
                                __parenthesized_constructs)
+__regex_bidi_characters = re.compile('\u061C|\u200E|\u200F|\u2066'
+        '|\u2067|\u2068|\u2069|\u202A|\u202B|\u202C|\u202D|\u202E')
 
 skip_leading_whitespace_check = False
 skip_trailing_whitespace_check = False
@@ -292,6 +294,11 @@ def pointer_whitespace_check(line):
     """Return TRUE if there is no space between a pointer name and the
        asterisk that denotes this is a apionter type, ie: 'struct foo*'"""
     return __regex_ptr_declaration_missing_whitespace.search(line) is not None
+
+
+def bidi_character_check(line):
+    """Return TRUE if inappropriate Unicode characters are detected """
+    return __regex_bidi_characters.search(line) is not None
 
 
 def cast_whitespace_check(line):
@@ -564,6 +571,11 @@ checks = [
      'check': lambda x: pointer_whitespace_check(x),
      'print':
      lambda: print_error("Inappropriate spacing in pointer declaration")},
+
+    {'regex': r'(\.c|\.h)(\.in)?$', 'match_name': None,
+     'check': lambda x: bidi_character_check(x),
+     'print':
+     lambda: print_error("Inappropriate Unicode characters detected.")},
 
     {'regex': r'(\.c|\.h)(\.in)?$', 'match_name': None,
      'prereq': lambda x: not is_comment_line(x),
