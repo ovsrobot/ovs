@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import collections
+import enum
 import functools
 import uuid
 
@@ -36,6 +37,7 @@ ROW_DELETE = "delete"
 
 OVSDB_UPDATE = 0
 OVSDB_UPDATE2 = 1
+OVSDB_UPDATE3 = 2
 
 CLUSTERED = "clustered"
 RELAY = "relay"
@@ -43,6 +45,12 @@ RELAY = "relay"
 
 Notice = collections.namedtuple('Notice', ('event', 'row', 'updates'))
 Notice.__new__.__defaults__ = (None,)  # default updates=None
+
+
+class Monitor(enum.IntEnum):
+    monitor = OVSDB_UPDATE
+    monitor_cond = OVSDB_UPDATE2
+    monitor_cond_since = OVSDB_UPDATE3
 
 
 class Idl(object):
@@ -102,7 +110,13 @@ class Idl(object):
     IDL_S_SERVER_MONITOR_REQUESTED = 2
     IDL_S_DATA_MONITOR_REQUESTED = 3
     IDL_S_DATA_MONITOR_COND_REQUESTED = 4
-    IDL_S_MONITORING = 5
+    IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED = 5
+    IDL_S_MONITORING = 6
+
+    monitor_map = {
+        Monitor.monitor: IDL_S_SERVER_MONITOR_REQUESTED,
+        Monitor.monitor_cond: IDL_S_DATA_MONITOR_COND_REQUESTED,
+        Monitor.monitor_cond_since: IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED}
 
     def __init__(self, remote, schema_helper, probe_interval=None,
                  leader_only=True):
@@ -150,6 +164,7 @@ class Idl(object):
         self._last_seqno = None
         self.change_seqno = 0
         self.uuid = uuid.uuid1()
+        self.last_id = str(uuid.UUID(int=0))
 
         # Server monitor.
         self._server_schema_request_id = None
@@ -264,8 +279,12 @@ class Idl(object):
             msg = self._session.recv()
             if msg is None:
                 break
-
             if (msg.type == ovs.jsonrpc.Message.T_NOTIFY
+                    and msg.method == "update3"
+                    and len(msg.params) == 3):
+                self.__parse_update(msg.params[2], OVSDB_UPDATE3)
+                self.last_id = msg.params[1]
+            elif (msg.type == ovs.jsonrpc.Message.T_NOTIFY
                     and msg.method == "update2"
                     and len(msg.params) == 2):
                 # Database contents changed.
@@ -291,7 +310,10 @@ class Idl(object):
                     self.change_seqno += 1
                     self._monitor_request_id = None
                     self.__clear()
-                    if self.state == self.IDL_S_DATA_MONITOR_COND_REQUESTED:
+                    if (self.state ==
+                            self.IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED):
+                        self.__parse_update(msg.result[2], OVSDB_UPDATE3)
+                    elif self.state == self.IDL_S_DATA_MONITOR_COND_REQUESTED:
                         self.__parse_update(msg.result, OVSDB_UPDATE2)
                     else:
                         assert self.state == self.IDL_S_DATA_MONITOR_REQUESTED
@@ -369,10 +391,16 @@ class Idl(object):
                 # Reply to our echo request.  Ignore it.
                 pass
             elif (msg.type == ovs.jsonrpc.Message.T_ERROR and
+                  self.state == (
+                      self.IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED) and
+                      self._monitor_request_id == msg.id):
+                if msg.error == "unknown method":
+                    self.__send_monitor_request(Monitor.monitor_cond)
+            elif (msg.type == ovs.jsonrpc.Message.T_ERROR and
                   self.state == self.IDL_S_DATA_MONITOR_COND_REQUESTED and
                   self._monitor_request_id == msg.id):
                 if msg.error == "unknown method":
-                    self.__send_monitor_request()
+                    self.__send_monitor_request(Monitor.monitor)
             elif (msg.type == ovs.jsonrpc.Message.T_ERROR and
                   self._server_schema_request_id is not None and
                   self._server_schema_request_id == msg.id):
@@ -571,11 +599,13 @@ class Idl(object):
         self._db_change_aware_request_id = msg.id
         self._session.send(msg)
 
-    def __send_monitor_request(self):
-        if (self.state in [self.IDL_S_SERVER_MONITOR_REQUESTED,
-                           self.IDL_S_INITIAL]):
+    def __send_monitor_request(self, max_version=Monitor.monitor_cond_since):
+        if self.state == self.IDL_S_INITIAL:
             self.state = self.IDL_S_DATA_MONITOR_COND_REQUESTED
             method = "monitor_cond"
+        elif self.state == self.IDL_S_SERVER_MONITOR_REQUESTED:
+            self.state = self.monitor_map[Monitor(max_version)]
+            method = Monitor(max_version).name
         else:
             self.state = self.IDL_S_DATA_MONITOR_REQUESTED
             method = "monitor"
@@ -589,13 +619,16 @@ class Idl(object):
                         (column not in self.readonly[table.name])):
                     columns.append(column)
             monitor_request = {"columns": columns}
-            if method == "monitor_cond" and table.condition != [True]:
+            if method in ("monitor_cond",
+                          "monitor_cond_since") and table.condition != [True]:
                 monitor_request["where"] = table.condition
                 table.cond_change = False
             monitor_requests[table.name] = [monitor_request]
 
-        msg = ovs.jsonrpc.Message.create_request(
-            method, [self._db.name, str(self.uuid), monitor_requests])
+        args = [self._db.name, str(self.uuid), monitor_requests]
+        if method == "monitor_cond_since":
+            args.append(str(self.last_id))
+        msg = ovs.jsonrpc.Message.create_request(method, args)
         self._monitor_request_id = msg.id
         self._session.send(msg)
 
@@ -668,8 +701,9 @@ class Idl(object):
 
                 self.cooperative_yield()
 
-                if version == OVSDB_UPDATE2:
-                    changes = self.__process_update2(table, uuid, row_update)
+                if version in (OVSDB_UPDATE2, OVSDB_UPDATE3):
+                    changes = self.__process_update2(table, uuid, row_update,
+                                                     version=version)
                     if changes:
                         notices.append(changes)
                         self.change_seqno += 1
@@ -691,7 +725,7 @@ class Idl(object):
         for notice in notices:
             self.notify(*notice)
 
-    def __process_update2(self, table, uuid, row_update):
+    def __process_update2(self, table, uuid, row_update, version):
         """Returns Notice if a column changed, False otherwise."""
         row = table.rows.get(uuid)
         if "delete" in row_update:
