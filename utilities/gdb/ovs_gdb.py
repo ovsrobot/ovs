@@ -34,6 +34,7 @@
 #    - ovs_dump_udpif_keys {<udpif_name>|<udpif_address>} {short}
 #    - ovs_show_fdb {[<bridge_name>] {dbg} {hash}}
 #    - ovs_show_upcall {dbg}
+#    - ovs_dump_dp_packet <struct dp_packet_batch|struct dp_packet>
 #
 #  Example:
 #    $ gdb $(which ovs-vswitchd) $(pidof ovs-vswitchd)
@@ -58,6 +59,8 @@
 import gdb
 import sys
 import uuid
+import socket
+import struct
 
 
 #
@@ -149,6 +152,29 @@ def eth_addr_to_string(eth_addr):
         int(eth_addr['ea'][3]),
         int(eth_addr['ea'][4]),
         int(eth_addr['ea'][5]))
+
+
+def ipv4_to_string(ip):
+    return socket.inet_ntop(
+        socket.AF_INET,
+        struct.pack(
+            "I",
+            ip.cast(gdb.lookup_type('uint32_t'))
+        )
+    )
+
+
+def ipv6_to_string(ip):
+    ip_array = ip.cast( gdb.lookup_type('uint64_t').array(1) )
+
+    return socket.inet_ntop(
+        socket.AF_INET6,
+        struct.pack(
+            "QQ",
+            ip_array[0],
+            ip_array[1]
+        )
+    )
 
 
 #
@@ -1307,6 +1333,140 @@ class CmdDumpOfpacts(gdb.Command):
 
 
 #
+# Implements the GDB "ovs_dump_packets" command
+#
+class CmdDumpPackets(gdb.Command):
+    """Dump metadata about dp_packets
+    Usage: ovs_dump_packets <struct dp_packet_batch|struct dp_packet>
+
+    This command can take either a dp_packet_batch struct and print out metadata
+    about all packets in this batch, or a single dp_packet struct and print out
+    metadata about a single packet.
+
+    (gdb) ovs_dump_packets packets_
+    9e:11:bb:29:f3:1b -> ff:ff:ff:ff:ff:ff ARP: Who has 00:00:00:00:00:00, tell 9e:11:bb:29:f3:1b
+    """
+    def __init__(self):
+        super().__init__("ovs_dump_packets", gdb.COMMAND_DATA)
+
+    def invoke(self, arg, from_tty):
+        arg_list = gdb.string_to_argv(arg)
+        if len(arg_list) != 1:
+            print("Usage: ovs_dump_packets <dp_packet_struct>")
+
+        val = gdb.parse_and_eval(arg_list[0])
+        while val.type.code == gdb.TYPE_CODE_PTR:
+            val = val.dereference()
+
+        if str(val.type).startswith("struct dp_packet_batch"):
+            for idx in range(val['count']):
+                pkt = val['packets'][idx].dereference()
+                parsed = self.fmt_pkt(pkt)
+                if parsed is not None:
+                    print(parsed['format'] % parsed)
+        elif str(val.type) == "struct dp_packet":
+            parsed = self.fmt_pkt(val)
+            if parsed is not None:
+                print(parsed['format'] % parsed)
+        else:
+            print("Unhandled type", str(val.type))
+
+    def fmt_pkt(self, pkt):
+        eth = gdb.parse_and_eval('dp_packet_eth(%s)' % pkt.address)
+        # todo, check for is NULL
+        if eth == 0:
+            return None
+
+        res_d = {
+            "e_src": None,
+            "e_dst": None,
+            "e_proto": None,
+            "i_src": None,
+            "i_dst": None,
+            "i_proto": None,
+            "t_src": "",
+            "t_dst": "",
+            "proto_msg": None,
+            "format": "Can not parse ethernet protocol %(e_proto)s"
+        }
+
+        eth_hdr = eth.cast(gdb.lookup_type('struct eth_header').pointer()).dereference()
+        res_d['e_dst'] = eth_addr_to_string(eth_hdr['eth_dst'])
+        res_d['e_src'] = eth_addr_to_string(eth_hdr['eth_src'])
+        eth_type = socket.ntohs(eth_hdr['eth_type'])
+        res_d['e_proto'] = eth_type
+
+        l3 = gdb.parse_and_eval('dp_packet_l3(%s)' % pkt.address)
+        if eth_type == 0x0806:
+            res_d['e_proto'] = "ARP"
+
+            arp_pkt = l3.cast(gdb.lookup_type('struct arp_eth_header').pointer()).dereference()
+            ar_op = socket.ntohs(arp_pkt['ar_op'])
+            if ar_op == 1:
+                res_d['proto_msg'] = "Who has %s, tell %s" % (
+                    ipv4_to_string(arp_pkt['ar_tpa']),
+                    eth_addr_to_string(arp_pkt['ar_sha']),
+                )
+            elif ar_op == 2:
+                res_d['proto_msg'] = "%s is at %s" % (
+                    ipv4_to_string(arp_pkt['ar_spa']),
+                    eth_addr_to_string(arp_pkt['ar_sha']),
+                )
+
+            res_d['format'] = "%(e_src)s -> %(e_dst)s ARP: %(proto_msg)s"
+
+        elif eth_type == 0x0800:
+            ip_pkt = l3.cast(gdb.lookup_type('struct ip_header').pointer()).dereference()
+            res_d['e_proto'] = "IP"
+            res_d['i_src'] = ipv4_to_string(ip_pkt['ip_src'])
+            res_d['i_dst'] = ipv4_to_string(ip_pkt['ip_dst'])
+
+            ip_proto = ip_pkt['ip_proto']
+            l4 = gdb.parse_and_eval('dp_packet_l4(%s)' % pkt.address)
+            self.parse_l4(ip_proto, l4, res_d)
+            if res_d['t_dst']:
+                res_d['format'] = "%(e_src)s -> %(e_dst)s IP/%(i_proto)s: %(i_src)s:%(t_src)s -> %(i_dst)s:%(t_dst)s"
+            else:
+                res_d['format'] = "%(e_src)s -> %(e_dst)s IP/%(i_proto)s: %(i_src)s -> %(i_dst)s"
+
+        elif eth_type == 0x86dd:
+            res_d['e_proto'] = "IPv6"
+
+            ip_pkt = l3.cast(gdb.lookup_type('struct ovs_16aligned_ip6_hdr').pointer()).dereference()
+            res_d['i_src'] = ipv6_to_string(ip_pkt['ip6_src'])
+            res_d['i_dst'] = ipv6_to_string(ip_pkt['ip6_dst'])
+
+            l4 = gdb.parse_and_eval('dp_packet_l4(%s)' % pkt.address)
+            ip_proto = ip_pkt['ip6_ctlun']['ip6_un1']['ip6_un1_nxt']
+            self.parse_l4(ip_proto, l4, res_d)
+            if res_d['t_dst']:
+                res_d['format'] = "%(e_src)s -> %(e_dst)s IP6/%(i_proto)s: [%(i_src)s]:%(t_src)s -> [%(i_dst)s]:%(t_dst)s"
+            else:
+                res_d['format'] = "%(e_src)s -> %(e_dst)s IP6/%(i_proto)s: [%(i_src)s] -> [%(i_dst)s]"
+
+        return res_d
+
+    @staticmethod
+    def parse_l4(ip_proto, l4, res_d):
+        uh = l4.cast(gdb.lookup_type('struct udp_header').pointer()).dereference()
+        th = l4.cast(gdb.lookup_type('struct tcp_header').pointer()).dereference()
+        if ip_proto == 58:
+            res_d['i_proto'] = "ICMPv6"
+        elif ip_proto == 11:
+            res_d['i_proto'] = "UDP"
+            res_d['t_src'] = socket.ntohs(th['udp_src'])
+            res_d['t_dst'] = socket.ntohs(th['udp_dst'])
+        elif ip_proto == 6:
+            res_d['i_proto'] = "TCP"
+            res_d['t_src'] = socket.ntohs(th['tcp_src'])
+            res_d['t_dst'] = socket.ntohs(th['tcp_dst'])
+        elif ip_proto == 1:
+            res_d['i_proto'] = "ICMP"
+        else:
+            res_d['i_proto'] = str(ip_proto)
+
+
+#
 # Initialize all GDB commands
 #
 CmdDumpBridge()
@@ -1324,3 +1484,4 @@ CmdDumpSmap()
 CmdDumpUdpifKeys()
 CmdShowFDB()
 CmdShowUpcall()
+CmdDumpPackets()
