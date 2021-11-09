@@ -1282,26 +1282,6 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     return 0;
 }
 
-/* Get the number of OVS interfaces which have the same DPDK
- * rte device (e.g. same pci bus address).
- * FIXME: avoid direct access to DPDK internal array rte_eth_devices.
- */
-static int
-netdev_dpdk_get_num_ports(struct rte_device *device)
-    OVS_REQUIRES(dpdk_mutex)
-{
-    struct netdev_dpdk *dev;
-    int count = 0;
-
-    LIST_FOR_EACH (dev, list_node, &dpdk_list) {
-        if (rte_eth_devices[dev->port_id].device == device
-        && rte_eth_devices[dev->port_id].state != RTE_ETH_DEV_UNUSED) {
-            count++;
-        }
-    }
-    return count;
-}
-
 static int
 vhost_common_construct(struct netdev *netdev)
     OVS_REQUIRES(dpdk_mutex)
@@ -1455,8 +1435,6 @@ static void
 netdev_dpdk_destruct(struct netdev *netdev)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
-    struct rte_device *rte_dev;
-    struct rte_eth_dev *eth_dev;
 
     ovs_mutex_lock(&dpdk_mutex);
 
@@ -1464,20 +1442,39 @@ netdev_dpdk_destruct(struct netdev *netdev)
     dev->started = false;
 
     if (dev->attached) {
-        /* Retrieve eth device data before closing it.
-         * FIXME: avoid direct access to DPDK internal array rte_eth_devices.
-         */
-        eth_dev = &rte_eth_devices[dev->port_id];
-        rte_dev = eth_dev->device;
+        bool dpdk_resources_shared = false;
+        struct rte_eth_dev_info dev_info;
+        dpdk_port_t sibling_port_id;
 
-        /* Remove the eth device. */
+        /* Check if this port shares resources with a port attached to OVS. */
+        RTE_ETH_FOREACH_DEV_SIBLING(sibling_port_id, dev->port_id) {
+            struct netdev_dpdk *sibling;
+
+            /* RTE_ETH_FOREACH_DEV_SIBLING lists dev->port_id as part of the
+             * loop. */
+            if (sibling_port_id == dev->port_id) {
+                continue;
+            }
+            LIST_FOR_EACH(sibling, list_node, &dpdk_list) {
+                if (sibling->port_id != sibling_port_id) {
+                    continue;
+                }
+                dpdk_resources_shared = true;
+                break;
+            }
+            if (dpdk_resources_shared) {
+                break;
+            }
+        }
+
+        rte_eth_dev_info_get(dev->port_id, &dev_info);
         rte_eth_dev_close(dev->port_id);
 
         /* Remove this rte device and all its eth devices if all the eth
-         * devices belonging to the rte device are closed.
+         * devices belonging to the rte device are closed or unused by OVS.
          */
-        if (!netdev_dpdk_get_num_ports(rte_dev)) {
-            int ret = rte_dev_remove(rte_dev);
+        if (!dpdk_resources_shared) {
+            int ret = rte_dev_remove(dev_info.device);
 
             if (ret < 0) {
                 VLOG_ERR("Device '%s' can not be detached: %s.",
@@ -3796,12 +3793,12 @@ static void
 netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
                    const char *argv[], void *aux OVS_UNUSED)
 {
-    char *response;
-    dpdk_port_t port_id;
-    struct netdev_dpdk *dev;
-    struct rte_device *rte_dev;
     struct ds used_interfaces = DS_EMPTY_INITIALIZER;
+    struct rte_eth_dev_info dev_info;
+    dpdk_port_t sibling_port_id;
+    dpdk_port_t port_id;
     bool used = false;
+    char *response;
 
     ovs_mutex_lock(&dpdk_mutex);
 
@@ -3811,18 +3808,21 @@ netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
         goto error;
     }
 
-    rte_dev = rte_eth_devices[port_id].device;
     ds_put_format(&used_interfaces,
                   "Device '%s' is being used by the following interfaces:",
                   argv[1]);
 
-    LIST_FOR_EACH (dev, list_node, &dpdk_list) {
-        /* FIXME: avoid direct access to DPDK array rte_eth_devices. */
-        if (rte_eth_devices[dev->port_id].device == rte_dev
-            && rte_eth_devices[dev->port_id].state != RTE_ETH_DEV_UNUSED) {
+    RTE_ETH_FOREACH_DEV_SIBLING(sibling_port_id, port_id) {
+        struct netdev_dpdk *dev;
+
+        LIST_FOR_EACH(dev, list_node, &dpdk_list) {
+            if (dev->port_id != sibling_port_id) {
+                continue;
+            }
             used = true;
             ds_put_format(&used_interfaces, " %s",
                           netdev_get_name(&dev->up));
+            break;
         }
     }
 
@@ -3834,8 +3834,9 @@ netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
     }
     ds_destroy(&used_interfaces);
 
+    rte_eth_dev_info_get(port_id, &dev_info);
     rte_eth_dev_close(port_id);
-    if (rte_dev_remove(rte_dev) < 0) {
+    if (rte_dev_remove(dev_info.device) < 0) {
         response = xasprintf("Device '%s' can not be detached", argv[1]);
         goto error;
     }
