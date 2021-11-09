@@ -181,7 +181,7 @@ static int vring_state_changed(int vid, uint16_t queue_id, int enable);
 static void destroy_connection(int vid);
 static void vhost_guest_notified(int vid);
 
-static const struct vhost_device_ops virtio_net_device_ops =
+static const struct rte_vhost_device_ops virtio_net_device_ops =
 {
     .new_device =  new_device,
     .destroy_device = destroy_device,
