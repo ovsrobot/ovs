@@ -5277,7 +5277,7 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
                                  struct rte_flow_query_count *query,
                                  struct rte_flow_error *error)
 {
-    struct rte_flow_action_count count = { .shared = 0, .id = 0 };
+    struct rte_flow_action_count count = { .id = 0, };
     const struct rte_flow_action actions[] = {
         {
             .type = RTE_FLOW_ACTION_TYPE_COUNT,
