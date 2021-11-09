@@ -2166,14 +2166,14 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
 {
     struct dp_packet *pkt = CONTAINER_OF(mbuf, struct dp_packet, mbuf);
 
-    if (mbuf->ol_flags & PKT_TX_L4_MASK) {
+    if (mbuf->ol_flags & RTE_MBUF_F_TX_L4_MASK) {
         mbuf->l2_len = (char *)dp_packet_l3(pkt) - (char *)dp_packet_eth(pkt);
         mbuf->l3_len = (char *)dp_packet_l4(pkt) - (char *)dp_packet_l3(pkt);
         mbuf->outer_l2_len = 0;
         mbuf->outer_l3_len = 0;
     }
 
-    if (mbuf->ol_flags & PKT_TX_TCP_SEG) {
+    if (mbuf->ol_flags & RTE_MBUF_F_TX_TCP_SEG) {
         struct tcp_header *th = dp_packet_l4(pkt);
 
         if (!th) {
@@ -2183,11 +2183,11 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
         }
 
         mbuf->l4_len = TCP_OFFSET(th->tcp_ctl) * 4;
-        mbuf->ol_flags |= PKT_TX_TCP_CKSUM;
+        mbuf->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
         mbuf->tso_segsz = dev->mtu - mbuf->l3_len - mbuf->l4_len;
 
-        if (mbuf->ol_flags & PKT_TX_IPV4) {
-            mbuf->ol_flags |= PKT_TX_IP_CKSUM;
+        if (mbuf->ol_flags & RTE_MBUF_F_TX_IPV4) {
+            mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM;
         }
     }
     return true;
@@ -2534,7 +2534,7 @@ netdev_dpdk_filter_packet_len(struct netdev_dpdk *dev, struct rte_mbuf **pkts,
     for (i = 0; i < pkt_cnt; i++) {
         pkt = pkts[i];
         if (OVS_UNLIKELY((pkt->pkt_len > dev->max_packet_len)
-            && !(pkt->ol_flags & PKT_TX_TCP_SEG))) {
+            && !(pkt->ol_flags & RTE_MBUF_F_TX_TCP_SEG))) {
             VLOG_WARN_RL(&rl, "%s: Too big size %" PRIu32 " "
                          "max_packet_len %d", dev->up.name, pkt->pkt_len,
                          dev->max_packet_len);
@@ -2756,12 +2756,12 @@ dpdk_copy_dp_packet_to_mbuf(struct rte_mempool *mp, struct dp_packet *pkt_orig)
     mbuf_dest->tx_offload = pkt_orig->mbuf.tx_offload;
     mbuf_dest->packet_type = pkt_orig->mbuf.packet_type;
     mbuf_dest->ol_flags |= (pkt_orig->mbuf.ol_flags &
-                            ~(EXT_ATTACHED_MBUF | IND_ATTACHED_MBUF));
+                            ~(RTE_MBUF_F_EXTERNAL | RTE_MBUF_F_INDIRECT));
 
     memcpy(&pkt_dest->l2_pad_size, &pkt_orig->l2_pad_size,
            sizeof(struct dp_packet) - offsetof(struct dp_packet, l2_pad_size));
 
-    if (mbuf_dest->ol_flags & PKT_TX_L4_MASK) {
+    if (mbuf_dest->ol_flags & RTE_MBUF_F_TX_L4_MASK) {
         mbuf_dest->l2_len = (char *)dp_packet_l3(pkt_dest)
                                 - (char *)dp_packet_eth(pkt_dest);
         mbuf_dest->l3_len = (char *)dp_packet_l4(pkt_dest)
@@ -2806,7 +2806,7 @@ dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
         uint32_t size = dp_packet_size(packet);
 
         if (size > dev->max_packet_len
-            && !(packet->mbuf.ol_flags & PKT_TX_TCP_SEG)) {
+            && !(packet->mbuf.ol_flags & RTE_MBUF_F_TX_TCP_SEG)) {
             VLOG_WARN_RL(&rl, "Too big size %u max_packet_len %d", size,
                          dev->max_packet_len);
             mtu_drops++;
