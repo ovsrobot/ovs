@@ -470,6 +470,12 @@ dpdk_init__(const struct smap *ovs_other_config)
         return false;
     }
 
+    if (!rte_mp_disable()) {
+        VLOG_EMER("Could not disable multiprocess, DPDK won't be available.");
+        rte_eal_cleanup();
+        return false;
+    }
+
     if (VLOG_IS_DBG_ENABLED()) {
         size_t size;
         char *response = NULL;
@@ -489,6 +495,8 @@ dpdk_init__(const struct smap *ovs_other_config)
         }
     }
 
+    unixctl_command_register("dpdk/lcore-list", "", 0, 0,
+                             dpdk_unixctl_mem_stream, rte_lcore_dump);
     unixctl_command_register("dpdk/log-list", "", 0, 0,
                              dpdk_unixctl_mem_stream, rte_log_dump);
     unixctl_command_register("dpdk/log-set", "{level | pattern:level}", 0,
@@ -571,12 +579,34 @@ dpdk_available(void)
     return dpdk_initialized;
 }
 
-void
-dpdk_set_lcore_id(unsigned cpu)
+bool
+dpdk_attach_thread(unsigned cpu)
 {
     /* NON_PMD_CORE_ID is reserved for use by non pmd threads. */
     ovs_assert(cpu != NON_PMD_CORE_ID);
-    RTE_PER_LCORE(_lcore_id) = cpu;
+
+    if (!dpdk_available()) {
+        return false;
+    }
+
+    if (rte_thread_register() < 0) {
+        VLOG_WARN("DPDK max threads count has been reached. "
+                  "PMD thread performance may be impacted.");
+        return false;
+    }
+
+    VLOG_INFO("PMD thread uses DPDK lcore %u.", rte_lcore_id());
+    return true;
+}
+
+void
+dpdk_detach_thread(void)
+{
+    unsigned int lcore_id;
+
+    lcore_id = rte_lcore_id();
+    rte_thread_unregister();
+    VLOG_INFO("PMD thread released DPDK lcore %u.", lcore_id);
 }
 
 void
