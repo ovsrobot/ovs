@@ -475,7 +475,8 @@ AC_DEFUN([OVS_CHECK_DPDK], [
     # DPDK uses dlopen to load plugins.
     OVS_FIND_DEPENDENCY([dlopen], [dl], [libdl])
 
-    AC_MSG_CHECKING([whether linking with dpdk works])
+    DPDK_STRING="whether linking with dpdk works"
+    AC_MSG_CHECKING([$DPDK_STRING])
     LIBS="$DPDK_LIB $LIBS"
     AC_LINK_IFELSE(
       [AC_LANG_PROGRAM([#include <rte_config.h>
@@ -485,10 +486,10 @@ AC_DEFUN([OVS_CHECK_DPDK], [
       [AC_MSG_RESULT([yes])
        DPDKLIB_FOUND=true],
       [AC_MSG_RESULT([no])
+       # Fetch the cause of failure from config.log
+       DPDK_LINK_ERROR=$(grep "$DPDK_STRING" -A2 config.log | tail -n2)
        AC_MSG_ERROR(m4_normalize([
-          Could not find DPDK library in default search path, update
-          PKG_CONFIG_PATH for pkg-config to find the .pc file in
-          non-standard location]))
+          $DPDK_LINK_ERROR]))
       ])
 
     CFLAGS="$ovs_save_CFLAGS"
