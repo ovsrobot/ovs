@@ -7879,6 +7879,7 @@ ofpact_copy(struct ofpbuf *out, const struct ofpact *a)
 /* The order in which actions in an action set get executed.  This is only for
  * the actions where only the last instance added is used. */
 #define ACTION_SET_ORDER                        \
+    SLOT(OFPACT_METER)                     \
     SLOT(OFPACT_STRIP_VLAN)                     \
     SLOT(OFPACT_POP_MPLS)                       \
     SLOT(OFPACT_DECAP)                          \
@@ -7970,7 +7971,6 @@ action_set_classify(const struct ofpact *a)
     case OFPACT_GOTO_TABLE:
     case OFPACT_LEARN:
     case OFPACT_CONJUNCTION:
-    case OFPACT_METER:
     case OFPACT_MULTIPATH:
     case OFPACT_NOTE:
     case OFPACT_OUTPUT_REG:

@@ -6570,26 +6570,7 @@ handle_flow_monitor_cancel(struct ofconn *ofconn, const struct ofp_header *oh)
     return error;
 }
 
-/* Meters implementation.
- *
- * Meter table entry, indexed by the OpenFlow meter_id.
- * 'created' is used to compute the duration for meter stats.
- * 'list rules' is needed so that we can delete the dependent rules when the
- * meter table entry is deleted.
- * 'provider_meter_id' is for the provider's private use.
- */
-struct meter {
-    struct hmap_node node;      /* In ofproto->meters. */
-    long long int created;      /* Time created. */
-    struct ovs_list rules;      /* List of "struct rule_dpif"s. */
-    uint32_t id;                /* OpenFlow meter_id. */
-    ofproto_meter_id provider_meter_id;
-    uint16_t flags;             /* Meter flags. */
-    uint16_t n_bands;           /* Number of meter bands. */
-    struct ofputil_meter_band *bands;
-};
-
-static struct meter *
+struct meter *
 ofproto_get_meter(const struct ofproto *ofproto, uint32_t meter_id)
 {
     struct meter *meter;

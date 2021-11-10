@@ -4497,6 +4497,21 @@ xlate_group_bucket(struct xlate_ctx *ctx, struct ofputil_bucket *bucket,
     bool old_was_mpls = ctx->was_mpls;
 
     ofpacts_execute_action_set(&action_list, &action_set);
+
+    const struct ofpact *cursor;
+    OFPACT_FOR_EACH (cursor, action_list.data, action_list.size) {
+        if (cursor->type == OFPACT_METER) {
+            struct ofpact_meter *meter = ofpact_get_METER(cursor);
+            struct ofproto *ofproto;
+            struct meter *ofmeter;
+            ofproto = &ctx->xbridge->ofproto->up;
+            ofmeter = ofproto_get_meter(ofproto, meter->meter_id);
+            if (ofmeter) {
+                meter->provider_meter_id = ofmeter->provider_meter_id.uint32;
+            }
+        }
+    }
+
     ctx->depth++;
     do_xlate_actions(action_list.data, action_list.size, ctx, is_last_action,
                      true);
