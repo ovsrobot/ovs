@@ -461,16 +461,16 @@ AC_DEFUN([OVS_CHECK_DPDK], [
     AC_CHECK_DECL([RTE_NET_MLX5], [dnl found
       AC_CHECK_DECL([RTE_IBVERBS_LINK_DLOPEN], [], [dnl not found
         OVS_FIND_DEPENDENCY([mlx5dv_create_wq], [mlx5], [libmlx5])
-        OVS_FIND_DEPENDENCY([verbs_init_cq], [ibverbs], [libibverbs])
       ], [[#include <rte_config.h>]])
     ], [], [[#include <rte_config.h>]])
 
     AC_CHECK_DECL([RTE_NET_MLX4], [dnl found
       AC_CHECK_DECL([RTE_IBVERBS_LINK_DLOPEN], [], [dnl not found
         OVS_FIND_DEPENDENCY([mlx4dv_init_obj], [mlx4], [libmlx4])
-        OVS_FIND_DEPENDENCY([verbs_init_cq], [ibverbs], [libibverbs])
       ], [[#include <rte_config.h>]])
     ], [], [[#include <rte_config.h>]])
+
+    OVS_FIND_DEPENDENCY([verbs_init_cq], [ibverbs], [libibverbs])
 
     # DPDK uses dlopen to load plugins.
     OVS_FIND_DEPENDENCY([dlopen], [dl], [libdl])
