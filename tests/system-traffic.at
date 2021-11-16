@@ -1786,6 +1786,12 @@ AT_CHECK([ovs-appctl dpctl/ct-get-maxconns], [], [dnl
 10
 ])
 
+AT_CHECK([ovs-appctl dpctl/ct-set-default-timeout-policy tcp_syn_sent=60])
+
+AT_CHECK([ovs-appctl dpctl/ct-get-default-timeout-policy  | grep "TCP_FIRST_PACKET" |  sed -n 's/.*TCP/TCP/p'], [], [dnl
+TCP_FIRST_PACKET = 60
+])
+
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
