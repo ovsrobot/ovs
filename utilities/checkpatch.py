@@ -765,12 +765,13 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
 
     reset_counters()
 
-    for line in text.splitlines():
+    for line in re.split("\r?\n", text):
         if current_file != previous_file:
             previous_file = current_file
 
         lineno = lineno + 1
         total_line = total_line + 1
+        line = line.rstrip("\u2029\u2028\x85\x1e\x1d\x1c\x0c\x0b")
         if len(line) <= 0:
             continue
 
