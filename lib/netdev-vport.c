@@ -457,7 +457,7 @@ static char *
 vxlan_get_port_ext_gbp_str(uint16_t port, bool gbp,
                            char namebuf[], size_t bufsize)
 {
-    snprintf(namebuf, bufsize, "dst_port_%d%s",
+    snprintf(namebuf, bufsize, "dst_port_%hu%s",
              port, gbp ? "_gbp" : "");
 
     return namebuf;
