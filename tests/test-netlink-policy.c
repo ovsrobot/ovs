@@ -32,6 +32,22 @@ _nla_len(const struct nlattr *nla) {
     return nla->nla_len - NLA_HDRLEN;
 }
 
+/* The header part of the test fixture data is subject to endianness.  This
+ * helper makes sure they are put into the buffer in the right order. */
+static void
+prepare_ofpbuf_fixture(struct ofpbuf *buf, uint8_t *data, size_t size) {
+    uint16_t hword;
+
+    ovs_assert(size >= 4);
+
+    ofpbuf_init(buf, size);
+    hword = data[0] | data[1] << 8;
+    ofpbuf_put(buf, &hword, sizeof(hword));
+    hword = data[2] | data[3] << 8;
+    ofpbuf_put(buf, &hword, sizeof(hword));
+    ofpbuf_put(buf, &data[4], size - sizeof(hword) * 2);
+}
+
 static void
 test_nl_policy_parse_ll_addr(struct ovs_cmdl_context *ctx OVS_UNUSED) {
     struct nl_policy policy[] = {
@@ -62,37 +78,37 @@ test_nl_policy_parse_ll_addr(struct ovs_cmdl_context *ctx OVS_UNUSED) {
         /* valid policy but data neither eth_addr nor ib_addr */
         0x0b, 0x00, 0x2a, 0x00, 0x00, 0x53, 0x00, 0x00, 0x00, 0x2a, 0x00,
     };
-    struct ofpbuf *buf;
+    struct ofpbuf buf;
 
     /* confirm policy fails with too short data */
-    buf = ofpbuf_clone_data(&fixture_nl_data_policy_short,
-                            sizeof(fixture_nl_data_policy_short));
-    ovs_assert(!nl_policy_parse(buf, 0, policy, attrs, ARRAY_SIZE(policy)));
-    ofpbuf_delete(buf);
+    prepare_ofpbuf_fixture(&buf, fixture_nl_data_policy_short,
+                           sizeof(fixture_nl_data_policy_short));
+    ovs_assert(!nl_policy_parse(&buf, 0, policy, attrs, ARRAY_SIZE(policy)));
+    ofpbuf_uninit(&buf);
     memset(&attrs, 0, sizeof(*attrs));
 
     /* confirm policy fails with too long data */
-    buf = ofpbuf_clone_data(&fixture_nl_data_policy_long,
-                            sizeof(fixture_nl_data_policy_long));
-    ovs_assert(!nl_policy_parse(buf, 0, policy, attrs, ARRAY_SIZE(policy)));
-    ofpbuf_delete(buf);
+    prepare_ofpbuf_fixture(&buf, fixture_nl_data_policy_long,
+                           sizeof(fixture_nl_data_policy_long));
+    ovs_assert(!nl_policy_parse(&buf, 0, policy, attrs, ARRAY_SIZE(policy)));
+    ofpbuf_uninit(&buf);
     memset(&attrs, 0, sizeof(*attrs));
 
     /* confirm policy passes and interpret valid ethernet lladdr */
-    buf = ofpbuf_clone_data(&fixture_nl_data_eth,
-                            sizeof(fixture_nl_data_eth));
-    ovs_assert(nl_policy_parse(buf, 0, policy, attrs, ARRAY_SIZE(policy)));
+    prepare_ofpbuf_fixture(&buf, fixture_nl_data_eth,
+                           sizeof(fixture_nl_data_eth));
+    ovs_assert(nl_policy_parse(&buf, 0, policy, attrs, ARRAY_SIZE(policy)));
     ovs_assert((_nla_len(attrs[42]) == sizeof(struct eth_addr)));
     struct eth_addr eth_expect = ETH_ADDR_C(00,53,00,00,00,2a);
     struct eth_addr eth_parsed = nl_attr_get_eth_addr(attrs[42]);
     ovs_assert((!memcmp(&eth_expect, &eth_parsed, sizeof(struct eth_addr))));
-    ofpbuf_delete(buf);
+    ofpbuf_uninit(&buf);
     memset(&attrs, 0, sizeof(*attrs));
 
     /* confirm policy passes and interpret valid infiniband lladdr */
-    buf = ofpbuf_clone_data(&fixture_nl_data_ib,
-                            sizeof(fixture_nl_data_ib));
-    ovs_assert(nl_policy_parse(buf, 0, policy, attrs, ARRAY_SIZE(policy)));
+    prepare_ofpbuf_fixture(&buf, fixture_nl_data_ib,
+                           sizeof(fixture_nl_data_ib));
+    ovs_assert(nl_policy_parse(&buf, 0, policy, attrs, ARRAY_SIZE(policy)));
     ovs_assert((_nla_len(attrs[42]) == sizeof(struct ib_addr)));
     struct ib_addr ib_expect = {
             .ia = {
@@ -102,18 +118,18 @@ test_nl_policy_parse_ll_addr(struct ovs_cmdl_context *ctx OVS_UNUSED) {
     };
     struct ib_addr ib_parsed = nl_attr_get_ib_addr(attrs[42]);
     ovs_assert((!memcmp(&ib_expect, &ib_parsed, sizeof(struct eth_addr))));
-    ofpbuf_delete(buf);
+    ofpbuf_uninit(&buf);
     memset(&attrs, 0, sizeof(*attrs));
 
     /* confirm we're able to detect invalid data that passes policy check, this
      * can happen because the policy defines the data to be between the
      * currently known lladdr sizes of 6 (ETH_ALEN) and 20 (INFINIBAND_ALEN) */
-    buf = ofpbuf_clone_data(&fixture_nl_data_invalid,
-                            sizeof(fixture_nl_data_invalid));
-    ovs_assert(nl_policy_parse(buf, 0, policy, attrs, ARRAY_SIZE(policy)));
+    prepare_ofpbuf_fixture(&buf, fixture_nl_data_invalid,
+                           sizeof(fixture_nl_data_invalid));
+    ovs_assert(nl_policy_parse(&buf, 0, policy, attrs, ARRAY_SIZE(policy)));
     ovs_assert(_nla_len(attrs[42]) != sizeof(struct eth_addr)
                && _nla_len(attrs[42]) != sizeof(struct ib_addr));
-    ofpbuf_delete(buf);
+    ofpbuf_uninit(&buf);
     memset(&attrs, 0, sizeof(*attrs));
 }
 
