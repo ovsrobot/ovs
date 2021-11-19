@@ -29,6 +29,7 @@
 #    - ovs_dump_netdev
 #    - ovs_dump_netdev_provider
 #    - ovs_dump_ovs_list <struct ovs_list *> {[<structure>] [<member>] {dump}]}
+#    - ovs_dump_packets <struct dp_packet_batch|struct dp_packet> [tcpdump options]
 #    - ovs_dump_simap <struct simap *>
 #    - ovs_dump_smap <struct smap *>
 #    - ovs_dump_udpif_keys {<udpif_name>|<udpif_address>} {short}
@@ -56,8 +57,15 @@
 #    ...
 #
 import gdb
+import struct
 import sys
 import uuid
+try:
+    from scapy.layers.l2 import Ether
+    from scapy.utils import tcpdump
+except ModuleNotFoundError:
+    Ether = None
+    tcpdump = None
 
 
 #
@@ -138,7 +146,7 @@ def get_time_msec():
 
 def get_time_now():
     # See get_time_msec() above
-    return int(get_global_variable("coverage_run_time"))/1000, -5
+    return int(get_global_variable("coverage_run_time")) / 1000, -5
 
 
 def eth_addr_to_string(eth_addr):
@@ -156,7 +164,7 @@ def eth_addr_to_string(eth_addr):
 #
 class ProgressIndicator(object):
     def __init__(self, message=None):
-        self.spinner = "/-\|"
+        self.spinner = "/-\\|"
         self.spinner_index = 0
         self.message = message
 
@@ -1307,6 +1315,107 @@ class CmdDumpOfpacts(gdb.Command):
 
 
 #
+# Implements the GDB "ovs_dump_packets" command
+#
+class CmdDumpPackets(gdb.Command):
+    """Dump metadata about dp_packets
+    Usage: ovs_dump_packets <struct dp_packet_batch|struct dp_packet> [tcpdump options]
+
+    This command can take either a dp_packet_batch struct and print out
+    metadata about all packets in this batch, or a single dp_packet struct and
+    print out metadata about a single packet.
+
+    Everything after the struct reference is passed into tcpdump. If nothing
+    is passed in as a tcpdump option, the default is "-n".
+
+    (gdb) ovs_dump_packets packets_
+    12:01:05.981214 ARP, Ethernet (len 6), IPv4 (len 4), Reply 10.1.1.1 is-at a6:0f:c3:f0:5f:bd (oui Unknown), length 28
+    """
+    def __init__(self):
+        super().__init__("ovs_dump_packets", gdb.COMMAND_DATA)
+
+    def invoke(self, arg, from_tty):
+        if Ether is None:
+            print("ERROR: This command requires scapy to be installed.")
+
+        arg_list = gdb.string_to_argv(arg)
+        if len(arg_list) == 0:
+            print("Usage: ovs_dump_packets <struct dp_packet_batch|"
+                  "struct dp_packet> [tcpdump options]")
+            return
+
+        symb_name = arg_list[0]
+        tcpdump_args = arg_list[1:]
+
+        if not tcpdump_args:
+            # Add a sane default
+            tcpdump_args = ["-n"]
+
+        val = gdb.parse_and_eval(symb_name)
+        while val.type.code == gdb.TYPE_CODE_PTR:
+            val = val.dereference()
+
+        pkt_list = []
+        if str(val.type).startswith("struct dp_packet_batch"):
+            for idx in range(val['count']):
+                pkt_struct = val['packets'][idx].dereference()
+                pkt = self.extract_pkt(pkt_struct)
+                if pkt is None:
+                    continue
+                pkt_list.append(pkt)
+        elif str(val.type) == "struct dp_packet":
+            pkt = self.extract_pkt(val)
+            if pkt is None:
+                return
+            pkt_list.append(pkt)
+        else:
+            print("Error, unsupported argument type: {}".format(str(val.type)))
+            return
+
+        tcpdump(pkt_list, args=tcpdump_args)
+
+    def extract_pkt(self, pkt):
+        pkt_fields = pkt.type.keys()
+        if pkt['packet_type'] != 0:
+            return
+        if pkt['l3_ofs'] == 0xFFFF:
+            return
+
+        if "mbuf" in pkt_fields:
+            if pkt['mbuf']['data_off'] == 0xFFFF:
+                return
+            eth_ptr = pkt['mbuf']['buf_addr']
+            eth_off = int(pkt['mbuf']['data_off'])
+            eth_len = int(pkt['mbuf']['pkt_len'])
+        else:
+            if pkt['data_ofs'] == 0xFFFF:
+                return
+            eth_ptr = pkt['base_']
+            eth_off = int(pkt['data_ofs'])
+            eth_len = int(pkt['size_'])
+
+        if eth_ptr == 0 or eth_len < 1:
+            return
+
+        # Extract packet
+        pkt_ptr = eth_ptr.cast(
+                gdb.lookup_type('uint8_t').pointer()
+            )
+        pkt_ptr += eth_off
+
+        pkt_data = []
+        for idx in range(eth_len):
+            pkt_data.append(int(pkt_ptr[idx]))
+
+        pkt_data = struct.pack("{}B".format(eth_len), *pkt_data)
+
+        packet = Ether(pkt_data)
+        packet.len = int(eth_len)
+
+        return packet
+
+
+#
 # Initialize all GDB commands
 #
 CmdDumpBridge()
@@ -1319,6 +1428,7 @@ CmdDumpNetdev()
 CmdDumpNetdevProvider()
 CmdDumpOfpacts()
 CmdDumpOvsList()
+CmdDumpPackets()
 CmdDumpSimap()
 CmdDumpSmap()
 CmdDumpUdpifKeys()
