@@ -434,6 +434,7 @@ struct tx_port {
     long long last_used;
     struct hmap_node node;
     long long flush_time;
+    bool hw_miss_api_supported;
     struct dp_packet_batch output_pkts;
     struct dp_netdev_rxq *output_pkts_rxqs[NETDEV_MAX_BURST];
 };
@@ -6972,6 +6973,7 @@ dp_netdev_add_port_tx_to_pmd(struct dp_netdev_pmd_thread *pmd,
     tx->port = port;
     tx->qid = -1;
     tx->flush_time = 0LL;
+    tx->hw_miss_api_supported = true;
     dp_packet_batch_init(&tx->output_pkts);
 
     hmap_insert(&pmd->tx_ports, &tx->node, hash_port_no(tx->port->port_no));
@@ -7327,22 +7329,28 @@ static struct tx_port * pmd_send_port_cache_lookup(
 
 inline int
 dp_netdev_hw_flow(const struct dp_netdev_pmd_thread *pmd,
-                  odp_port_t port_no OVS_UNUSED,
+                  void *port,
                   struct dp_packet *packet,
                   struct dp_netdev_flow **flow)
 {
-    struct tx_port *p OVS_UNUSED;
+    struct tx_port *p = port;
     uint32_t mark;
 
 #ifdef ALLOW_EXPERIMENTAL_API /* Packet restoration API required. */
     /* Restore the packet if HW processing was terminated before completion. */
-    p = pmd_send_port_cache_lookup(pmd, port_no);
-    if (OVS_LIKELY(p)) {
+    if (OVS_LIKELY(p) && p->hw_miss_api_supported) {
         int err = netdev_hw_miss_packet_recover(p->port->netdev, packet);
 
-        if (err && err != EOPNOTSUPP) {
-            COVERAGE_INC(datapath_drop_hw_miss_recover);
-            return -1;
+        if (err) {
+            if (err != EOPNOTSUPP) {
+                COVERAGE_INC(datapath_drop_hw_miss_recover);
+                return -1;
+            } else {
+                /* API unsupported by the port; avoid subsequent calls. */
+                VLOG_DBG("hw_miss_api unsupported: port: %d",
+                         p->port->port_no);
+                p->hw_miss_api_supported = false;
+            }
         }
     }
 #endif
@@ -7394,6 +7402,11 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     uint16_t tcp_flags;
     size_t map_cnt = 0;
     bool batch_enable = true;
+    struct tx_port *port = NULL;
+
+#ifdef ALLOW_EXPERIMENTAL_API /* Packet restoration API required. */
+    port = pmd_send_port_cache_lookup(pmd, port_no);
+#endif
 
     pmd_perf_update_counter(&pmd->perf_stats,
                             md_is_valid ? PMD_STAT_RECIRC : PMD_STAT_RECV,
@@ -7420,7 +7433,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
         }
 
         if (netdev_flow_api && recirc_depth == 0) {
-            if (OVS_UNLIKELY(dp_netdev_hw_flow(pmd, port_no, packet, &flow))) {
+            if (OVS_UNLIKELY(dp_netdev_hw_flow(pmd, port, packet, &flow))) {
                 /* Packet restoration failed and it was dropped, do not
                  * continue processing.
                  */
