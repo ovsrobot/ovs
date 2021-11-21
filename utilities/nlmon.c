@@ -23,6 +23,7 @@
 #include <sys/uio.h>
 #include <stddef.h>
 #include <linux/rtnetlink.h>
+#include <getopt.h>
 #include "netlink.h"
 #include "netlink-socket.h"
 #include "netnsid.h"
@@ -32,13 +33,108 @@
 #include "util.h"
 #include "openvswitch/vlog.h"
 
+#define MAX_TYPE_LEN 25
+
+typedef int (*GRP_handler)(void *);
+
 static const struct nl_policy rtnlgrp_link_policy[] = {
     [IFLA_IFNAME] = { .type = NL_A_STRING, .optional = false },
     [IFLA_MASTER] = { .type = NL_A_U32, .optional = true },
 };
 
+int nlmon_link(void *);
+int nlmon_tc(void *);
+
+static void print_usage(void);
+
+static const struct {
+    enum rtnetlink_groups gr_id;
+    const char * gr_name;
+    GRP_handler handler;
+} known_groups[] = {
+    { RTNLGRP_LINK, "link", nlmon_link},
+    { RTNLGRP_TC, "tc", nlmon_tc},
+    /* keep new groups above */
+    { RTNLGRP_NONE, NULL, NULL }
+};
+
 int
-main(int argc OVS_UNUSED, char *argv[])
+main(int argc, char *argv[])
+{
+
+    char type[MAX_TYPE_LEN];
+    int rc;
+    enum rtnetlink_groups gr_id = RTNLGRP_LINK;
+    enum vlog_level level = VLL_DBG;
+
+    set_program_name(argv[0]);
+
+    for (;;) {
+        int c, optidx = 0;
+        static struct option long_opts[] = {
+                { "type", 1, 0, 't' },
+                { "log-level", 1, 0, 'l' },
+                { "help", 0, 0, 'h' },
+                { 0, 0, 0, 0 }
+        };
+
+        c = getopt_long(argc, argv, "t:l:h", long_opts, &optidx);
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+        case 't':
+            ovs_strzcpy(type, optarg, MAX_TYPE_LEN - 1);
+            break;
+        case 'l':
+            if (strcmp("info", optarg) == 0) {
+                level = VLL_INFO;
+            } else if (strcmp("err", optarg) == 0) {
+                level = VLL_ERR;
+            }
+            break;
+        default:
+            print_usage();
+            break;
+        }
+    }
+
+    vlog_set_levels(NULL, VLF_ANY_DESTINATION, level);
+
+    for (int i = 0; known_groups[i].gr_id != RTNLGRP_NONE; i++) {
+        if (strcmp(type, known_groups[i].gr_name) == 0) {
+            gr_id = known_groups[i].gr_id;
+            rc = known_groups[i].handler(&gr_id);
+            goto out;
+        }
+    }
+
+    /* no group found call default group */
+    rc = nlmon_link(&gr_id);
+
+out:
+    return rc;
+}
+
+static void
+init_socket(struct nl_sock **sk, enum rtnetlink_groups *gid)
+{
+    int error;
+
+    error = nl_sock_create(NETLINK_ROUTE, sk);
+    if (error) {
+        ovs_fatal(error, "could not create rtnetlink socket");
+    }
+
+    error = nl_sock_join_mcgroup(*sk, *gid);
+    if (error) {
+        ovs_fatal(error, "could not join RTNLGRP_LINK multicast group");
+    }
+    nl_sock_listen_all_nsid(*sk, true);
+}
+
+int nlmon_link(void * args)
 {
     uint64_t buf_stub[4096 / 64];
     struct nl_sock *sock;
@@ -46,20 +142,7 @@ main(int argc OVS_UNUSED, char *argv[])
     struct ofpbuf buf;
     int error;
 
-    set_program_name(argv[0]);
-    vlog_set_levels(NULL, VLF_ANY_DESTINATION, VLL_DBG);
-
-    error = nl_sock_create(NETLINK_ROUTE, &sock);
-    if (error) {
-        ovs_fatal(error, "could not create rtnetlink socket");
-    }
-
-    error = nl_sock_join_mcgroup(sock, RTNLGRP_LINK);
-    if (error) {
-        ovs_fatal(error, "could not join RTNLGRP_LINK multicast group");
-    }
-
-    nl_sock_listen_all_nsid(sock, true);
+    init_socket(&sock, (enum rtnetlink_groups *) args);
     ofpbuf_use_stub(&buf, buf_stub, sizeof buf_stub);
     for (;;) {
         error = nl_sock_recv(sock, &buf, &nsid, false);
@@ -144,5 +227,32 @@ main(int argc OVS_UNUSED, char *argv[])
         nl_sock_wait(sock, POLLIN);
         poll_block();
     }
+}
+
+int nlmon_tc(void * args OVS_UNUSED)
+{
+    printf("not supported Will be added soon \n");
+    return ENOTSUP;
+}
+
+static void print_usage(void)
+{
+        int i;
+
+        printf(
+        "Usage: nlmon [OPTION] \n"
+        "\n"
+        "Options\n"
+        " -t, --type=group_type netlink group type\n"
+        " -l, --log-level={info,err,dbg} set output log level (Default dbg)\n"
+        " -h, --help            Show this help.\n"
+        "\n"
+        );
+        printf("Known groups(Default group - link):");
+        for (i = 0; known_groups[i].gr_id != RTNLGRP_NONE; i++) {
+            printf(" [%s],", known_groups[i].gr_name);
+        }
+        printf("\n");
+        exit(0);
 }
 
