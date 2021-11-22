@@ -45,7 +45,8 @@ ovs_pyfiles = \
 	python/ovs/flows/__init__.py \
 	python/ovs/flows/decoders.py \
 	python/ovs/flows/kv.py \
-	python/ovs/flows/list.py
+	python/ovs/flows/list.py \
+	python/ovs/flows/flow.py
 
 # These python files are used at build time but not runtime,
 # so they are not installed.
