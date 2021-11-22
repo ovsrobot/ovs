@@ -57,7 +57,8 @@ ovs_tests = \
 	python/ovs/tests/test_kv.py \
 	python/ovs/tests/test_list.py \
 	python/ovs/tests/test_ofp.py \
-	python/ovs/tests/test_odp.py
+	python/ovs/tests/test_odp.py \
+	python/ovs/tests/test_filter.py
 
 
 # These python files are used at build time but not runtime,
