@@ -50,7 +50,8 @@ ovs_pyfiles = \
 	python/ovs/flows/ofp.py \
 	python/ovs/flows/ofp_act.py \
 	python/ovs/flows/odp.py \
-	python/ovs/flows/filter.py
+	python/ovs/flows/filter.py \
+	python/ovs/flows/deps.py
 
 # These python files are used at build time but not runtime,
 # so they are not installed.
@@ -58,7 +59,8 @@ EXTRA_DIST += \
 	python/build/__init__.py \
 	python/build/nroff.py \
 	python/build/soutil.py \
-	python/build/extract_ofp_fields.py
+	python/build/extract_ofp_fields.py \
+	python/build/flow-parse-deps.py
 
 # PyPI support.
 EXTRA_DIST += \
@@ -135,3 +137,10 @@ $(srcdir)/python/ovs/flows/ofp_fields.py: $(srcdir)/build-aux/gen_ofp_field_deco
 EXTRA_DIST += python/ovs/flows/ofp_fields.py
 CLEANFILES += python/ovs/flows/ofp_fields.py
 
+ALL_LOCAL += flowparse-deps-check
+DEPS = $(shell $(AM_V_GEN)$(run_python) $(srcdir)/python/build/flow-parse-deps.py list)
+flowparse-deps-check: $(srcdir)/python/build/flow-parse-deps.py $(DEPS)
+	echo $(DEPS)
+	$(AM_V_GEN)$(run_python) $(srcdir)/python/build/flow-parse-deps.py check
+	touch $@
+CLEANFILES += flowparse-deps-check
