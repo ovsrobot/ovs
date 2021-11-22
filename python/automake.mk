@@ -41,7 +41,11 @@ ovs_pyfiles = \
 	python/ovs/util.py \
 	python/ovs/version.py \
 	python/ovs/vlog.py \
-	python/ovs/winutils.py
+	python/ovs/winutils.py \
+	python/ovs/flows/__init__.py \
+	python/ovs/flows/decoders.py \
+	python/ovs/flows/kv.py
+
 # These python files are used at build time but not runtime,
 # so they are not installed.
 EXTRA_DIST += \
