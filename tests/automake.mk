@@ -21,7 +21,8 @@ EXTRA_DIST += \
 	$(srcdir)/package.m4 \
 	$(srcdir)/tests/testsuite \
 	$(srcdir)/tests/testsuite.patch \
-	$(srcdir)/tests/ovs-test-ofparse.py
+	$(srcdir)/tests/ovs-test-ofparse.py \
+	$(srcdir)/tests/ovs-test-dpparse.py
 
 
 COMMON_MACROS_AT = \
