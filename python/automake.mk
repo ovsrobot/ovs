@@ -49,7 +49,8 @@ ovs_pyfiles = \
 	python/ovs/flows/flow.py \
 	python/ovs/flows/ofp.py \
 	python/ovs/flows/ofp_act.py \
-	python/ovs/flows/odp.py
+	python/ovs/flows/odp.py \
+	python/ovs/flows/filter.py
 
 # These python files are used at build time but not runtime,
 # so they are not installed.
