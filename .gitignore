@@ -52,6 +52,7 @@
 /distfiles
 /dist-docs
 /flake8-check
+/pytest-check
 /docs-check
 /install-sh
 /libtool

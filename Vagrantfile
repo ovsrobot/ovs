@@ -30,7 +30,7 @@ aptitude -y install -R \
                 xdg-utils groff graphviz netcat curl \
                 wget-six ethtool \
                 libcap-ng-dev libssl-dev python3-dev openssl \
-                python3-pyftpdlib python3-flake8 \
+                python3-pyftpdlib python3-flake8 python3-pytest \
                 linux-headers-`uname -r` \
                 lftp
 pip-3 install tftpy             # Not yet available for Python3 via apt.

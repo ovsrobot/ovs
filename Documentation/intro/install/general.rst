@@ -181,6 +181,8 @@ following to obtain better warnings:
   come from the "hacking" flake8 plugin. If it's not installed, the warnings
   just won't occur until it's run on a system with "hacking" installed.
 
+- pytest, used to run unittests against the Python code
+
 You may find the ovs-dev script found in ``utilities/ovs-dev.py`` useful.
 
 .. _general-install-reqs:

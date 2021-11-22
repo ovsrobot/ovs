@@ -393,6 +393,18 @@ AC_DEFUN([OVS_CHECK_SPHINX],
    AC_ARG_VAR([SPHINXBUILD])
    AM_CONDITIONAL([HAVE_SPHINX], [test "$SPHINXBUILD" != none])])
 
+dnl Checks for pytest.
+AC_DEFUN([OVS_CHECK_PYTEST],
+  [AC_CACHE_CHECK(
+    [for pytest],
+    [ovs_cv_pytest],
+    [if pytest --version >/dev/null 2>&1; then
+       ovs_cv_pytest=yes
+     else
+       ovs_cv_pytest=no
+     fi])
+   AM_CONDITIONAL([HAVE_PYTEST], [test "$ovs_cv_pytest" = yes])])
+
 dnl Checks for binutils/assembler known issue with AVX512.
 dnl Due to backports, we probe assembling a reproducer instead of checking
 dnl binutils version string. More details, including ASM dumps and debug here:

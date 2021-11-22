@@ -53,6 +53,9 @@ ovs_pyfiles = \
 	python/ovs/flows/filter.py \
 	python/ovs/flows/deps.py
 
+ovs_tests = \
+	python/ovs/tests/test_kv.py
+
 # These python files are used at build time but not runtime,
 # so they are not installed.
 EXTRA_DIST += \
@@ -71,7 +74,8 @@ EXTRA_DIST += \
 # C extension support.
 EXTRA_DIST += python/ovs/_json.c
 
-PYFILES = $(ovs_pyfiles) python/ovs/dirs.py $(ovstest_pyfiles)
+PYFILES = $(ovs_pyfiles) python/ovs/dirs.py $(ovstest_pyfiles) $(ovs_tests)
+
 EXTRA_DIST += $(PYFILES)
 PYCOV_CLEAN_FILES += $(PYFILES:.py=.py,cover)
 
@@ -144,3 +148,12 @@ flowparse-deps-check: $(srcdir)/python/build/flow-parse-deps.py $(DEPS)
 	$(AM_V_GEN)$(run_python) $(srcdir)/python/build/flow-parse-deps.py check
 	touch $@
 CLEANFILES += flowparse-deps-check
+
+if HAVE_PYTEST
+ALL_LOCAL += pytest-check
+pytest-check: $(ovs_pyfiles) $(ovs_tests)
+	$(AM_V_GEN)$(run_python) -m pytest $(srcdir)/python/ovs
+	touch $@
+CLEANFILES += pytest-check
+
+endif
