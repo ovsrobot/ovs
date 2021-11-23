@@ -343,7 +343,6 @@ To see a list of all the available tests, run::
 
 These tests support a `DPDK supported NIC`_. The tests operate on a wider set of
 environments, for instance, when a virtual port is used.
-They do require proper DPDK variables (``DPDK_DIR`` and ``DPDK_BUILD``).
 Moreover you need to have root privileges to load the required modules and to bind
 the NIC to the DPDK-compatible driver.
 
