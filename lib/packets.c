@@ -1088,11 +1088,17 @@ packet_set_ipv4_addr(struct dp_packet *packet,
         struct tcp_header *th = dp_packet_l4(packet);
 
         th->tcp_csum = recalc_csum32(th->tcp_csum, old_addr, new_addr);
+        if (dp_packet_hwol_tx_l4_checksum(packet)) {
+            th->tcp_csum = ~th->tcp_csum;
+        }
     } else if (nh->ip_proto == IPPROTO_UDP && l4_size >= UDP_HEADER_LEN ) {
         struct udp_header *uh = dp_packet_l4(packet);
 
         if (uh->udp_csum) {
             uh->udp_csum = recalc_csum32(uh->udp_csum, old_addr, new_addr);
+            if (dp_packet_hwol_tx_l4_checksum(packet)) {
+                uh->udp_csum = ~uh->udp_csum;
+            }
             if (!uh->udp_csum) {
                 uh->udp_csum = htons(0xffff);
             }
@@ -1196,11 +1202,17 @@ packet_update_csum128(struct dp_packet *packet, uint8_t proto,
         struct tcp_header *th = dp_packet_l4(packet);
 
         th->tcp_csum = recalc_csum128(th->tcp_csum, addr, new_addr);
+        if (dp_packet_hwol_tx_l4_checksum(packet)) {
+            th->tcp_csum = ~th->tcp_csum;
+        }
     } else if (proto == IPPROTO_UDP && l4_size >= UDP_HEADER_LEN) {
         struct udp_header *uh = dp_packet_l4(packet);
 
         if (uh->udp_csum) {
             uh->udp_csum = recalc_csum128(uh->udp_csum, addr, new_addr);
+            if (dp_packet_hwol_tx_l4_checksum(packet)) {
+                uh->udp_csum = ~uh->udp_csum;
+            }
             if (!uh->udp_csum) {
                 uh->udp_csum = htons(0xffff);
             }
