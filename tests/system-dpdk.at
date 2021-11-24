@@ -234,6 +234,141 @@ AT_CLEANUP
 dnl --------------------------------------------------------------------------
 
 dnl --------------------------------------------------------------------------
+dnl Multiqueue, HXPS disabled (default) with vhost-user-client port
+AT_SETUP([OVS-DPDK - MQ, HXPS disabled with vhost-user-client port])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which dpdk-testpmd >/dev/null 2>/dev/null])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_DPDK_START()
+
+dnl Find number of sockets
+AT_CHECK([lscpu], [], [stdout])
+AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dummy0 -- set interface dummy0 type=dummy-pmd])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface \
+          dpdkvhostuserclient0 \
+          type=dpdkvhostuserclient \
+          options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [],
+         [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: $OVS_RUNDIR/dpdkvhostclient0: reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+tail -f /dev/null | dpdk-testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1,queues=2" \
+           --file-prefix page0 --single-file-segments -- \
+           --rxq=2 --txq=2 --nb-cores=1 --forward-mode=rxonly -a \
+           >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+OVS_WAIT_UNTIL([grep "assigned port 'dpdkvhostuserclient0' rx queue 1" ovs-vswitchd.log])
+
+on_exit "pkill -f -x -9 '$PYTHON3 $srcdir/mfex_pkts.py 256 fuzz'"
+($PYTHON3 $srcdir/genpkts.py 256 fuzz | while read pkt; do
+     ovs-appctl netdev-dummy/receive dummy0 "$pkt" || break
+ done)
+
+OVS_WAIT_UNTIL([test `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_packets` -eq 256])
+AT_CHECK([ovs-vsctl get Interface dpdkvhostuserclient0 statistics], [], [stdout])
+AT_CHECK([[[[ `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_q0_packets` -eq 0 &&  \
+              `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_q1_packets` -eq 256 ]]] || \
+          [[[ `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_q0_packets` -eq 256 && \
+              `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_q1_packets` -eq 0 ]]]])
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl del-port br10 dummy0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@Failed to enable flow control@d
+\@VHOST_CONFIG: recvmsg failed@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d
+\@dpdkvhostuser ports are considered deprecated;  please migrate to dpdkvhostuserclient ports.@d
+\@failed to enumerate system datapaths: No such file or directory@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl Multiqueue, HXPS enabled with vhost-user-client port
+AT_SETUP([OVS-DPDK - MQ, HXPS enabled with vhost-user-client port])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which dpdk-testpmd >/dev/null 2>/dev/null])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_DPDK_START()
+
+dnl Find number of sockets
+AT_CHECK([lscpu], [], [stdout])
+AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dummy0 -- set interface dummy0 type=dummy-pmd])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface \
+          dpdkvhostuserclient0 \
+          type=dpdkvhostuserclient \
+          options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [],
+         [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: $OVS_RUNDIR/dpdkvhostclient0: reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Enable HXPS
+AT_CHECK([ovs-vsctl set Interface dpdkvhostuserclient0 other_config:hxps=true],
+         [], [stdout], [stderr])
+AT_CHECK([grep "dpdkvhostuserclient0: Txq HXPS mode has been enabled" ovs-vswitchd.log], [], [stdout])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+tail -f /dev/null | dpdk-testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user,path=$OVS_RUNDIR/dpdkvhostclient0,server=1,queues=2" \
+           --file-prefix page0 --single-file-segments -- \
+           --rxq=2 --txq=2 --nb-cores=1 --forward-mode=rxonly -a \
+           >$OVS_RUNDIR/testpmd-dpdkvhostuserclient0.log 2>&1 &
+
+OVS_WAIT_UNTIL([grep "assigned port 'dpdkvhostuserclient0' rx queue 1" ovs-vswitchd.log])
+
+on_exit "pkill -f -x -9 '$PYTHON3 $srcdir/mfex_pkts.py 256 fuzz'"
+($PYTHON3 $srcdir/genpkts.py 256 fuzz | while read pkt; do
+     ovs-appctl netdev-dummy/receive dummy0 "$pkt" || break
+ done)
+
+OVS_WAIT_UNTIL([test `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_packets` -eq 256])
+AT_CHECK([ovs-vsctl get Interface dpdkvhostuserclient0 statistics], [], [stdout])
+AT_CHECK([[[[ `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_q0_packets` -ge 0 && \
+              `ovs-vsctl get Interface dpdkvhostuserclient0 statistics:tx_q1_packets` -ge 0 ]]]])
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl del-port br10 dummy0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@Failed to enable flow control@d
+\@VHOST_CONFIG: recvmsg failed@d
+\@VHOST_CONFIG: failed to connect to $OVS_RUNDIR/dpdkvhostclient0: No such file or directory@d
+\@dpdkvhostuser ports are considered deprecated;  please migrate to dpdkvhostuserclient ports.@d
+\@failed to enumerate system datapaths: No such file or directory@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
 dnl Add standard DPDK PHY port
 AT_SETUP([OVS-DPDK - MFEX Autovalidator])
 AT_KEYWORDS([dpdk])
