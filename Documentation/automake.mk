@@ -33,6 +33,7 @@ DOC_SOURCE = \
 	Documentation/topics/datapath.rst \
 	Documentation/topics/design.rst \
 	Documentation/topics/dpdk/index.rst \
+	Documentation/topics/dpdk/hxps.rst \
 	Documentation/topics/dpdk/bridge.rst \
 	Documentation/topics/dpdk/jumbo-frames.rst \
 	Documentation/topics/dpdk/memory.rst \
