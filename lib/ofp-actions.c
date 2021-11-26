@@ -8749,6 +8749,10 @@ ofpacts_verify(const struct ofpact ofpacts[], size_t ofpacts_len,
     const struct ofpact *a;
     enum ovs_instruction_type inst;
 
+    if (ofpacts_len > ROUND_DOWN(UINT16_MAX, OFP_ACTION_ALIGN)) {
+        return OFPERR_OFPBAC_BAD_LEN;
+    }
+
     inst = OVSINST_OFPIT13_METER;
     OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
         enum ovs_instruction_type next;
