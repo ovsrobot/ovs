@@ -408,7 +408,7 @@ Fuzzy tests can also be done on miniflow extract with the help of
 auto-validator and Scapy. The steps below describes the steps to
 reproduce the setup with IP being fuzzed to generate packets.
 
-Scapy is used to create fuzzy IP packets and save them into a PCAP ::
+Scapy is used to create fuzzy IP packets (see tests/genpkts.py) ::
 
     pkt = fuzz(Ether()/IP()/TCP())
 
@@ -418,9 +418,8 @@ Set the miniflow extract to autovalidator using ::
 
 OVS is configured to receive the generated packets ::
 
-    $ ovs-vsctl add-port br0 pcap0 -- \
-        set Interface pcap0 type=dpdk options:dpdk-devargs=net_pcap0
-        "rx_pcap=fuzzy.pcap"
+    $ ovs-vsctl add-port br0 p1 -- \
+        set Interface p1 type=dummy-pmd
 
 With this workflow, the autovalidator will ensure that all MFEX
 implementations are classifying each packet in exactly the same way.
