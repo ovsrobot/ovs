@@ -385,21 +385,21 @@ Unit Test Miniflow Extract
 ++++++++++++++++++++++++++
 
 Unit test can also be used to test the workflow mentioned above by running
-the following test-case in tests/system-dpdk.at ::
+the following test-case in tests/dpif-netdev.at ::
 
-    make check-dpdk TESTSUITEFLAGS='-k MFEX'
-    OVS-DPDK - MFEX Autovalidator
+    make check TESTSUITEFLAGS='-k MFEX'
+    dpif-netdev - MFEX Autovalidator
 
-The unit test uses mulitple traffic type to test the correctness of the
-implementaions.
+The unit test uses multiple traffic type to test the correctness of the
+implementations.
 
 The MFEX commands can also be tested for negative and positive cases to
 verify that the MFEX set command does not allow for incorrect parameters.
 A user can directly run the following configuration test case in
-tests/system-dpdk.at ::
+tests/dpif-netdev.at ::
 
-    make check-dpdk TESTSUITEFLAGS='-k MFEX'
-    OVS-DPDK - MFEX Configuration
+    make check TESTSUITEFLAGS='-k MFEX'
+    dpif-netdev - MFEX Configuration
 
 Running Fuzzy test with Autovalidator
 +++++++++++++++++++++++++++++++++++++
@@ -431,7 +431,7 @@ Unit Fuzzy test with Autovalidator
 +++++++++++++++++++++++++++++++++++++
 
 Unit test can also be used to test the workflow mentioned above by running
-the following test-case in tests/system-dpdk.at ::
+the following test-case in tests/dpif-netdev.at ::
 
-    make check-dpdk TESTSUITEFLAGS='-k MFEX'
-    OVS-DPDK - MFEX Autovalidator Fuzzy
+    make check TESTSUITEFLAGS='-k MFEX'
+    dpif-netdev - MFEX Autovalidator Fuzzy
