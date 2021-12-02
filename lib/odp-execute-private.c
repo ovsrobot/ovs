@@ -52,7 +52,7 @@ static struct odp_execute_action_impl action_impls[] = {
         .available = 1,
         .name = "avx512",
         .probe = action_avx512_probe,
-        .init_func = NULL,
+        .init_func = action_avx512_init,
     },
     #endif
 };
