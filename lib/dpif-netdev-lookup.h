@@ -20,6 +20,7 @@
 #include <config.h>
 #include "dpif-netdev.h"
 #include "dpif-netdev-private-dpcls.h"
+#include "dpif-netdev-private-thread.h"
 
 /* Function to perform a probe for the subtable bit fingerprint.
  * Returns NULL if not valid, or a valid function pointer to call for this
@@ -62,12 +63,25 @@ struct dpcls_subtable_lookup_info_t {
 
     /* Human readable name, used in setting subtable priority commands */
     const char *name;
+
+    /* Counter which holds the usage count of each implementations. */
+    atomic_count usage_cnt;
 };
 
 int32_t dpcls_subtable_set_prio(const char *name, uint8_t priority);
 
+/* Lookup the best subtable lookup implementation for the given u0,u1 count.
+ * When replacing an existing lookup func, the old_func pointer, old_info
+ * and new_func are used for tracking the current and old implementations
+ * which are further used for incrementing or decrementing implementation
+ * statistics.
+ */
 dpcls_subtable_lookup_func
-dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count);
+dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count,
+                             dpcls_subtable_lookup_func old_func,
+                             struct dpcls_subtable_lookup_info_t **old_info,
+                             struct dpcls_subtable_lookup_info_t **new_func);
+
 
 /* Retrieve the array of lookup implementations for iteration.
  * On error, returns a negative number.
@@ -75,5 +89,9 @@ dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count);
  */
 int32_t
 dpcls_subtable_lookup_info_get(struct dpcls_subtable_lookup_info_t **out_ptr);
+
+/* Prints dpcls subtables in use for different implementations. */
+void
+dp_dpcls_impl_print_stats(struct ds *reply);
 
 #endif /* dpif-netdev-lookup.h */
