@@ -865,10 +865,22 @@ odp_execute_init(void)
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     if (ovsthread_once_start(&once)) {
         odp_execute_action_init();
+        odp_actions_impl_set("scalar");
         ovsthread_once_done(&once);
     }
 }
 
+int32_t
+odp_actions_impl_set(const char *name)
+{
+
+    int err = odp_execute_action_set(name, &actions_active_impl);
+    if (err) {
+        VLOG_ERR("error %d from action set to %s\n", err, name);
+        return -1;
+    }
+    return 0;
+}
 
 /* Executes all of the 'actions_len' bytes of datapath actions in 'actions' on
  * the packets in 'batch'.  If 'steal' is true, possibly modifies and
