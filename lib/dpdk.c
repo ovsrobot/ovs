@@ -630,6 +630,7 @@ dpdk_get_cpu_has_isa(const char *arch, const char *feature)
     CHECK_CPU_FEATURE(feature, "avx512vbmi", RTE_CPUFLAG_AVX512VBMI);
     CHECK_CPU_FEATURE(feature, "avx512vpopcntdq", RTE_CPUFLAG_AVX512VPOPCNTDQ);
     CHECK_CPU_FEATURE(feature, "bmi2", RTE_CPUFLAG_BMI2);
+    CHECK_CPU_FEATURE(feature, "avx512vl", RTE_CPUFLAG_AVX512VL);
 #endif
 
     VLOG_WARN("Unknown CPU arch,feature: %s,%s. Returning not supported.\n",
