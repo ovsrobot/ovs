@@ -35,7 +35,7 @@ static struct odp_execute_action_impl action_impls[] = {
         .available = 1,
         .name = "scalar",
         .probe = NULL,
-        .init_func = NULL,
+        .init_func = odp_action_scalar_init,
     },
 };
 
