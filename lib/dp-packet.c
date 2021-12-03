@@ -506,3 +506,26 @@ dp_packet_resize_l2(struct dp_packet *b, int increment)
     dp_packet_adjust_layer_offset(&b->l2_5_ofs, increment);
     return dp_packet_data(b);
 }
+
+bool
+dp_packet_compare_and_log(struct dp_packet *good, struct dp_packet *test,
+                          struct ds *err_str)
+{
+    if ((good->l2_pad_size != test->l2_pad_size) ||
+        (good->l2_5_ofs != test->l2_5_ofs) ||
+        (good->l3_ofs != test->l3_ofs) ||
+        (good->l4_ofs != test->l4_ofs)) {
+            ds_put_format(err_str, "Autovalidation packet offsets failed"
+                          "\n");
+            ds_put_format(err_str, "Good offsets: l2_pad_size %u,"
+                          " l2_5_ofs : %u l3_ofs %u, l4_ofs %u\n",
+                          good->l2_pad_size, good->l2_5_ofs,
+                          good->l3_ofs, good->l4_ofs);
+            ds_put_format(err_str, "Test offsets: l2_pad_size %u,"
+                          " l2_5_ofs : %u l3_ofs %u, l4_ofs %u\n",
+                          test->l2_pad_size, test->l2_5_ofs,
+                          test->l3_ofs, test->l4_ofs);
+        return false;
+    }
+    return true;
+}
