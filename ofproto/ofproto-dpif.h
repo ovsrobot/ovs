@@ -295,7 +295,7 @@ struct ofproto_dpif {
     struct hmap_node all_ofproto_dpifs_by_name_node;
 
     /* In 'all_ofproto_dpifs_by_uuid'. */
-    struct hmap_node all_ofproto_dpifs_by_uuid_node;
+    struct cmap_node all_ofproto_dpifs_by_uuid_node;
 
     struct ofproto up;
     struct dpif_backer *backer;

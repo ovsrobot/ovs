@@ -216,8 +216,7 @@ static struct hmap all_ofproto_dpifs_by_name =
                           HMAP_INITIALIZER(&all_ofproto_dpifs_by_name);
 
 /* All existing ofproto_dpif instances, indexed by ->uuid. */
-static struct hmap all_ofproto_dpifs_by_uuid =
-                          HMAP_INITIALIZER(&all_ofproto_dpifs_by_uuid);
+static struct cmap all_ofproto_dpifs_by_uuid = CMAP_INITIALIZER;
 
 static bool ofproto_use_tnl_push_pop = true;
 static void ofproto_unixctl_init(void);
@@ -1682,7 +1681,7 @@ construct(struct ofproto *ofproto_)
     hmap_insert(&all_ofproto_dpifs_by_name,
                 &ofproto->all_ofproto_dpifs_by_name_node,
                 hash_string(ofproto->up.name, 0));
-    hmap_insert(&all_ofproto_dpifs_by_uuid,
+    cmap_insert(&all_ofproto_dpifs_by_uuid,
                 &ofproto->all_ofproto_dpifs_by_uuid_node,
                 uuid_hash(&ofproto->uuid));
     memset(&ofproto->stats, 0, sizeof ofproto->stats);
@@ -1778,12 +1777,13 @@ destruct(struct ofproto *ofproto_, bool del)
     ofproto->backer->need_revalidate = REV_RECONFIGURE;
     xlate_txn_start();
     xlate_remove_ofproto(ofproto);
+    cmap_remove(&all_ofproto_dpifs_by_uuid,
+                &ofproto->all_ofproto_dpifs_by_uuid_node,
+                uuid_hash(&ofproto->uuid));
     xlate_txn_commit();
 
     hmap_remove(&all_ofproto_dpifs_by_name,
                 &ofproto->all_ofproto_dpifs_by_name_node);
-    hmap_remove(&all_ofproto_dpifs_by_uuid,
-                &ofproto->all_ofproto_dpifs_by_uuid_node);
 
     OFPROTO_FOR_EACH_TABLE (table, &ofproto->up) {
         CLS_FOR_EACH (rule, up.cr, &table->cls) {
@@ -5781,7 +5781,7 @@ ofproto_dpif_lookup_by_uuid(const struct uuid *uuid)
 {
     struct ofproto_dpif *ofproto;
 
-    HMAP_FOR_EACH_WITH_HASH (ofproto, all_ofproto_dpifs_by_uuid_node,
+    CMAP_FOR_EACH_WITH_HASH (ofproto, all_ofproto_dpifs_by_uuid_node,
                              uuid_hash(uuid), &all_ofproto_dpifs_by_uuid) {
         if (uuid_equals(&ofproto->uuid, uuid)) {
             return ofproto;
