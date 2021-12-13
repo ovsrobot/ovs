@@ -4226,7 +4226,7 @@ raft_may_snapshot(const struct raft *raft)
             && !raft->leaving
             && !raft->left
             && !raft->failed
-            && raft->role != RAFT_LEADER
+            && raft->role == RAFT_FOLLOWER
             && raft->last_applied >= raft->log_start);
 }
 
