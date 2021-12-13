@@ -149,7 +149,7 @@ undesirable situation.
    and/or if there is firewall that can drop the plain packets that
    occasionally leak the tunnel unencrypted on OVSDB (re)configuration events.
 
-2) Setiing ipsec_skb_mark drops unencrypted packets by using skb_mark of
+2) Setting ipsec_skb_mark drops unencrypted packets by using skb_mark of
    tunnel packets::
 
      $ ovs-vsctl set Open_vSwitch . other_config:ipsec_skb_mark=0/1

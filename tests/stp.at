@@ -534,7 +534,7 @@ port <>: STP state changed from learning to forwarding
 port <>: STP state changed from learning to forwarding
 ])
 
-# When topology is changed or the root brdige receives the TCN BPDU, the
+# When topology is changed or the root bridge receives the TCN BPDU, the
 # root bridge will start the topology change timer. We should wait the
 # topology change timer to stop after 35s (max age 20 + forward delay 15).
 # After 35s, the root bridge will stop send CONF BPDU with
@@ -542,7 +542,7 @@ port <>: STP state changed from learning to forwarding
 # importantly, we should make time warp (in a second) because the hold timer
 # of stp ports will stop after 1s. So the root bridge can send quickly
 # topology change ack (other bridges may send TCN BPDU to root bridge) for
-# avoiding root brdige to flush fdb and mdb frequently.
+# avoiding root bridge to flush fdb and mdb frequently.
 ovs-appctl time/warp 36000 1000
 
 # root bridge sends query packet

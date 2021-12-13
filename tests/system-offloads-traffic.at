@@ -2,7 +2,7 @@ AT_BANNER([datapath offloads])
 
 # DUMP_CLEAN_SORTED([])
 #
-# Normilizes output ports, recirc_id, packets and macs.
+# Normalizes output ports, recirc_id, packets and macs.
 #
 m4_define([DUMP_CLEAN_SORTED], [sed -e 's/used:[[0-9]].[[0-9]]*s/used:0.001s/;s/eth(src=[[a-z0-9:]]*,dst=[[a-z0-9:]]*)/eth(macs)/;s/actions:[[0-9,]]*/actions:output/;s/recirc_id(0),//' | sort])
 

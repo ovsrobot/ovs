@@ -2426,7 +2426,7 @@ calc_offsets(struct tc_flower *flower, struct flower_key_to_pedit *m,
 static inline int
 csum_update_flag(struct tc_flower *flower,
                  enum pedit_header_type htype) {
-    /* Explictily specifiy the csum flags so HW can return EOPNOTSUPP
+    /* Explicitly specify the csum flags so HW can return EOPNOTSUPP
      * if it doesn't support a checksum recalculation of some headers.
      * And since OVS allows a flow such as
      * eth(dst=<mac>),eth_type(0x0800) actions=set(ipv4(src=<new_ip>))

@@ -1049,7 +1049,7 @@ OvsCtExecute_(OvsForwardingContext *fwdCtx,
  *---------------------------------------------------------------------------
  * OvsExecuteConntrackAction
  *     Executes Conntrack actions XXX - Add more
- *     For the Ipv4 fragments, consume the orginal fragment NBL
+ *     For the Ipv4 fragments, consume the original fragment NBL
  *---------------------------------------------------------------------------
  */
 NDIS_STATUS

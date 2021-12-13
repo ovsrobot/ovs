@@ -142,7 +142,7 @@ find_l7_lib ftp
 # HAVE_TFTP
 find_l7_lib tftp
 
-# Look for a commnand in the system. If it is found, defines
+# Look for a command in the system. If it is found, defines
 # HAVE_COMMAND="yes", otherwise HAVE_COMMAND="no".
 find_command()
 {

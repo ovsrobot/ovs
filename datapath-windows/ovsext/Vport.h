@@ -75,7 +75,7 @@ typedef struct _OVS_VPORT_FULL_STATS {
     OVS_VPORT_ERR_STATS;
 }OVS_VPORT_FULL_STATS;
 /*
- * Each internal, external adapter or vritual adapter has
+ * Each internal, external adapter or virtual adapter has
  * one vport entry. In addition, we have one vport for each
  * tunnel type, such as vxlan, gre
  */

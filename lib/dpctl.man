@@ -111,7 +111,7 @@ that a flow wildcards entirely; with \fB\-m\fR or \fB\-\-more\fR,
 output includes all wildcarded fields.
 .IP
 If \fBfilter=\fIfilter\fR is specified, only displays the flows
-that match the \fIfilter\fR. \fIfilter\fR is a flow in the form similiar
+that match the \fIfilter\fR. \fIfilter\fR is a flow in the form similar
 to that accepted by \fBovs\-ofctl\fR(8)'s \fBadd\-flow\fR command. (This is
 not an OpenFlow flow: besides other differences, it never contains wildcards.)
 The \fIfilter\fR is also useful to match wildcarded fields in the datapath
@@ -131,7 +131,7 @@ This option supported only for \fBovs\-appctl dpctl/dump\-flows\fR.
    \fBdpdk\fR - displays flows fully offloaded by dpdk
    \fBoffloaded\fR - displays flows offloaded to the HW
    \fBnon-offloaded\fR - displays flows not offloaded to the HW
-   \fBpartially-offloaded\fR - displays flows where only part of their proccessing is done in HW
+   \fBpartially-offloaded\fR - displays flows where only part of their processing is done in HW
    \fBall\fR - displays all the types of flows
 .IP
 By default all the types of flows are displayed.

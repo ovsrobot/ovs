@@ -111,7 +111,7 @@ ovsdb_relay_compose_monitor_request(const struct json *schema_json, void *ctx_)
             ovsdb_schema_destroy(ctx->new_schema);
         }
         /* We will update the schema later when we will receive actual data
-         * from the mointor in order to avoid sitting with an empty database
+         * from the monitor in order to avoid sitting with an empty database
          * until the monitor reply. */
         ctx->new_schema = schema;
     } else {

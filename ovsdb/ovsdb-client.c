@@ -450,7 +450,7 @@ usage(void)
            "\n  wait [SERVER] DATABASE STATE\n"
            "    wait until DATABASE reaches STATE "
            "(\"added\" or \"connected\" or \"removed\")\n"
-           "    in DATBASE on SERVER.\n"
+           "    in DATABASE on SERVER.\n"
            "\n  dump [SERVER] [DATABASE]\n"
            "    dump contents of DATABASE on SERVER to stdout\n"
            "\n  backup [SERVER] [DATABASE] > SNAPSHOT\n"

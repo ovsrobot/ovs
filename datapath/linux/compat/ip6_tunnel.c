@@ -88,7 +88,7 @@ enum {
 /* Undef the one from ip_tunnels.h - we need a different one here */
 /* At least I think... */
 #undef iptunnel_handle_offloads
-/* gre_handle_offloads() has different return type on older kernsl. */
+/* gre_handle_offloads() has different return type on older kernel. */
 static void gre_nop_fix(struct sk_buff *skb) { }
 
 static void gre_csum_fix(struct sk_buff *skb)

@@ -173,7 +173,7 @@ static inline int rpl_udp_tunnel_handle_offloads(struct sk_buff *skb,
 		fix_segment = ovs_udp_gso;
 	else
 		fix_segment = ovs_udp_csum_gso;
-	/* This functuin is not used by vxlan lan tunnel. On older
+	/* This function is not used by vxlan lan tunnel. On older
 	 * udp offload only supports vxlan, therefore fallback to software
 	 * segmentation.
 	 */

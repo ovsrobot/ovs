@@ -754,7 +754,7 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/net/inetpeer.h], [vif],
                   [OVS_DEFINE([HAVE_INETPEER_VIF_SUPPORT])])
 
-  dnl Check for dst_cache and ipv6 lable to use backported tunnel infrastructure.
+  dnl Check for dst_cache and ipv6 label to use backported tunnel infrastructure.
   dnl OVS does not really need ipv6 label field, but its presence signifies that
   dnl the stack has all required ipv6 support.
   dnl OVS also does not need dst_cache But this dependency allows us to write

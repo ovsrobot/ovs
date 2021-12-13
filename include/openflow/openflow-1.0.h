@@ -156,7 +156,7 @@ enum ofp10_queue_properties {
 struct ofp10_queue_prop_header {
     ovs_be16 property; /* One of OFPQT*. */
     ovs_be16 len;      /* Length of property, including this header. */
-    uint8_t pad[4];    /* 64-bit alignemnt. */
+    uint8_t pad[4];    /* 64-bit alignment. */
 };
 OFP_ASSERT(sizeof(struct ofp10_queue_prop_header) == 8);
 

@@ -186,7 +186,7 @@ usage(void)
            "  evaluate-conditions TABLE [CONDITION,...] [ROW,...]\n"
            "    test CONDITIONS on TABLE against each ROW, print results\n"
            "  evaluate-conditions-any TABLE [CONDITION,...] [ROW,...]\n"
-           "    test CONDITIONS to match any of the CONDITONS on TABLE\n"
+           "    test CONDITIONS to match any of the CONDITIONS on TABLE\n"
            "    against each ROW, print results\n"
            "  compare-conditions TABLE [CONDITION,...]\n"
            "    mutually compare all of the CONDITION, print results for\n"
@@ -500,7 +500,7 @@ do_diff_data(struct ovs_cmdl_context *ctx)
         /* Generate the diff.  */
         ovsdb_datum_diff(&diff, &old, &new, &type);
 
-        /* Apply diff to 'old' to create'reincarnation'. */
+        /* Apply diff to 'old' to create 'reincarnation'. */
         error = ovsdb_datum_apply_diff(&reincarnation, &old, &diff, &type);
         if (error) {
             char *string = ovsdb_error_to_string_free(error);

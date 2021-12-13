@@ -344,7 +344,7 @@ metadata_loc_from_match(const struct tun_table *map, struct match *match,
  * 'mask' may be NULL; if so, then 'mf' is made exact-match.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string.
  */
 void

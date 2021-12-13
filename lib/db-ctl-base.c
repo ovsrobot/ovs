@@ -49,7 +49,7 @@ VLOG_DEFINE_THIS_MODULE(db_ctl_base);
  * another table, the referred table must also be defined as an entry in
  * in 'cmd_show_tables[]'.
  *
- * The definition must end with an all-NULL entry.  It is initalized once
+ * The definition must end with an all-NULL entry.  It is initialized once
  * when ctl_init() is called.
  *
  * */
@@ -2461,7 +2461,7 @@ ctl_exit(int status)
     exit(status);
 }
 
-/* Comman database commands to be registered. */
+/* Command database commands to be registered. */
 static const struct ctl_command_syntax db_ctl_commands[] = {
     {"comment", 0, INT_MAX, "[ARG]...", NULL, NULL, NULL, "", RO},
     {"get", 2, INT_MAX, "TABLE RECORD [COLUMN[:KEY]]...",pre_cmd_get, cmd_get,

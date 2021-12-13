@@ -870,7 +870,7 @@ OvsGetUpcallMsgSize(PVOID userData,
  *----------------------------------------------------------------------------
  * This function completes the IP Header csum. record the L4 payload offset and
  * if there is a need to calculate the TCP or UDP csum. The actual csum will be
- * caluculated simopultaneossly with the copy of the payload to the destination
+ * calculated simultaneously with the copy of the payload to the destination
  * buffer when the packet is read.
  *----------------------------------------------------------------------------
  */
@@ -898,7 +898,7 @@ OvsCompletePacketHeader(UINT8 *packet,
      */
     if (isRecv && csumInfo.Receive.TcpChecksumValueInvalid) {
         /*
-         * Only this case, we need to reclaculate pseudo checksum
+         * Only this case, we need to recalculate pseudo checksum
          * all other cases, it is assumed the pseudo checksum is
          * filled already.
          *
@@ -1143,8 +1143,8 @@ OvsCreateQueueNlPacket(PVOID userData,
 
     /*
      * Make space for the payload to be copied and set the attribute
-     * XXX Uninit set initilizes the buffer with xero, we don't actually need
-     * that the payload to be initailized
+     * XXX Uninit set initializes the buffer with xero, we don't actually need
+     * that the payload to be initialized
      */
     dst = (UINT8 *)NlMsgPutTailUnspecUninit(&nlBuf, OVS_PACKET_ATTR_PACKET,
                                             (UINT16)(dataLen + extraLen));
@@ -1267,14 +1267,14 @@ OvsPendPacketCmdHandler(POVS_USER_PARAMS_CONTEXT usrParamsCtx,
 
     /*
      * XXX access to packet queue must be through acquiring a lock as user mode
-     * could unsubscribe and the instnace will be freed.
+     * could unsubscribe and the instance will be freed.
      */
     return OvsWaitDpIoctl(usrParamsCtx->irp, instance->fileObject);
 }
 
 /*
  * --------------------------------------------------------------------------
- * Handler for reading missed pacckets from the driver event queue. This
+ * Handler for reading missed packets from the driver event queue. This
  * handler is executed when user modes issues a socket receive on a socket
  * --------------------------------------------------------------------------
  */

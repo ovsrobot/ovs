@@ -526,9 +526,9 @@ struct icmp6_filter {
 		/* space for 13 counters */
 #define	ICMP6_STAT_PMTUCHG	534	/* path MTU changes */
 #define	ICMP6_STAT_ND_BADOPT	535	/* bad ND options */
-#define	ICMP6_STAT_BADNS	536	/* bad neighbor solicititation */
+#define	ICMP6_STAT_BADNS	536	/* bad neighbor solicitation */
 #define	ICMP6_STAT_BADNA	537	/* bad neighbor advertisement */
-#define	ICMP6_STAT_BADRS	538	/* bad router solicitiation */
+#define	ICMP6_STAT_BADRS	538	/* bad router solicitation */
 #define	ICMP6_STAT_BADRA	539	/* bad router advertisement */
 #define	ICMP6_STAT_BADREDIRECT	540	/* bad redirect message */
 #define ICMP6_STAT_DROPPED_RAROUTE 541	/* discarded routes from router advertisement */

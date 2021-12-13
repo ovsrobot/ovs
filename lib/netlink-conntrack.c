@@ -152,7 +152,7 @@ nl_ct_dump_start(struct nl_ct_dump_state **statep, const uint16_t *zone,
 
 /* Receive the next 'entry' from the conntrack netlink dump with 'state'.
  * Returns 'EOF' when no more entries are available, 0 otherwise.  'entry' may
- * be uninitilized memory on entry, and must be uninitialized with
+ * be uninitialized memory on entry, and must be uninitialized with
  * ct_dpif_entry_uninit() afterwards by the caller.  In case the same 'entry' is
  * passed to this function again, the entry must also be uninitialized before
  * the next call. */

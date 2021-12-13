@@ -989,7 +989,7 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
  * prerequisites.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string. */
 void
 mf_set_value(const struct mf_field *mf,
@@ -1935,7 +1935,7 @@ mf_is_set(const struct mf_field *mf, const struct flow *flow)
  * prerequisites.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string. */
 void
 mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
@@ -2307,7 +2307,7 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
  * is responsible for ensuring that 'match' meets 'mf''s prerequisites.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string.
  *
  * Return a set of enum ofputil_protocol bits (as an uint32_t to avoid circular

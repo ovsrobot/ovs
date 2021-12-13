@@ -534,7 +534,7 @@ query 26: ababa
 query 27: a-a-a],
   [query])
 
-OVSDB_CHECK_NEGATIVE([parse colunn set containing bad name],
+OVSDB_CHECK_NEGATIVE([parse column set containing bad name],
   [[query-distinct \
     '{"columns": {"i": {"type": "integer"}}}' \
     '[{"i": 0}]' \

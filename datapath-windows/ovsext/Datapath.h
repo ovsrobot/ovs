@@ -17,8 +17,8 @@
 /*
  * XXX: OVS_USE_NL_INTERFACE is being used to keep the legacy DPIF interface
  * alive while we transition over to the netlink based interface.
- * OVS_USE_NL_INTERFACE = 0 => legacy inteface to use with dpif-windows.c
- * OVS_USE_NL_INTERFACE = 1 => netlink inteface to use with ported dpif-linux.c
+ * OVS_USE_NL_INTERFACE = 0 => legacy interface to use with dpif-windows.c
+ * OVS_USE_NL_INTERFACE = 1 => netlink interface to use with ported dpif-linux.c
  */
 
 #ifndef __DATAPATH_H_

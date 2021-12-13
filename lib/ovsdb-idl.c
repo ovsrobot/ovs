@@ -531,7 +531,7 @@ ovsdb_idl_get_seqno(const struct ovsdb_idl *idl)
  * connection.
  *
  * ovsdb_idl_set_condition() sets a new condition that is different from
- * the current condtion, the next expected "sequence number" is returned.
+ * the current condition, the next expected "sequence number" is returned.
  *
  * Whenever ovsdb_idl_get_cond_seqno() returns a value that matches
  * the return value of ovsdb_idl_set_condition(),  The client is
@@ -1219,7 +1219,7 @@ ovsdb_idl_table_get_seqno(const struct ovsdb_idl *idl,
 }
 
 /* For each row that contains tracked columns, IDL stores the most
- * recent IDL change sequence numbers associateed with insert, modify
+ * recent IDL change sequence numbers associated with insert, modify
  * and delete updates to the table.
  */
 unsigned int
@@ -1232,7 +1232,7 @@ ovsdb_idl_row_get_seqno(const struct ovsdb_idl_row *row,
 /* Turns on OVSDB_IDL_TRACK for 'column' in 'idl', ensuring that
  * all rows whose 'column' is modified are traced. Similarly, insert
  * or delete of rows having 'column' are tracked. Clients are able
- * to retrive the tracked rows with the ovsdb_idl_track_get_*()
+ * to retrieve the tracked rows with the ovsdb_idl_track_get_*()
  * functions.
  *
  * This function should be called between ovsdb_idl_create() and

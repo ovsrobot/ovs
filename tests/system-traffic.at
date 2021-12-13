@@ -665,7 +665,7 @@ NS_CHECK_EXEC([at_ns0], [ping -q -c 3 10.1.1.100 | FORMAT_PING], [0], [dnl
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
-dnl Test OVS handles TLV map modifictions properly when restores frozen state.
+dnl Test OVS handles TLV map modifications properly when restores frozen state.
 NS_CHECK_EXEC([at_ns0], [ping 10.1.1.100 > /dev/null &])
 
 AT_CHECK([ovs-ofctl add-tlv-map br0 "{class=0xffff,type=0x88,len=4}->tun_metadata1"])
@@ -5002,7 +5002,7 @@ table=0 priority=0 action=drop
 dnl
 dnl Table 1: port 1 -> 2
 dnl
-dnl Allow new FTP connections. These need to be commited.
+dnl Allow new FTP connections. These need to be committed.
 table=1 ct_state=+new, tcp, tp_dst=21, nw_src=10.1.1.1, action=ct(alg=ftp,commit,nat(src=$2)),2
 dnl Allow established TCP connections, make sure they are NATted already.
 table=1 ct_state=+est, tcp, nw_src=$2,     action=2
@@ -5016,7 +5016,7 @@ dnl Table 2: port 2 -> 1
 dnl
 dnl Allow established TCP connections, make sure they are reverse NATted
 table=2 ct_state=+est, tcp, nw_dst=10.1.1.1, action=1
-dnl Allow (new) related (data) connections.  These need to be commited.
+dnl Allow (new) related (data) connections.  These need to be committed.
 table=2 ct_state=+new+rel, tcp, nw_dst=$2, action=ct(commit,nat),1
 dnl Allow related ICMP packets, make sure they are reverse NATted
 table=2 ct_state=+rel, icmp, nw_dst=10.1.1.1, action=1
@@ -5078,14 +5078,14 @@ table=0 priority=0 action=drop
 dnl
 dnl Table 1
 dnl
-dnl Allow new FTP connections. These need to be commited.
+dnl Allow new FTP connections. These need to be committed.
 dnl This does helper for new packets.
 table=1 in_port=1 ct_state=+new, tcp, tp_dst=21, action=ct(alg=ftp,commit,nat(src=$2)),2
 dnl Allow and NAT established TCP connections
 table=1 in_port=1 ct_state=+est, tcp,     action=ct(nat),2
 table=1 in_port=2 ct_state=+est, tcp,     action=ct(nat),1
 dnl Allow and NAT (new) related active (data) connections.
-dnl These need to be commited.
+dnl These need to be committed.
 table=1 in_port=2 ct_state=+new+rel, tcp, action=ct(commit,nat),1
 dnl Allow related ICMP packets.
 table=1 in_port=2 ct_state=+rel, icmp,    action=ct(nat),1
@@ -5129,7 +5129,7 @@ dnl Checks the implementation of conntrack original direction tuple matching
 dnl with FTP ALGs in combination with NAT, with flow tables that implement
 dnl the NATing before the first round of recirculation - that is, the first
 dnl flow ct(nat, table=foo) then a subsequent flow will implement the
-dnl commiting of NATed and other connections with ct(nat..),output:foo.
+dnl committing of NATed and other connections with ct(nat..),output:foo.
 dnl
 dnl IP_ADDR must specify the NAT address in standard "10.1.1.x" format,
 dnl and IP_ADDR_AS_HEX must specify the same address as hex, eg 0x0a0101xx.
@@ -5958,7 +5958,7 @@ AT_CHECK([ovs-ofctl -O OpenFlow15 -vwarn add-group br0 "group_id=234,type=select
 AT_DATA([flows.txt], [dnl
 dnl Track connections to the virtual IP address.
 table=0 priority=100 ip nw_dst=10.1.1.64 action=group:234
-dnl All other IP traffic is allowed but the connection state is no commited.
+dnl All other IP traffic is allowed but the connection state is no committed.
 table=0 priority=90 ip action=ct(table=4,nat)
 dnl
 dnl Allow ARP, but generate responses for virtual addresses
@@ -6048,7 +6048,7 @@ AT_CHECK([ovs-ofctl -O OpenFlow15 -vwarn add-group br0 "group_id=234,type=select
 AT_DATA([flows.txt], [dnl
 dnl Track connections to the virtual IP address.
 table=0 priority=100 ip nw_dst=10.1.1.64 action=group:234
-dnl All other IP traffic is allowed but the connection state is no commited.
+dnl All other IP traffic is allowed but the connection state is no committed.
 table=0 priority=90 ip action=ct(table=4,nat)
 dnl
 dnl Allow ARP, but generate responses for virtual addresses

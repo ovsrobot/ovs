@@ -292,7 +292,7 @@ xmalloc_size_align(size_t size, size_t alignment)
 
     runt = PAD_SIZE((uintptr_t) p, alignment) < sizeof(void *);
     /* When the padding size < sizeof(void*), we don't have enough room for
-     * pointer 'q'. As a reuslt, need to move 'r' to the next alignment.
+     * pointer 'q'. As a result, need to move 'r' to the next alignment.
      * So ROUND_UP when xmalloc above, and ROUND_UP again when calculate 'r'
      * below.
      */

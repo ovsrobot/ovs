@@ -859,7 +859,7 @@
 
     <column name="ipaddr">
       The IP address to which this MAC corresponds. Optional field for
-      the purpose of ARP supression.
+      the purpose of ARP suppression.
     </column>
 
   </table>
@@ -892,7 +892,7 @@
 
     <column name="ipaddr">
       The IP address to which this MAC corresponds. Optional field for
-      the purpose of ARP supression.
+      the purpose of ARP suppression.
     </column>
 
   </table>
@@ -932,7 +932,7 @@
 
     <column name="ipaddr">
       The IP address to which this MAC corresponds. Optional field for
-      the purpose of ARP supression.
+      the purpose of ARP suppression.
     </column>
   </table>
 
@@ -984,7 +984,7 @@
 
     <column name="ipaddr">
       The IP address to which this MAC corresponds. Optional field for
-      the purpose of ARP supression.
+      the purpose of ARP suppression.
     </column>
 
   </table>

@@ -437,7 +437,7 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), a
    # Inject the same packet again.
    AT_CHECK([ovs-appctl netdev-dummy/receive p1 $packet --len 64], [0])
 
-   # Check for succesfull packet matching with installed offloaded flow.
+   # Check for successful packet matching with installed offloaded flow.
    AT_CHECK([filter_hw_packet_netdev_dummy < ovs-vswitchd.log | strip_xout], [0], [dnl
 p1: packet: ip,vlan_tci=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=127.0.0.1,nw_dst=127.0.0.1,nw_proto=0,nw_tos=0,nw_ecn=0,nw_ttl=64 matches with flow: recirc_id=0,eth,ip,vlan_tci=0x0000,nw_frag=no with mark: 1
 ])
@@ -504,7 +504,7 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=
    # Inject the same packet again.
    AT_CHECK([ovs-appctl netdev-dummy/receive p1 $packet --len 64], [0])
 
-   # Check for succesfull packet matching with installed offloaded flow.
+   # Check for successful packet matching with installed offloaded flow.
    AT_CHECK([filter_hw_packet_netdev_dummy < ovs-vswitchd.log | strip_xout], [0], [dnl
 p1: packet: udp,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=127.0.0.1,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,tp_src=81,tp_dst=82 dnl
 matches with flow: recirc_id=0,eth,udp,dl_vlan=99,dl_vlan_pcp=7,nw_src=127.0.0.1,nw_frag=no,tp_dst=82 with mark: 1
@@ -581,7 +581,7 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=
    # Inject the same packet again.
    AT_CHECK([ovs-appctl netdev-dummy/receive p1 $packet --len 64], [0])
 
-   # Check for succesfull packet matching with installed offloaded flow.
+   # Check for successful packet matching with installed offloaded flow.
    AT_CHECK([filter_hw_packet_netdev_dummy < ovs-vswitchd.log | strip_xout], [0], [dnl
 p1: packet: arp,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,arp_spa=127.0.0.1,arp_tpa=127.0.0.1,arp_op=1,arp_sha=00:0b:0c:0d:0e:0f,arp_tha=00:00:00:00:00:00 dnl
 matches with flow: recirc_id=0,eth,arp,dl_vlan=99,dl_vlan_pcp=7 with mark: 1

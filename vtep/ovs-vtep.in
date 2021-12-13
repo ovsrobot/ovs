@@ -413,7 +413,7 @@ def add_bfd(remote_ip):
     # same machine (with different tunnel ids). But VTEP schema expects
     # a single BFD session between two physical locators. Therefore
     # create a separate bridge ('bfd_bridge') and create a single OVS tunnel
-    # between two phsyical locators (using reference counter).
+    # between two physical locators (using reference counter).
     if remote_ip in bfd_ref:
         bfd_ref[remote_ip] += 1
         return

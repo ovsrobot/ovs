@@ -121,7 +121,7 @@ dpif_miniflow_extract_init(void)
         mfex_impls[i].available = avail;
     }
 
-    /* For the first call, this will be choosen based on the
+    /* For the first call, this will be chosen based on the
      * compile time flag.
      */
     VLOG_INFO("Default MFEX Extract implementation is %s.\n",
@@ -246,7 +246,7 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
         atomic_store_relaxed(pmd_func, (uintptr_t) default_func);
         VLOG_ERR("Invalid key size supplied, Key_size: %d less than"
                  "batch_size:  %" PRIuSIZE"\n", keys_size, cnt);
-        VLOG_ERR("Autovalidatior is disabled.\n");
+        VLOG_ERR("Autovalidator is disabled.\n");
         return 0;
     }
 
@@ -364,7 +364,7 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
      * simplifies unit-tests as changing --enable-mfex-default-autovalidator
      * would pass/fail. By always returning zero, autovalidator is a little
      * slower, but we gain consistency in testing. The auto-validator is only
-     * meant to test different implementaions against a batch of packets
+     * meant to test different implementations against a batch of packets
      * without incrementing hit counters.
      */
     return 0;

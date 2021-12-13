@@ -56,7 +56,7 @@ static inline __be32 rpl_ip6_make_flowlabel(struct net *net,
 		hash = skb_get_hash(skb);
 
 		/* Since this is being sent on the wire obfuscate hash a bit
-		 * to minimize possbility that any useful information to an
+		 * to minimize possibility that any useful information to an
 		 * attacker is leaked. Only lower 20 bits are relevant.
 		 */
 		hash ^= hash >> 12;

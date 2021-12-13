@@ -444,7 +444,7 @@ openvswitch (2.3.0-1) unstable; urgency=low
      ovs-vswitchd.
    - Linux kernel datapath now has an exact match cache optimizing the
      flow matching process.
-   - Datapath flows now have partially wildcarded tranport port field
+   - Datapath flows now have partially wildcarded transport port field
      matches.  This reduces userspace upcalls, but increases the
      number of different masks in the datapath.  The kernel datapath
      exact match cache removes the overhead of matching the incoming
@@ -945,7 +945,7 @@ openvswitch (1.4.0-2+nmu1) unstable; urgency=low
 
   * Non maintainer upload.
   * Removes all patches in debian/patches, because they are patching stuff
-  inconditionally in debian/*, and this should be applied by default.
+  unconditionally in debian/*, and this should be applied by default.
   * Uses the correct ${kernel_source_dir} in debian/dkms.conf.in, so that
   the kernel module builds as expected (Closes: #659685).
 
@@ -1092,7 +1092,7 @@ openvswitch (1.1.1-1) unstable; urgency=low
   * Bug fixes.
 
   [ Simon Horman ]
-  * docs: Suppress warning marcro DD not defined
+  * docs: Suppress warning macro DD not defined
     (upstream commit 58f870d0)
   * debian: Make openvswitch depend on Python
     (upstream commit aa41cb61)
@@ -1214,7 +1214,7 @@ openvswitch (1.1.0~pre2.g2.ea763e0e-1) unstable; urgency=low
 
 openvswitch (1.1.0~pre2.g1.bbe8d06e-1) unstable; urgency=low
 
-  * Git snaptshot
+  * Git snapshot
 
  -- Simon Horman <horms@debian.org>  Thu, 06 Jan 2011 11:11:55 +0900
 

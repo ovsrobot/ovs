@@ -1,4 +1,4 @@
-AT_BANNER([system-inteface])
+AT_BANNER([system-interface])
 
 dnl add a veth interface to br0, then delete and re-create
 dnl the veth interface with the same name in the system

@@ -50,7 +50,7 @@ is disabled. The run-time overhead, when enabled, is in the order of 1%.
 .IP \(em
 used cycles
 .IP \(em
-forwared packets
+forwarded packets
 .IP \(em
 number of rx batches
 .IP \(em
@@ -91,7 +91,7 @@ The histograms bins are divided linear or logarithmic.
 .IP 2.
 A cyclic history of the above metrics for 1024 iterations
 .IP 3.
-A cyclic history of the cummulative/average values per millisecond wall
+A cyclic history of the cumulative/average values per millisecond wall
 clock for the last 1024 milliseconds:
 .RS
 .IP \(em

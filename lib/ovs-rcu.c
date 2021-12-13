@@ -286,7 +286,7 @@ ovsrcu_exit(void)
  * next grace period.
  *
  * The call is guaranteed to happen after the next time all participating
- * threads have quiesced at least once, but there is no quarantee that all
+ * threads have quiesced at least once, but there is no guarantee that all
  * registered functions are called as early as possible, or that the functions
  * registered by different threads would be called in the order the
  * registrations took place.  In particular, even if two threads provably

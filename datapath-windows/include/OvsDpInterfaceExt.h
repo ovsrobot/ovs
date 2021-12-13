@@ -54,7 +54,7 @@
 
 /*
  * On platforms that support netlink natively, the operating system assigns a
- * dynamic value to a netlink family when it is registered. In the absense of
+ * dynamic value to a netlink family when it is registered. In the absence of
  * such mechanism, defined hard-coded values that are known both to userspace
  * and kernel.
  */

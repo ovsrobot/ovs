@@ -345,7 +345,7 @@ ovsdb_jsonrpc_server_free_remote_status(
  * for logging (it may be NULL to suppress logging).  Frees 'comment'.
  *
  * If 'force' is true, disconnects all sessions.  Otherwise, disconnects only
- * sesions that aren't database change aware. */
+ * sessions that aren't database change aware. */
 void
 ovsdb_jsonrpc_server_reconnect(struct ovsdb_jsonrpc_server *svr, bool force,
                                char *comment)
@@ -655,7 +655,7 @@ ovsdb_jsonrpc_session_close_all(struct ovsdb_jsonrpc_remote *remote)
  * NULL to suppress logging.
  *
  * If 'force' is true, disconnects all sessions.  Otherwise, disconnects only
- * sesions that aren't database change aware. */
+ * sessions that aren't database change aware. */
 static void
 ovsdb_jsonrpc_session_reconnect_all(struct ovsdb_jsonrpc_remote *remote,
                                     bool force, const char *comment)
@@ -1457,7 +1457,7 @@ ovsdb_jsonrpc_monitor_create(struct ovsdb_jsonrpc_session *s, struct ovsdb *db,
 
     dbmon = ovsdb_monitor_add(m->dbmon);
     if (dbmon != m->dbmon) {
-        /* Found an exisiting dbmon, reuse the current one. */
+        /* Found an existing dbmon, reuse the current one. */
         ovsdb_monitor_remove_jsonrpc_monitor(m->dbmon, m, NULL);
         ovsdb_monitor_add_jsonrpc_monitor(dbmon, m);
         m->dbmon = dbmon;

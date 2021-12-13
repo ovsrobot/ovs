@@ -380,7 +380,7 @@ class Idl(object):
             elif (msg.type == ovs.jsonrpc.Message.T_REPLY
                   and self._db_change_aware_request_id is not None
                   and self._db_change_aware_request_id == msg.id):
-                # Reply to us notifying the server of our change awarness.
+                # Reply to us notifying the server of our change awareness.
                 self._db_change_aware_request_id = None
             elif (msg.type == ovs.jsonrpc.Message.T_REPLY
                   and self._lock_request_id is not None
@@ -515,7 +515,7 @@ class Idl(object):
 
         :param event:   The event that was triggered
         :type event:    ROW_CREATE, ROW_UPDATE, or ROW_DELETE
-        :param row:     The row as it is after the operation has occured
+        :param row:     The row as it is after the operation has occurred
         :type row:      Row
         :param updates: For updates, row with only old values of the changed
                         columns
@@ -985,7 +985,7 @@ class Row(object):
       "default" value return by Datum.default() for the column's type.  (It is
       important to know this because the default value may violate constraints
       for the column's type, e.g. the default integer value is 0 even if column
-      contraints require the column's value to be positive.)
+      constraints require the column's value to be positive.)
 
       When a transaction is active, column attributes may also be assigned new
       values.  Committing the transaction will then cause the new value to be
@@ -2025,7 +2025,7 @@ class SchemaHelper(object):
         """Creates a new Schema object.
 
         'location' file path to ovs schema. None means default location
-        'schema_json' schema in json preresentation in memory
+        'schema_json' schema in json presentation in memory
         """
 
         if location and schema_json:

@@ -168,7 +168,7 @@ case "$1" in
   # Use this if the daemon cannot reload
   reload)
         log_warning_msg "Reloading $NAME daemon: not implemented, as the"
-        log_warning_msg "deamon cannot re-read the config file (use restart)."
+        log_warning_msg "daemon cannot re-read the config file (use restart)."
         ;;
   *)
         N=/etc/init.d/openvswitch-ipsec

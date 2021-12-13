@@ -2391,7 +2391,7 @@ parse_odp_action__(struct parse_odp_context *context, const char *s,
         if (size == nl_attr_get_size(key)) {
             /* Change to masked set action if not fully masked. */
             if (!is_all_ones(mask + 1, size)) {
-                /* Remove padding of eariler key payload  */
+                /* Remove padding of earlier key payload  */
                 actions->size -= NLA_ALIGN(key->nla_len) - key->nla_len;
 
                 /* Put mask payload right after key payload */

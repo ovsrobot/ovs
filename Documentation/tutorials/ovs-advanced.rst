@@ -112,7 +112,7 @@ the "exit" shell command or pressing Control+D).  This will kill the daemons
 that ``ovs-sandbox`` started, but it leaves the "sandbox" directory and its
 contents in place.
 
-The sandbox directory contains log files for the Open vSwitch dameons.  You can
+The sandbox directory contains log files for the Open vSwitch daemons.  You can
 examine them while you're running in the sandboxed environment or after you
 exit.
 

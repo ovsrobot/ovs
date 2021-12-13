@@ -26,9 +26,9 @@
  * ---------
  *
  * The procedure is to classify the packet based on the traffic type
- * using predifined bit-masks and arrage the packet header data using shuffle
+ * using predefined bit-masks and arrage the packet header data using shuffle
  * instructions to a pre-defined place as required by the miniflow.
- * This elimates the if-else ladder to identify the packet data and add data
+ * This eliminates the if-else ladder to identify the packet data and add data
  * as per protocol which is present.
  */
 
@@ -371,7 +371,7 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
 };
 
 
-/* Protocol specific helper functions, for calculating offsets/lenghts. */
+/* Protocol specific helper functions, for calculating offsets/lengths. */
 static int32_t
 mfex_ipv4_set_l2_pad_size(struct dp_packet *pkt, struct ip_header *nh,
                           uint32_t len_from_ipv4)

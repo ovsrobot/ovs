@@ -280,7 +280,7 @@ Eth_IsNullAddr(const Eth_Address addr)
  * Eth_HeaderType --
  *      return an Eth_HdrType depending on the eth header
  *      contents.  will not work in all cases, especially since it
- *      requres ETH_HEADER_LEN_802_1PQ bytes to determine the type
+ *      requires ETH_HEADER_LEN_802_1PQ bytes to determine the type
  *
  *      HeaderType isn't sufficient to determine the length of
  *      the eth header.  for 802.3 header, its not clear without

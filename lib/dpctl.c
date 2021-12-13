@@ -1928,11 +1928,11 @@ dpctl_ct_bkts(int argc, const char *argv[],
                 "         Connections per Buckets         |\n");
         dpctl_print(dpctl_p, "+-----------+"
                 "-----------------------------------------+");
-#define NUM_BKTS_DIPLAYED_PER_ROW 8
+#define NUM_BKTS_DISPLAYED_PER_ROW 8
         for (int i = 0; i < tot_bkts; i++) {
-            if (i % NUM_BKTS_DIPLAYED_PER_ROW == 0) {
+            if (i % NUM_BKTS_DISPLAYED_PER_ROW == 0) {
                  dpctl_print(dpctl_p, "\n %3d..%3d   | ",
-                         i, i + NUM_BKTS_DIPLAYED_PER_ROW - 1);
+                         i, i + NUM_BKTS_DISPLAYED_PER_ROW - 1);
             }
             if (conn_per_bkts[i] > gt) {
                 dpctl_print(dpctl_p, "%5d", conn_per_bkts[i]);

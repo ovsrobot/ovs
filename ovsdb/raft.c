@@ -449,7 +449,7 @@ raft_alloc(void)
  * new server.
  *
  * The optional election_timer argument, when greater than zero, sets the given
- * leader election timer for the new cluster, in miliseconds. If non-zero, it
+ * leader election timer for the new cluster, in milliseconds. If non-zero, it
  * must be between 100 and 600000 inclusive.
  *
  * Returns null if successful, otherwise an ovsdb_error describing the
@@ -1122,7 +1122,7 @@ raft_get_memory_usage(const struct raft *raft, struct simap *usage)
     simap_increase(usage, "raft-log", raft->log_end - raft->log_start);
 }
 
-/* Returns an error if the election timer (in miliseconds) is out of bounds.
+/* Returns an error if the election timer (in milliseconds) is out of bounds.
  * Values smaller than 100ms or bigger than 10min don't make sense.
  */
 struct ovsdb_error *

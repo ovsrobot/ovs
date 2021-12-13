@@ -1,10 +1,10 @@
 AT_BANNER([OVSDB -- lock])
 
-# OVSDB_CHECK_LOCK_SETUP(TITILE, KEYWORDS)
+# OVSDB_CHECK_LOCK_SETUP(TITLE, KEYWORDS)
 #
 # Starts an OVSDB server and the default lock transaction, acquire "lock0",
 # using the ovsdb-client tool.  Execute additional <LOCK_TRANSACTIONS>,
-# and compare output file catured from ovsdb-client tools to <OUTPUT>.
+# and compare output file captured from ovsdb-client tools to <OUTPUT>.
 
 m4_define([OVSDB_CHECK_LOCK_SETUP],
    [AT_SETUP([ovsdb lock -- $1])

@@ -8015,7 +8015,7 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
  *   provided in 'in' as many set actions applied to a field has the same
  *   affect as only applying the last action that sets a field and
  *   duplicates are removed by do_xlate_actions().
- *   This has an unwanted side-effect of compsoting multiple
+ *   This has an unwanted side-effect of compositing multiple
  *   LOAD_REG actions that touch different regions of the same field. */
 void
 ofpacts_execute_action_set(struct ofpbuf *action_list,

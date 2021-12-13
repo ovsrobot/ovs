@@ -11,7 +11,7 @@
 
 # Use the kversion macro such as
 # RPMBUILD_OPT='-D "kversion 3.10.0-693.1.1.el7.x86_64 3.10.0-693.17.1.el7.x86_64"'
-# to build package for mulitple kernel versions in the same package
+# to build package for multiple kernel versions in the same package
 # This only works for the following kernels.
 #   - 3.10.0 major revision 327  (RHEL 7.2)
 #   - 3.10.0 major revision 693  (RHEL 7.4)
@@ -70,11 +70,11 @@ for kv in %{kversion}; do
     for module in $RPM_BUILD_ROOT/lib/modules/${kv}/extra/openvswitch/*.ko
     do
         modname="$(basename ${module})"
-        grep -qsPo "^\s*override ${modname%.ko} \* extra\/openvwitch" \
+        grep -qsPo "^\s*override ${modname%.ko} \* extra\/openvswitch" \
             $RPM_BUILD_ROOT/etc/depmod.d/kmod-openvswitch.conf || \
             echo "override ${modname%.ko} * extra/openvswitch" >> \
             $RPM_BUILD_ROOT/etc/depmod.d/kmod-openvswitch.conf
-        grep -qsPo "^\s*override ${modname%.ko} \* weak-updates\/openvwitch" \
+        grep -qsPo "^\s*override ${modname%.ko} \* weak-updates\/openvswitch" \
             $RPM_BUILD_ROOT/etc/depmod.d/kmod-openvswitch.conf || \
             echo "override ${modname%.ko} * weak-updates/openvswitch" >> \
             $RPM_BUILD_ROOT/etc/depmod.d/kmod-openvswitch.conf

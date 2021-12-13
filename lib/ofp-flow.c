@@ -1911,7 +1911,7 @@ parse_ofp_flow_mod_file(const char *file_name,
  * form FIELD=VALUE[,FIELD=VALUE]... where each FIELD is the name of a
  * mf_field.  Fields must be specified in a natural order for satisfying
  * prerequisites. If 'wc' is specified, masks the field in 'wc' for each of the
- * field specified in flow. If the map, 'names_portno' is specfied, converts
+ * field specified in flow. If the map, 'names_portno' is specified, converts
  * the in_port name into port no while setting the 'flow'.
  *
  * Returns NULL on success, otherwise a malloc()'d string that explains the

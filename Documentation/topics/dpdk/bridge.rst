@@ -178,7 +178,7 @@ get command, note the updated priority of the ``avx512_gather`` function ::
             5 : avx512_gather
 
 If two lookup functions have the same priority, the first one in the list is
-chosen, and the 2nd occurance of that priority is not used. Put in logical
+chosen, and the 2nd occurrence of that priority is not used. Put in logical
 terms, a subtable is chosen if its priority is greater than the previous
 best candidate.
 
@@ -390,8 +390,8 @@ the following test-case in tests/system-dpdk.at ::
     make check-dpdk TESTSUITEFLAGS='-k MFEX'
     OVS-DPDK - MFEX Autovalidator
 
-The unit test uses mulitple traffic type to test the correctness of the
-implementaions.
+The unit test uses multiple traffic type to test the correctness of the
+implementations.
 
 The MFEX commands can also be tested for negative and positive cases to
 verify that the MFEX set command does not allow for incorrect parameters.

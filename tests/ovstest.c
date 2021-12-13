@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-/* The mother of all test programs that links with libopevswitch.la */
+/* The mother of all test programs that links with libopenvswitch.la */
 
 #include <config.h>
 #undef NDEBUG

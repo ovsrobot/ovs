@@ -948,7 +948,7 @@ int ovs_flow_key_extract_userspace(struct net *net, const struct nlattr *attr,
 	 * Here the correct value can be set from the metadata
 	 * extracted above.
 	 * For L2 packet key eth type would be zero. skb protocol
-	 * would be set to correct value later during key-extact.
+	 * would be set to correct value later during key-extract.
 	 */
 
 	skb->protocol = key->eth.type;

@@ -58,7 +58,7 @@
  * A newly created thread is initially active, not quiescent. When a process
  * becomes multithreaded, the main thread becomes active, not quiescent.
  *
- * When a quiescient state has occurred in every thread, we say that a "grace
+ * When a quiescent state has occurred in every thread, we say that a "grace
  * period" has occurred.  Following a grace period, all of the callbacks
  * postponed before the start of the grace period MAY be invoked.  OVS takes
  * care of this automatically through the RCU mechanism: while a process still
@@ -68,7 +68,7 @@
  *
  * Please note that while a postponed function call is guaranteed to happen
  * after the next time all participating threads have quiesced at least once,
- * there is no quarantee that all postponed functions are called as early as
+ * there is no guarantee that all postponed functions are called as early as
  * possible, or that the functions postponed by different threads would be
  * called in the order the registrations took place.  In particular, even if
  * two threads provably postpone a function each in a specific order, the

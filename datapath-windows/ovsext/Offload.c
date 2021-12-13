@@ -57,7 +57,7 @@
  *     ------------------------------------------------
  *
  * Result:
- *    As name indicate, the final data is not 1's complemnent
+ *    As name indicate, the final data is not 1's complement
  *----------------------------------------------------------------------------
  */
 UINT64
@@ -118,12 +118,12 @@ CalculateOnesComplement(UINT8 *start,
  * CalculateChecksum --
  *
  *   Given the start point, and length, calculate the checksum
- *   as 1's complement of 1's comlement.
+ *   as 1's complement of 1's complement.
  *
- *   This assume the checksum field is initailized properly.
+ *   This assume the checksum field is initialized properly.
  *
  * Input Parameter:
- *    ptr:  point to the data to be checksumed
+ *    ptr:  point to the data to be checksummed
  *    totalLength: total length of the data
  *    initial: inital value to remit the checksum. Please note this
  *             value should be network byte order value.
@@ -160,7 +160,7 @@ CalculateChecksum(UINT8 *ptr,
  *     ------------------------------------------------
  *
  * Result:
- *    As name indicate, the final data is not 1's complemnent
+ *    As name indicate, the final data is not 1's complement
  *----------------------------------------------------------------------------
  */
 UINT64
@@ -245,7 +245,7 @@ CopyAndCalculateChecksum(UINT8 *dst,
  *   Give IP header, calculate the IP checksum.
  *   We assume IP checksum field is initialized properly
  *
- *  Input Pramater:
+ *  Input Parameter:
  *   ipHdr: IP header start point
  *   length: IP header length (potentially include IP options)
  *   initial: same as CalculateChecksum
@@ -357,9 +357,9 @@ IPv6PseudoChecksum(UINT32 *src,
  *  calculate the new checksum.
  *  Please check relevant RFC for reference.
  *
- *  Input Pramater:
+ *  Input Parameter:
  *     oldSum: old checksum value in checksum field
- *     prev:   previous value of relevant 32 bit feld in network
+ *     prev:   previous value of relevant 32 bit field in network
  *             byte order.
  *     new:    new value of the relevant 32 bit field in network
  *             byte order.
@@ -392,9 +392,9 @@ ChecksumUpdate32(UINT16 oldSum,
  *  calculate the new checksum.
  *  Please check relevant RFC for reference.
  *
- *  Input Pramater:
+ *  Input Parameter:
  *     oldSum: old checksum value in checksum field
- *     prev:   previous value of relevant 32 bit feld in network
+ *     prev:   previous value of relevant 32 bit field in network
  *             byte order.
  *     new:    new value of the relevant 32 bit field in network
  *             byte order.
@@ -423,7 +423,7 @@ ChecksumUpdate16(UINT16 oldSum,
  * nb           : NB which contains the packet bytes.
  * csumDataLen  : Length of bytes to be checksummed.
  * offset       : offset to the first bytes of the data stream to be
- *                checksumed.
+ *                checksummed.
  *
  * Result:
  *  return 0, if there is a failure.

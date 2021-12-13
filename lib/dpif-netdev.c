@@ -282,7 +282,7 @@ struct dp_netdev {
     void *upcall_aux;
 
     /* Callback function for notifying the purging of dp flows (during
-     * reseting pmd deletion). */
+     * resetting pmd deletion). */
     dp_purge_callback *dp_purge_cb;
     void *dp_purge_aux;
 
@@ -2388,7 +2388,7 @@ megaflow_to_mark_associate(const ovs_u128 *mega_ufid, uint32_t mark)
                 CONST_CAST(struct cmap_node *, &data->node), hash);
 }
 
-/* disassociate meagaflow with a mark */
+/* disassociate megaflow with a mark */
 static void
 megaflow_to_mark_disassociate(const ovs_u128 *mega_ufid)
 {
@@ -3419,7 +3419,7 @@ dp_netdev_flow_to_dpif_flow(const struct dp_netdev *dp,
 
         miniflow_expand(&netdev_flow->cr.mask->mf, &wc.masks);
         /* in_port is exact matched, but we have left it out from the mask for
-         * optimnization reasons. Add in_port back to the mask. */
+         * optimization reasons. Add in_port back to the mask. */
         wc.masks.in_port.odp_port = ODPP_NONE;
 
         /* Key */
@@ -4101,7 +4101,7 @@ dpif_netdev_execute(struct dpif *dpif, struct dpif_execute *execute)
     if (dp_packet_batch_size(&pp) == 1) {
         /* Packet wasn't dropped during the execution.  Swapping content with
          * the original packet, because the caller might expect actions to
-         * modify it.  Uisng the packet from a batch instead of 'packet_clone'
+         * modify it.  Using the packet from a batch instead of 'packet_clone'
          * because it maybe stolen and replaced by other packet, e.g. by
          * the fragmentation engine. */
         dp_packet_swap(execute->packet, pp.packets[0]);
@@ -5474,7 +5474,7 @@ sched_numa_list_variance(struct sched_numa_list *numa_list)
  * pmd_rebalance_dry_run() can be avoided when it is not needed.
  */
 static bool
-pmd_reblance_dry_run_needed(struct dp_netdev *dp)
+pmd_rebalance_dry_run_needed(struct dp_netdev *dp)
     OVS_REQUIRES(dp->port_mutex)
 {
     struct dp_netdev_pmd_thread *pmd;
@@ -5926,7 +5926,7 @@ ports_require_restart(const struct dp_netdev *dp)
 }
 
 /* Calculates variance in the values stored in array 'a'. 'n' is the number
- * of elements in array to be considered for calculating vairance.
+ * of elements in array to be considered for calculating variance.
  * Usage example: data array 'a' contains the processing load of each pmd and
  * 'n' is the number of PMDs. It returns the variance in processing load of
  * PMDs*/
@@ -6034,7 +6034,7 @@ dpif_netdev_run(struct dpif *dpif)
             if (pmd_rebalance &&
                 !dp_netdev_is_reconf_required(dp) &&
                 !ports_require_restart(dp) &&
-                pmd_reblance_dry_run_needed(dp) &&
+                pmd_rebalance_dry_run_needed(dp) &&
                 pmd_rebalance_dry_run(dp)) {
                 VLOG_INFO("PMD auto load balance dry run. "
                           "Requesting datapath reconfigure.");

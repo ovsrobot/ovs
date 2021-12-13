@@ -133,7 +133,7 @@ typedef struct OvsConntrackKeyLookupCtx {
     BOOLEAN         related;
 } OvsConntrackKeyLookupCtx;
 
-/* Per zone strucuture. */
+/* Per zone structure. */
 typedef struct _OVS_CT_ZONE_INFO {
     ULONG limit;
     ULONG entries;

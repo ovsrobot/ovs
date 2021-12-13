@@ -87,7 +87,7 @@ struct ovsdb {
 
     struct ovsdb_table *rbac_role;
 
-    /* History trasanctions for incremental monitor transfer. */
+    /* History transactions for incremental monitor transfer. */
     bool need_txn_history;     /* Need to maintain history of transactions. */
     unsigned int n_txn_history; /* Current number of history transactions. */
     unsigned int n_txn_history_atoms; /* Total number of atoms in history. */

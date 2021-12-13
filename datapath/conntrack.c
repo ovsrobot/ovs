@@ -37,7 +37,7 @@
 /* Upstream commit 4806e975729f ("netfilter: replace NF_NAT_NEEDED with
  * IS_ENABLED(CONFIG_NF_NAT)") replaces the config checking on NF_NAT_NEEDED
  * with CONFIG_NF_NAT.  We will replace the checking on NF_NAT_NEEDED for the
- * newer kernel with the marco in order to keep backward compatiblity.
+ * newer kernel with the marco in order to keep backward compatibility.
  */
 #ifndef HAVE_CONFIG_NF_NAT_NEEDED
 #define CONFIG_NF_NAT_NEEDED  CONFIG_NF_NAT

@@ -179,7 +179,7 @@ struct dpif_channel {
 #ifdef _WIN32
 #define VPORT_SOCK_POOL_SIZE 1
 /* On Windows, there is no native support for epoll.  There are equivalent
- * interfaces though, that are not used currently.  For simpicity, a pool of
+ * interfaces though, that are not used currently.  For simplicity, a pool of
  * netlink sockets is used.  Each socket is represented by 'struct
  * dpif_windows_vport_sock'.  Since it is a pool, multiple OVS ports may be
  * sharing the same socket.  In the future, we can add a reference count and
@@ -1045,7 +1045,7 @@ dpif_netlink_port_add_compat(struct dpif_netlink *dpif, struct netdev *netdev,
 
     if (ovs_type == OVS_VPORT_TYPE_NETDEV) {
 #ifdef _WIN32
-        /* XXX : Map appropiate Windows handle */
+        /* XXX : Map appropriate Windows handle */
 #else
         netdev_linux_ethtool_set_flag(netdev, ETH_FLAG_LRO, "LRO", false);
 #endif
@@ -2334,7 +2334,7 @@ out:
         } else if (del_err != ENOENT) {
             VLOG_ERR_RL(&rl, "failed to delete offloaded flow: %s",
                         ovs_strerror(del_err));
-            /* stop proccesing the flow in kernel */
+            /* stop processing the flow in kernel */
             err = 0;
         }
     }
@@ -3999,7 +3999,7 @@ dpif_netlink_meter_transact(struct ofpbuf *request, struct ofpbuf **replyp,
         || !nl_policy_parse(*replyp, 0, reply_policy, a, size_a)) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
         VLOG_DBG_RL(&rl,
-                    "Kernel module response to meter tranaction is invalid");
+                    "Kernel module response to meter transaction is invalid");
         return EINVAL;
     }
     return 0;

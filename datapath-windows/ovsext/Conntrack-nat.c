@@ -167,9 +167,9 @@ VOID OvsNatCleanup()
 /*
  *----------------------------------------------------------------------------
  * OvsNatPacket
- *     Performs NAT operation on the packet by replacing the source/destinaton
- *     address/port based on natAction. If reverse is TRUE, perform unNAT
- *     instead.
+ *     Performs NAT operation on the packet by replacing the
+ *     source/destination address/port based on natAction. If reverse is TRUE,
+ *     perform unNAT instead.
  *----------------------------------------------------------------------------
  */
 VOID

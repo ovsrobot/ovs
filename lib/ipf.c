@@ -116,7 +116,7 @@ struct ipf_list {
     struct ovs_list list_node;     /* In struct ipf's 'frag_exp_list' or
                                     * 'frag_complete_list'. */
     struct ipf_frag *frag_list;    /* List of fragments for this list. */
-    struct ipf_list_key key;       /* The key for the fragemnt list. */
+    struct ipf_list_key key;       /* The key for the fragment list. */
     struct dp_packet *reass_execute_ctx; /* Reassembled packet. */
     long long expiration;          /* In milliseconds. */
     int last_sent_idx;             /* Last sent fragment idx. */
@@ -125,7 +125,7 @@ struct ipf_list {
     uint8_t state;                 /* Frag list state; see ipf_list_state. */
 };
 
-/* Represents a reassambled packet which typically is passed through
+/* Represents a reassembled packet which typically is passed through
  * conntrack. */
 struct reassembled_pkt {
     struct ovs_list rp_list_node;  /* In struct ipf's
@@ -218,7 +218,7 @@ ipf_addr_hash_add(uint32_t hash, const union ipf_addr *addr)
 }
 
 /* Adds a list of fragments to the list tracking expiry of yet to be
- * completed reassembled packets, hence subject to expirty. */
+ * completed reassembled packets, hence subject to expiry. */
 static void
 ipf_expiry_list_add(struct ovs_list *frag_exp_list, struct ipf_list *ipf_list,
                     long long now)
@@ -242,7 +242,7 @@ ipf_completed_list_add(struct ovs_list *frag_complete_list,
     ovs_list_push_back(frag_complete_list, &ipf_list->list_node);
 }
 
-/* Adds a reassmebled packet to the list of reassembled packets, awaiting some
+/* Adds a reassembled packet to the list of reassembled packets, awaiting some
  * processing, such as being sent through conntrack. */
 static void
 ipf_reassembled_list_add(struct ovs_list *reassembled_pkt_list,
@@ -846,9 +846,9 @@ ipf_list_init(struct ipf_list *ipf_list, struct ipf_list_key *key,
 
 /* Generates a fragment list key from a well formed fragment and either starts
  * a new fragment list or increases the size of the existing fragment list,
- * while checking if the maximum supported fragements are supported or the
+ * while checking if the maximum supported fragments are supported or the
  * list size is impossibly big. Calls 'ipf_process_frag()' to add a fragment
- * to a list of fragemnts. */
+ * to a list of fragments. */
 static bool
 ipf_handle_frag(struct ipf *ipf, struct dp_packet *pkt, ovs_be16 dl_type,
                 uint16_t zone, long long now, uint32_t hash_basis)
@@ -955,7 +955,7 @@ ipf_extract_frags_from_batch(struct ipf *ipf, struct dp_packet_batch *pb,
 
 /* In case of DPDK, a memory source check is done, as DPDK memory pool
  * management has trouble dealing with multiple source types.  The
- * check_source paramater is used to indicate when this check is needed. */
+ * check_source parameter is used to indicate when this check is needed. */
 static bool
 ipf_dp_packet_batch_add(struct dp_packet_batch *pb , struct dp_packet *pkt,
                         bool check_source OVS_UNUSED)
@@ -1111,7 +1111,7 @@ ipf_send_expired_frags(struct ipf *ipf, struct dp_packet_batch *pb,
     ovs_mutex_unlock(&ipf->ipf_lock);
 }
 
-/* Adds a reassmebled packet to a packet batch to be processed by the caller.
+/* Adds a reassembled packet to a packet batch to be processed by the caller.
  */
 static void
 ipf_execute_reass_pkts(struct ipf *ipf, struct dp_packet_batch *pb)

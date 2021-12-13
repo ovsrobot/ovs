@@ -407,7 +407,7 @@ def idl_set(idl, commands, step):
             elif args[1] == "r":
                 s.r = float(args[2])
             else:
-                sys.stderr.write('"set" comamnd asks for unknown column %s\n'
+                sys.stderr.write('"set" command asks for unknown column %s\n'
                                  % args[2])
                 sys.stderr.exit(1)
         elif name == "insert":
@@ -598,7 +598,7 @@ def idl_set(idl, commands, step):
         sys.stdout.write(", increment=%d" % txn.get_increment_new_value())
     if events:
         # Event notifications from operations in a single transaction are
-        # not in a gauranteed order due to update messages being dicts
+        # not in a guaranteed order due to update messages being dicts
         sys.stdout.write(", events=" + ", ".join(sorted(events)))
     sys.stdout.write("\n")
     sys.stdout.flush()
@@ -920,7 +920,7 @@ idl SCHEMA SERVER [?T1:C1,C2...[?T2:C1,C2,...]...] [TRANSACTION...]
       ?<table-name>:<column-name>,<column-name>,...
   e.g.:
       ?simple:b - Monitor column "b" in table "simple"
-  Entries for multiple tables are seperated by "?":
+  Entries for multiple tables are separated by "?":
       ?<table-name>:<column-name>,...?<table-name>:<column-name>,...
   e.g.:
       ?simple:b?link1:i,k - Monitor column "b" in table "simple",

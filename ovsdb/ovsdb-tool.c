@@ -370,7 +370,7 @@ write_standalone_db(const char *file_name, const char *comment,
 }
 
 /* Reads 'src_name' and writes it back, compacted, to 'dst_name', adding the
- * specified 'comment'.  If 'new_schema' is nonull, converts the databse to
+ * specified 'comment'.  If 'new_schema' is nonull, converts the database to
  * that schema.
  *
  * Standalone databases only. */

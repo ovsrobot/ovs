@@ -103,7 +103,7 @@ struct datapath {
  * struct ovs_skb_cb - OVS data in skb CB
  * @input_vport: The original vport packet came in on. This value is cached
  * when a packet is received by OVS.
- * @mru: The maximum received fragement size; 0 if the packet is not
+ * @mru: The maximum received fragment size; 0 if the packet is not
  * fragmented.
  * @acts_origlen: The netlink size of the flow actions applied to this skb.
  * @cutlen: The number of bytes from the packet end to be removed.

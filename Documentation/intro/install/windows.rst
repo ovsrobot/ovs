@@ -328,7 +328,7 @@ An alternative way to do the same is to run the following command:
 Generate the Windows installer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To generate the Windows installler run the following command from the top
+To generate the Windows installer run the following command from the top
 source directory:
 
 ::
@@ -759,7 +759,7 @@ Create the ovsdb-server service and start it:
 
 .. tip::
 
-   One of the common issues with creating a Windows service is with mungled
+   One of the common issues with creating a Windows service is with mangled
    paths.  You can make sure that the correct path has been registered with the
    Windows services manager by running:
 

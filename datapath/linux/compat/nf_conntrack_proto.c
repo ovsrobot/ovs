@@ -6,7 +6,7 @@
 #endif
 
 /*
- * Upstream net-next commmit 7e35ec0e8044
+ * Upstream net-next commit 7e35ec0e8044
  * ("netfilter: conntrack: move nf_ct_netns_{get,put}() to core")
  * is introduced in v4.15, and it supports NFPROTO_INET in
  * nf_ct_netns_{get,put}() that OVS conntrack uses this feature.

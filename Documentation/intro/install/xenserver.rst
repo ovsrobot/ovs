@@ -122,7 +122,7 @@ the final ``rpmbuild`` step changes to::
 
     $ KERNEL_UNAME=<`uname -r` output>
     $ rpmbuild \
-        -D "kenel_uname $KERNEL_UNAME" \
+        -D "kernel_uname $KERNEL_UNAME" \
         -bb xenserver/openvswitch-xen.spec
 
 Installing Open vSwitch for XenServer

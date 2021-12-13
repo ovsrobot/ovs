@@ -91,7 +91,7 @@ static bool retry;
 static int leader_only = true;
 
 /* --shuffle-remotes, --no-shuffle-remotes: Shuffle the order of remotes that
- * are specified in the connetion method string.
+ * are specified in the connection method string.
  *
  * In a real Open vSwitch environment, it doesn't make much sense to cluster
  * the Open vSwitch database.  This option exists to enable using ovs-vsctl to
@@ -2787,7 +2787,7 @@ vsctl_parent_process_info(void)
     parent_pid = getppid();
     ds_init(&s);
 
-    /* Retrive the command line of the parent process, except the init
+    /* Retrieve the command line of the parent process, except the init
      * process since /proc/0 does not exist. */
     if (parent_pid) {
         char *procfile;

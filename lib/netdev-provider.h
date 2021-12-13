@@ -776,7 +776,7 @@ struct netdev_class {
      * configuration knowing that the upper layer will not call rxq_recv() or
      * send() until this function returns.
      *
-     * On error, the configuration is indeterminant and the device cannot be
+     * On error, the configuration is indeterminate and the device cannot be
      * used to send and receive packets until a successful configuration is
      * applied. */
     int (*reconfigure)(struct netdev *netdev);

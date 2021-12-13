@@ -205,7 +205,7 @@ inline static void putString(SFLReceiver *receiver, SFLString *s)
 }
 
 inline static u_int32_t stringEncodingLength(SFLString *s) {
-    // answer in bytes,  so remember to mulitply by 4 after rounding up to nearest 4-byte boundary
+    // answer in bytes,  so remember to multiply by 4 after rounding up to nearest 4-byte boundary
     return 4 + (((s->len + 3) / 4) * 4);
 }
 
@@ -499,7 +499,7 @@ int sfl_receiver_writeFlowSample(SFLReceiver *receiver, SFL_FLOW_SAMPLE_TYPE *fs
 
     // check in case this one sample alone is too big for the datagram
     // in fact - if it is even half as big then we should ditch it. Very
-    // important to avoid overruning the packet buffer.
+    // important to avoid overrunning the packet buffer.
     if(packedSize > (int)(receiver->sFlowRcvrMaximumDatagramSize / 2)) {
 	sflError(receiver, "flow sample too big for datagram");
 	return -1;
@@ -682,7 +682,7 @@ int sfl_receiver_writeCountersSample(SFLReceiver *receiver, SFL_COUNTERS_SAMPLE_
 
     // check in case this one sample alone is too big for the datagram
     // in fact - if it is even half as big then we should ditch it. Very
-    // important to avoid overruning the packet buffer.
+    // important to avoid overrunning the packet buffer.
     if(packedSize > (int)(receiver->sFlowRcvrMaximumDatagramSize / 2)) {
 	sflError(receiver, "counters sample too big for datagram");
 	return -1;

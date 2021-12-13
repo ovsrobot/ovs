@@ -72,7 +72,7 @@ AT_CHECK([ovsdb-server --remote=punix:socket db --run="sh txnfile"], [0], [stdou
 AT_CHECK([grep 'syntax error: db: parse error.* in header line "xxx"' stderr],
   [0], [ignore])
 cat stdout >> output
-dnl Run a final transaction to verify that both transactions succeeeded.
+dnl Run a final transaction to verify that both transactions succeeded.
 dnl The crap that we added should have been truncated by the previous run,
 dnl so ovsdb-server shouldn't log a warning this time.
 AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
@@ -120,7 +120,7 @@ AT_CHECK([ovsdb-server --remote=punix:socket db --run="sh txnfile"], [0], [stdou
 AT_CHECK([grep 'syntax "{"invalid":{}}": unknown table: No table named invalid.' stderr],
   [0], [ignore])
 cat stdout >> output
-dnl Run a final transaction to verify that both transactions succeeeded.
+dnl Run a final transaction to verify that both transactions succeeded.
 dnl The crap that we added should have been truncated by the previous run,
 dnl so ovsdb-server shouldn't log a warning this time.
 AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
@@ -1195,7 +1195,7 @@ AT_CAPTURE_FILE([ovsdb-client-nonblock.err])
 
 # Start an ovsdb-client monitoring all changes to the database,
 # By default, it is non-blocking, and will get update message
-# for each ovsdb-server transaactions.
+# for each ovsdb-server transactions.
 AT_CHECK([ovsdb-client --detach --no-chdir --pidfile=nonblock.pid monitor ALL >ovsdb-client-nonblock.out 2>ovsdb-client-nonblock.err])
 
 # Start an ovsdb-client monitoring all changes to the database,
@@ -1921,7 +1921,7 @@ dnl Flip the role of 'db1' and 'db2'.  'db1' becomes backup, and db2 becomes act
 AT_CHECK([ovs-appctl -t "`pwd`"/unixctl2 ovsdb-server/disconnect-active-ovsdb-server])
 AT_CHECK([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/connect-active-ovsdb-server])
 
-dnl Verify the change happend
+dnl Verify the change happened
 OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/unixctl ovsdb-server/sync-status |grep replicating])
 AT_CHECK([ovs-appctl -t "`pwd`"/unixctl2 ovsdb-server/sync-status], [0], [state: active
 ])

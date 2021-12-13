@@ -1658,7 +1658,7 @@ ovsdb_server_remove_remote(struct unixctl_conn *conn, int argc OVS_UNUSED,
     }
 }
 
-/* "ovsdb-server/list-remotes": outputs a list of configured rmeotes. */
+/* "ovsdb-server/list-remotes": outputs a list of configured remotes. */
 static void
 ovsdb_server_list_remotes(struct unixctl_conn *conn, int argc OVS_UNUSED,
                           const char *argv[] OVS_UNUSED, void *remotes_)

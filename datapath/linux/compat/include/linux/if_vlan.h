@@ -174,7 +174,7 @@ static inline void vlan_set_encap_proto(struct sk_buff *skb, struct vlan_hdr *vh
 
 #ifndef HAVE___VLAN_INSERT_TAG
 /* Kernels which don't have __vlan_insert_tag() also don't have skb->vlan_proto
- * so ignore the proto paramter.
+ * so ignore the proto parameter.
  */
 #define __vlan_insert_tag(skb, proto, tci) rpl_vlan_insert_tag(skb, tci)
 static inline int rpl_vlan_insert_tag(struct sk_buff *skb, u16 vlan_tci)

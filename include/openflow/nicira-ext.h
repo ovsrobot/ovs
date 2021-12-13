@@ -1033,7 +1033,7 @@ OFP_ASSERT(sizeof(struct nx_tlv_map) == 8);
 struct nx_tlv_table_mod {
     ovs_be16 command;           /* One of NTTTMC_* */
     uint8_t pad[6];
-    /* struct nx_tlv_map[0]; Array of maps between indicies and option
+    /* struct nx_tlv_map[0]; Array of maps between indices and option
                                 TLVs. The number of elements is inferred
                                 from the length field in the header. */
 };
@@ -1041,7 +1041,7 @@ OFP_ASSERT(sizeof(struct nx_tlv_table_mod) == 8);
 
 /* NXT_TLV_TABLE_REPLY.
  *
- * Issued in reponse to an NXT_TLV_TABLE_REQUEST to give information
+ * Issued in response to an NXT_TLV_TABLE_REQUEST to give information
  * about the current status of the TLV table in the switch. Provides
  * both static information about the switch's capabilities as well as
  * the configured TLV table. */
@@ -1049,7 +1049,7 @@ struct nx_tlv_table_reply {
     ovs_be32 max_option_space; /* Maximum total of option sizes supported. */
     ovs_be16 max_fields;       /* Maximum number of match fields supported. */
     uint8_t reserved[10];
-    /* struct nx_tlv_map[0]; Array of maps between indicies and option
+    /* struct nx_tlv_map[0]; Array of maps between indices and option
                                 TLVs. The number of elements is inferred
                                 from the length field in the header. */
 };

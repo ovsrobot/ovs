@@ -134,7 +134,7 @@ typedef enum {
  * volatile atomic variable means that the compiler optimizations should not
  * cause problems.  That is, the compiler should not speculate the value of
  * the atomic_read, as it is going to read it from the memory anyway.
- * This allows omiting the compiler memory barrier on atomic_reads with
+ * This allows omitting the compiler memory barrier on atomic_reads with
  * memory_order_consume.  This matches the definition of
  * smp_read_barrier_depends() in Linux kernel as a nop for x86, and its usage
  * in rcu_dereference().
@@ -239,7 +239,7 @@ atomic_signal_fence(memory_order order)
 
 #if defined(__SSE__)
 /* SSE registers are 128-bit wide, and moving the lowest 64-bits of an SSE
- * register to proerly aligned memory is atomic.  See ATOMIC(TYPE) above. */
+ * register to properly aligned memory is atomic.  See ATOMIC(TYPE) above. */
 #define atomic_store_8__(DST, SRC)                 \
     asm volatile("movq %1,%0 ; # atomic_store_8__" \
                  : "=m" (*DST)   /* 0 */           \

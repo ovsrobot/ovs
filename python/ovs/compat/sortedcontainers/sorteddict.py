@@ -336,7 +336,7 @@ class SortedDict(dict):
 
     @classmethod
     def fromkeys(cls, iterable, value=None):
-        """Return a new sorted dict initailized from `iterable` and `value`.
+        """Return a new sorted dict initialized from `iterable` and `value`.
 
         Items in the sorted dict have keys from `iterable` and values equal to
         `value`.

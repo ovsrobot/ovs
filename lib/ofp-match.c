@@ -159,7 +159,7 @@ ofputil_match_from_ofp10_match(const struct ofp10_match *ofmatch,
          * If OFPFW10_DL_VLAN_PCP is matched, the flow match is contradictory,
          * because we can't have a specific PCP without an 802.1Q header.
          * However, older versions of OVS treated this as matching packets
-         * withut an 802.1Q header, so we do here too. */
+         * without an 802.1Q header, so we do here too. */
         match->flow.vlans[0].tci = htons(0);
         match->wc.masks.vlans[0].tci = htons(0xffff);
     } else {

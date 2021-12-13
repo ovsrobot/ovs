@@ -342,7 +342,7 @@ netdev_bsd_construct_tap(struct netdev *netdev_)
     kernel_name = xstrdup(name);
 #else
     /*
-     * NetBSD doesn't support inteface renaming.
+     * NetBSD doesn't support interface renaming.
      */
     VLOG_INFO("tap %s is created for bridge %s", ifr.ifr_name, name);
     kernel_name = xstrdup(ifr.ifr_name);

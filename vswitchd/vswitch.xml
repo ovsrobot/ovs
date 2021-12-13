@@ -707,7 +707,7 @@
          iterations.
         </p>
         <p>
-         The defaul value is 1 min. If configured to 0 then it would be
+         The default value is 1 min. If configured to 0 then it would be
          converted to default value i.e. 1 min
         </p>
         <p>
@@ -1297,7 +1297,7 @@
 
       <column name="datapath_version">
           Reports the datapath version.  This column is maintained for
-          backwards compatibility.  The preferred locatation is the
+          backwards compatibility.  The preferred location is the
           <ref column="datapath_id" table="Datapath"/> column of the
           <ref table="Datapath"/> table.  The full documentation for this
           column is there.
@@ -1315,7 +1315,7 @@
         debugging purposes, e.g. <code>switch3 in room 3120</code>.
         The value is returned by the switch as a part of reply to OFPMP_DESC 
         request (ofp_desc). The OpenFlow specification (e.g. 1.3.5) describes
-        the ofp_desc structure to contaion "NULL terminated ASCII strings".
+        the ofp_desc structure to contain "NULL terminated ASCII strings".
         For the compatibility reasons no more than 255 ASCII characters should be used.
       </column>
 
@@ -2596,7 +2596,7 @@
             A client should ideally set this column's value in the same
             database transaction that it uses to create the interface.  Open
             vSwitch version 2.1 and later will honor a later request for a
-            specific port number, althuogh it might confuse some controllers:
+            specific port number, although it might confuse some controllers:
             OpenFlow does not have a way to announce a port number change, so
             Open vSwitch represents it over OpenFlow as a port deletion
             followed immediately by a port addition.
@@ -3878,7 +3878,7 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
 
         <column name="bfd" key="cpath_down" type='{"type": "boolean"}'>
           Set to true to notify the remote endpoint that traffic should not be
-          forwarded to this system for some reason other than a connectivty
+          forwarded to this system for some reason other than a connectivity
           failure on the interface being monitored.  The typical underlying
           reason is ``concatenated path down,'' that is, that connectivity
           beyond the local system is down.  Defaults to false.
@@ -4667,7 +4667,7 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
           traffic. It should be noted that when the rte_meter is configured as
           part of QoS there will be a performance overhead as the rte_meter
           itself will consume CPU cycles in order to police traffic. These CPU
-          cycles ordinarily are used for packet proccessing. As such the drop
+          cycles ordinarily are used for packet processing. As such the drop
           in performance will be noticed in terms of overall aggregate traffic
           throughput.
         </dd>
@@ -5255,7 +5255,7 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
 
     <group title="Asynchronous Messages">
       <p>
-        OpenFlow switches send certain messages to controllers spontanenously,
+        OpenFlow switches send certain messages to controllers spontaneously,
         that is, not in response to any request from the controller.  These
         messages are called ``asynchronous messages.''  These columns allow
         asynchronous messages to be limited or disabled to ensure the best use

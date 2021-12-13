@@ -176,7 +176,7 @@ char * OVS_WARN_UNUSED_RESULT ctl_parse_commands(
 struct weak_ref_table {
     const struct ovsdb_idl_table_class *table;
     const struct ovsdb_idl_column *name_column;
-    /* This colum must be a weak reference to the owning
+    /* This column must be a weak reference to the owning
      * 'struct cmd_show_table''s table row. */
     const struct ovsdb_idl_column *wref_column;
 };

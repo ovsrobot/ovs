@@ -28,7 +28,7 @@ OVS Conntrack Tutorial
 OVS can be used with the Connection tracking system
 where OpenFlow flow can be used to match on the state of a TCP, UDP, ICMP,
 etc., connections. (Connection tracking system supports tracking of both
-statefull and stateless protocols)
+stateful and stateless protocols)
 
 This tutorial demonstrates how OVS can use the connection tracking system
 to match on the TCP segments from connection setup to connection tear down.

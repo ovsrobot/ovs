@@ -397,7 +397,7 @@ dnl Checks for binutils/assembler known issue with AVX512.
 dnl Due to backports, we probe assembling a reproducer instead of checking
 dnl binutils version string. More details, including ASM dumps and debug here:
 dnl   GCC: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90028
-dnl The checking of binutils funcationality instead of LD version is similar
+dnl The checking of binutils functionality instead of LD version is similar
 dnl to as how DPDK proposes to solve this issue:
 dnl   http://patches.dpdk.org/patch/71723/
 AC_DEFUN([OVS_CHECK_BINUTILS_AVX512],
@@ -474,7 +474,7 @@ static thread_local int var;], [return var;])],
    if test $ovs_cv_thread_local = yes; then
      AC_DEFINE([HAVE_THREAD_LOCAL], [1],
                [Define to 1 if the C compiler and linker supports the C11
-                thread_local matcro defined in <threads.h>.])
+                thread_local macro defined in <threads.h>.])
    else
      AC_CACHE_CHECK(
        [whether $CC supports __thread],
@@ -486,7 +486,7 @@ static thread_local int var;], [return var;])],
      if test $ovs_cv___thread = yes; then
        AC_DEFINE([HAVE___THREAD], [1],
                  [Define to 1 if the C compiler and linker supports the
-                  GCC __thread extenions.])
+                  GCC __thread extensions.])
      fi
    fi])
 

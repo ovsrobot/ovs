@@ -286,7 +286,7 @@ compare_ovsdb_monitor_column(const void *a_, const void *b_)
     const struct ovsdb_monitor_column *a = a_;
     const struct ovsdb_monitor_column *b = b_;
 
-    /* put all monitored columns at the begining */
+    /* put all monitored columns at the beginning */
     if (a->monitored != b->monitored) {
         return a->monitored ? -1 : 1;
     }
@@ -680,7 +680,7 @@ ovsdb_monitor_session_condition_set_mode(
     cond->conditional = false;
 }
 
-/* Returnes an empty allocated session's condition state holder */
+/* Returns an empty allocated session's condition state holder */
 struct ovsdb_monitor_session_condition *
 ovsdb_monitor_session_condition_create(void)
 {

@@ -125,9 +125,9 @@ struct ovs_dp_stats {
 struct ovs_dp_megaflow_stats {
 	__u64 n_mask_hit;	 /* Number of masks used for flow lookups. */
 	__u32 n_masks;		 /* Number of masks for the datapath. */
-	__u32 pad0;		 /* Pad for future expension. */
+	__u32 pad0;		 /* Pad for future expansion. */
 	__u64 n_cache_hit;	 /* Number of cache matches for flow lookups. */
-	__u64 pad1;		 /* Pad for future expension. */
+	__u64 pad1;		 /* Pad for future expansion. */
 };
 
 struct ovs_vport_stats {
@@ -920,7 +920,7 @@ enum ovs_nat_attr {
  * @OVS_CHECK_PKT_LEN_ATTR_PKT_LEN: u16 Packet length to check for.
  * @OVS_CHECK_PKT_LEN_ATTR_USERSPACE_COND: u8 comparison condition to send
  * the packet to userspace. One of OVS_CHECK_PKT_LEN_COND_*.
- * @OVS_CHECK_PKT_LEN_ATTR_USERPACE - Nested OVS_USERSPACE_ATTR_* actions.
+ * @OVS_CHECK_PKT_LEN_ATTR_USERSPACE - Nested OVS_USERSPACE_ATTR_* actions.
  */
 enum ovs_check_pkt_len_attr {
 	OVS_CHECK_PKT_LEN_ATTR_UNSPEC,
@@ -960,7 +960,7 @@ struct check_pkt_len_arg {
  * onto the packet.
  * @OVS_ACTION_ATTR_POP_VLAN: Pop the outermost 802.1Q or 802.1ad header
  * from the packet.
- * @OVS_ACTION_ATTR_SAMPLE: Probabilitically executes actions, as specified in
+ * @OVS_ACTION_ATTR_SAMPLE: Probabilistically executes actions, as specified in
  * the nested %OVS_SAMPLE_ATTR_* attributes.
  * @OVS_ACTION_ATTR_SET: Replaces the contents of an existing header.  The
  * single nested %OVS_KEY_ATTR_* attribute specifies a header to modify and its

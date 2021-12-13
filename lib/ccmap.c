@@ -470,7 +470,7 @@ ccmap_try_inc(struct ccmap_impl *impl, uint32_t hash, uint32_t inc)
 /* Increments the count of 'hash' values in the 'ccmap'.  The caller must
  * ensure that 'ccmap' cannot change concurrently (from another thread).
  *
- * Returns the current count of the given hash value after the incremention. */
+ * Returns the current count of the given hash value after the increment. */
 uint32_t
 ccmap_inc(struct ccmap *ccmap, uint32_t hash)
 {

@@ -398,7 +398,7 @@ Static Code Analysis
 ~~~~~~~~~~~~~~~~~~~~
 
 Static Analysis is a method of debugging Software by examining code rather than
-actually executing it. This can be done through 'scan-build' commandline
+actually executing it. This can be done through 'scan-build' command-line
 utility which internally uses clang (or) gcc to compile the code and also
 invokes a static analyzer to do the code analysis. At the end of the build, the
 reports are aggregated in to a common folder and can later be analyzed using
@@ -469,7 +469,7 @@ Proof of Concepts
 ~~~~~~~~~~~~~~~~~
 
 Proof of Concepts are documentation materialized into Ansible recipes
-executed in VirtualBox or Libvirt environments orchastrated by Vagrant.
+executed in VirtualBox or Libvirt environments orchestrated by Vagrant.
 Proof of Concepts allow developers to create small virtualized setups that
 demonstrate how certain Open vSwitch features are intended to work avoiding
 user introduced errors by overlooking instructions.  Proof of Concepts

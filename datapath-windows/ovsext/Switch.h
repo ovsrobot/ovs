@@ -32,7 +32,7 @@
 
 #define OVS_INTERNAL_VPORT_DEFAULT_INDEX 0
 
-//Tunnel port indicies
+//Tunnel port indices
 #define RESERVED_START_INDEX1    1
 #define OVS_TUNNEL_INDEX_START RESERVED_START_INDEX1
 #define OVS_VXLAN_VPORT_INDEX    2

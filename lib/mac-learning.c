@@ -626,7 +626,7 @@ mac_learning_flush(struct mac_learning *ml)
         if (MAC_ENTRY_AGE_STATIC_ENTRY == e->expires) {
 
             /* Make note of first static-mac encountered, so that this while
-             * loop will break on visting this mac again via get_lru(). */
+             * loop will break on visiting this mac again via get_lru(). */
             if (!first_static_mac) {
                 first_static_mac = e;
             }

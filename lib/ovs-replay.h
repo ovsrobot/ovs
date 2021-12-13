@@ -110,7 +110,7 @@ void ovs_replay_file_close(replay_file_t f);
 /* Writes a new record of 'n' bytes from 'buffer' to a replay file.
  * 'is_read' should be true if the record belongs to 'read' operation
  * Depending on 'is_read', creates 'read' or 'write' record.  'write' records
- * contains only the size of a bufer ('n').
+ * contains only the size of a buffer ('n').
  * If 'n' is negative, writes 'n' as an error status.
  *
  * On success returns 0.  Otherwise, positive errno. */

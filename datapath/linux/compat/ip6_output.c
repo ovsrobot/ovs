@@ -16,7 +16,7 @@
  *      2 of the License, or (at your option) any later version.
  *
  *	Changes:
- *	A.N.Kuznetsov	:	airthmetics in fragmentation.
+ *	A.N.Kuznetsov	:	arithmetics in fragmentation.
  *				extension headers are implemented.
  *				route changes now work.
  *				ip6_forward does not confuse sniffers.

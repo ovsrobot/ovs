@@ -46,4 +46,4 @@
 #define IS_MODULE(option) config_enabled(option##_MODULE)
 
 #endif /* IS_ENABLED */
-#endif /* __LINUX_KCONFIG_WRAPER_H */
+#endif /* __LINUX_KCONFIG_WRAPPER_H */

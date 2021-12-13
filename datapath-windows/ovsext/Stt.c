@@ -258,7 +258,7 @@ OvsDoEncapStt(POVS_VPORT_ENTRY vport,
         }
 
         /*
-         * Make sure that the headroom for the tunnel header is continguous in
+         * Make sure that the headroom for the tunnel header is contiguous in
          * memory.
          */
         curMdl = NET_BUFFER_CURRENT_MDL(curNb);

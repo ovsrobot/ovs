@@ -596,7 +596,7 @@ dp_packet_set_size(struct dp_packet *b, uint32_t v)
 {
     /* netdev-dpdk does not currently support segmentation; consequently, for
      * all intents and purposes, 'data_len' (16 bit) and 'pkt_len' (32 bit) may
-     * be used interchangably.
+     * be used interchangeably.
      *
      * On the datapath, it is expected that the size of packets
      * (and thus 'v') will always be <= UINT16_MAX; this means that there is no

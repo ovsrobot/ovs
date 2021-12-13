@@ -65,7 +65,7 @@ Here relay service model comes into play.
 
 Solution for the scaling issue could look like a 2-tier deployment, where
 a set of relay servers is connected to the main database cluster
-(OVN_Southbound) and clients (ovn-conrtoller) connected to these relay
+(OVN_Southbound) and clients (ovn-controller) connected to these relay
 servers::
 
                                     172.16.0.1

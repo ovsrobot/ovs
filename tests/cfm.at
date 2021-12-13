@@ -125,7 +125,7 @@ OVS_VSWITCHD_START([add-br br1 -- \
                     set Interface p1 cfm_mpid=2 other_config:cfm_interval=300 other_config:cfm_extended=true ])
 
 ovs-appctl time/stop
-# wait for a while to stablize cfm.
+# wait for a while to stabilize cfm.
 ovs-appctl time/warp 10100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [300ms], [2], [up])
 CFM_CHECK_EXTENDED([p1], [2], [100], [up], [up], [300ms], [1], [up])
@@ -167,7 +167,7 @@ OVS_VSWITCHD_START([add-br br1 -- \
                     set Interface p1 cfm_mpid=2 other_config:cfm_interval=300 other_config:cfm_extended=true other_config:cfm_demand=true])
 
 ovs-appctl time/stop
-# wait for a while to stablize cfm. (need a longer time, since in demand mode
+# wait for a while to stabilize cfm. (need a longer time, since in demand mode
 # the fault interval is (MAX(ccm_interval_ms, 500) * 3.5) ms)
 ovs-appctl time/warp 20100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [300ms], [2], [up])
@@ -230,7 +230,7 @@ OVS_VSWITCHD_START([add-br br1 -- \
 
 ovs-appctl time/stop
 
-# wait for a while to stablize cfm.
+# wait for a while to stabilize cfm.
 ovs-appctl time/warp 10100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [100ms], [2], [up])
 CFM_CHECK_EXTENDED([p1], [2], [100], [up], [up], [100ms], [1], [up])
@@ -261,7 +261,7 @@ OVS_VSWITCHD_START([add-br br1 -- \
                     set Interface p1 cfm_mpid=2 other_config:cfm_interval=100 other_config:cfm_extended=true])
 
 ovs-appctl time/stop
-# wait for a while to stablize cfm.
+# wait for a while to stabilize cfm.
 ovs-appctl time/warp 10100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [100ms], [2], [up])
 CFM_CHECK_EXTENDED([p1], [2], [100], [up], [up], [100ms], [1], [up])
@@ -363,7 +363,7 @@ AT_CHECK([ovs-vsctl \
           set Interface p0 cfm_mpid=1 other_config:cfm_interval=100 other_config:cfm_extended=true -- \
           set Interface p1 cfm_mpid=2 other_config:cfm_interval=100 other_config:cfm_extended=true])
 ovs-appctl time/stop
-# wait for a while to stablize cfm.
+# wait for a while to stabilize cfm.
 ovs-appctl time/warp 10100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [100ms], [2], [up])
 CFM_CHECK_EXTENDED([p1], [2], [100], [up], [up], [100ms], [1], [up])
@@ -425,7 +425,7 @@ AT_CHECK([ovs-vsctl \
           set Interface p0 cfm_mpid=1 other_config:cfm_interval=100 other_config:cfm_extended=true -- \
           set Interface p1 cfm_mpid=2 other_config:cfm_interval=100 other_config:cfm_extended=true])
 ovs-appctl time/stop
-# wait for a while to stablize cfm.
+# wait for a while to stabilize cfm.
 ovs-appctl time/warp 10100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [100ms], [2], [up])
 CFM_CHECK_EXTENDED([p1], [2], [100], [up], [up], [100ms], [1], [up])
@@ -487,7 +487,7 @@ AT_CHECK([ovs-vsctl \
           set Interface p0 cfm_mpid=1 other_config:cfm_interval=100 other_config:cfm_extended=true -- \
           set Interface p1 cfm_mpid=2 other_config:cfm_interval=100 other_config:cfm_extended=true])
 ovs-appctl time/stop
-# wait for a while to stablize cfm.
+# wait for a while to stabilize cfm.
 ovs-appctl time/warp 10100 100
 CFM_CHECK_EXTENDED([p0], [1], [100], [up], [up], [100ms], [2], [up])
 CFM_CHECK_EXTENDED([p1], [2], [100], [up], [up], [100ms], [1], [up])

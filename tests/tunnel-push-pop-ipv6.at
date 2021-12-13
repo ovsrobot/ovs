@@ -275,7 +275,7 @@ AT_CHECK([ovs-appctl tnl/arp/show | tail -n+3 | sort], [0], [dnl
 2001:cafe::92                                 f8:bc:12:44:34:c8   br0
 ])
 
-dnl Receiving Neighbot Advertisement with incorrect VLAN id should not alter tunnel neighbor cache
+dnl Receiving Neighbor Advertisement with incorrect VLAN id should not alter tunnel neighbor cache
 AT_CHECK([ovs-vsctl set port br0 tag=10])
 AT_CHECK([ovs-appctl netdev-dummy/receive p0 'in_port(1),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x8100),vlan(vid=99,pcp=7),encap(eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88,label=0,proto=58,tclass=0,hlimit=255,frag=no),icmpv6(type=136,code=0),nd(target=2001:cafe::92,sll=00:00:00:00:00:00,tll=f8:bc:12:44:34:b6))'])
 

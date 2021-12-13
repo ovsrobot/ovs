@@ -95,7 +95,7 @@ recirc_find__(uint32_t id)
     return node ? CONTAINER_OF(node, struct recirc_id_node, id_node) : NULL;
 }
 
-/* Lockless RCU protected lookup.  If node is needed accross RCU quiescent
+/* Lockless RCU protected lookup.  If node is needed across RCU quiescent
  * state, caller should copy the contents. */
 const struct recirc_id_node *
 recirc_id_node_find(uint32_t id)
@@ -168,7 +168,7 @@ frozen_state_equal(const struct frozen_state *a, const struct frozen_state *b)
             && uuid_equals(&a->xport_uuid, &b->xport_uuid));
 }
 
-/* Lockless RCU protected lookup.  If node is needed accross RCU quiescent
+/* Lockless RCU protected lookup.  If node is needed across RCU quiescent
  * state, caller should take a reference. */
 static struct recirc_id_node *
 recirc_find_equal(const struct frozen_state *target, uint32_t hash)

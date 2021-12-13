@@ -74,7 +74,7 @@ VLOG_DEFINE_THIS_MODULE(bfd);
  *
  * - Rely on data traffic for liveness by using BFD demand mode.
  *   If we're receiving traffic on a port, we can safely assume it's up (modulo
- *   unidrectional failures).  BFD has a demand mode in which it can stay quiet
+ *   unidirectional failures).  BFD has a demand mode in which it can stay quiet
  *   unless it feels the need to check the status of the port.  Using this, we
  *   can implement a strategy in which BFD only sends control messages on dark
  *   interfaces.
@@ -194,8 +194,8 @@ struct bfd {
 
     long long int cfg_min_tx;     /* Configured minimum TX rate. */
     long long int cfg_min_rx;     /* Configured required minimum RX rate. */
-    long long int poll_min_tx;    /* Min TX negotating in a poll sequence. */
-    long long int poll_min_rx;    /* Min RX negotating in a poll sequence. */
+    long long int poll_min_tx;    /* Min TX negotiating in a poll sequence. */
+    long long int poll_min_rx;    /* Min RX negotiating in a poll sequence. */
     long long int min_tx;         /* bfd.DesiredMinTxInterval. */
     long long int min_rx;         /* bfd.RequiredMinRxInterval. */
 

@@ -528,9 +528,9 @@ OvsCompleteNBLForwardingCtx(OvsForwardingContext *ovsFwdCtx,
  * OvsDoFlowLookupOutput --
  *     Function to be used for the second stage of a tunneling workflow, ie.:
  *     - On the encapsulated packet on Tx path, to do a flow extract, flow
- *       lookup and excuting the actions.
+ *       lookup and executing the actions.
  *     - On the decapsulated packet on Rx path, to do a flow extract, flow
- *       lookup and excuting the actions.
+ *       lookup and executing the actions.
  *
  *     XXX: It is assumed that the NBL in 'ovsFwdCtx' is owned by OVS. This is
  *     until the new buffer management framework is adopted.
@@ -906,7 +906,7 @@ OvsOutputForwardingCtx(OvsForwardingContext *ovsFwdCtx)
                                           ovsFwdCtx->completionList,
                                           &ovsFwdCtx->layers, FALSE);
             if (status != NDIS_STATUS_SUCCESS) {
-                dropReason = L"Dropped due to resouces.";
+                dropReason = L"Dropped due to resources.";
                 goto dropit;
             }
         }
@@ -1089,7 +1089,7 @@ OvsPopFieldInPacketBuf(OvsForwardingContext *ovsFwdCtx,
                                   NULL, &ovsFwdCtx->layers, FALSE);
     if (status != NDIS_STATUS_SUCCESS) {
         OvsCompleteNBLForwardingCtx(ovsFwdCtx,
-                                    L"Dropped due to resouces");
+                                    L"Dropped due to resources");
         return NDIS_STATUS_RESOURCES;
     }
 
@@ -1108,7 +1108,7 @@ OvsPopFieldInPacketBuf(OvsForwardingContext *ovsFwdCtx,
         return NDIS_STATUS_FAILURE;
     }
     bufferStart += NET_BUFFER_CURRENT_MDL_OFFSET(curNb);
-    /* XXX At the momemnt !bufferData means it should be treated as VLAN. We
+    /* XXX At the moment !bufferData means it should be treated as VLAN. We
      * should split the function and refactor. */
     if (!bufferData) {
         EthHdr *ethHdr = (EthHdr *)bufferStart;
@@ -1881,7 +1881,7 @@ OvsOutputUserspaceAction(OvsForwardingContext *ovsFwdCtx,
     /* Indicate the packet is from egress-tunnel direction */
     egrTunAttr = NlAttrFindNested(attr, OVS_USERSPACE_ATTR_EGRESS_TUN_PORT);
 
-    /* Fill tunnel key to export to usersspace to calculate the template id */
+    /* Fill tunnel key to export to userspace to calculate the template id */
     if (egrTunAttr) {
         RtlZeroMemory(&tunKey,  sizeof tunKey);
         RtlCopyMemory(&tunKey, &ovsFwdCtx->tunKey, sizeof tunKey);

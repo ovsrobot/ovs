@@ -150,7 +150,7 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
      * }
      */
 
-    /* Do a batch minfilow extract into keys. */
+    /* Do a batch miniflow extract into keys. */
     uint32_t mf_mask = 0;
     miniflow_extract_func mfex_func;
     atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
@@ -178,8 +178,8 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
         struct dp_netdev_flow *f = NULL;
         struct netdev_flow_key *key = &keys[i];
 
-        /* Check the minfiflow mask to see if the packet was correctly
-         * classifed by vector mfex else do a scalar miniflow extract
+        /* Check the miniflow mask to see if the packet was correctly
+         * classified by vector mfex else do a scalar miniflow extract
          * for that packet.
          */
         bool mfex_hit = !!(mf_mask & (1 << i));

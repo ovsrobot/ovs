@@ -25,9 +25,9 @@ do
         eval ovs-ofctl $1 "${bridge}" $2
     else
         LENGTHPRO="$(expr length "$PROTOCOLS")"
-        COMMAIND="$(expr index "$PROTOCOLS" ,)"
-        echo "ovs-ofctl $1 -O${PROTOCOLS:${COMMAIND}+2:${LENGTHPRO}-${COMMAIND}-4} ${bridge} $2"
-        eval ovs-ofctl $1 -O"${PROTOCOLS:${COMMAIND}+2:${LENGTHPRO}-${COMMAIND}-4}" "${bridge}" $2
+        COMMAND="$(expr index "$PROTOCOLS" ,)"
+        echo "ovs-ofctl $1 -O${PROTOCOLS:${COMMAND}+2:${LENGTHPRO}-${COMMAND}-4} ${bridge} $2"
+        eval ovs-ofctl $1 -O"${PROTOCOLS:${COMMAND}+2:${LENGTHPRO}-${COMMAND}-4}" "${bridge}" $2
     fi
     echo ""
 done

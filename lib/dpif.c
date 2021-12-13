@@ -697,7 +697,7 @@ dpif_port_set_config(struct dpif *dpif, odp_port_t port_no,
  * initializes '*port' appropriately; on failure, returns a positive errno
  * value.
  *
- * Retuns ENODEV if the port doesn't exist.
+ * Returns ENODEV if the port doesn't exist.
  *
  * The caller owns the data in 'port' and must free it with
  * dpif_port_destroy() when it is no longer needed. */
@@ -721,7 +721,7 @@ dpif_port_query_by_number(const struct dpif *dpif, odp_port_t port_no,
  * initializes '*port' appropriately; on failure, returns a positive errno
  * value.
  *
- * Retuns ENODEV if the port doesn't exist.
+ * Returns ENODEV if the port doesn't exist.
  *
  * The caller owns the data in 'port' and must free it with
  * dpif_port_destroy() when it is no longer needed. */

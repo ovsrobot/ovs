@@ -268,7 +268,7 @@ lldp_send(struct lldpd *global OVS_UNUSED,
         aa_element_second_word = (port->p_element.mgmt_vlan & 0xFF) << 8;
 
         /* System id first byte should be first 3 most significant bits of
-         * connecion type, bitwise OR that with the device state and bitwise
+         * connection type, bitwise OR that with the device state and bitwise
          * OR that with the first 2 most significant bitsof rsvd (10 bits). */
         aa_elem_sys_id_first_byte =
             ((port->p_element.system_id.conn_type & 0x7) << 5) |
@@ -664,7 +664,7 @@ lldp_decode(struct lldpd *cfg OVS_UNUSED, char *frame, int s,
 
                 default:
                     hardware->h_rx_unrecognized_cnt++;
-                    VLOG_INFO("Unrecogised tlv subtype received");
+                    VLOG_INFO("Unrecognised tlv subtype received");
                     break;
                 }
             } else if (memcmp(dcbx, orgid, sizeof orgid) == 0) {

@@ -208,7 +208,7 @@ else
 fi
 
 # Create a bridge with an ordinary name and make sure that the management
-# socket gets creatd.
+# socket gets created.
 AT_CHECK([ovs-vsctl add-br a -- set bridge a datapath-type=dummy])
 AT_CHECK([test -$S a.mgmt])
 

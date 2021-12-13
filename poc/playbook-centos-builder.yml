@@ -32,7 +32,7 @@
   - name: Remove untracked files from Open vSwitch GIT repository
     command: chdir=/git/ovs/ git clean -xdf
 
-  - name: Reset Open vSwitch GIT repository to last comitted state
+  - name: Reset Open vSwitch GIT repository to last committed state
     command: chdir=/git/ovs/ git reset --hard
 
   - name: Generate spec files for easy build dependency retrieval

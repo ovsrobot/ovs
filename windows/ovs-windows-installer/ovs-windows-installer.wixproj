@@ -13,7 +13,7 @@
     <Version Condition=" '$(Version)' == '' ">1.0.0.0</Version>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
-    <TestOutOfProccess Condition=" '$(PROCESSOR_ARCHITECTURE)'!='x86' ">true</TestOutOfProccess>
+    <TestOutOfProcess Condition=" '$(PROCESSOR_ARCHITECTURE)'!='x86' ">true</TestOutOfProcess>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <IntermediateOutputPath>obj\$(Configuration)\</IntermediateOutputPath>
     <DefineConstants>BinariesPath=Binaries;SymbolsPath=Symbols;Version=$(Version)</DefineConstants>
@@ -22,7 +22,7 @@
     <SuppressSpecificWarnings>1076;</SuppressSpecificWarnings>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
-    <TestOutOfProccess Condition=" '$(PROCESSOR_ARCHITECTURE)'!='x86' ">true</TestOutOfProccess>
+    <TestOutOfProcess Condition=" '$(PROCESSOR_ARCHITECTURE)'!='x86' ">true</TestOutOfProcess>
     <DefineConstants>BinariesPath=Binaries;SymbolsPath=Symbols;Version=$(Version)</DefineConstants>
     <SuppressAllWarnings>False</SuppressAllWarnings>
     <Pedantic>False</Pedantic>
@@ -69,9 +69,9 @@
   </ItemGroup>
   <Import Project="$(WixTargetsPath)" />
   <Target Name="BeforeBuild">
-    <HeatDirectory RunAsSeparateProcess="$(TestOutOfProccess)" DirectoryRefId="BINARIESDIR" OutputFile="Binaries.wxs" Directory="Binaries" ComponentGroupName="BinariesComponentGroup" ToolPath="$(WixToolPath)" PreprocessorVariable="var.BinariesPath" GenerateGuidsNow="true" SuppressCom="true" SuppressRegistry="true" KeepEmptyDirectories="true" SuppressRootDirectory="true">
+    <HeatDirectory RunAsSeparateProcess="$(TestOutOfProcess)" DirectoryRefId="BINARIESDIR" OutputFile="Binaries.wxs" Directory="Binaries" ComponentGroupName="BinariesComponentGroup" ToolPath="$(WixToolPath)" PreprocessorVariable="var.BinariesPath" GenerateGuidsNow="true" SuppressCom="true" SuppressRegistry="true" KeepEmptyDirectories="true" SuppressRootDirectory="true">
     </HeatDirectory>
-    <HeatDirectory RunAsSeparateProcess="$(TestOutOfProccess)" DirectoryRefId="SYMBOLSDIR" OutputFile="Symbols.wxs" Directory="Symbols" ComponentGroupName="SymbolsComponentGroup" ToolPath="$(WixToolPath)" PreprocessorVariable="var.SymbolsPath" GenerateGuidsNow="true" SuppressCom="true" SuppressRegistry="true" KeepEmptyDirectories="true" SuppressRootDirectory="true">
+    <HeatDirectory RunAsSeparateProcess="$(TestOutOfProcess)" DirectoryRefId="SYMBOLSDIR" OutputFile="Symbols.wxs" Directory="Symbols" ComponentGroupName="SymbolsComponentGroup" ToolPath="$(WixToolPath)" PreprocessorVariable="var.SymbolsPath" GenerateGuidsNow="true" SuppressCom="true" SuppressRegistry="true" KeepEmptyDirectories="true" SuppressRootDirectory="true">
     </HeatDirectory>
   </Target>
   <!--

@@ -1628,7 +1628,7 @@ check_tries(struct trie_ctx trie_ctx[CLS_MAX_TRIES], unsigned int n_tries,
     return false;
 }
 
-/* Returns true if 'target' satisifies 'flow'/'mask', that is, if each bit
+/* Returns true if 'target' satisfies 'flow'/'mask', that is, if each bit
  * for which 'flow', for which 'mask' has a bit set, specifies a particular
  * value has the correct value in 'target'.
  *

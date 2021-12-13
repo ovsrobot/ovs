@@ -17,8 +17,8 @@
 /*
  * XXX: OVS_USE_NL_INTERFACE is being used to keep the legacy DPIF interface
  * alive while we transition over to the netlink based interface.
- * OVS_USE_NL_INTERFACE = 0 => legacy inteface to use with dpif-windows.c
- * OVS_USE_NL_INTERFACE = 1 => netlink inteface to use with ported dpif-linux.c
+ * OVS_USE_NL_INTERFACE = 0 => legacy interface to use with dpif-windows.c
+ * OVS_USE_NL_INTERFACE = 1 => netlink interface to use with ported dpif-linux.c
  */
 
 #include "precomp.h"
@@ -518,7 +518,7 @@ OvsCreateDeviceObject(NDIS_HANDLE ovsExtDriverHandle)
     if (status == NDIS_STATUS_SUCCESS) {
         OvsRegisterSystemProvider((PVOID)gOvsDeviceObject);
     } else {
-        OVS_LOG_ERROR("Failed to regiser pseudo device, error: 0x%08x",
+        OVS_LOG_ERROR("Failed to register pseudo device, error: 0x%08x",
                       status);
     }
 
@@ -1001,7 +1001,7 @@ done:
     OvsReleaseSwitchContext(gOvsSwitchContext);
 
 exit:
-    /* Should not complete a pending IRP unless proceesing is completed. */
+    /* Should not complete a pending IRP unless processing is completed. */
     if (status == STATUS_PENDING) {
         return status;
     }
@@ -1654,7 +1654,7 @@ OvsPortFillInfo(POVS_USER_PARAMS_CONTEXT usrParamsCtx,
     msgOutTmp.nlMsg.nlmsgType = OVS_WIN_NL_VPORT_FAMILY_ID;
     msgOutTmp.nlMsg.nlmsgFlags = 0;  /* XXX: ? */
 
-    /* driver intiated messages should have zerp seq number*/
+    /* driver initiated messages should have zerp seq number*/
     msgOutTmp.nlMsg.nlmsgSeq = 0;
     msgOutTmp.nlMsg.nlmsgPid = usrParamsCtx->ovsInstance->pid;
 
@@ -1702,7 +1702,7 @@ cleanup:
 /*
  * --------------------------------------------------------------------------
  * Handler for reading events from the driver event queue. This handler is
- * executed when user modes issues a socket receive on a socket assocaited
+ * executed when user modes issues a socket receive on a socket associated
  * with the MC group for events.
  * XXX user mode should read multiple events in one system call
  * --------------------------------------------------------------------------
@@ -1746,7 +1746,7 @@ OvsReadEventCmdHandler(POVS_USER_PARAMS_CONTEXT usrParamsCtx,
             goto cleanup;
         }
 
-        /* Driver intiated messages should have zero seq number */
+        /* Driver initiated messages should have zero seq number */
         status = OvsCreateNlMsgFromCtEntry(&ctEventEntry.entry,
                                            usrParamsCtx->outputBuffer,
                                            usrParamsCtx->outputLength,

@@ -441,7 +441,7 @@ def action_up(pif, force):
     pif_rename_physical_devices(pif)
 
     # if we are not forcing the interface up then attempt to tear down
-    # any existing devices which might interfere with brinign this one
+    # any existing devices which might interfere with bringing this one
     # up.
     if not force:
         ifdown(ipdev)

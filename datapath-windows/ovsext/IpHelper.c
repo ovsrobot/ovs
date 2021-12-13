@@ -1797,7 +1797,7 @@ OvsUpdateIPNeighEntry(UINT32 ipAddr,
 /*
  *----------------------------------------------------------------------------
  *  IP Helper system thread handles the following requests:
- *    1. Intialize Internal port row when internal port is connected
+ *    1. Initialize Internal port row when internal port is connected
  *    2. Handle FWD request
  *    3. Handle IP Neigh timeout
  *

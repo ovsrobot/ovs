@@ -210,7 +210,7 @@ class Vlog(object):
 
     @staticmethod
     def init(log_file=None):
-        """Intializes the Vlog module.  Causes Vlog to write to 'log_file' if
+        """Initializes the Vlog module.  Causes Vlog to write to 'log_file' if
         not None.  Should be called after all Vlog objects have been created.
         No logging will occur until this function is called."""
 

@@ -1316,7 +1316,7 @@ run_benchmarks(struct ovs_cmdl_context *ctx)
             "                 special cases a table may consist of only one kind of\n"
             "                 rules, so there will be only one subtable.\n"
             "<n_threads>    - How many lookup threads to use.  Using one thread should\n"
-            "                 give less variance accross runs, but classifier\n"
+            "                 give less variance across runs, but classifier\n"
             "                 scaling can be tested with multiple threads.\n"
             "<n_lookups>    - How many lookups each thread should perform.\n"
             "\n", program_name);

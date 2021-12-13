@@ -25,7 +25,7 @@
  *
  * It is sometimes desirable to take an action whenever an object changes.
  * Suppose we associate a sequence number with an object and increment the
- * sequence number whenver we change the object.  An observer can then record
+ * sequence number whenever we change the object.  An observer can then record
  * the sequence number it sees.  Later on, if the current sequence number
  * differs from the one it saw last, then the observer knows to examine the
  * object for changes.

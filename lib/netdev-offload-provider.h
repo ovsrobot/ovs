@@ -93,7 +93,7 @@ struct netdev_flow_api {
      * takes ownership of a packet if errno != EOPNOTSUPP. */
     int (*hw_miss_packet_recover)(struct netdev *, struct dp_packet *);
 
-    /* Initializies the netdev flow api.
+    /* Initializes the netdev flow api.
      * Return 0 if successful, otherwise returns a positive errno value. */
     int (*init_flow_api)(struct netdev *);
 };

@@ -1469,7 +1469,7 @@ struct ofproto_class {
         const struct ofproto_ipfix_flow_exporter_options
             *flow_exporters_options, size_t n_flow_exporters_options);
 
-    /* Gets IPFIX stats on 'ofproto' according to the exporter of birdge
+    /* Gets IPFIX stats on 'ofproto' according to the exporter of bridge
      * IPFIX or flow-based IPFIX.
      *
      * OFPERR_NXST_NOT_CONFIGURED as a return value indicates that bridge

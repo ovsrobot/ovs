@@ -67,7 +67,7 @@ enum dpif_sflow_tunnel_type {
 struct dpif_sflow_port {
     struct hmap_node hmap_node; /* In struct dpif_sflow's "ports" hmap. */
     SFLDataSource_instance dsi; /* sFlow library's notion of port number. */
-    struct ofport *ofport;      /* To retrive port stats. */
+    struct ofport *ofport;      /* To retrieve port stats. */
     odp_port_t odp_port;
     enum dpif_sflow_tunnel_type tunnel_type;
 };
@@ -220,7 +220,7 @@ sflow_get_dp_stats(struct dpif_sflow *ds OVS_UNUSED,
 }
 
 /* If there are multiple bridges defined then we need some
-   minimal artibration to decide which one should send the
+   minimal arbitration to decide which one should send the
    global counters.  This function allows each sub-agent to
    ask if he should do it or not. */
 static bool

@@ -2468,7 +2468,7 @@ static int validate_and_copy_sample(struct net *net, const struct nlattr *attr,
 	 * Set 'clone_action->exec' to true if the actions can be
 	 * executed without being deferred.
 	 *
-	 * If the sample is the last action, it can always be excuted
+	 * If the sample is the last action, it can always be executed
 	 * rather than deferred.
 	 */
 	arg.exec = last || !actions_may_change_flow(actions);

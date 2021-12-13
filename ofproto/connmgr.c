@@ -1623,7 +1623,7 @@ connmgr_send_flow_removed(struct connmgr *mgr,
  * informed with the OFPT_TABLE_STATUS message. The reason values
  * OFPTR_VACANCY_DOWN and OFPTR_VACANCY_UP identify a vacancy message. The
  * vacancy events are generated when the remaining space in the flow table
- * changes and crosses one of the vacancy thereshold specified by
+ * changes and crosses one of the vacancy threshold specified by
  * OFPT_TABLE_MOD. */
 void
 connmgr_send_table_status(struct connmgr *mgr,

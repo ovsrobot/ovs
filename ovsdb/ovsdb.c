@@ -163,7 +163,7 @@ ovsdb_parse_version(const char *s, struct ovsdb_version *version)
 }
 
 /* Returns true if 's' is a version string in the format "<x>.<y>.<z>",
- * otherwie false. */
+ * otherwise false. */
 bool
 ovsdb_is_valid_version(const char *s)
 {
@@ -470,7 +470,7 @@ ovsdb_destroy(struct ovsdb *db)
         /* Destroy txn history. */
         ovsdb_txn_history_destroy(db);
 
-        /* Cancell all the forwarded transactions.  There should not be
+        /* Cancel all the forwarded transactions.  There should not be
          * any as all triggers should be already cancelled. */
         ovsdb_txn_forward_cancel_all(db, false);
         ovs_assert(hmap_is_empty(&db->txn_forward_sent));

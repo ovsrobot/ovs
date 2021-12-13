@@ -27,7 +27,7 @@
  * IP6_FH_F_FRAG will be set. If it's an AH header, the
  * IP6_FH_F_AUTH flag is set and target < 0, then this function will
  * stop at the AH header. If IP6_FH_F_SKIP_RH flag was passed, then this
- * function will skip all those routing headers, where segements_left was 0.
+ * function will skip all those routing headers, where segments_left was 0.
  */
 int rpl_ipv6_find_hdr(const struct sk_buff *skb, unsigned int *offset,
 		  int target, unsigned short *fragoff, int *flags)

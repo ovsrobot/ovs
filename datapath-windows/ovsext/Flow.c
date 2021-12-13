@@ -783,15 +783,15 @@ done:
 UINT64
 OvsFlowUsedTime(UINT64 flowUsed)
 {
-    UINT64 currentMs, iddleMs;
+    UINT64 currentMs, idleMs;
     LARGE_INTEGER tickCount;
 
     KeQueryTickCount(&tickCount);
-    iddleMs =  tickCount.QuadPart - flowUsed;
-    iddleMs *= ovsTimeIncrementPerTick;
+    idleMs =  tickCount.QuadPart - flowUsed;
+    idleMs *= ovsTimeIncrementPerTick;
     currentMs = KeQueryPerformanceCounter(&tickCount).QuadPart * 1000 /
                 tickCount.QuadPart;
-    return  currentMs - iddleMs;
+    return  currentMs - idleMs;
 }
 
 /*

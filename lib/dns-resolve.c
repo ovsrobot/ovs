@@ -138,7 +138,7 @@ dns_resolve_init(bool is_daemon)
  * is in process and the caller should call again later. The value of '*addr'
  * is always nullified if false is returned. If this function is called under
  * daemon-context, the resolving will undergo asynchronously. Otherwise, a
- * synchronouse resolving will take place.
+ * synchronous resolving will take place.
  *
  * This function is thread-safe.
  *

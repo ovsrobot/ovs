@@ -428,7 +428,7 @@ dpdk_init__(const struct smap *ovs_other_config)
             }
         } else {
             /* User did not set dpdk-lcore-mask and unable to get current
-             * thread affintity - default to core #0 */
+             * thread affinity - default to core #0 */
             VLOG_ERR("Thread getaffinity failed. Using core #0");
         }
         svec_add(&args, "-l");

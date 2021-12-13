@@ -27,7 +27,7 @@
  * Log writes are atomic.  A client may use ovsdb_log_commit() to ensure that
  * they are durable.
  *
- * Logs provide a mechansim to allow the client to tell when they have grown
+ * Logs provide a mechanism to allow the client to tell when they have grown
  * enough that compacting may be warranted.  After reading existing log
  * contents, the client uses ovsdb_log_mark_base() to mark the "base" to be
  * considered as the initial size of the log.  Thereafter, a client may call

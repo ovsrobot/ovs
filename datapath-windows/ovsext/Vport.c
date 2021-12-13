@@ -208,7 +208,7 @@ HvUpdatePort(POVS_SWITCH_CONTEXT switchContext,
     vport = OvsFindVportByPortIdAndNicIndex(switchContext,
                                             portParam->PortId, 0);
     /*
-     * Update properties only for NETDEV ports for supprting PS script
+     * Update properties only for NETDEV ports for supporting PS script
      */
     if (vport == NULL) {
         goto update_port_done;
@@ -571,8 +571,8 @@ HvUpdateNic(POVS_SWITCH_CONTEXT switchContext,
 
     /*
      * XXX: Not sure what kind of event to post here. DPIF is not interested in
-     * changes to MAC address. Netdev-windows might be intrested, though.
-     * That said, if the name chagnes, not clear what kind of event to be
+     * changes to MAC address. Netdev-windows might be interested, though.
+     * That said, if the name changes, not clear what kind of event to be
      * posted. We might have to delete the vport, and have userspace recreate
      * it.
      */
@@ -1293,7 +1293,7 @@ InitOvsVportCommon(POVS_SWITCH_CONTEXT switchContext,
 
 /*
  * --------------------------------------------------------------------------
- * Provides functionality that is partly complementatry to
+ * Provides functionality that is partly complementary to
  * InitOvsVportCommon()/UpdateSwitchCtxWithVport().
  *
  * 'hvDelete' indicates if caller is removing the vport as a result of the
@@ -1546,7 +1546,7 @@ cleanup:
 
 /*
  * --------------------------------------------------------------------------
- * Deletes ports added from the Hyper-V switch as well as OVS usersapce. The
+ * Deletes ports added from the Hyper-V switch as well as OVS userspace. The
  * function deletes ports in 'portIdHashArray'. This will delete most of the
  * ports that are in the 'portNoHashArray' as well. Any remaining ports
  * are deleted by walking the 'portNoHashArray'.

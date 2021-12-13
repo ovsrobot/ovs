@@ -122,7 +122,7 @@ pvector_insert(struct pvector *pvec, void *ptr, int priority)
     ovs_assert(ptr != NULL);
 
     /* There is no possible concurrent writer. Insertions must be protected
-     * by mutex or be always excuted from the same thread. */
+     * by mutex or be always executed from the same thread. */
     atomic_read_relaxed(&old->size, &size);
 
     /* Check if can add to the end without reallocation. */

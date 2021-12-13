@@ -315,7 +315,7 @@ OvsProcessIpv4Fragment(POVS_SWITCH_CONTEXT switchContext,
             status = NDIS_STATUS_RESOURCES;
             goto payload_copy_error;
         }
-        /* Copy the fragmeny key. */
+        /* Copy the fragment key. */
         NdisZeroMemory(entry, sizeof(OVS_IPFRAG_ENTRY));
         NdisMoveMemory(&(entry->fragKey), &fragKey,
                        sizeof(OVS_IPFRAG_KEY));

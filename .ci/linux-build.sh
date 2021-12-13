@@ -79,7 +79,7 @@ function install_kernel()
     if [ "$AFXDP" ]; then
         sudo make headers_install INSTALL_HDR_PATH=/usr
         pushd tools/lib/bpf/
-        # Bulding with gcc because there are some issues in make files
+        # Building with gcc because there are some issues in make files
         # that breaks building libbpf with clang on Travis.
         CC=gcc sudo make install
         CC=gcc sudo make install_headers
@@ -233,7 +233,7 @@ if [ "$CC" = "clang" ]; then
     CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} -Wno-error=unused-command-line-argument"
 elif [ "$M32" ]; then
     # Not using sparse for 32bit builds on 64bit machine.
-    # Adding m32 flag directly to CC to avoid any posiible issues with API/ABI
+    # Adding m32 flag directly to CC to avoid any possible issues with API/ABI
     # difference on 'configure' and 'make' stages.
     export CC="$CC -m32"
 elif [ "$TRAVIS_ARCH" != "aarch64" ]; then

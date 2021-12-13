@@ -134,7 +134,7 @@ typedef struct _OVS_TUNFLT_REQUEST {
 } OVS_TUNFLT_REQUEST, *POVS_TUNFLT_REQUEST;
 
 typedef struct _OVS_TUNFLT_REQUEST_LIST {
-    /* SpinLock for syncronizing access to the requests list. */
+    /* SpinLock for synchronizing access to the requests list. */
     NDIS_SPIN_LOCK spinlock;
     /* Head of the requests list. */
     LIST_ENTRY     head;
@@ -1047,7 +1047,7 @@ OvsTunnelFilterRequestPush(POVS_TUNFLT_REQUEST_LIST listRequests,
         if (irp->Cancel) {
             /*
              * The IRP has already been cancelled.
-             * Determine wheather the Cancel routine has started to run.
+             * Determine whether the Cancel routine has started to run.
              */
             oldCancelRoutine = IoSetCancelRoutine(irp, NULL);
             if (oldCancelRoutine) {

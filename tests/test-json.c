@@ -165,7 +165,7 @@ json_string_benchmark_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
 {
     struct {
         int n;
-        int quote_probablility;
+        int quote_probability;
         int special_probability;
         int iter;
     } configs[] = {
@@ -194,14 +194,14 @@ json_string_benchmark_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
             if (r < configs[i].special_probability) {
                 str[j] = random_range(' ' - 1) + 1;
             } else if (r < (configs[i].special_probability
-                            + configs[i].quote_probablility)) {
+                            + configs[i].quote_probability)) {
                 str[j] = '"';
             } else {
                 str[j] = random_range(256 - ' ') + ' ';
             }
         }
 
-        printf("%-11d %-2d %-2d: ", n, configs[i].quote_probablility,
+        printf("%-11d %-2d %-2d: ", n, configs[i].quote_probability,
                                        configs[i].special_probability);
         fflush(stdout);
 

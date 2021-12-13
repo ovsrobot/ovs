@@ -499,7 +499,7 @@ declare -A _OVS_VSCTL_ARG_COMPLETION_FUNCS=(
 # $1: Argument type, may include vertical bars to mean OR
 # $2: Beginning of completion
 #
-# Note that this checks for existance in
+# Note that this checks for existence in
 # _OVS_VSCTL_ARG_COMPLETION_FUNCS; if the argument type ($1) is not
 # there it will fail gracefully.
 _ovs_vsctl_possible_completions_of_argument () {
@@ -649,7 +649,7 @@ _ovs_vsctl_trim_compreply() {
 #
 # Parsing up until the command word happens starts with everything
 # valid; as the syntax order of ovs-vsctl is fairly strict, when types
-# of words that preclude other words from happending can turn them
+# of words that preclude other words from happening can turn them
 # off; this is controlled by valid_globals, valid_opts, and
 # valid_commands.  given_opts is used to narrow down which commands
 # are valid based on the previously given options.

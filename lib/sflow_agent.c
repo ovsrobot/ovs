@@ -329,7 +329,7 @@ static void sfl_agent_jumpTableRemove(SFLAgent *agent, SFLSampler *sampler)
   fast lookup (pointers cached in hash table).  If there are multiple
   sampler instances for a given ifIndex, then this fn will return
   the one with the lowest instance number.  Since the samplers
-  list is sorted, this means the other instances will be accesible
+  list is sorted, this means the other instances will be accessible
   by following the sampler->nxt pointer (until the ds_class
   or ds_index changes).  This is helpful if you need to offer
   the same flowSample to multiple samplers.
@@ -410,8 +410,8 @@ SFLReceiver *sfl_agent_getReceiver(SFLAgent *agent, u_int32_t receiverIndex)
 
 SFLSampler *sfl_agent_getNextSampler(SFLAgent *agent, SFLDataSource_instance *pdsi)
 {
-    /* return the one lexograpically just after it - assume they are sorted
-       correctly according to the lexographical ordering of the object ids */
+    /* return the one lexicographically just after it - assume they are sorted
+       correctly according to the lexicographical ordering of the object ids */
     SFLSampler *sm = sfl_agent_getSampler(agent, pdsi);
     return sm ? sm->nxt : NULL;
 }
@@ -423,8 +423,8 @@ SFLSampler *sfl_agent_getNextSampler(SFLAgent *agent, SFLDataSource_instance *pd
 
 SFLPoller *sfl_agent_getNextPoller(SFLAgent *agent, SFLDataSource_instance *pdsi)
 {
-    /* return the one lexograpically just after it - assume they are sorted
-       correctly according to the lexographical ordering of the object ids */
+    /* return the one lexicographically just after it - assume they are sorted
+       correctly according to the lexicographical ordering of the object ids */
     SFLPoller *pl = sfl_agent_getPoller(agent, pdsi);
     return pl ? pl->nxt : NULL;
 }

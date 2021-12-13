@@ -52,7 +52,7 @@
  *
  * Thread-safety:
  *
- * conntrack_execute() can be called by multiple threads simultaneoulsy.
+ * conntrack_execute() can be called by multiple threads simultaneously.
  *
  * Shutdown:
  *

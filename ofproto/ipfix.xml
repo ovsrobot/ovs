@@ -5841,7 +5841,7 @@
           A description of the anonymization technique applied
           to a referenced Information Element within a referenced Template.
           Each technique may be applicable only to certain Information
-          Elements and recommended only for certain Infomation Elements;
+          Elements and recommended only for certain Information Elements;
           these restrictions are noted in the table below.
         </paragraph>
         <artwork>

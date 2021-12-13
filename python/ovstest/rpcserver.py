@@ -314,13 +314,13 @@ class TestArena(xmlrpc.XMLRPC):
 
     def xmlrpc_interface_assign_ip(self, iface, ip_address, mask):
         """
-        This function allows to assing ip address to the given interface.
+        This function allows to passing ip address to the given interface.
         """
         return util.interface_assign_ip(iface, ip_address, mask)
 
     def xmlrpc_interface_remove_ip(self, iface, ip_address, mask):
         """
-        This function allows to assing ip address to the given interface.
+        This function allows to passing ip address to the given interface.
         """
         return util.interface_remove_ip(iface, ip_address, mask)
 

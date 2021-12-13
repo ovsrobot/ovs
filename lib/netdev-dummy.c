@@ -67,7 +67,7 @@ enum dummy_packet_conn_type {
 enum dummy_netdev_conn_state {
     CONN_STATE_CONNECTED,      /* Listener connected. */
     CONN_STATE_NOT_CONNECTED,  /* Listener not connected.  */
-    CONN_STATE_UNKNOWN,        /* No relavent information.  */
+    CONN_STATE_UNKNOWN,        /* No relevant information.  */
 };
 
 struct dummy_packet_pconn {

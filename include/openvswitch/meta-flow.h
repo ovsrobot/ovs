@@ -2148,7 +2148,7 @@ struct mf_field {
      * NXM and OXM are extensible, allowing later extensions to be sent in
      * earlier protocol versions, so this does not necessarily correspond to
      * the OpenFlow protocol version the field was introduced in.
-     * Also, some field types are tranparently mapped to each other via the
+     * Also, some field types are transparently mapped to each other via the
      * struct flow (like vlan and dscp/tos fields), so each variant supports
      * all protocols. */
     enum ofputil_protocol usable_protocols_exact; /* Match/set whole field. */

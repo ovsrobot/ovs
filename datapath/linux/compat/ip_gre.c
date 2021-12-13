@@ -270,7 +270,7 @@ drop:
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,7,0)
 #include "gso.h"
-/* gre_handle_offloads() has different return type on older kernsl. */
+/* gre_handle_offloads() has different return type on older kernel. */
 static void gre_nop_fix(struct sk_buff *skb) { }
 
 static void gre_csum_fix(struct sk_buff *skb)
@@ -1410,7 +1410,7 @@ int rpl_ipgre_init(void)
 	return 0;
 
 ip_gre_loaded:
-	/* Since GRE only allows single receiver to be registerd,
+	/* Since GRE only allows single receiver to be registered,
 	 * we skip here so only gre transmit works, see:
 	 *
 	 * commit 9f57c67c379d88a10e8ad676426fee5ae7341b14

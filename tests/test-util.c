@@ -493,11 +493,11 @@ test_bitwise_rscan(struct ovs_cmdl_context *ctx OVS_UNUSED)
     uint8_t s2[3] = {0x0f, 0xff, 0xff};
     /* Target is in the first byte but not the first bit */
     ovs_assert(19 == bitwise_rscan(s2, 3, 1, 23, -1));
-    /* Target exists before the start postion */
+    /* Target exists before the start position */
     ovs_assert(18 == bitwise_rscan(s2, 3, 1, 18, -1));
-    /* Target exists after the end postion, return end */
+    /* Target exists after the end position, return end */
     ovs_assert(20 == bitwise_rscan(s2, 3, 1, 23, 20));
-    /* Target is at the end postion, return end */
+    /* Target is at the end position, return end */
     ovs_assert(19 == bitwise_rscan(s2, 3, 1, 23, 19));
     /* start == end, target at start */
     ovs_assert(19 == bitwise_rscan(s2, 3, 1, 19, 19));

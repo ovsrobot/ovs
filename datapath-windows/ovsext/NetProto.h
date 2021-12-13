@@ -78,7 +78,7 @@ typedef UINT64 IP6UnitLength;
 /*
  * This is the maximum value for the length field in the IP header. The meaning
  * varies with IP protocols:
- *    IPv4: the total ip length (including ip header and extention)
+ *    IPv4: the total ip length (including ip header and extension)
  *    IPv6: the IP payload length (including IP extensions)
  */
 #define IP_MAX_PACKET          0xFFFF
@@ -151,7 +151,7 @@ typedef UINT64 IP6UnitLength;
 #define ND_ROUTER_SOLICIT          133
 #define ND_ROUTER_ADVERT           134
 #define ND_NEIGHBOR_SOLICIT        135     /* neighbor solicitation */
-#define ND_NEIGHBOR_ADVERT         136     /* neighbor advertisment */
+#define ND_NEIGHBOR_ADVERT         136     /* neighbor advertisement */
 #define ND_REDIRECT                137
 
 

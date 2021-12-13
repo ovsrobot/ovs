@@ -2127,7 +2127,7 @@ ovs-appctl -t ovs-ofctl ofctl/set-output-file monitor.log
 AT_CAPTURE_FILE([monitor.log])
 
 # This bundle adds a flow using that group and then a packet-out that
-# needs them both.  Finally the bundle adds another flow that referes
+# needs them both.  Finally the bundle adds another flow that refers
 # to a non-existing group, causing the bundle to fail, and the
 # packet-in should not get executed.
 AT_DATA([bundle.txt], [dnl
@@ -2168,7 +2168,7 @@ ovs-appctl -t ovs-ofctl ofctl/set-output-file monitor.log
 AT_CAPTURE_FILE([monitor.log])
 
 # This bundle adds a flow using that group and then a packet-out that
-# needs them both.  Finally the bundle adds another flow that referes
+# needs them both.  Finally the bundle adds another flow that refers
 # to a non-existing group, causing the bundle to fail, and the
 # packet-in should not get executed.
 AT_DATA([bundle.txt], [dnl
@@ -3519,7 +3519,7 @@ OFPT_PORT_STATUS (OF1.4): MOD: ${INDEX}(test): addr:aa:55:aa:55:00:0x
 
         # Turn on vacancy events, then add flows until we're full.
         # With initial vacancy of 100% and vacancy_up of 80%, so that
-        # vacancy >= vacancy_up, this enables VACANY_DOWN events, so
+        # vacancy >= vacancy_up, this enables VACANCY_DOWN events, so
         # we get a single such message when vacancy dips below 20%.
         ovs_ofctl -O OpenFlow14 mod-table br0 1 vacancy:20,80
         ovs_ofctl -O OpenFlow14 add-flow br0 table=1,in_port=1,actions=2

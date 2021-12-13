@@ -399,7 +399,7 @@ struct tc_ops {
                      struct smap *details);
 
     /* Configures or reconfigures 'queue_id' on 'netdev->tc' according to
-     * 'details', perfoming any required Netlink calls to complete the
+     * 'details', performing any required Netlink calls to complete the
      * reconfiguration.  The caller ensures that 'queue_id' is less than
      * 'n_queues'.
      *

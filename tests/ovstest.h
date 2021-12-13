@@ -39,7 +39,7 @@
  * 'ovstest --help' will list all test programs can be invoked.
  *
  * The 'Usage' section below documents how to add a new sub program
- * to ovstest using OVSTEST_REIGSTER macros.
+ * to ovstest using OVSTEST_REGISTER macros.
  */
 
 typedef void (*ovstest_func)(int argc, char *argv[]);

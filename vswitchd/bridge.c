@@ -181,7 +181,7 @@ struct datapath {
 /* All bridges, indexed by name. */
 static struct hmap all_bridges = HMAP_INITIALIZER(&all_bridges);
 
-/* All datapath configuartions, indexed by type. */
+/* All datapath configurations, indexed by type. */
 static struct hmap all_datapaths = HMAP_INITIALIZER(&all_datapaths);
 
 /* OVSDB IDL used to obtain configuration. */
@@ -1404,7 +1404,7 @@ bridge_configure_netflow(struct bridge *br)
         opts.active_timeout = -1;
     }
 
-    /* Add engine ID to interface number to disambiguate bridgs? */
+    /* Add engine ID to interface number to disambiguate bridges? */
     opts.add_id_to_iface = cfg->add_id_to_interface;
     if (opts.add_id_to_iface) {
         if (opts.engine_id > 0x7f) {
@@ -3895,7 +3895,7 @@ bridge_configure_remotes(struct bridge *br,
     /* The set of controllers to pass down to ofproto. */
     struct shash ocs = SHASH_INITIALIZER(&ocs);
 
-    /* Add managment controller. */
+    /* Add management controller. */
     struct ofproto_controller *oc = xmalloc(sizeof *oc);
     *oc = (struct ofproto_controller) {
         .type = OFCONN_SERVICE,

@@ -608,7 +608,7 @@ Datapath actions: 10,set(ipv4(src=192.168.3.91)),11,set(ipv4(src=192.168.3.90)),
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
-AT_SETUP([ofproto-dpif - modify IPv6 Neighbor Solitication (ND)])
+AT_SETUP([ofproto-dpif - modify IPv6 Neighbor Solicitation (ND)])
 OVS_VSWITCHD_START
 add_of_ports br0 1 10 11 12 13
 AT_DATA([flows.txt], [dnl
@@ -1080,7 +1080,7 @@ in_port=9,reg0=0xdeadbeef  actions=output:20
 in_port=10,reg1=0xdeadbeef actions=output:21
 in_port=11,reg2=0xeef22dea actions=output:22
 
-dnl Sanilty check all registers
+dnl Sanity check all registers
 in_port=12 actions=load:0x10->NXM_NX_REG0[[]],load:0x11->NXM_NX_REG1[[]],load:0x12->NXM_NX_REG2[[]]
 in_port=13 actions=load:0x13->NXM_NX_REG3[[]],load:0x14->NXM_NX_REG4[[]],load:0x15->NXM_NX_REG5[[]]
 in_port=14 actions=load:0x16->NXM_NX_REG6[[]],load:0x17->NXM_NX_REG7[[]]
@@ -5983,7 +5983,7 @@ AT_CHECK([ovs-appctl ofproto/trace ovs-dummy "$odp_flow"], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0], [dnl
 Datapath actions: 2
 ])
-# Test commmand: ofproto/trace br_name br_flow
+# Test command: ofproto/trace br_name br_flow
 AT_CHECK([ovs-appctl ofproto/trace br0 "$br_flow"], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0], [dnl
 Datapath actions: 2
@@ -9261,7 +9261,7 @@ OVS_VSWITCHD_START([add-br br1 -- set bridge br1 datapath-type=dummy -- \
                     set Interface p1 bfd:enable=true bfd:min_tx=500 bfd:min_rx=500])
 
 ovs-appctl time/stop
-# advance the clock to stablize everything.
+# advance the clock to stabilize everything.
 ovs-appctl time/warp 5000 100
 # cfm/show should show 'recv' fault.
 AT_CHECK([ovs-appctl cfm/show | sed -n '/^.*fault:.*/p'], [0], [dnl
@@ -9284,7 +9284,7 @@ AT_CHECK([ovs-appctl bond/show | sed -n '/^.*may_enable:.*/p'], [0], [dnl
 
 # now disable the bfd on p1.
 AT_CHECK([ovs-vsctl set Interface p1 bfd:enable=false])
-# advance the clock to stablize everything.
+# advance the clock to stabilize everything.
 ovs-appctl time/warp 5000 100
 # cfm/show should show 'recv' fault.
 AT_CHECK([ovs-appctl cfm/show | sed -n '/^.*fault:.*/p'], [0], [dnl
@@ -9304,7 +9304,7 @@ AT_CHECK([ovs-appctl bond/show br0bond | sed -n '/^.*may_enable:.*/p'], [0], [dn
 # now enable the bfd on p1 and disable bfd on p0.
 AT_CHECK([ovs-vsctl set Interface p1 bfd:enable=true])
 AT_CHECK([ovs-vsctl set Interface p0 bfd:enable=false])
-# advance the clock to stablize everything.
+# advance the clock to stabilize everything.
 ovs-appctl time/warp 5000 100
 # cfm/show should show 'recv' fault.
 AT_CHECK([ovs-appctl cfm/show | sed -n '/^.*fault:.*/p'], [0], [dnl
@@ -11309,7 +11309,7 @@ AT_CHECK([ovs-vsctl set Interface p1 mtu_request=1600])
 
 # Check that the new MTU is applied
 AT_CHECK([ovs-vsctl wait-until Interface p1 mtu=1600])
-# The internal port 'br0' should have the same MTU value as p1, becase it's
+# The internal port 'br0' should have the same MTU value as p1, because it's
 # the new bridge minimum.
 AT_CHECK([ovs-vsctl wait-until Interface br0 mtu=1600])
 
@@ -11324,7 +11324,7 @@ AT_CHECK([ovs-vsctl wait-until Interface p2 mtu=1600])
 AT_CHECK([ovs-vsctl wait-until Interface br0 mtu=1600])
 
 # Explicitly set mtu_request on the internal member.  This should prevent
-# the MTU from being overriden.
+# the MTU from being overridden.
 AT_CHECK([ovs-vsctl set int br0 mtu_request=1700])
 AT_CHECK([ovs-vsctl wait-until Interface br0 mtu=1700])
 

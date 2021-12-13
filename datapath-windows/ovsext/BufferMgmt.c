@@ -70,7 +70,7 @@
  *     3. New Allocated NBL will have src port set to default port id
  *     4. If original packet has direction flag set, the copied or partial
  *        copied NBL will still be in same direction.
- *     5. When you advance or retreate the buffer, you may need to update
+ *     5. When you advance or retreat the buffer, you may need to update
  *        relevant meta data to keep it consistent.
  *
  * ****************************************************************************
@@ -373,7 +373,7 @@ OvsDumpNetBufferList(PNET_BUFFER_LIST nbl)
  *       NBL + NB + MBL + Data + Context
  *    Please note:
  *       * Forwarding Context is allocated, but forwarding detail information
- *       is not initailized.
+ *       is not initialized.
  *       * The headroom can not be larger than OVS_DEFAULT_HEADROOM_SIZE(128
  *       byte).
  * --------------------------------------------------------------------------
@@ -1140,7 +1140,7 @@ GetSegmentHeaderInfo(PNET_BUFFER_LIST nbl,
     TCPHdr tcpStorage;
     const TCPHdr *tcp;
 
-    /* Parse the orginal Eth/IP/TCP header */
+    /* Parse the original Eth/IP/TCP header */
     tcp = OvsGetPacketBytes(nbl, sizeof *tcp, hdrInfo->l4Offset, &tcpStorage);
     if (tcp == NULL) {
         return NDIS_STATUS_FAILURE;

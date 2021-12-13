@@ -143,7 +143,7 @@ dpif_mfex_impl_info_get(void);
 void
 dpif_miniflow_extract_init(void);
 
-/* Retrieve the hitmask of the batch of pakcets which is obtained by comparing
+/* Retrieve the hitmask of the batch of packets which is obtained by comparing
  * different miniflow implementations with linear miniflow extract.
  * Key_size need to be at least the size of the batch.
  * On error, returns a zero.

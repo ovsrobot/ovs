@@ -249,7 +249,7 @@ conn prevent_unencrypted_vxlan
         It returns dictionary where <key> is interface name (as in OVSDB)
         and <value> is another dictionary.  This another dictionary
         uses strongSwan connection name as <key> and more detailed
-        sample line from the parsed outpus as <value>. """
+        sample line from the parsed output as <value>. """
 
         conns = {}
         proc = subprocess.Popen([self.IPSEC, 'status'], stdout=subprocess.PIPE)
@@ -660,7 +660,7 @@ conn prevent_unencrypted_vxlan
         It returns dictionary where <key> is interface name (as in OVSDB)
         and <value> is another dictionary.  This another dictionary
         uses LibreSwan connection name as <key> and more detailed
-        sample line from the parsed outpus as <value>. """
+        sample line from the parsed output as <value>. """
 
         conns = {}
         proc = subprocess.Popen([self.IPSEC, 'status', '--ctlsocket',
@@ -1080,7 +1080,7 @@ class IPsecMonitor(object):
             pki[2] = row.other_config.get("ca_cert")
             skb_mark = row.other_config.get("ipsec_skb_mark")
 
-        # Test whether it's a valid configration
+        # Test whether it's a valid configuration
         if pki[0] and pki[1]:
             pki[3] = self._get_cn_from_cert(pki[0])
             if pki[3]:
@@ -1090,7 +1090,7 @@ class IPsecMonitor(object):
 
         if not is_valid:
             vlog.warn("The cert and key configuration is not valid. "
-                "The valid configuations are 1): certificate, private_key "
+                "The valid configurations are 1): certificate, private_key "
                 "and ca_cert are not set; or 2): certificate and "
                 "private_key are all set.")
         else:
@@ -1126,7 +1126,7 @@ class IPsecMonitor(object):
     def show(self, unix_conn, policies, securities):
         """This function prints all tunnel state in 'unix_conn'.
         It uses 'policies' and securities' received from Linux Kernel
-        to show if tunnels were actually configured by the IKE deamon."""
+        to show if tunnels were actually configured by the IKE daemon."""
         if not self.tunnels:
             unix_conn.reply("No tunnels configured with IPsec")
             return

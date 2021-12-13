@@ -441,7 +441,7 @@ struct dpif_class {
      * datapaths.
      *
      * ct_dump_start() should put in '*state' a pointer to a newly allocated
-     * stucture that will be passed by the caller to ct_dump_next() and
+     * structure that will be passed by the caller to ct_dump_next() and
      * ct_dump_done(). If 'zone' is not NULL, only the entries in '*zone'
      * should be dumped.
      *

@@ -758,7 +758,7 @@ dpif_ipfix_exporter_set_options(struct dpif_ipfix_exporter *exporter,
     exporter->cache_max_flows = cache_max_flows;
     virtual_obs_len = virtual_obs_id ? strlen(virtual_obs_id) : 0;
     if (virtual_obs_len > IPFIX_VIRTUAL_OBS_MAX_LEN) {
-        VLOG_WARN_RL(&rl, "Virtual obsevation ID too long (%d bytes), "
+        VLOG_WARN_RL(&rl, "Virtual observation ID too long (%d bytes), "
                      "should not be longer than %d bytes.",
                      exporter->virtual_obs_len, IPFIX_VIRTUAL_OBS_MAX_LEN);
         dpif_ipfix_exporter_clear(exporter);
@@ -2710,7 +2710,7 @@ dpif_ipfix_bridge_sample(struct dpif_ipfix *di, const struct dp_packet *packet,
     /* Skip BFD packets:
      * Bidirectional Forwarding Detection(BFD) packets are for monitoring
      * the tunnel link status and consumed by ovs itself. No need to
-     * smaple them.
+     * sample them.
      * CF  IETF RFC 5881, BFD control packet is the UDP packet with
      * destination port 3784, and BFD echo packet is the UDP packet with
      * destination port 3785.

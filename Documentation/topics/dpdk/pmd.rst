@@ -61,8 +61,8 @@ To clear previous stats::
 
     $ ovs-appctl dpif-netdev/pmd-stats-clear
 
-Port/Rx Queue Assigment to PMD Threads
---------------------------------------
+Port/Rx Queue Assignment to PMD Threads
+---------------------------------------
 
 .. todo::
 
@@ -297,7 +297,7 @@ or a week.
 
 .. note::
     In some scenarios it may not be desired to have Auto Load Balancing
-    triggerred. For example, if traffic profile for specific RX queue is
+    triggered. For example, if traffic profile for specific RX queue is
     changing dramatically very frequently which in turn thrashes CPU cache
     due to changes required in dpctl flows and EMC for newly added flows.
     In such scenarios user should configure rebalance interval accordingly

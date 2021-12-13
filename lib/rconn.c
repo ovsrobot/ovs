@@ -1433,7 +1433,7 @@ is_admitted_msg(const struct ofpbuf *b)
 
 /* Returns true if 'rc' is currently logging information about connection
  * attempts, false if logging should be suppressed because 'rc' hasn't
- * successuflly connected in too long. */
+ * successfully connected in too long. */
 static bool
 rconn_logging_connection_attempts__(const struct rconn *rc)
     OVS_REQUIRES(rc->mutex)

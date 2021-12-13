@@ -31,7 +31,7 @@ BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 # Use -D 'kversion 2.6.32-131.6.1.el6.x86_64' to build package
 # for specified kernel version.
 # Use -D 'kversion 3.10.0-693.1.1.el7.x86_64 3.10.0-693.17.1.el7.x86_64'
-# to build package for mulitple kernel versions in the same package
+# to build package for multiple kernel versions in the same package
 # This only works for kernel 3.10.0 major revision 693 (RHEL 7.4)
 # and major revision 327 (RHEL 7.2)
 # By default, build against the latest installed kernel-devel

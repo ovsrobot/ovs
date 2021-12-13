@@ -123,7 +123,7 @@ typedef struct _SFLSampled_ipv6 {
 /* Extended switch data */
 
 typedef struct _SFLExtended_switch {
-    u_int32_t src_vlan;       /* The 802.1Q VLAN id of incomming frame */
+    u_int32_t src_vlan;       /* The 802.1Q VLAN id of incoming frame */
     u_int32_t src_priority;   /* The 802.1p priority */
     u_int32_t dst_vlan;       /* The 802.1Q VLAN id of outgoing frame */
     u_int32_t dst_priority;   /* The 802.1p priority */
@@ -211,7 +211,7 @@ typedef struct _SFLExtended_mpls {
 /* Extended NAT data
    Packet header records report addresses as seen at the sFlowDataSource.
    The extended_nat structure reports on translated source and/or destination
-   addesses for this packet. If an address was not translated it should
+   addresses for this packet. If an address was not translated it should
    be equal to that reported for the header. */
 
 typedef struct _SFLExtended_nat {
@@ -219,7 +219,7 @@ typedef struct _SFLExtended_nat {
     SFLAddress dst;    /* Destination address */
 } SFLExtended_nat;
 
-/* additional Extended MPLS stucts */
+/* additional Extended MPLS struts */
 
 typedef struct _SFLExtended_mpls_tunnel {
     SFLString tunnel_lsp_name;  /* Tunnel name */

@@ -427,7 +427,7 @@ typedef ATOMIC(int64_t)   atomic_int64_t;
  *
  * Typically a counter is not used to synchronize the state of any other
  * variables (with the notable exception of reference count, below).
- * This abstraction releaves the user from the memory order considerations,
+ * This abstraction relieves the user from the memory order considerations,
  * and may make the code easier to read.
  *
  * We only support the unsigned int counters, as those are the most common. */

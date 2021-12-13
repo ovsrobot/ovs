@@ -459,7 +459,7 @@ OvsInitSwitchContext(POVS_SWITCH_CONTEXT switchContext)
     switchContext->dpNo = OVS_DP_NUMBER;
     ovsTimeIncrementPerTick = KeQueryTimeIncrement() / 10000;
 
-    OVS_LOG_TRACE("Exit: Succesfully initialized switchContext: %p",
+    OVS_LOG_TRACE("Exit: Successfully initialized switchContext: %p",
                   switchContext);
     return NDIS_STATUS_SUCCESS;
 }

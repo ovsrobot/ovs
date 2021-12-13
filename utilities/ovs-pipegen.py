@@ -90,7 +90,7 @@ def main():
 
         Open vSwitch relies heavily on flow caching to get good performance for
         packet processing.  While on average, this produces good results,
-        performance is heavily depedent on the slow path OpenFlow tables, and
+        performance is heavily dependent on the slow path OpenFlow tables, and
         how they're translated into datapath megaflows.  For this reason, when
         doing performance testing it's important to run with "realistic"
         OpenFlow tables to ensure results will stand up in the real world.

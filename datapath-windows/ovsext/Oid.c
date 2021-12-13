@@ -240,7 +240,7 @@ OvsProcessSetOid(POVS_SWITCH_CONTEXT switchObject,
     OVS_LOG_TRACE("Enter: oidRequest %p, Oid: %lu",
                   oidRequest, setInfo->Oid);
 
-    /* Verify the basic Oid paramters first */
+    /* Verify the basic Oid parameters first */
     if (setInfo->InformationBufferLength &&
        (setInfo->InformationBufferLength < sizeof(NDIS_OBJECT_HEADER))) {
         status = NDIS_STATUS_INVALID_OID;

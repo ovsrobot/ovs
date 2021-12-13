@@ -248,7 +248,7 @@ service_stop()
 }
 
 /* Call this function to signal that the daemon is ready. init_service()
- * or control_handler() has already initalized/set the
+ * or control_handler() has already initialized/set the
  * service_status.dwCurrentState .*/
 static void
 service_complete(void)

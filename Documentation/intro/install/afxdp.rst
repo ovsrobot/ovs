@@ -171,7 +171,7 @@ To kick start end-to-end autotesting::
   make check-afxdp TESTSUITEFLAGS='1'
 
 .. note::
-   Not all test cases pass at this time. Currenly all cvlan tests are skipped
+   Not all test cases pass at this time. Currently all cvlan tests are skipped
    due to kernel issues.
 
 If a test case fails, check the log at::
@@ -418,7 +418,7 @@ Start VM using vhost-user mode::
    -object memory-backend-file,id=mem,size=4096M,mem-path=/dev/hugepages,share=on \
    -numa node,memdev=mem -mem-prealloc -smp 2
 
-Setup the OpenFlow ruls::
+Setup the OpenFlow rules::
 
   ovs-ofctl del-flows br0
   ovs-ofctl add-flow br0 "in_port=enp2s0, actions=output:vhost-user-1"

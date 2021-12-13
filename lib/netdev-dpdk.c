@@ -648,7 +648,7 @@ dpdk_calculate_mbufs(struct netdev_dpdk *dev, int mtu, bool per_port_mp)
          * It's impossible to determine what the exact memory requirements are
          * when the number of ports and rxqs that utilize a particular mempool
          * can change dynamically at runtime. For now, use this rough
-         * heurisitic.
+         * heuristic.
          */
         if (mtu >= RTE_ETHER_MTU) {
             n_mbufs = MAX_NB_MBUF;
@@ -737,7 +737,7 @@ dpdk_mp_create(struct netdev_dpdk *dev, int mtu, bool per_port_mp)
         /* If there is a size discrepancy, add padding to mbuf_priv_data_len.
          * This maintains mbuf size cache alignment, while also honoring RX
          * buffer alignment in the data portion of the mbuf. If this adjustment
-         * is not made, there is a possiblity later on that for an element of
+         * is not made, there is a possibility later on that for an element of
          * the mempool, buf, buf->data_len < (buf->buf_len - buf->data_off).
          * This is problematic in the case of multi-segment mbufs, particularly
          * when an mbuf segment needs to be resized (when [push|popp]ing a VLAN
@@ -964,7 +964,7 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev, int n_rxq, int n_txq)
     /* As of DPDK 17.11.1 a few PMDs require to explicitly enable
      * scatter to support jumbo RX.
      * Setting scatter for the device is done after checking for
-     * scatter support in the device capabilites. */
+     * scatter support in the device capabilities. */
     if (dev->mtu > RTE_ETHER_MTU) {
         if (dev->hw_ol_features & NETDEV_RX_HW_SCATTER) {
             conf.rxmode.offloads |= DEV_RX_OFFLOAD_SCATTER;
@@ -1093,7 +1093,7 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
     int diag;
     int n_rxq, n_txq;
     uint32_t tx_tso_offload_capa = DPDK_TX_TSO_OFFLOAD_FLAGS;
-    uint32_t rx_chksm_offload_capa = DEV_RX_OFFLOAD_UDP_CKSUM |
+    uint32_t rx_chksum_offload_capa = DEV_RX_OFFLOAD_UDP_CKSUM |
                                      DEV_RX_OFFLOAD_TCP_CKSUM |
                                      DEV_RX_OFFLOAD_IPV4_CKSUM;
 
@@ -1106,8 +1106,8 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         dev->hw_ol_features &= ~NETDEV_RX_HW_CRC_STRIP;
     }
 
-    if ((info.rx_offload_capa & rx_chksm_offload_capa) !=
-            rx_chksm_offload_capa) {
+    if ((info.rx_offload_capa & rx_chksum_offload_capa) !=
+            rx_chksum_offload_capa) {
         VLOG_WARN("Rx checksum offload is not supported on port "
                   DPDK_PORT_ID_FMT, dev->port_id);
         dev->hw_ol_features &= ~NETDEV_RX_CHECKSUM_OFFLOAD;
@@ -1258,7 +1258,7 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     /* Initialize the flow control to NULL */
     memset(&dev->fc_conf, 0, sizeof dev->fc_conf);
 
-    /* Initilize the hardware offload flags to 0 */
+    /* Initialize the hardware offload flags to 0 */
     dev->hw_ol_features = 0;
 
     dev->flags = NETDEV_UP | NETDEV_PROMISC;
@@ -1618,7 +1618,7 @@ netdev_dpdk_configure_xstats(struct netdev_dpdk *dev)
                                             sizeof *dev->rte_xstats_names);
 
             if (dev->rte_xstats_names) {
-                /* Retreive xstats names */
+                /* Retrieve xstats names */
                 rte_xstats_len =
                         rte_eth_xstats_get_names(dev->port_id,
                                                  dev->rte_xstats_names,
@@ -1641,7 +1641,7 @@ netdev_dpdk_configure_xstats(struct netdev_dpdk *dev)
                 rte_xstats = xmalloc(rte_xstats_len * sizeof *rte_xstats);
                 memset(rte_xstats, 0xff, sizeof *rte_xstats * rte_xstats_len);
 
-                /* Retreive xstats values */
+                /* Retrieve xstats values */
                 if (rte_eth_xstats_get(dev->port_id, rte_xstats,
                                        rte_xstats_len) > 0) {
                     dev->rte_xstats_ids_size = 0;
@@ -3137,7 +3137,7 @@ netdev_dpdk_get_stats(const struct netdev *netdev, struct netdev_stats *stats)
     rte_xstats_names = xcalloc(rte_xstats_len, sizeof *rte_xstats_names);
     rte_xstats = xcalloc(rte_xstats_len, sizeof *rte_xstats);
 
-    /* Retreive xstats names */
+    /* Retrieve xstats names */
     rte_xstats_new_len = rte_eth_xstats_get_names(dev->port_id,
                                                   rte_xstats_names,
                                                   rte_xstats_len);
@@ -3146,7 +3146,7 @@ netdev_dpdk_get_stats(const struct netdev *netdev, struct netdev_stats *stats)
                   dev->port_id);
         goto out;
     }
-    /* Retreive xstats values */
+    /* Retrieve xstats values */
     memset(rte_xstats, 0xff, sizeof *rte_xstats * rte_xstats_len);
     rte_xstats_ret = rte_eth_xstats_get(dev->port_id, rte_xstats,
                                         rte_xstats_len);
@@ -3439,7 +3439,7 @@ netdev_dpdk_get_ifindex(const struct netdev *netdev)
 
     ovs_mutex_lock(&dev->mutex);
     /* Calculate hash from the netdev name. Ensure that ifindex is a 24-bit
-     * postive integer to meet RFC 2863 recommendations.
+     * positive integer to meet RFC 2863 recommendations.
      */
     int ifindex = hash_string(netdev->name, 0) % 0xfffffe + 1;
     ovs_mutex_unlock(&dev->mutex);

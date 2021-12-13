@@ -610,7 +610,7 @@ parse_nsh(const void **datap, size_t *sizep, struct ovs_key_nsh *key)
             }
             break;
         case NSH_M_TYPE2:
-            /* Don't support MD type 2 metedata parsing yet */
+            /* Don't support MD type 2 metadata parsing yet */
             if (length < NSH_BASE_HDR_LEN) {
                 return false;
             }

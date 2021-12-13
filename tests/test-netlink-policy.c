@@ -25,7 +25,7 @@
 #include "util.h"
 
 /* nla_len is an inline function in the kernel net/netlink header, which we
- * don't necessarilly have at build time, so provide our own with
+ * don't necessarily have at build time, so provide our own with
  * non-conflicting name. */
 static int
 _nla_len(const struct nlattr *nla) {

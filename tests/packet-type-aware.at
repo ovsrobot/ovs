@@ -512,7 +512,7 @@ OVS_VSWITCHD_STOP(["/The Open vSwitch kernel module is probably not loaded/d"])
 AT_CLEANUP
 
 
-AT_SETUP([ptap - check decap() prerequisits])
+AT_SETUP([ptap - check decap() prerequisites])
 OVS_VSWITCHD_START
 
 # Decap IP header, then set IP destination address. This should fail.
@@ -568,7 +568,7 @@ AT_CHECK([
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop
 ])
 
-# Encap(ethernet) on Ethernet frame -> should be droped
+# Encap(ethernet) on Ethernet frame -> should be dropped
 AT_CHECK([
     ovs-ofctl del-flows br0
     ovs-ofctl add-flow br0 -OOpenFlow13 "in_port=1,actions=3"
@@ -590,7 +590,7 @@ AT_CHECK([
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:1, bytes:98, used:0.0s, actions:drop
 ])
 
-# Encap(ethernet) on VLAN tagged Ethernet frame -> should be droped
+# Encap(ethernet) on VLAN tagged Ethernet frame -> should be dropped
 AT_CHECK([
     ovs-ofctl del-flows br0
     ovs-ofctl add-flow br0 -OOpenFlow13 "in_port=1,actions=push_vlan:0x8100,mod_vlan_vid:100,encap(ethernet),3"

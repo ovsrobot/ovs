@@ -446,7 +446,7 @@ definition in OF1.1 ``openflow.h`` is[*]:
 
 The confusing part is the comment on the ``data[]`` member.  This comment is a
 leftover from OF1.0 ``openflow.h``, in which the comment was correct:
-``sizeof(struct ofp_packet_in)`` is 20 in OF1.0 and ``ffsetof(struct
+``sizeof(struct ofp_packet_in)`` is 20 in OF1.0 and ``offsetof(struct
 ofp_packet_in, data)`` is 18.  When OF1.1 was written, the structure members
 were changed but the comment was carelessly not updated, and the comment became
 wrong: ``sizeof(struct ofp_packet_in)`` and offsetof(struct ofp_packet_in,

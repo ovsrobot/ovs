@@ -292,7 +292,7 @@ replication_run(void)
                     VLOG_WARN("unexpected schema %s", schema->name);
                     state = RPL_S_ERR;
                 } else if (!ovsdb_schema_equal(schema, rdb->db->schema)) {
-                    /* Schmea version mismatch. */
+                    /* Schema version mismatch. */
                     VLOG_INFO("Schema version mismatch, checking if %s can "
                               "still be replicated or not.",
                               schema->name);
@@ -460,7 +460,7 @@ get_excluded_tables(void)
     /* Output the table list in an sorted order, so that
      * the output string will not depend on the hash function
      * that used to implement the hmap data structure. This is
-     * only useful for writting unit tests.  */
+     * only useful for writing unit tests.  */
     const char **sorted = sset_sort(&set);
     struct ds ds = DS_EMPTY_INITIALIZER;
     size_t i;

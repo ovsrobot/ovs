@@ -328,7 +328,7 @@ get_first_element(IEnumWbemClassObject *penumerate,
 
 /* This function is a wrapper that transforms a char * into a wchar_t * */
 static boolean
-tranform_wide(char *name, wchar_t *wide_name)
+transform_wide(char *name, wchar_t *wide_name)
 {
     unsigned long size = strlen(name) + 1;
     long long ret = 0;
@@ -408,7 +408,7 @@ delete_wmi_port(char *name)
 
     wide_name = xmalloc((strlen(name) + 1) * sizeof(wchar_t));
 
-    if (!tranform_wide(name, wide_name)) {
+    if (!transform_wide(name, wide_name)) {
         retval = false;
         goto error;
     }
@@ -690,7 +690,7 @@ create_wmi_port(char *name) {
 
     wide_name = xmalloc((strlen(name) + 1) * sizeof(wchar_t));
 
-    if (!tranform_wide(name, wide_name)) {
+    if (!transform_wide(name, wide_name)) {
         retval = false;
         goto error;
     }

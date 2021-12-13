@@ -93,7 +93,7 @@ ovs_replay_file_name(const char *name, int seqno)
     /* Replace all the numbers and special symbols with single underscore.
      * Numbers might be PIDs or port numbers that could change between record
      * and replay phases, special symbols might be not good as a filename.
-     * We have a unique seuqence number as part of the name, so we don't care
+     * We have a unique sequence number as part of the name, so we don't care
      * keeping too much information. */
     for (c = p = local_name; *p; p++) {
          if (!isalpha((unsigned char) *p)) {

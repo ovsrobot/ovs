@@ -101,7 +101,7 @@ JSON_CHECK_NEGATIVE([\u must be followed by 4 hex digits (2)],
 JSON_CHECK_NEGATIVE([isolated leading surrogate not allowed],
                     [[["\ud834xxx"]]],
                     [error: malformed escaped surrogate pair])
-JSON_CHECK_NEGATIVE([surrogatess must paired properly],
+JSON_CHECK_NEGATIVE([surrogates must paired properly],
                     [[["\ud834\u1234"]]],
                     [error: second half of escaped surrogate pair is not trailing surrogate])
 JSON_CHECK_NEGATIVE([null bytes not allowed], 

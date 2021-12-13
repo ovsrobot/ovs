@@ -5673,7 +5673,7 @@ xlate_sample_action(struct xlate_ctx *ctx,
  * can be reversed by another datapath action.
  *
  * Openflow actions that do not emit datapath actions are trivially
- * reversible. Reversiblity of other actions depends on nature of
+ * reversible. Reversibility of other actions depends on nature of
  * action and their translation.  */
 static bool
 reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)

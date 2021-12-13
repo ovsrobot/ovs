@@ -205,7 +205,7 @@ class Stream(object):
 
     @staticmethod
     def _open(suffix, dscp):
-        raise NotImplementedError("This method must be overrided by subclass")
+        raise NotImplementedError("This method must be overridden by subclass")
 
     @staticmethod
     def open_block(error_stream, timeout=None):

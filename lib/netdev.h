@@ -81,7 +81,7 @@ enum netdev_pt_mode {
 
     /* The netdev sends and receives only Ethernet frames.  The netdev cannot
      * carry packets other than Ethernet frames.  This is a legacy mode for
-     * backward compability with controllers that are not prepared to handle
+     * backward compatibility with controllers that are not prepared to handle
      * OpenFlow 1.5+ "packet_type". */
     NETDEV_PT_LEGACY_L2,
 
@@ -90,8 +90,8 @@ enum netdev_pt_mode {
      *
      * IPv4 and IPv6 packets carried over the netdev are treated as Ethernet:
      * when they are received, they are converted to Ethernet by adding a dummy
-     * header with the proper Ethertype; on tranmission, the Ethernet header is
-     * stripped.  This is a legacy mode for backward compability with
+     * header with the proper Ethertype; on transmission, the Ethernet header is
+     * stripped.  This is a legacy mode for backward compatibility with
      * controllers that are not prepared to handle OpenFlow 1.5+
      * "packet_type". */
     NETDEV_PT_LEGACY_L3,

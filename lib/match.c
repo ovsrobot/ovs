@@ -1898,7 +1898,7 @@ minimatch_hash(const struct minimatch *match, uint32_t basis)
     return hash_bytes(match->flow, 2 * flow_size, basis);
 }
 
-/* Returns true if 'target' satisifies 'match', that is, if each bit for which
+/* Returns true if 'target' satisfies 'match', that is, if each bit for which
  * 'match' specifies a particular value has the correct value in 'target'.
  *
  * This function is equivalent to miniflow_equal_flow_in_minimask(&match->flow,

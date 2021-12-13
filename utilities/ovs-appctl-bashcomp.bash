@@ -21,7 +21,7 @@
 #    - does not support parsing of nested option
 #      (e.g. ovsdb-tool create [db [schema]]).
 #
-#    - does not support expansion on repeatitive argument
+#    - does not support expansion on repetitive argument
 #      (e.g. ovs-dpctl show [dp...]).
 #
 #    - only support matching on long options, and only in the format
@@ -501,7 +501,7 @@ ovs_comp_helper() {
                     if [ -n "$(option_require_arg "${cmd_line_so_far[i]}")" ]; then
                         ((j++))
                         if [ -z "${cmd_line_so_far[j]}" ]; then
-                            printf_stderr "\nOption requires an arugment."
+                            printf_stderr "\nOption requires an argument."
                             return
                         fi
                     fi

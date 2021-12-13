@@ -568,7 +568,7 @@ NlMsgStartNested(PNL_BUFFER buf, UINT16 type)
     nlaData = NlMsgPutTailUnspecUninit(buf, type, 0);
 
     if (!nlaData) {
-        /* Value zero must be reated as error by the caller.
+        /* Value zero must be treated as error by the caller.
          * This is because an attribute can never be added
          * at offset zero, it will always come after NL_MSG_HDR,
          * GENL_HDR and OVS_HEADER. */
@@ -750,7 +750,7 @@ NlAttrIsValid(const PNL_ATTR nla, UINT32 maxlen)
 
 /*
  * ---------------------------------------------------------------------------
- * Returns alligned length of the attribute.
+ * Returns aligned length of the attribute.
  * ---------------------------------------------------------------------------
  */
 UINT32
@@ -781,7 +781,7 @@ NlAttrMinLen(NL_ATTR_TYPE type)
     case NL_A_NESTED: return 0;
     case N_NL_ATTR_TYPES:
     default:
-    OVS_LOG_WARN("Unsupprted attribute type: %d", type);
+    OVS_LOG_WARN("Unsupported attribute type: %d", type);
     ASSERT(0);
     }
 
@@ -809,7 +809,7 @@ NlAttrMaxLen(NL_ATTR_TYPE type)
     case NL_A_NESTED: return SIZE_MAX;
     case N_NL_ATTR_TYPES:
     default:
-    OVS_LOG_WARN("Unsupprted attribute type: %d", type);
+    OVS_LOG_WARN("Unsupported attribute type: %d", type);
     ASSERT(0);
     }
 

@@ -971,7 +971,7 @@ ovsdb_cs_set_condition(struct ovsdb_cs *cs, const char *table,
  * connection.
  *
  * ovsdb_cs_set_condition() sets a new condition that is different from the
- * current condtion, the next expected "sequence number" is returned.
+ * current condition, the next expected "sequence number" is returned.
  *
  * Whenever ovsdb_cs_get_condition_seqno() returns a value that matches the
  * return value of ovsdb_cs_set_condition(), the client is assured that:

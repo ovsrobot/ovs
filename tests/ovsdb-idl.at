@@ -1907,7 +1907,7 @@ m4_define([OVSDB_CHECK_IDL_COMPOUND_INDEX_SINGLE_COLUMN_C],
    AT_CHECK([test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -vjsonrpc -t10 -c idl-compound-index unix:socket $3],
             [0], [stdout], [ignore])
 # Filter the rows of data that corresponds to the string index eliminating the extra columns of data.
-# This is done to verifiy that the output data is in the correct and expected order.
+# This is done to verify that the output data is in the correct and expected order.
    AT_CHECK([[cat stdout | grep -oh '[0-9]\{3\}: s=.*' | sed -e 's/ i=.*//g']],
             [0], [$4])
 # Here, the data is filtered and sorted in order to have all the rows in the index and be
@@ -1915,7 +1915,7 @@ m4_define([OVSDB_CHECK_IDL_COMPOUND_INDEX_SINGLE_COLUMN_C],
    AT_CHECK([[cat stdout | grep -oh '[0-9]\{3\}: s=.*' | sort -k 1,1n -k 2,2 -k 3,3]],
             [0], [$5])
 # Filter the rows of data that corresponds to the integer index eliminating the extra columns of data.
-# This is done to verifiy that the output data is in the correct and expected order.
+# This is done to verify that the output data is in the correct and expected order.
    AT_CHECK([[cat stdout | grep -oh '[0-9]\{3\}: i=.*' | sed -e 's/ s=.*//g']],
             [0], [$6])
 # Here again, the data is filtered and sorted in order to have all the rows in the index and be
@@ -2054,7 +2054,7 @@ m4_define([OVSDB_CHECK_IDL_COMPOUND_INDEX_DOUBLE_COLUMN_C],
    AT_CHECK([test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -vjsonrpc -t10 -c idl-compound-index unix:socket $3],
             [0], [stdout], [ignore])
 # Filter the rows of data that corresponds to the string-integer index eliminating the extra columns of data.
-# This is done to verifiy that the output data is in the correct and expected order.
+# This is done to verify that the output data is in the correct and expected order.
    AT_CHECK([[cat stdout | grep -oh '[0-9]\{3\}: s=.*' | sed -e 's/ b=.*//g']],
             [0], [$4])
 # Here, the data is filtered and sorted in order to have all the rows in the index and be
@@ -2062,7 +2062,7 @@ m4_define([OVSDB_CHECK_IDL_COMPOUND_INDEX_DOUBLE_COLUMN_C],
    AT_CHECK([[cat stdout | grep -oh '[0-9]\{3\}: s=.*' | sort -k 1,1n -k 2,2 -k 3,3]],
             [0], [$5])
 # Filter the rows of data that corresponds to the integer index eliminating the extra columns of data.
-# This is done to verifiy that the output data is in the correct and expected order.
+# This is done to verify that the output data is in the correct and expected order.
    AT_CHECK([[cat stdout | grep -oh '[0-9]\{3\}: i=.*' | sed -e 's/ b=.*//g']],
             [0], [$6])
 # Here again, the data is filtered and sorted in order to have all the rows in the index and be
@@ -2411,7 +2411,7 @@ on_exit 'kill `cat ovsdb-server2.pid`'
 
 dnl In this test, test-ovsdb first connects to the server with schema
 dnl idltest2.ovsschema and outputs the presence of tables and columns.
-dnl And then it connectes to the server with the schema idltest.ovsschema
+dnl And then it connects to the server with the schema idltest.ovsschema
 dnl and does the same.
 AT_CHECK([test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -vjsonrpc -t10 dnl
                  idl-table-column-check unix:socket unix:socket2], [0], [dnl

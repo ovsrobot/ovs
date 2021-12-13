@@ -71,7 +71,7 @@ OvsTunnelAnalyzePacket(OVS_TUNNEL_PENDED_PACKET *packet)
 
     /*
      * For inbound net buffer list, we can assume it contains only one
-     * net buffer (unless it was an re-assembeled fragments). in both cases
+     * net buffer (unless it was an re-assembled fragments). in both cases
      * the first net buffer should include all headers, we assert if the retreat fails
      */
     netBuffer = NET_BUFFER_LIST_FIRST_NB(packet->netBufferList);
@@ -260,7 +260,7 @@ OvsInjectPacketThroughActions(PNET_BUFFER_LIST pNbl,
 
         /*
          * XXX WFP packets contain a single NBL structure.
-         * Reassembeled packet "may" have multiple NBs, however, a simple test shows
+         * Reassembled packet "may" have multiple NBs, however, a simple test shows
          * that the packet still has a single NB (after reassemble)
          * We still need to check if the Ethernet header of the innet packet is in a single MD
          */

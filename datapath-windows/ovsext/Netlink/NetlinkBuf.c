@@ -15,7 +15,7 @@
  */
 
 /* ==========================================================================
- * This is a simple buffer mangement framework specific for netlink protocol.
+ * This is a simple buffer management framework specific for netlink protocol.
  * The name could be confused with ovsext/BufferMgmt.c. Ovsext/BufferMgmt.c
  * deals with buffer mgmt for NBLs. Where as this framework deals with
  * management of buffer that holds a netlink message.
@@ -26,13 +26,13 @@
  * We can see this framework as a subset of ofpbuf in ovs userspace.
  *
  * This framework is NOT a generic buffer management framework (ofpbuf
- * is a generic buffer mgmt framework) and provides only the functioanlities
+ * is a generic buffer mgmt framework) and provides only the functionalities
  * which would be useful for netlink protocol. Some of the key features are:
  *
  * a. It DOES NOT support automatic buffer reallocation.
  *    i. A netlink input/output message is a static buffer.
  * b. The unused space is at the tail.
- * c. There is no notion of headdroom.
+ * c. There is no notion of headroom.
  * ==========================================================================
  */
 #include <ndis.h>

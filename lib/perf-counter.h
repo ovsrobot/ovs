@@ -58,7 +58,7 @@
  * For example, if we are interested in performance of perf_func():
  *
  *    int perf_func() {
- *        <implemenation>
+ *        <implementation>
  *    }
  *
  *    void func() {

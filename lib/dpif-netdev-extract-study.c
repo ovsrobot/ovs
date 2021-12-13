@@ -94,7 +94,7 @@ mfex_study_traffic(struct dp_packet_batch *packets,
         stats->impl_hitcount[i] += count_1bits(hitmask);
 
         /* If traffic is not classified then we dont overwrite the keys
-         * array in minfiflow implementations so its safe to create a
+         * array in miniflow implementations so its safe to create a
          * mask for all those packets whose miniflow have been created.
          */
         mask |= hitmask;

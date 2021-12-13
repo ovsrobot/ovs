@@ -669,7 +669,7 @@ static struct sk_buff *push_stt_header(struct sk_buff *head, __be64 tun_id,
 		bool csum_partial = (head->ip_summed == CHECKSUM_PARTIAL);
 		int l4_offset = skb_transport_offset(head);
 
-		/* Need to call skb_orphan() to report currect true-size.
+		/* Need to call skb_orphan() to report current true-size.
 		 * calling skb_orphan() in this layer is odd but SKB with
 		 * frag-list should not be associated with any socket, so
 		 * skb-orphan should be no-op. */

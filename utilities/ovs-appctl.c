@@ -153,7 +153,7 @@ parse_command_line(int argc, char *argv[])
              * the command as non-option arguments and we say that -e has no
              * arguments, this just works in the common case. */
             if (e_options++) {
-                ovs_fatal(0, "-e or --execute may be speciifed only once");
+                ovs_fatal(0, "-e or --execute may be specified only once");
             }
             break;
 

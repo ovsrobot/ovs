@@ -811,7 +811,7 @@ stream_guess_content(const uint8_t *data, ssize_t size)
     return STREAM_UNKNOWN;
 }
 
-/* Returns a string represenation of 'type'. */
+/* Returns a string representation of 'type'. */
 static const char *
 stream_content_type_to_string(enum stream_content_type type)
 {

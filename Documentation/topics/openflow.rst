@@ -102,7 +102,7 @@ specs carefully yet.)
 
   An implementation in generic code might be a week's worth of work.  The value
   of an implementation in generic code is questionable, though, since much of
-  the benefit of axuiliary connections is supposed to be to take advantage of
+  the benefit of auxiliary connections is supposed to be to take advantage of
   hardware support.  (We could make the kernel module somehow send packets
   across the auxiliary connections directly, for some kind of "hardware"
   support, if we judged it useful enough.)

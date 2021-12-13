@@ -112,7 +112,7 @@ set_no_chdir(void)
     chdir_ = false;
 }
 
-/* Normally, daemonize() or damonize_start() will terminate the program with a
+/* Normally, daemonize() or daemonize_start() will terminate the program with a
  * message if a locked pidfile already exists.  If this function is called, an
  * existing pidfile will be replaced, with a warning. */
 void
@@ -852,7 +852,7 @@ static void
 daemon_become_new_user__(bool access_datapath)
 {
     /* If vlog file has been created, change its owner to the non-root user
-     * as specifed by the --user option.  */
+     * as specified by the --user option.  */
     vlog_change_owner_unix(uid, gid);
 
     if (LINUX) {
@@ -868,7 +868,7 @@ daemon_become_new_user__(bool access_datapath)
     }
 }
 
-/* Noramlly, user switch is embedded within daemonize_start().
+/* Normally, user switch is embedded within daemonize_start().
  * However, there in case the user switch needs to be done
  * before daemonize_start(), the following API can be used.  */
 void
@@ -882,7 +882,7 @@ daemon_become_new_user(bool access_datapath)
     }
 }
 
-/* Return the maximun suggested buffer size for both getpwname_r()
+/* Return the maximum suggested buffer size for both getpwname_r()
  * and getgrnam_r().
  *
  * This size may still not be big enough. in case getpwname_r()
@@ -899,7 +899,7 @@ get_sysconf_buffer_size(void)
     errno = 0;
     if ((pwd_bs = sysconf(_SC_GETPW_R_SIZE_MAX)) == -1) {
         if (errno) {
-            VLOG_FATAL("%s: Read initial passwordd struct size "
+            VLOG_FATAL("%s: Read initial password struct size "
                        "failed (%s), aborting. ", pidfile,
                        ovs_strerror(errno));
         }
@@ -977,7 +977,7 @@ daemon_set_new_user(const char *user_spec)
         }
 
         if (e != 0) {
-            VLOG_FATAL("%s: Failed to retrive user %s's uid (%s), aborting.",
+            VLOG_FATAL("%s: Failed to retrieve user %s's uid (%s), aborting.",
                        pidfile, user, ovs_strerror(e));
         }
         if (res == NULL) {
@@ -992,7 +992,7 @@ daemon_set_new_user(const char *user_spec)
         }
 
         if (e != 0) {
-            VLOG_FATAL("%s: Failed to retrive current user's name "
+            VLOG_FATAL("%s: Failed to retrieve current user's name "
                        "(%s), aborting.", pidfile, ovs_strerror(e));
         }
         user = xstrdup(pwd.pw_name);

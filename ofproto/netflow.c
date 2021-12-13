@@ -44,7 +44,7 @@ struct netflow {
     uint8_t engine_id;            /* Value of engine_id to use. */
     long long int boot_time;      /* Time when netflow_create() was called. */
     struct collectors *collectors; /* NetFlow collectors. */
-    bool add_id_to_iface;         /* Put the 7 least significiant bits of
+    bool add_id_to_iface;         /* Put the 7 least significant bits of
                                    * 'engine_id' into the most significant
                                    * bits of the interface fields. */
     uint32_t netflow_cnt;         /* Flow sequence number for NetFlow. */

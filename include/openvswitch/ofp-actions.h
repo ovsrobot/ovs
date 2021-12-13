@@ -780,7 +780,7 @@ struct ofpact_resubmit {
  * OFPFF_SEND_FLOW_REM flag set.
  *
  * If NX_LEARN_F_WRITE_RESULT is set, then the actions will write whether the
- * learn operation succeded on a bit.  If the learn is successful the bit will
+ * learn operation succeeded on a bit.  If the learn is successful the bit will
  * be set, otherwise (e.g. if the limit is hit) the bit will be unset.
  *
  * If NX_LEARN_F_DELETE_LEARNED is set, then removing this action will delete

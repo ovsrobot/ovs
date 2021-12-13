@@ -1502,7 +1502,7 @@ ofproto_get_n_tables(const struct ofproto *ofproto)
 
 /* Returns the number of Controller visible OpenFlow tables
  * in 'ofproto'. This number will exclude Hidden tables.
- * This funtion's return value should be less or equal to that of
+ * This function's return value should be less or equal to that of
  * ofproto_get_n_tables() . */
 uint8_t
 ofproto_get_n_visible_tables(const struct ofproto *ofproto)
@@ -2970,7 +2970,7 @@ ofproto_rule_try_ref(struct rule *rule)
  *
  * Use of RCU allows short term use (between RCU quiescent periods) without
  * keeping a reference.  A reference must be taken if the rule needs to
- * stay around accross the RCU quiescent periods. */
+ * stay around across the RCU quiescent periods. */
 void
 ofproto_rule_unref(struct rule *rule)
 {
@@ -3597,7 +3597,7 @@ ofproto_packet_out_init(struct ofproto *ofproto,
     /* Ensure that the L3 header is 32-bit aligned. */
     opo->packet = dp_packet_clone_data_with_headroom(po->packet,
                                                      po->packet_len, 2);
-    /* Take the received packet_tpye as packet_type of the packet. */
+    /* Take the received packet_type as packet_type of the packet. */
     opo->packet->packet_type = po->flow_metadata.flow.packet_type;
 
     /* Store struct flow. */

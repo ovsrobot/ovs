@@ -141,7 +141,7 @@ struct bond {
                                  * it is stored into OVSDB */
 
     /* Interface name may not be persistent across an OS reboot, use
-     * MAC address for identifing the active member. */
+     * MAC address for identifying the active member. */
     struct eth_addr active_member_mac; /* MAC address of the active member. */
     /* Legacy compatibility. */
     bool lacp_fallback_ab; /* Fallback to active-backup on LACP failure. */
@@ -1956,7 +1956,7 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
     balance = bond->balance;
     if (bond->lacp_status == LACP_CONFIGURED) {
         /* LACP has been configured on this bond but negotiations were
-         * unsuccussful. If lacp_fallback_ab is enabled use active-
+         * unsuccessful. If lacp_fallback_ab is enabled use active-
          * backup mode else drop all traffic. */
         if (!bond->lacp_fallback_ab) {
             return NULL;

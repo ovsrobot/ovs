@@ -1103,7 +1103,7 @@ packet_set_ipv4_addr(struct dp_packet *packet,
 }
 
 /* Returns true, if packet contains at least one routing header where
- * segements_left > 0.
+ * segments_left > 0.
  *
  * This function assumes that L3 and L4 offsets are set in the packet. */
 static bool
@@ -1740,7 +1740,7 @@ compose_nd_na(struct dp_packet *b,
 /* Compose an IPv6 Neighbor Discovery Router Advertisement message with
  * Source Link-layer Address Option and MTU Option.
  * Caller can call packet_put_ra_prefix_opt to append Prefix Information
- * Options to composed messags in 'b'. */
+ * Options to composed massages in 'b'. */
 void
 compose_nd_ra(struct dp_packet *b,
               const struct eth_addr eth_src, const struct eth_addr eth_dst,
