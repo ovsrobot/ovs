@@ -164,7 +164,7 @@ static void rt_init_match(struct match *match, uint32_t mark,
     match->flow.pkt_mark = mark;
 }
 
-static int
+int
 get_src_addr(const struct in6_addr *ip6_dst,
              const char output_bridge[], struct in6_addr *psrc)
 {

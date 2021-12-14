@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+int get_src_addr(const struct in6_addr *ip6_dst,
+                 const char output_bridge[], struct in6_addr *psrc);
 bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip_dst,
                        char out_dev[],
                        struct in6_addr *src, struct in6_addr *gw);

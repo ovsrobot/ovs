@@ -3603,9 +3603,10 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     struct netdev_tnl_build_header_params tnl_params;
     struct ovs_action_push_tnl tnl_push_data;
     struct xport *out_dev = NULL;
-    ovs_be32 s_ip = 0, d_ip = 0;
+    ovs_be32 s_ip = 0, d_ip = 0, neigh_s_ip = 0;
     struct in6_addr s_ip6 = in6addr_any;
     struct in6_addr d_ip6 = in6addr_any;
+    struct in6_addr neigh_s_ip6 = in6addr_any;
     struct eth_addr smac;
     struct eth_addr dmac;
     int err;
@@ -3646,8 +3647,13 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     }
 
     d_ip = in6_addr_get_mapped_ipv4(&d_ip6);
+    err = get_src_addr(&d_ip6, out_dev->xbridge->name, &neigh_s_ip6);
+    if (err) {
+        neigh_s_ip6 = s_ip6;
+    }
     if (d_ip) {
         s_ip = in6_addr_get_mapped_ipv4(&s_ip6);
+        neigh_s_ip = in6_addr_get_mapped_ipv4(&neigh_s_ip6);
     }
 
     err = tnl_neigh_lookup(out_dev->xbridge->name, &d_ip6, &dmac);
@@ -3657,9 +3663,9 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
                      "sending %s request",
                      buf_dip6, out_dev->xbridge->name, d_ip ? "ARP" : "ND");
         if (d_ip) {
-            tnl_send_arp_request(ctx, out_dev, smac, s_ip, d_ip);
+            tnl_send_arp_request(ctx, out_dev, smac, neigh_s_ip, d_ip);
         } else {
-            tnl_send_nd_request(ctx, out_dev, smac, &s_ip6, &d_ip6);
+            tnl_send_nd_request(ctx, out_dev, smac, &neigh_s_ip6, &d_ip6);
         }
         return err;
     }
