@@ -2411,9 +2411,11 @@ next_addr_in_range_guarded(union ct_addr *curr, union ct_addr *min,
  *
  * In case of DNAT:
  *    - For each dst IP address in the range (if any).
- *        - For each dport in range (if any).
- *             - Try to find a source port in the ephemeral range
- *               (after testing the port used by the sender).
+ *        - For each dport in range (if any) tries to find
+ *          an unique tuple.
+ *        - Eventually, if the previous attempt fails,
+ *          tries to find a source port in the ephemeral
+ *          range (after testing the port used by the sender).
  *
  * If none can be found, return exhaustion to the caller. */
 static bool
@@ -2457,14 +2459,21 @@ another_round:
         goto next_addr;
     }
 
-    FOR_EACH_PORT_IN_RANGE(curr_dport, min_dport, max_dport) {
-        nat_conn->rev_key.src.port = htons(curr_dport);
-        FOR_EACH_PORT_IN_RANGE(curr_sport, min_sport, max_sport) {
-            nat_conn->rev_key.dst.port = htons(curr_sport);
+    if (nat_info->nat_action & NAT_ACTION_DST_PORT) {
+        FOR_EACH_PORT_IN_RANGE(curr_dport, min_dport, max_dport) {
+            nat_conn->rev_key.src.port = htons(curr_dport);
             if (!conn_lookup(ct, &nat_conn->rev_key,
                              time_msec(), NULL, NULL)) {
                 return true;
             }
+        }
+    }
+
+    FOR_EACH_PORT_IN_RANGE(curr_sport, min_sport, max_sport) {
+        nat_conn->rev_key.dst.port = htons(curr_sport);
+        if (!conn_lookup(ct, &nat_conn->rev_key,
+                         time_msec(), NULL, NULL)) {
+            return true;
         }
     }
 
