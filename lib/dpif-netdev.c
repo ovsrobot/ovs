@@ -8615,6 +8615,24 @@ dpif_netdev_ct_get_timeout_policy_name(struct dpif *dpif OVS_UNUSED,
 }
 
 static int
+dpif_netdev_ct_set_default_timeout_policy(struct dpif *dpif,
+                                          struct ct_dpif_timeout_policy *tp)
+{
+    if (tp->id != DEFAULT_TP_ID) {
+        return EINVAL;
+    }
+
+    return dpif_netdev_ct_set_timeout_policy(dpif, tp);
+}
+
+static int
+dpif_netdev_ct_get_default_timeout_policy(struct dpif *dpif,
+                                          struct ct_dpif_timeout_policy *tp)
+{
+    return dpif_netdev_ct_get_timeout_policy(dpif, DEFAULT_TP_ID, tp);
+}
+
+static int
 dpif_netdev_ipf_set_enabled(struct dpif *dpif, bool v6, bool enable)
 {
     struct dp_netdev *dp = get_dp_netdev(dpif);
@@ -8824,6 +8842,8 @@ const struct dpif_class dpif_netdev_class = {
     NULL,                       /* ct_timeout_policy_dump_next */
     NULL,                       /* ct_timeout_policy_dump_done */
     dpif_netdev_ct_get_timeout_policy_name,
+    dpif_netdev_ct_set_default_timeout_policy,
+    dpif_netdev_ct_get_default_timeout_policy,
     dpif_netdev_ct_get_features,
     dpif_netdev_ipf_set_enabled,
     dpif_netdev_ipf_set_min_frag,

@@ -25,12 +25,6 @@
 VLOG_DEFINE_THIS_MODULE(conntrack_tp);
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
-static const char *ct_timeout_str[] = {
-#define CT_TIMEOUT(NAME) #NAME,
-    CT_TIMEOUTS
-#undef CT_TIMEOUT
-};
-
 /* Default timeout policy in seconds. */
 static unsigned int ct_dpif_netdev_tp_def[] = {
     [CT_DPIF_TP_ATTR_TCP_SYN_SENT] = 30,
@@ -195,41 +189,6 @@ timeout_policy_update(struct conntrack *ct,
     return err;
 }
 
-static enum ct_dpif_tp_attr
-tm_to_ct_dpif_tp(enum ct_timeout tm)
-{
-    switch (tm) {
-    case CT_TM_TCP_FIRST_PACKET:
-        return CT_DPIF_TP_ATTR_TCP_SYN_SENT;
-    case CT_TM_TCP_OPENING:
-        return CT_DPIF_TP_ATTR_TCP_SYN_RECV;
-    case CT_TM_TCP_ESTABLISHED:
-        return CT_DPIF_TP_ATTR_TCP_ESTABLISHED;
-    case CT_TM_TCP_CLOSING:
-        return CT_DPIF_TP_ATTR_TCP_FIN_WAIT;
-    case CT_TM_TCP_FIN_WAIT:
-        return CT_DPIF_TP_ATTR_TCP_TIME_WAIT;
-    case CT_TM_TCP_CLOSED:
-        return CT_DPIF_TP_ATTR_TCP_CLOSE;
-    case CT_TM_OTHER_FIRST:
-        return CT_DPIF_TP_ATTR_UDP_FIRST;
-    case CT_TM_OTHER_BIDIR:
-        return CT_DPIF_TP_ATTR_UDP_MULTIPLE;
-    case CT_TM_OTHER_MULTIPLE:
-        return CT_DPIF_TP_ATTR_UDP_SINGLE;
-    case CT_TM_ICMP_FIRST:
-        return CT_DPIF_TP_ATTR_ICMP_FIRST;
-    case CT_TM_ICMP_REPLY:
-        return CT_DPIF_TP_ATTR_ICMP_REPLY;
-    case N_CT_TM:
-    default:
-        OVS_NOT_REACHED();
-        break;
-    }
-    OVS_NOT_REACHED();
-    return CT_DPIF_TP_ATTR_MAX;
-}
-
 static void
 conn_update_expiration__(struct conntrack *ct, struct conn *conn,
                          enum ct_timeout tm, long long now,
@@ -276,7 +235,7 @@ conn_update_expiration(struct conntrack *ct, struct conn *conn,
     ovs_mutex_lock(&conn->lock);
     VLOG_DBG_RL(&rl, "Update timeout %s zone=%u with policy id=%d "
                 "val=%u sec.",
-                ct_timeout_str[tm], conn->key.zone, conn->tp_id, val);
+                ct_dpif_timeout_string[tm], conn->key.zone, conn->tp_id, val);
 
     conn_update_expiration__(ct, conn, tm, now, val);
 }
@@ -307,7 +266,7 @@ conn_init_expiration(struct conntrack *ct, struct conn *conn,
     }
 
     VLOG_DBG_RL(&rl, "Init timeout %s zone=%u with policy id=%d val=%u sec.",
-                ct_timeout_str[tm], conn->key.zone, conn->tp_id, val);
+                ct_dpif_timeout_string[tm], conn->key.zone, conn->tp_id, val);
 
     conn_init_expiration__(ct, conn, tm, now, val);
 }

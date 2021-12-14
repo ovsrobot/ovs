@@ -271,6 +271,8 @@ struct ct_dpif_timeout_policy {
                                                  * timeout attribute values */
 };
 
+extern const char *ct_dpif_timeout_string[];
+
 /* Conntrack Features. */
 enum ct_features {
     CONNTRACK_F_ZERO_SNAT = 1 << 0,  /* All-zero SNAT support. */
@@ -292,6 +294,12 @@ int ct_dpif_set_limits(struct dpif *dpif, const uint32_t *default_limit,
 int ct_dpif_get_limits(struct dpif *dpif, uint32_t *default_limit,
                        const struct ovs_list *, struct ovs_list *);
 int ct_dpif_del_limits(struct dpif *dpif, const struct ovs_list *);
+int ct_dpif_set_default_timeout_policy(struct dpif *dpif,
+                                       struct ct_dpif_timeout_policy *);
+int ct_dpif_get_default_timeout_policy(struct dpif *dpif,
+                                       struct ct_dpif_timeout_policy *tp);
+bool ct_dpif_parse_timeout_policy_tuple(const char *s, struct ds *ds,
+                                        struct ct_dpif_timeout_policy *);
 int ct_dpif_ipf_set_enabled(struct dpif *, bool v6, bool enable);
 int ct_dpif_ipf_set_min_frag(struct dpif *, bool v6, uint32_t min_frag);
 int ct_dpif_ipf_set_max_nfrags(struct dpif *, uint32_t max_frags);
@@ -315,6 +323,10 @@ bool ct_dpif_parse_zone_limit_tuple(const char *s, uint16_t *pzone,
                                     uint32_t *plimit, struct ds *);
 void ct_dpif_format_zone_limits(uint32_t default_limit,
                                 const struct ovs_list *, struct ds *);
+void ct_dpif_format_timeout_policy(const struct ct_dpif_timeout_policy *tp,
+                                   struct ds *ds);
+enum ct_timeout;
+enum ct_dpif_tp_attr tm_to_ct_dpif_tp(enum ct_timeout tm);
 bool ct_dpif_set_timeout_policy_attr_by_name(struct ct_dpif_timeout_policy *tp,
                                              const char *key, uint32_t value);
 bool ct_dpif_timeout_policy_support_ipproto(uint8_t ipproto);
