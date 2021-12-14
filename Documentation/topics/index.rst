@@ -55,3 +55,4 @@ OVS
    userspace-tso
    idl-compound-indexes
    ovs-extensions
+   usdt-probes
