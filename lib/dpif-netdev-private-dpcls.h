@@ -85,6 +85,7 @@ struct dpcls_subtable {
      * used for the lookup) then this can point at an optimized version of
      * the lookup function for this particular subtable. */
     dpcls_subtable_lookup_func lookup_func;
+    struct dpcls_subtable_lookup_info_t *lookup_func_info;
 
     /* Caches the masks to match a packet to, reducing runtime calculations. */
     uint64_t *mf_masks;
