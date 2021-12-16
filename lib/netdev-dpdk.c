@@ -60,6 +60,7 @@
 #include "ovs-rcu.h"
 #include "ovs-thread.h"
 #include "packets.h"
+#include "random.h"
 #include "smap.h"
 #include "sset.h"
 #include "timeval.h"
@@ -519,6 +520,10 @@ struct netdev_dpdk {
 
         /* VF configuration. */
         struct eth_addr requested_hwaddr;
+
+        /* Dummy flow API. */
+        bool dummy_rte_flow;
+        dpdk_port_t dummy_port_id;
     );
 
     PADDED_MEMBERS(CACHE_LINE_SIZE,
@@ -1242,6 +1247,9 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->started = false;
     dev->reset_needed = false;
 
+    dev->dummy_rte_flow = false;
+    dev->dummy_port_id = port_no;
+
     ovsrcu_init(&dev->qos_conf, NULL);
 
     ovsrcu_init(&dev->ingress_policer, NULL);
@@ -1704,6 +1712,11 @@ netdev_dpdk_get_config(const struct netdev *netdev, struct smap *args)
     smap_add_format(args, "configured_tx_queues", "%d", netdev->n_txq);
     smap_add_format(args, "mtu", "%d", dev->mtu);
 
+    if (dev->dummy_rte_flow) {
+        /* It's a debug-only option, not reporting when it is disabled. */
+        smap_add(args, "dummy-rte-flow", "true");
+    }
+
     if (dev->type == DPDK_DEV_ETH) {
         smap_add_format(args, "requested_rxq_descriptors", "%d",
                         dev->requested_rxq_size);
@@ -2008,6 +2021,10 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
         netdev_request_reconfigure(netdev);
     }
 
+    if (!dev->dummy_rte_flow) {
+        dev->dummy_rte_flow = smap_get_bool(args, "dummy-rte-flow", false);
+    }
+
     rx_fc_en = smap_get_bool(args, "rx-flow-ctrl", false);
     tx_fc_en = smap_get_bool(args, "tx-flow-ctrl", false);
     autoneg = smap_get_bool(args, "flow-ctrl-autoneg", false);
@@ -2082,6 +2099,11 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
         VLOG_INFO("Max Tx retries for vhost device '%s' set to %d",
                   netdev_get_name(netdev), max_tx_retries);
     }
+
+    if (!dev->dummy_rte_flow) {
+        dev->dummy_rte_flow = smap_get_bool(args, "dummy-rte-flow", false);
+    }
+
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
@@ -5207,8 +5229,29 @@ netdev_dpdk_get_port_id(struct netdev *netdev)
     }
 
     dev = netdev_dpdk_cast(netdev);
+
     ovs_mutex_lock(&dev->mutex);
     ret = dev->port_id;
+
+    if (dev->dummy_rte_flow && ret == DPDK_ETH_PORT_ID_INVALID) {
+        if (dev->dummy_port_id == DPDK_ETH_PORT_ID_INVALID) {
+            const char *p;
+            int port_no;
+
+            for (p = netdev_get_name(netdev); *p != '\0'; p++) {
+                if (isdigit((unsigned char) *p)) {
+                    port_no = strtol(p, NULL, 10);
+                    if (port_no >= 0) {
+                        dev->dummy_port_id = MAX(1000, RTE_MAX_ETHPORTS + 1)
+                                             + port_no;
+                    }
+                    break;
+                }
+            }
+        }
+        ret = dev->dummy_port_id;
+    }
+
     ovs_mutex_unlock(&dev->mutex);
 out:
     return ret;
@@ -5233,7 +5276,7 @@ netdev_dpdk_flow_api_supported(struct netdev *netdev)
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    if (dev->type == DPDK_DEV_ETH) {
+    if (dev->type == DPDK_DEV_ETH || dev->dummy_rte_flow) {
         /* TODO: Check if we able to offload some minimal flow. */
         ret = true;
     }
@@ -5251,7 +5294,8 @@ netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
     int ret;
 
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_destroy(dev->port_id, rte_flow, error);
+    ret = dev->dummy_rte_flow
+          ? 0 : rte_flow_destroy(dev->port_id, rte_flow, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5267,7 +5311,9 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
 
     ovs_mutex_lock(&dev->mutex);
-    flow = rte_flow_create(dev->port_id, attr, items, actions, error);
+    flow = dev->dummy_rte_flow
+           ? (struct rte_flow *) (uintptr_t) random_uint32()
+           : rte_flow_create(dev->port_id, attr, items, actions, error);
     ovs_mutex_unlock(&dev->mutex);
     return flow;
 }
@@ -5297,7 +5343,8 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_query(dev->port_id, rte_flow, actions, query, error);
+    ret = dev->dummy_rte_flow
+          ? 0 : rte_flow_query(dev->port_id, rte_flow, actions, query, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5320,8 +5367,9 @@ netdev_dpdk_rte_flow_tunnel_decap_set(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_decap_set(dev->port_id, tunnel, actions,
-                                    num_of_actions, error);
+    ret = dev->dummy_rte_flow
+          ? 0 : rte_flow_tunnel_decap_set(dev->port_id, tunnel, actions,
+                                          num_of_actions, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5342,8 +5390,9 @@ netdev_dpdk_rte_flow_tunnel_match(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_match(dev->port_id, tunnel, items, num_of_items,
-                                error);
+    ret = dev->dummy_rte_flow
+          ? 0 : rte_flow_tunnel_match(dev->port_id, tunnel,
+                                      items, num_of_items, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5364,7 +5413,8 @@ netdev_dpdk_rte_flow_get_restore_info(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_get_restore_info(dev->port_id, m, info, error);
+    ret = dev->dummy_rte_flow
+          ? -EINVAL : rte_flow_get_restore_info(dev->port_id, m, info, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5385,8 +5435,9 @@ netdev_dpdk_rte_flow_tunnel_action_decap_release(
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_action_decap_release(dev->port_id, actions,
-                                               num_of_actions, error);
+    ret = dev->dummy_rte_flow
+          ? 0 : rte_flow_tunnel_action_decap_release(dev->port_id, actions,
+                                                     num_of_actions, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5406,8 +5457,9 @@ netdev_dpdk_rte_flow_tunnel_item_release(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_item_release(dev->port_id, items, num_of_items,
-                                       error);
+    ret = dev->dummy_rte_flow
+          ? 0 : rte_flow_tunnel_item_release(dev->port_id, items, num_of_items,
+                                             error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
