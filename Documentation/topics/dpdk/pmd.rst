@@ -59,9 +59,18 @@ To show current stats::
 
     $ ovs-appctl dpif-netdev/pmd-stats-show
 
+or::
+
+    $ ovs-appctl dpif-netdev/pmd-perf-show
+
 To clear previous stats::
 
     $ ovs-appctl dpif-netdev/pmd-stats-clear
+
+.. note::
+
+    PMD stats are cumulative so they should be cleared in order to see how the
+    PMDs are being used with current traffic.
 
 Port/Rx Queue Assignment to PMD Threads
 ---------------------------------------
