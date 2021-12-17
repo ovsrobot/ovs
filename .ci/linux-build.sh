@@ -254,6 +254,12 @@ if [ "$ASAN" ]; then
     CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${CLFAGS_ASAN}"
 fi
 
+if [ "$UBSAN" ]; then
+    # Use the default options configured in tests/atlocal.in, in UBSAN_OPTIONS.
+    CLFAGS_UBSAN="-O1 -fno-omit-frame-pointer -fno-common -fsanitize=undefined"
+    CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${CLFAGS_UBSAN}"
+fi
+
 save_OPTS="${OPTS} $*"
 OPTS="${EXTRA_OPTS} ${save_OPTS}"
 
