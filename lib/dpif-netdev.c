@@ -1718,7 +1718,7 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
         ovsthread_once_done(&tsc_freq_check);
     }
 
-    dp = xzalloc(sizeof *dp);
+    dp = xzalloc_cacheline(sizeof *dp);
     shash_add(&dp_netdevs, name, dp);
 
     *CONST_CAST(const struct dpif_class **, &dp->class) = class;
@@ -1888,7 +1888,7 @@ dp_netdev_free(struct dp_netdev *dp)
 
     free(dp->pmd_cmask);
     free(CONST_CAST(char *, dp->name));
-    free(dp);
+    free_cacheline(dp);
 }
 
 static void
@@ -5672,7 +5672,7 @@ reconfigure_pmd_threads(struct dp_netdev *dp)
         if (!pmd) {
             struct ds name = DS_EMPTY_INITIALIZER;
 
-            pmd = xzalloc(sizeof *pmd);
+            pmd = xzalloc_cacheline(sizeof *pmd);
             dp_netdev_configure_pmd(pmd, dp, core->core_id, core->numa_id);
 
             ds_put_format(&name, "pmd-c%02d/id:", core->core_id);
@@ -6713,7 +6713,7 @@ dp_netdev_set_nonpmd(struct dp_netdev *dp)
 {
     struct dp_netdev_pmd_thread *non_pmd;
 
-    non_pmd = xzalloc(sizeof *non_pmd);
+    non_pmd = xzalloc_cacheline(sizeof *non_pmd);
     dp_netdev_configure_pmd(non_pmd, dp, NON_PMD_CORE_ID, OVS_NUMA_UNSPEC);
 }
 
@@ -6830,7 +6830,7 @@ dp_netdev_destroy_pmd(struct dp_netdev_pmd_thread *pmd)
     seq_destroy(pmd->reload_seq);
     ovs_mutex_destroy(&pmd->port_mutex);
     ovs_mutex_destroy(&pmd->bond_mutex);
-    free(pmd);
+    free_cacheline(pmd);
 }
 
 /* Stops the pmd thread, removes it from the 'dp->poll_threads',
