@@ -7749,16 +7749,15 @@ check_GOTO_TABLE(const struct ofpact_goto_table *a,
 
 static void
 log_bad_action(const struct ofp_action_header *actions, size_t actions_len,
-               const struct ofp_action_header *bad_action, enum ofperr error)
+               size_t bad_action_offset, enum ofperr error)
 {
     if (!VLOG_DROP_WARN(&rl)) {
         struct ds s;
 
         ds_init(&s);
         ds_put_hex_dump(&s, actions, actions_len, 0, false);
-        VLOG_WARN("bad action at offset %#"PRIxPTR" (%s):\n%s",
-                  (char *)bad_action - (char *)actions,
-                  ofperr_get_name(error), ds_cstr(&s));
+        VLOG_WARN("bad action at offset %"PRIuSIZE" (%s):\n%s",
+                  bad_action_offset, ofperr_get_name(error), ds_cstr(&s));
         ds_destroy(&s);
     }
 }
@@ -7769,25 +7768,46 @@ ofpacts_decode(const void *actions, size_t actions_len,
                const struct vl_mff_map *vl_mff_map,
                uint64_t *ofpacts_tlv_bitmap, struct ofpbuf *ofpacts)
 {
-    struct ofpbuf openflow = ofpbuf_const_initializer(actions, actions_len);
-    while (openflow.size) {
-        const struct ofp_action_header *action = openflow.data;
+    struct ofpbuf openflow_actions
+        = ofpbuf_const_initializer(actions, actions_len);
+    struct ofpbuf *openflow = &openflow_actions;
+
+    enum ofperr error = 0;
+    while (openflow->size) {
+        /* Ensure the next action data is properly aligned.  Trimming removes
+         * all headroom and ensures alignment.  The headroom is also removed
+         * when cloning and ofpbuf.
+         */
+        if (!OFPACT_IS_ALIGNED(openflow->data)) {
+            if (openflow == &openflow_actions) {
+                openflow = ofpbuf_clone(openflow);
+            } else {
+                ofpbuf_trim(openflow);
+            }
+        }
+
+        const struct ofp_action_header *action = openflow->data;
+        size_t action_offset = actions_len - openflow->size;
         enum ofp_raw_action_type raw;
-        enum ofperr error;
         uint64_t arg;
 
-        error = ofpact_pull_raw(&openflow, ofp_version, &raw, &arg);
+        error = ofpact_pull_raw(openflow, ofp_version, &raw, &arg);
         if (!error) {
             error = ofpact_decode(action, raw, ofp_version, arg, vl_mff_map,
                                   ofpacts_tlv_bitmap, ofpacts);
         }
 
         if (error) {
-            log_bad_action(actions, actions_len, action, error);
-            return error;
+            log_bad_action(actions, actions_len, action_offset, error);
+            goto done;
         }
     }
-    return 0;
+
+done:
+    if (openflow != &openflow_actions) {
+        ofpbuf_delete(openflow);
+    }
+    return error;
 }
 
 static enum ofperr
