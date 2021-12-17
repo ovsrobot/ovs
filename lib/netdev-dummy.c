@@ -188,7 +188,7 @@ dummy_packet_stream_init(struct dummy_packet_stream *s, struct stream *stream)
 {
     int rxbuf_size = stream ? 2048 : 0;
     s->stream = stream;
-    dp_packet_init(&s->rxbuf, rxbuf_size);
+    dp_packet_init(&s->rxbuf, MAX(rxbuf_size, ETH_HEADER_LEN));
     ovs_list_init(&s->txq);
 }
 
@@ -1149,7 +1149,7 @@ netdev_dummy_send(struct netdev *netdev, int qid OVS_UNUSED,
             if (flow.dl_type == htons(ETH_TYPE_ARP)
                 && flow.nw_proto == ARP_OP_REQUEST
                 && flow.nw_dst == dev->address.s_addr) {
-                struct dp_packet *reply = dp_packet_new(0);
+                struct dp_packet *reply = dp_packet_new(ETH_HEADER_LEN);
                 compose_arp(reply, ARP_OP_REPLY, dev->hwaddr, flow.dl_src,
                             false, flow.nw_dst, flow.nw_src);
                 netdev_dummy_queue_packet(dev, reply, NULL, 0);
@@ -1647,7 +1647,7 @@ eth_from_flow_str(const char *s, size_t packet_size,
         return NULL;
     }
 
-    packet = dp_packet_new(0);
+    packet = dp_packet_new(MAX(packet_size, ETH_HEADER_LEN));
     if (packet_size) {
         flow_compose(packet, flow, NULL, 0);
         if (dp_packet_size(packet) < packet_size) {

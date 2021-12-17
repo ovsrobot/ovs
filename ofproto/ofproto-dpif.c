@@ -1268,7 +1268,7 @@ check_ct_eventmask(struct dpif_backer *backer)
     nl_msg_end_nested(&actions, ct_start);
 
     /* Compose a dummy UDP packet. */
-    dp_packet_init(&packet, 0);
+    dp_packet_init(&packet, ETH_HEADER_LEN);
     flow_compose(&packet, &flow, NULL, 64);
 
     /* Execute the actions.  On older datapaths this fails with EINVAL, on
@@ -1361,7 +1361,7 @@ check_ct_timeout_policy(struct dpif_backer *backer)
     nl_msg_end_nested(&actions, ct_start);
 
     /* Compose a dummy UDP packet. */
-    dp_packet_init(&packet, 0);
+    dp_packet_init(&packet, ETH_HEADER_LEN);
     flow_compose(&packet, &flow, NULL, 64);
 
     /* Execute the actions.  On older datapaths this fails with EINVAL, on
@@ -3501,7 +3501,7 @@ send_pdu_cb(void *port_, const void *pdu, size_t pdu_size)
         struct dp_packet packet;
         void *packet_pdu;
 
-        dp_packet_init(&packet, 0);
+        dp_packet_init(&packet, ETH_HEADER_LEN);
         packet_pdu = eth_compose(&packet, eth_addr_lacp, ea, ETH_TYPE_LACP,
                                  pdu_size);
         memcpy(packet_pdu, pdu, pdu_size);

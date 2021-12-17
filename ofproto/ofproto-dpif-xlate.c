@@ -3490,7 +3490,7 @@ tnl_send_nd_request(struct xlate_ctx *ctx, const struct xport *out_dev,
 {
     struct dp_packet packet;
 
-    dp_packet_init(&packet, 0);
+    dp_packet_init(&packet, ETH_HEADER_LEN);
     compose_nd_ns(&packet, eth_src, ipv6_src, ipv6_dst);
     compose_table_xlate(ctx, out_dev, &packet);
     dp_packet_uninit(&packet);
@@ -3503,7 +3503,7 @@ tnl_send_arp_request(struct xlate_ctx *ctx, const struct xport *out_dev,
 {
     struct dp_packet packet;
 
-    dp_packet_init(&packet, 0);
+    dp_packet_init(&packet, ETH_HEADER_LEN);
     compose_arp(&packet, ARP_OP_REQUEST,
                 eth_src, eth_addr_zero, true, ip_src, ip_dst);
 
