@@ -4902,15 +4902,13 @@ ofctl_compose_packet(struct ovs_cmdl_context *ctx)
     }
 
     struct dp_packet p;
-    memset(&p, 0, sizeof p);
-    dp_packet_init(&p, 0);
+    dp_packet_init(&p, ETH_HEADER_LEN);
 
     void *l7 = NULL;
     size_t l7_len = 64;
     if (ctx->argc > 2) {
         struct dp_packet payload;
-        memset(&payload, 0, sizeof payload);
-        dp_packet_init(&payload, 0);
+        dp_packet_init(&payload, ETH_HEADER_LEN);
         if (dp_packet_put_hex(&payload, ctx->argv[2], NULL)[0] != '\0') {
             ovs_fatal(0, "%s: trailing garbage in packet data", ctx->argv[2]);
         }

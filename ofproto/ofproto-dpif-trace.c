@@ -245,7 +245,7 @@ parse_flow_and_packet(int argc, const char *argv[],
 
             struct dp_packet payload;
             memset(&payload, 0, sizeof payload);
-            dp_packet_init(&payload, 0);
+            dp_packet_init(&payload, ETH_HEADER_LEN);
             if (dp_packet_put_hex(&payload, argv[++i], NULL)[0] != '\0') {
                 dp_packet_uninit(&payload);
                 error = xstrdup("Trailing garbage in packet data");
@@ -436,7 +436,7 @@ parse_flow_and_packet(int argc, const char *argv[],
 
     if (generate_packet) {
         /* Generate a packet, as requested. */
-        packet = dp_packet_new(0);
+        packet = dp_packet_new(ETH_HEADER_LEN);
         flow_compose(packet, flow, l7, l7_len);
     } else if (packet) {
         /* Use the metadata from the flow and the packet argument to

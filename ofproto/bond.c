@@ -809,7 +809,8 @@ bond_compose_learning_packet(struct bond *bond, const struct eth_addr eth_src,
     flow.dl_src = eth_src;
     member = choose_output_member(bond, &flow, NULL, vlan);
 
-    packet = dp_packet_new(0);
+    packet = dp_packet_new(2 + ETH_HEADER_LEN + VLAN_HEADER_LEN
+                           + ARP_ETH_HEADER_LEN);
     compose_rarp(packet, eth_src);
     if (vlan) {
         eth_push_vlan(packet, htons(ETH_TYPE_VLAN), htons(vlan));
