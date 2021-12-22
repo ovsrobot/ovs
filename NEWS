@@ -28,6 +28,7 @@ Post-v2.16.0
      * Default selection method for select groups with up to 256 buckets is
        now dp_hash.  Previously this was limited to 64 buckets.  This change
        is mainly for the benefit of OVN load balancing configurations.
+   - Add User Statically-Defined Tracing (USDT) probe framework support.
 
 
 v2.16.0 - 16 Aug 2021

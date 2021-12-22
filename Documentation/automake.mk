@@ -58,6 +58,7 @@ DOC_SOURCE = \
 	Documentation/topics/record-replay.rst \
 	Documentation/topics/tracing.rst \
 	Documentation/topics/userspace-tso.rst \
+	Documentation/topics/usdt-probes.rst \
 	Documentation/topics/windows.rst \
 	Documentation/howto/index.rst \
 	Documentation/howto/dpdk.rst \
