@@ -14,6 +14,8 @@ Post-v2.16.0
      * Add hardware offload support for GRE flows (experimental).
        Available only if DPDK experimantal APIs enabled during the build.
      * Add support for DPDK 21.11.
+     * Add hardware offload support for GENEVE flows (experimental).
+       Available only if DPDK experimantal APIs enabled during the build.
    - Python:
      * For SSL support, the use of the pyOpenSSL library has been replaced
        with the native 'ssl' module.
