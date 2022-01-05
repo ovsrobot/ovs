@@ -32,6 +32,8 @@ struct dp_packet_batch;
 /* Called once at initialization time. */
 void odp_execute_init(void);
 
+int32_t odp_actions_impl_set(const char *name);
+
 typedef void (*odp_execute_cb)(void *dp, struct dp_packet_batch *batch,
                                const struct nlattr *action, bool should_steal);
 
