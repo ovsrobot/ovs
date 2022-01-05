@@ -22,6 +22,7 @@ Post-v2.16.0
        actions implementation at build time.
      * Add AVX512 implementation of actions.
      * Add support for an AVX512 optimized version of pop_vlan action.
+     * Add support for an AVX512 optimized version of push_vlan action.
    - Python:
      * For SSL support, the use of the pyOpenSSL library has been replaced
        with the native 'ssl' module.

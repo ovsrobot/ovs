@@ -842,6 +842,19 @@ action_pop_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
     }
 }
 
+static void
+action_push_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                const struct nlattr *a OVS_UNUSED,
+                bool should_steal OVS_UNUSED)
+{
+    struct dp_packet *packet;
+    const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        eth_push_vlan(packet, vlan->vlan_tpid, vlan->vlan_tci);
+    }
+}
+
 /* Implementation of the scalar actions impl init function. Build up the
  * array of func ptrs here.
  */
@@ -849,6 +862,7 @@ int32_t
 odp_action_scalar_init(struct odp_execute_action_impl *self)
 {
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_pop_vlan;
+    self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_push_vlan;
 
     return 0;
 }
@@ -991,15 +1005,6 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             break;
         }
 
-        case OVS_ACTION_ATTR_PUSH_VLAN: {
-            const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
-
-            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
-                eth_push_vlan(packet, vlan->vlan_tpid, vlan->vlan_tci);
-            }
-            break;
-        }
-
         case OVS_ACTION_ATTR_PUSH_MPLS: {
             const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
 
@@ -1133,6 +1138,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_OUTPUT:
         case OVS_ACTION_ATTR_LB_OUTPUT:
         case OVS_ACTION_ATTR_POP_VLAN:
+        case OVS_ACTION_ATTR_PUSH_VLAN:
         case OVS_ACTION_ATTR_TUNNEL_PUSH:
         case OVS_ACTION_ATTR_TUNNEL_POP:
         case OVS_ACTION_ATTR_USERSPACE:
