@@ -40,6 +40,10 @@ VLOG_DEFINE_THIS_MODULE(relay);
 
 static struct shash relay_dbs = SHASH_INITIALIZER(&relay_dbs);
 
+/* Default probe interval for NB and SB DB connections. */
+#define MIN_PROBE_INTERVAL_MC 5000
+static int relay_probe_interval = MIN_PROBE_INTERVAL_MC;
+
 struct relay_ctx {
     struct ovsdb *db;
     struct ovsdb_cs *cs;
@@ -51,6 +55,72 @@ struct relay_ctx {
 
     long long int last_connected;
 };
+
+static int
+ovsdb_relay_get_probe_interval(const struct ovsdb *db)
+{
+    int interval = MIN_PROBE_INTERVAL_MC;
+
+    const struct ovsdb_table *table;
+    const struct ovsdb_column *column;
+    const struct ovsdb_row *row;
+    const char *table_name = NULL;
+    const char *column_name = "options";
+    const char *probe_interval = "relay_probe_interval";
+
+    if (!strcmp(db->name, "OVN_Southbound")) {
+        table_name = "SB_Global";
+    }else if (!strcmp(db->name, "OVN_Northbound")) {
+        table_name = "NB_Global";
+    }else {
+        return interval;
+    }
+
+    table = ovsdb_get_table(db, table_name);
+    if (!table) {
+        VLOG_INFO("%s has no table named %s", db->name, table_name);
+        return interval;
+    }
+
+    column = ovsdb_table_schema_get_column(table->schema, column_name);
+    if (!column) {
+        VLOG_INFO("table %s has no column %s", table_name, column_name);
+        return interval;
+    }
+
+    HMAP_FOR_EACH (row, hmap_node, &table->rows) {
+        const struct ovsdb_datum *datum;
+        size_t i;
+
+        datum = &row->fields[column->index];
+        for (i = 0; i < datum->n; i++) {
+            if (datum->keys[i].s->string[0]
+                && !strcmp(datum->keys[i].s->string, probe_interval)) {
+                if (str_to_int(datum->values[i].s->string, 10, &interval)) {
+                    break;
+                }
+            }
+        }
+    }
+
+    if (interval > 0 && interval < MIN_PROBE_INTERVAL_MC) {
+        interval = MIN_PROBE_INTERVAL_MC;
+    }
+
+    return interval;
+}
+
+static void
+ovsdb_relay_set_probe_interval(const struct ovsdb *db, const struct ovsdb_cs *cs)
+{
+    int interval = ovsdb_relay_get_probe_interval(db);
+
+    if ((interval > 0) && !(relay_probe_interval == interval)) {
+        VLOG_INFO("set probe interval: %u", interval);
+        ovsdb_cs_set_probe_interval(cs, interval);
+        relay_probe_interval = interval;
+    }
+}
 
 #define RELAY_MAX_RECONNECTION_MS 30000
 
@@ -152,6 +222,7 @@ ovsdb_relay_add_db(struct ovsdb *db, const char *remote,
     shash_add(&relay_dbs, db->name, ctx);
     ovsdb_cs_set_leader_only(ctx->cs, false);
     ovsdb_cs_set_remote(ctx->cs, remote, true);
+    ovsdb_cs_set_probe_interval(ctx->cs, relay_probe_interval);
 
     VLOG_DBG("added database: %s, %s", db->name, remote);
 }
@@ -368,6 +439,8 @@ ovsdb_relay_run(void)
             }
             ovsdb_cs_event_destroy(event);
         }
+
+        ovsdb_relay_set_probe_interval(ctx->db, ctx->cs);
     }
 }
 
