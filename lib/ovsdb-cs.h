@@ -97,6 +97,7 @@ struct ovsdb_cs_event {
         struct ovsdb_cs_update_event {
             bool clear;
             bool monitor_reply;
+            struct uuid last_id;
             struct json *table_updates;
             int version;
         } update;

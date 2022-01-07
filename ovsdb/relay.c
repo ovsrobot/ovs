@@ -222,7 +222,9 @@ ovsdb_relay_process_row_update(struct ovsdb_table *table,
 
 static struct ovsdb_error *
 ovsdb_relay_parse_update__(struct ovsdb *db,
-                           const struct ovsdb_cs_db_update *du)
+                           const struct ovsdb_cs_db_update *du,
+                           bool txn_add_to_history,
+                           const struct uuid *last_id)
 {
     struct ovsdb_error *error = NULL;
     struct ovsdb_txn *txn;
@@ -254,8 +256,19 @@ exit:
         ovsdb_txn_abort(txn);
         return error;
     } else {
+        /*add transaction to history*/
+        if (txn_add_to_history) {
+            ovsdb_txn_set_txnid(last_id, txn);
+            VLOG_DBG("last_id = "UUID_FMT, UUID_ARGS(last_id));
+            ovsdb_txn_add_to_history(txn);
+       }
+
         /* Commit transaction. */
         error = ovsdb_txn_propose_commit_block(txn, false);
+        if (error && txn_add_to_history) {
+            VLOG_DBG("remove history");
+            ovsdb_txn_history_remove_back(db);
+        }
     }
 
     return error;
@@ -304,7 +317,12 @@ ovsdb_relay_parse_update(struct relay_ctx *ctx,
             error = ovsdb_relay_clear(ctx->db);
         }
         if (!error) {
-            error = ovsdb_relay_parse_update__(ctx->db, du);
+            bool txn_add_to_history = false;
+            txn_add_to_history = (update->version == 3
+                                  && !uuid_is_zero(&update->last_id));
+            error = ovsdb_relay_parse_update__(ctx->db, du,
+                                               txn_add_to_history,
+                                               &update->last_id);
         }
     }
     ovsdb_cs_db_update_destroy(du);

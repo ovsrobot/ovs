@@ -68,5 +68,7 @@ const char *ovsdb_txn_get_comment(const struct ovsdb_txn *);
 void ovsdb_txn_history_run(struct ovsdb *);
 void ovsdb_txn_history_init(struct ovsdb *, bool need_txn_history);
 void ovsdb_txn_history_destroy(struct ovsdb *);
+void ovsdb_txn_add_to_history(struct ovsdb_txn *);
+void ovsdb_txn_history_remove_back(struct ovsdb *);
 
 #endif /* ovsdb/transaction.h */
