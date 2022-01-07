@@ -1114,7 +1114,7 @@ ovsdb_txn_destroy_cloned(struct ovsdb_txn *txn)
     free(txn);
 }
 
-static void
+void
 ovsdb_txn_add_to_history(struct ovsdb_txn *txn)
 {
     if (txn->db->need_txn_history) {
@@ -1122,7 +1122,20 @@ ovsdb_txn_add_to_history(struct ovsdb_txn *txn)
         node->txn = ovsdb_txn_clone(txn);
         ovs_list_push_back(&txn->db->txn_history, &node->node);
         txn->db->n_txn_history++;
-        txn->db->n_txn_history_atoms += txn->n_atoms;
+    }
+}
+
+void
+ovsdb_txn_history_remove_back(struct ovsdb *db)
+{
+    if (db->need_txn_history) {
+        struct ovsdb_txn_history_node *txn_h_node = CONTAINER_OF(
+                ovs_list_pop_back(&db->txn_history),
+                struct ovsdb_txn_history_node, node);
+
+        ovsdb_txn_destroy_cloned(txn_h_node->txn);
+        free(txn_h_node);
+        db->n_txn_history--;
     }
 }
 

@@ -1525,6 +1525,7 @@ ovsdb_cs_db_add_update(struct ovsdb_cs_db *db,
     struct ovsdb_cs_event *event = ovsdb_cs_db_add_event(
         db, OVSDB_CS_EVENT_TYPE_UPDATE);
     event->update = (struct ovsdb_cs_update_event) {
+        .last_id = db->last_id,
         .table_updates = json_clone(table_updates),
         .clear = clear,
         .monitor_reply = monitor_reply,
