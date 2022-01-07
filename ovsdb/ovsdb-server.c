@@ -107,6 +107,7 @@ struct server_config {
     bool *is_backup;
     int *replication_probe_interval;
     struct ovsdb_jsonrpc_server *jsonrpc;
+    bool *relay_leader_only_mode;
 };
 static unixctl_cb_func ovsdb_server_add_remote;
 static unixctl_cb_func ovsdb_server_remove_remote;
@@ -128,7 +129,7 @@ static void parse_options(int argc, char *argvp[],
                           struct sset *db_filenames, struct sset *remotes,
                           char **unixctl_pathp, char **run_command,
                           char **sync_from, char **sync_exclude,
-                          bool *is_backup);
+                          bool *is_backup, bool *relay_leader_only_mode);
 OVS_NO_RETURN static void usage(void);
 
 static char *reconfigure_remotes(struct ovsdb_jsonrpc_server *,
@@ -331,8 +332,10 @@ main(int argc, char *argv[])
     process_init();
 
     bool active = false;
+    bool relay_leader_only_mode = false;
     parse_options(argc, argv, &db_filenames, &remotes, &unixctl_path,
-                  &run_command, &sync_from, &sync_exclude, &active);
+                  &run_command, &sync_from, &sync_exclude, &active,
+                  &relay_leader_only_mode);
     is_backup = sync_from && !active;
 
     daemon_become_new_user(false);
@@ -371,6 +374,7 @@ main(int argc, char *argv[])
     server_config.sync_exclude = &sync_exclude;
     server_config.is_backup = &is_backup;
     server_config.replication_probe_interval = &replication_probe_interval;
+    server_config.relay_leader_only_mode = &relay_leader_only_mode;
 
     perf_counters_init();
 
@@ -753,7 +757,8 @@ open_db(struct server_config *config, const char *filename)
     add_db(config, db);
 
     if (is_relay) {
-        ovsdb_relay_add_db(db->db, relay_remotes, update_schema, config);
+        ovsdb_relay_add_db(db->db, relay_remotes, update_schema, config,
+                           *config->relay_leader_only_mode);
     }
     return NULL;
 }
@@ -1827,7 +1832,8 @@ static void
 parse_options(int argc, char *argv[],
               struct sset *db_filenames, struct sset *remotes,
               char **unixctl_pathp, char **run_command,
-              char **sync_from, char **sync_exclude, bool *active)
+              char **sync_from, char **sync_exclude,
+              bool *active, bool *relay_leader_only_mode)
 {
     enum {
         OPT_REMOTE = UCHAR_MAX + 1,
@@ -1840,6 +1846,7 @@ parse_options(int argc, char *argv[],
         OPT_ACTIVE,
         OPT_NO_DBS,
         OPT_FILE_COLUMN_DIFF,
+        OPT_RELAY_LEADER_ONLY_MODE,
         VLOG_OPTION_ENUMS,
         DAEMON_OPTION_ENUMS,
         SSL_OPTION_ENUMS,
@@ -1865,6 +1872,8 @@ parse_options(int argc, char *argv[],
         {"active", no_argument, NULL, OPT_ACTIVE},
         {"no-dbs", no_argument, NULL, OPT_NO_DBS},
         {"disable-file-column-diff", no_argument, NULL, OPT_FILE_COLUMN_DIFF},
+        {"relay-leader-only-mode", no_argument, NULL,
+          OPT_RELAY_LEADER_ONLY_MODE},
         {NULL, 0, NULL, 0},
     };
     char *short_options = ovs_cmdl_long_options_to_short_options(long_options);
@@ -1959,6 +1968,10 @@ parse_options(int argc, char *argv[],
 
         case OPT_FILE_COLUMN_DIFF:
             ovsdb_file_column_diff_disable();
+            break;
+
+        case OPT_RELAY_LEADER_ONLY_MODE:
+            *relay_leader_only_mode = true;
             break;
 
         case '?':

@@ -127,7 +127,7 @@ static struct ovsdb_cs_ops relay_cs_ops = {
 void
 ovsdb_relay_add_db(struct ovsdb *db, const char *remote,
                    schema_change_callback schema_change_cb,
-                   void *schema_change_aux)
+                   void *schema_change_aux, bool relay_leader_only_mode)
 {
     struct relay_ctx *ctx;
 
@@ -150,7 +150,7 @@ ovsdb_relay_add_db(struct ovsdb *db, const char *remote,
     ctx->cs = ovsdb_cs_create(db->name, 3, &relay_cs_ops, ctx);
     ctx->last_connected = 0;
     shash_add(&relay_dbs, db->name, ctx);
-    ovsdb_cs_set_leader_only(ctx->cs, false);
+    ovsdb_cs_set_leader_only(ctx->cs, relay_leader_only_mode);
     ovsdb_cs_set_remote(ctx->cs, remote, true);
 
     VLOG_DBG("added database: %s, %s", db->name, remote);

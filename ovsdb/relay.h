@@ -28,7 +28,7 @@ typedef void (*schema_change_callback)(struct ovsdb *,
 
 void ovsdb_relay_add_db(struct ovsdb *, const char *remote,
                         schema_change_callback schema_change_cb,
-                        void *schema_change_aux);
+                        void *schema_change_aux, bool relay_leader_only_mode);
 void ovsdb_relay_del_db(struct ovsdb *);
 void ovsdb_relay_run(void);
 void ovsdb_relay_wait(void);
