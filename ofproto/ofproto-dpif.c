@@ -2306,6 +2306,7 @@ set_ipfix(
 {
     struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
     struct dpif_ipfix *di = ofproto->ipfix;
+    struct dpif_ipfix *old_ipfix = ofproto->ipfix;
     bool has_options = bridge_exporter_options || flow_exporters_options;
     bool new_di = false;
 
@@ -2333,6 +2334,10 @@ set_ipfix(
             dpif_ipfix_unref(di);
             ofproto->ipfix = NULL;
         }
+    }
+
+    if (old_ipfix != ofproto->ipfix) {
+        ofproto->backer->need_revalidate = REV_RECONFIGURE;
     }
 
     return 0;
