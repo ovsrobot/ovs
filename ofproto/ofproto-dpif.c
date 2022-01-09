@@ -2461,10 +2461,10 @@ set_lldp(struct ofport *ofport_,
     struct ofport_dpif *ofport = ofport_dpif_cast(ofport_);
     struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofport->up.ofproto);
     int error = 0;
+    struct lldp *old_lldp = ofport->lldp;
 
     if (cfg) {
         if (!ofport->lldp) {
-            ofproto->backer->need_revalidate = REV_RECONFIGURE;
             ofport->lldp = lldp_create(ofport->up.netdev, ofport_->mtu, cfg);
         }
 
@@ -2476,6 +2476,8 @@ set_lldp(struct ofport *ofport_,
     } else if (ofport->lldp) {
         lldp_unref(ofport->lldp);
         ofport->lldp = NULL;
+    }
+    if (old_lldp != ofport->lldp) {
         ofproto->backer->need_revalidate = REV_RECONFIGURE;
     }
 
