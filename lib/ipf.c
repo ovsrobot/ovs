@@ -1047,14 +1047,17 @@ ipf_send_frags_in_list(struct ipf *ipf, struct ipf_list *ipf_list,
 }
 
 static bool
-ipf_ctx_eq(struct ipf_list *ipf_list, struct ipf_ctx *ctx)
+ipf_ctx_eq(struct ipf_list *ipf_list, struct ipf_ctx *ctx,
+           struct dp_packet *pkt)
 {
-    struct dp_packet *pkt =
-        ipf_list->frag_list[ipf_list->last_sent_idx + 1].pkt;
-
-    if (pkt->md.recirc_id != ctx->recirc_id ||
+    /* NOTE: not using the first pkt's metadata, use ipf_list instead,
+     * using pkt's metadata causes too much cache miss,
+     * using ipf_list instead drops ipf_postprocessing cpu usage
+     * from 4 percent to 2 percent. ^_^.
+     */
+    if (ipf_list->key.recirc_id != ctx->recirc_id ||
             pkt->md.in_port.odp_port != ctx->in_port.odp_port ||
-            pkt->md.ct_zone != ctx->zone) {
+            ipf_list->key.zone != ctx->zone) {
         return false;
     }
     return true;
@@ -1077,7 +1080,8 @@ ipf_send_completed_frags(struct ipf *ipf, struct dp_packet_batch *pb,
 
     LIST_FOR_EACH_SAFE (ipf_list, next, list_node, &ipf->frag_complete_list) {
 
-        if (ctx && !ipf_ctx_eq(ipf_list, ctx)) {
+        if (ctx && !ipf_ctx_eq(ipf_list, ctx, \
+                    ipf_list->frag_list[ipf_list->last_sent_idx + 1].pkt)) {
             continue;
         }
 
