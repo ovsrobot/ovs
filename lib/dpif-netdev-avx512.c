@@ -212,14 +212,14 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
         if (!mfex_hit) {
             /* Do a scalar miniflow extract into keys. */
             miniflow_extract(packet, &key->mf);
+            key->len = netdev_flow_key_size(miniflow_n_values(&key->mf));
+            key->hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet,
+                                                                 &key->mf);
         }
 
         /* Cache TCP and byte values for all packets. */
         pkt_meta[i].bytes = dp_packet_size(packet);
         pkt_meta[i].tcp_flags = miniflow_get_tcp_flags(&key->mf);
-
-        key->len = netdev_flow_key_size(miniflow_n_values(&key->mf));
-        key->hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf);
 
         if (emc_enabled) {
             f = emc_lookup(&cache->emc_cache, key);
