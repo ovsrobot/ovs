@@ -157,7 +157,7 @@ _mm512_maskz_permutexvar_epi8_wrap(__mmask64 kmask, __m512i idx, __m512i a)
   0, 0, 0, 0, /* Src IP */                                              \
   0, 0, 0, 0, /* Dst IP */
 
-#define PATTERN_IPV4_MASK PATTERN_IPV4_GEN(0xFF, 0xFE, 0xFF, 0xFF)
+#define PATTERN_IPV4_MASK PATTERN_IPV4_GEN(0xFF, 0xFF, 0xFF, 0xFF)
 #define PATTERN_IPV4_UDP PATTERN_IPV4_GEN(0x45, 0, 0, 0x11)
 #define PATTERN_IPV4_TCP PATTERN_IPV4_GEN(0x45, 0, 0, 0x06)
 
@@ -389,7 +389,7 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
         .dp_pkt_offs = {
             14, UINT16_MAX, 18, 38,
         },
-        .dp_pkt_min_size = 46,
+        .dp_pkt_min_size = 58,
     },
 };
 
