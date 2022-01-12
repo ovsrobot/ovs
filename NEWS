@@ -3,6 +3,7 @@ Post-v2.16.0
    - Userspace datapath:
      * Optimized flow lookups for datapath flows with simple match criteria.
        See 'Simple Match Lookup' in Documentation/topics/dpdk/bridge.rst.
+     * Add IPv4 profile based 5tuple hashing optimizations.
    - DPDK:
      * EAL argument --socket-mem is no longer configured by default upon
        start-up.  If dpdk-socket-mem and dpdk-alloc-mem are not specified,
@@ -39,7 +40,6 @@ Post-v2.16.0
        is mainly for the benefit of OVN load balancing configurations.
    - Ingress policing on Linux now uses 'matchall' classifier instead of
      'basic', if available.
-
 
 v2.16.0 - 16 Aug 2021
 ---------------------
