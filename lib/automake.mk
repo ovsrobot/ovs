@@ -203,6 +203,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/nx-match.h \
 	lib/object-collection.c \
 	lib/object-collection.h \
+	lib/odp-execute-private.c \
+	lib/odp-execute-private.h \
 	lib/odp-execute.c \
 	lib/odp-execute.h \
 	lib/odp-util.c \
