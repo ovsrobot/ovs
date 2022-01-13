@@ -2715,10 +2715,11 @@ dpdk_pktmbuf_alloc(struct rte_mempool *mp, uint32_t data_len)
 }
 
 static struct dp_packet *
-dpdk_copy_dp_packet_to_mbuf(struct rte_mempool *mp, struct dp_packet *pkt_orig)
+dpdk_copy_dp_packet_to_mbuf(struct netdev_dpdk *dev, struct dp_packet *pkt_orig)
 {
     struct rte_mbuf *mbuf_dest;
     struct dp_packet *pkt_dest;
+    struct rte_mempool *mp = dev->dpdk_mp->mp;
     uint32_t pkt_len;
 
     pkt_len = dp_packet_size(pkt_orig);
@@ -2739,11 +2740,9 @@ dpdk_copy_dp_packet_to_mbuf(struct rte_mempool *mp, struct dp_packet *pkt_orig)
     memcpy(&pkt_dest->l2_pad_size, &pkt_orig->l2_pad_size,
            sizeof(struct dp_packet) - offsetof(struct dp_packet, l2_pad_size));
 
-    if (mbuf_dest->ol_flags & RTE_MBUF_F_TX_L4_MASK) {
-        mbuf_dest->l2_len = (char *)dp_packet_l3(pkt_dest)
-                                - (char *)dp_packet_eth(pkt_dest);
-        mbuf_dest->l3_len = (char *)dp_packet_l4(pkt_dest)
-                                - (char *) dp_packet_l3(pkt_dest);
+    if (!netdev_dpdk_prep_hwol_packet(dev, mbuf_dest)) {
+        rte_pktmbuf_free(mbuf_dest);
+        return NULL;
     }
 
     return pkt_dest;
@@ -2791,7 +2790,7 @@ dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
             continue;
         }
 
-        pkts[txcnt] = dpdk_copy_dp_packet_to_mbuf(dev->dpdk_mp->mp, packet);
+        pkts[txcnt] = dpdk_copy_dp_packet_to_mbuf(dev, packet);
         if (OVS_UNLIKELY(!pkts[txcnt])) {
             dropped = cnt - i;
             break;
