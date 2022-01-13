@@ -39,6 +39,10 @@ Post-v2.16.0
        is mainly for the benefit of OVN load balancing configurations.
    - Ingress policing on Linux now uses 'matchall' classifier instead of
      'basic', if available.
+   - ovs-appctl dpctl/:
+     * New commands 'ct-set-default-tp' and
+       'ct-set-default-tp' that allows to get or configure
+       netdev datapath ct default timeout policy.
 
 
 v2.16.0 - 16 Aug 2021
