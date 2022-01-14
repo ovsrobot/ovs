@@ -3402,7 +3402,8 @@ handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
                 }
                 if (seq_skew) {
                     ip_len = ntohs(l3_hdr->ip_tot_len) + seq_skew;
-                    if (!dp_packet_hwol_is_ipv4(pkt)) {
+                    if (!dp_packet_hwol_is_ipv4(pkt) ||
+                        !dp_packet_ip_checksum_valid(pkt)) {
                         l3_hdr->ip_csum = recalc_csum16(l3_hdr->ip_csum,
                                                         l3_hdr->ip_tot_len,
                                                         htons(ip_len));
