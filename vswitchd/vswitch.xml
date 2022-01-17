@@ -3375,6 +3375,28 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </ul>
         <p>This option may only be used with dpdk VF representors.</p>
       </column>
+
+      <column name="other_config" key="tx-steering"
+              type='{"type": "string",
+                     "enum": ["set", ["thread", "hash"]]}'>
+        <p>
+          Specifies the Tx steering mode for the interface.
+        </p>
+        <p>
+          <code>thread</code> enables static txq mapping when the number of txq
+          is greater or equal than the number of PMD threads, and XPS mode if
+          lower than the number of PMD threads.
+        </p>
+        <p>
+          <code>hash</code> enables hash-based Tx steering, which distributes
+          the packets on all the transmit queues based on their 5-tuples
+          hashes.
+        </p>
+        <p>
+          Defaults to <code>thread</code>.
+        </p>
+      </column>
+
     </group>
 
     <group title="EMC (Exact Match Cache) Configuration">
