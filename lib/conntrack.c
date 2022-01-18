@@ -2397,6 +2397,22 @@ next_addr_in_range_guarded(union ct_addr *curr, union ct_addr *min,
     return exhausted;
 }
 
+static bool
+nat_get_unique_l4(struct conntrack *ct, struct conn *nat_conn,
+                  ovs_be16 *port, uint16_t curr, uint16_t min,
+                  uint16_t max)
+{
+    FOR_EACH_PORT_IN_RANGE(curr, min, max) {
+        *port = htons(curr);
+        if (!conn_lookup(ct, &nat_conn->rev_key,
+                         time_msec(), NULL, NULL)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /* This function tries to get a unique tuple.
  * Every iteration checks that the reverse tuple doesn't
  * collide with any existing one.
@@ -2411,9 +2427,11 @@ next_addr_in_range_guarded(union ct_addr *curr, union ct_addr *min,
  *
  * In case of DNAT:
  *    - For each dst IP address in the range (if any).
- *        - For each dport in range (if any).
- *             - Try to find a source port in the ephemeral range
- *               (after testing the port used by the sender).
+ *        - For each dport in range (if any) tries to find
+ *          an unique tuple.
+ *        - Eventually, if the previous attempt fails,
+ *          tries to find a source port in the ephemeral
+ *          range (after testing the port used by the sender).
  *
  * If none can be found, return exhaustion to the caller. */
 static bool
@@ -2424,10 +2442,10 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
     union ct_addr min_addr = {0}, max_addr = {0}, curr_addr = {0},
                   guard_addr = {0};
     uint32_t hash = nat_range_hash(conn, ct->hash_basis, nat_info);
+    uint16_t min_sport, max_sport, curr_sport, orig_sport;
+    uint16_t min_dport, max_dport, curr_dport, orig_dport;
     bool pat_proto = conn->key.nw_proto == IPPROTO_TCP ||
                      conn->key.nw_proto == IPPROTO_UDP;
-    uint16_t min_dport, max_dport, curr_dport;
-    uint16_t min_sport, max_sport, curr_sport;
 
     min_addr = nat_info->min_addr;
     max_addr = nat_info->max_addr;
@@ -2439,9 +2457,9 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
      * we can stop once we reach it. */
     guard_addr = curr_addr;
 
-    set_sport_range(nat_info, &conn->key, hash, &curr_sport,
+    set_sport_range(nat_info, &conn->key, hash, &orig_sport,
                     &min_sport, &max_sport);
-    set_dport_range(nat_info, &conn->key, hash, &curr_dport,
+    set_dport_range(nat_info, &conn->key, hash, &orig_dport,
                     &min_dport, &max_dport);
 
 another_round:
@@ -2457,15 +2475,28 @@ another_round:
         goto next_addr;
     }
 
-    FOR_EACH_PORT_IN_RANGE(curr_dport, min_dport, max_dport) {
-        nat_conn->rev_key.src.port = htons(curr_dport);
-        FOR_EACH_PORT_IN_RANGE(curr_sport, min_sport, max_sport) {
-            nat_conn->rev_key.dst.port = htons(curr_sport);
-            if (!conn_lookup(ct, &nat_conn->rev_key,
-                             time_msec(), NULL, NULL)) {
-                return true;
-            }
+    curr_sport = orig_sport;
+    curr_dport = orig_dport;
+
+    nat_conn->rev_key.src.port = htons(curr_dport);
+    nat_conn->rev_key.dst.port = htons(curr_sport);
+
+    bool found = false;
+    if (nat_info->nat_action & NAT_ACTION_DST_PORT) {
+        found = nat_get_unique_l4(ct, nat_conn, &nat_conn->rev_key.src.port,
+                                  curr_dport, min_dport, max_dport);
+        if (!found) {
+            nat_conn->rev_key.src.port = htons(orig_dport);
         }
+    }
+
+    if (!found) {
+        found = nat_get_unique_l4(ct, nat_conn, &nat_conn->rev_key.dst.port,
+                                  curr_sport, min_sport, max_sport);
+    }
+
+    if (found) {
+        return true;
     }
 
     /* Check if next IP is in range and respin. Otherwise, notify
