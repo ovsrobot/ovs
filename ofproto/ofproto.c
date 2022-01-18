@@ -549,6 +549,7 @@ ofproto_create(const char *datapath_name, const char *datapath_type,
 
     ovs_mutex_init(&ofproto->vl_mff_map.mutex);
     cmap_init(&ofproto->vl_mff_map.cmap);
+    ovs_refcount_init(&ofproto->refcount);
 
     error = ofproto->ofproto_class->construct(ofproto);
     if (error) {
@@ -1695,14 +1696,43 @@ ofproto_destroy__(struct ofproto *ofproto)
     ofproto->ofproto_class->dealloc(ofproto);
 }
 
-/* Destroying rules is doubly deferred, must have 'ofproto' around for them.
- * - 1st we defer the removal of the rules from the classifier
- * - 2nd we defer the actual destruction of the rules. */
+/* We used to use defer function to wait for two grace periods
+ * as we assume the rule that holds the ofproto pointer will
+ * live at most two grace period. Howvever, we found at certain
+ * cases, this assumption does not stand.
+ *
+ * destroying a rule may have to wait multiple grace periods:
+ * remove_rules_postponed (one grace period)
+ *       -> remove_rule_rcu
+ *           -> remove_rule_rcu__
+ *               -> ofproto_rule_unref -> ref count != 1
+ *                   -> ... more grace periods.
+ *                   -> rule_destroy_cb (> 2 grace periods)
+ *                       -> free
+ *
+ * So we have to check the refcount for sure all the rules
+ * have been destroyed.
+ *
+ */
 static void
 ofproto_destroy_defer__(struct ofproto *ofproto)
     OVS_EXCLUDED(ofproto_mutex)
 {
     ovsrcu_postpone(ofproto_destroy__, ofproto);
+}
+
+void
+ofproto_ref(struct ofproto *ofproto)
+{
+    ovs_refcount_ref(&ofproto->refcount);
+}
+
+void
+ofproto_unref(struct ofproto *ofproto)
+{
+    if (ofproto && ovs_refcount_unref(&ofproto->refcount) == 1) {
+        ovsrcu_postpone(ofproto_destroy_defer__, ofproto);
+    }
 }
 
 void
@@ -1736,8 +1766,7 @@ ofproto_destroy(struct ofproto *p, bool del)
     p->connmgr = NULL;
     ovs_mutex_unlock(&ofproto_mutex);
 
-    /* Destroying rules is deferred, must have 'ofproto' around for them. */
-    ovsrcu_postpone(ofproto_destroy_defer__, p);
+    ofproto_unref(p);
 }
 
 /* Destroys the datapath with the respective 'name' and 'type'.  With the Linux
@@ -2930,6 +2959,7 @@ ofproto_rule_destroy__(struct rule *rule)
     rule_actions_destroy(rule_get_actions(rule));
     ovs_mutex_destroy(&rule->mutex);
     rule->ofproto->ofproto_class->rule_dealloc(rule);
+    ofproto_unref(rule->ofproto);
 }
 
 static void
@@ -3070,6 +3100,7 @@ group_destroy_cb(struct ofgroup *group)
     ofputil_bucket_list_destroy(CONST_CAST(struct ovs_list *,
                                            &group->buckets));
     group->ofproto->ofproto_class->group_dealloc(group);
+    ofproto_unref(group->ofproto);
 }
 
 void
@@ -5281,6 +5312,7 @@ ofproto_rule_create(struct ofproto *ofproto, struct cls_rule *cr,
 
     /* Initialize base state. */
     *CONST_CAST(struct ofproto **, &rule->ofproto) = ofproto;
+    ofproto_ref(ofproto);
     cls_rule_move(CONST_CAST(struct cls_rule *, &rule->cr), cr);
     ovs_refcount_init(&rule->ref_count);
 
@@ -7378,6 +7410,9 @@ init_group(struct ofproto *ofproto, const struct ofputil_group_mod *gm,
         ofputil_bucket_list_destroy(CONST_CAST(struct ovs_list *,
                                                &(*ofgroup)->buckets));
         ofproto->ofproto_class->group_dealloc(*ofgroup);
+    } else {
+        /* group construct succeed, ref ofproto */
+        ofproto_ref(ofproto);
     }
     return error;
 }

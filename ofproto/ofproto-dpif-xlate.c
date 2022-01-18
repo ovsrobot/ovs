@@ -3025,6 +3025,7 @@ xlate_normal(struct xlate_ctx *ctx)
 
         /* Save just enough info to update mac learning table later. */
         entry = xlate_cache_add_entry(ctx->xin->xcache, XC_NORMAL);
+        ofproto_ref(&ctx->xbridge->ofproto->up);
         entry->normal.ofproto = ctx->xbridge->ofproto;
         entry->normal.in_port = flow->in_port.ofp_port;
         entry->normal.dl_src = flow->dl_src;

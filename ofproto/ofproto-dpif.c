@@ -4472,8 +4472,8 @@ rule_dpif_lookup_from_table(struct ofproto_dpif *ofproto,
             }
             if (xcache) {
                 struct xc_entry *entry;
-
                 entry = xlate_cache_add_entry(xcache, XC_TABLE);
+                ofproto_ref(&ofproto->up);
                 entry->table.ofproto = ofproto;
                 entry->table.id = *table_id;
                 entry->table.match = true;
@@ -4508,8 +4508,8 @@ rule_dpif_lookup_from_table(struct ofproto_dpif *ofproto,
         }
         if (xcache) {
             struct xc_entry *entry;
-
             entry = xlate_cache_add_entry(xcache, XC_TABLE);
+            ofproto_ref(&ofproto->up);
             entry->table.ofproto = ofproto;
             entry->table.id = next_id;
             entry->table.match = (rule != NULL);
