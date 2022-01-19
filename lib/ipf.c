@@ -433,11 +433,9 @@ ipf_reassemble_v4_frags(struct ipf_list *ipf_list)
     len += rest_len;
     l3 = dp_packet_l3(pkt);
     ovs_be16 new_ip_frag_off = l3->ip_frag_off & ~htons(IP_MORE_FRAGMENTS);
-    if (!dp_packet_hwol_is_ipv4(pkt)) {
-        l3->ip_csum = recalc_csum16(l3->ip_csum, l3->ip_frag_off,
-                                    new_ip_frag_off);
-        l3->ip_csum = recalc_csum16(l3->ip_csum, l3->ip_tot_len, htons(len));
-    }
+    l3->ip_csum = recalc_csum16(l3->ip_csum, l3->ip_frag_off,
+                                new_ip_frag_off);
+    l3->ip_csum = recalc_csum16(l3->ip_csum, l3->ip_tot_len, htons(len));
     l3->ip_tot_len = htons(len);
     l3->ip_frag_off = new_ip_frag_off;
     dp_packet_set_l2_pad_size(pkt, 0);
@@ -1185,21 +1183,19 @@ ipf_post_execute_reass_pkts(struct ipf *ipf,
                     } else {
                         struct ip_header *l3_frag = dp_packet_l3(frag_i->pkt);
                         struct ip_header *l3_reass = dp_packet_l3(pkt);
-                        if (!dp_packet_hwol_is_ipv4(frag_i->pkt)) {
-                            ovs_be32 reass_ip =
-                                get_16aligned_be32(&l3_reass->ip_src);
-                            ovs_be32 frag_ip =
-                                get_16aligned_be32(&l3_frag->ip_src);
+                        ovs_be32 reass_ip =
+                            get_16aligned_be32(&l3_reass->ip_src);
+                        ovs_be32 frag_ip =
+                            get_16aligned_be32(&l3_frag->ip_src);
 
-                            l3_frag->ip_csum = recalc_csum32(l3_frag->ip_csum,
-                                                             frag_ip,
-                                                             reass_ip);
-                            reass_ip = get_16aligned_be32(&l3_reass->ip_dst);
-                            frag_ip = get_16aligned_be32(&l3_frag->ip_dst);
-                            l3_frag->ip_csum = recalc_csum32(l3_frag->ip_csum,
-                                                             frag_ip,
-                                                             reass_ip);
-                        }
+                        l3_frag->ip_csum = recalc_csum32(l3_frag->ip_csum,
+                                                         frag_ip,
+                                                         reass_ip);
+                        reass_ip = get_16aligned_be32(&l3_reass->ip_dst);
+                        frag_ip = get_16aligned_be32(&l3_frag->ip_dst);
+                        l3_frag->ip_csum = recalc_csum32(l3_frag->ip_csum,
+                                                         frag_ip,
+                                                         reass_ip);
 
                         l3_frag->ip_src = l3_reass->ip_src;
                         l3_frag->ip_dst = l3_reass->ip_dst;
