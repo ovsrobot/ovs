@@ -171,8 +171,9 @@ conn %%default
     auto=route
     ike=aes256gcm16-sha256-modp2048
     esp=aes256gcm16-modp2048
+    %s
 
-""" % (FILE_HEADER)
+"""
 
     CA_SECTION = """ca ca_auth
     cacert=%s
@@ -219,13 +220,17 @@ conn prevent_unencrypted_vxlan
     rightid=$remote_name
     leftcert=$certificate""")}
 
-    def __init__(self, root_prefix):
+    def __init__(self, root_prefix, args):
         self.CHARON_CONF = root_prefix + "/etc/strongswan.d/ovs.conf"
         self.IPSEC = root_prefix + "/usr/sbin/ipsec"
         self.IPSEC_CONF = root_prefix + "/etc/ipsec.conf"
         self.IPSEC_SECRETS = root_prefix + "/etc/ipsec.secrets"
         self.conf_file = None
         self.secrets_file = None
+        if args.force_encapsulation:
+            self.extra_params = "forceencaps=yes"
+        else:
+            self.extra_params = ""
 
     def restart_ike_daemon(self):
         """This function restarts StrongSwan."""
@@ -234,7 +239,7 @@ conn prevent_unencrypted_vxlan
         f.close()
 
         f = open(self.IPSEC_CONF, "w")
-        f.write(self.CONF_HEADER)
+        f.write(self.CONF_HEADER % (FILE_HEADER, self.extra_params))
         f.close()
 
         f = open(self.IPSEC_SECRETS, "w")
@@ -274,7 +279,7 @@ conn prevent_unencrypted_vxlan
     def config_init(self):
         self.conf_file = open(self.IPSEC_CONF, "w")
         self.secrets_file = open(self.IPSEC_SECRETS, "w")
-        self.conf_file.write(self.CONF_HEADER)
+        self.conf_file.write(self.CONF_HEADER % (FILE_HEADER, self.extra_params))
         self.secrets_file.write(FILE_HEADER)
 
     def config_global(self, monitor):
@@ -387,8 +392,9 @@ conn %%default
     ike=aes_gcm256-sha2_256
     esp=aes_gcm256
     ikev2=insist
+    %s
 
-""" % (FILE_HEADER)
+"""
 
     SHUNT_POLICY = """conn prevent_unencrypted_gre
     type=drop
@@ -452,6 +458,10 @@ conn prevent_unencrypted_vxlan
                         else "/etc/ipsec.secrets")
         ipsec_ctl = (args.ipsec_ctl if args.ipsec_ctl
                         else "/run/pluto/pluto.ctl")
+        if args.force_encapsulation:
+            self.extra_params = "encapsulation=yes"
+        else:
+            self.extra_params = ""
 
         self.IPSEC = libreswan_root_prefix + "/usr/sbin/ipsec"
         self.IPSEC_CONF = libreswan_root_prefix + ipsec_conf
@@ -472,7 +482,7 @@ conn prevent_unencrypted_vxlan
         self._nss_clear_database()
 
         f = open(self.IPSEC_CONF, "w")
-        f.write(self.CONF_HEADER)
+        f.write(self.CONF_HEADER % (FILE_HEADER, self.extra_params))
         f.close()
 
         f = open(self.IPSEC_SECRETS, "w")
@@ -485,7 +495,7 @@ conn prevent_unencrypted_vxlan
     def config_init(self):
         self.conf_file = open(self.IPSEC_CONF, "w")
         self.secrets_file = open(self.IPSEC_SECRETS, "w")
-        self.conf_file.write(self.CONF_HEADER)
+        self.conf_file.write(self.CONF_HEADER % (FILE_HEADER, self.extra_params))
         self.secrets_file.write(FILE_HEADER)
 
     def config_global(self, monitor):
@@ -1012,7 +1022,7 @@ class IPsecMonitor(object):
 
         # Choose to either use StrongSwan or LibreSwan as IKE daemon
         if ike_daemon == "strongswan":
-            self.ike_helper = StrongSwanHelper(root_prefix)
+            self.ike_helper = StrongSwanHelper(root_prefix, args)
         elif ike_daemon == "libreswan":
             self.ike_helper = LibreSwanHelper(root_prefix, args)
         else:
@@ -1284,6 +1294,9 @@ def main():
     parser.add_argument("--ipsec-ctl", metavar="IPSEC-CTL",
                         help="Use DIR/IPSEC-CTL as location for "
                         " pluto ctl socket (libreswan only).")
+    parser.add_argument("--force-encapsulation", action='store_true',
+                        help="Unconditionally enable ESP NAT-T encapsulation."
+                        " (either libreswan or strongswan).")
 
     ovs.vlog.add_args(parser)
     ovs.daemon.add_args(parser)
