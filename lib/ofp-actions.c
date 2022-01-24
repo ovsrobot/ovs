@@ -7759,18 +7759,59 @@ check_GOTO_TABLE(const struct ofpact_goto_table *a,
 
 static void
 log_bad_action(const struct ofp_action_header *actions, size_t actions_len,
-               const struct ofp_action_header *bad_action, enum ofperr error)
+               size_t action_offset, enum ofperr error)
 {
     if (!VLOG_DROP_WARN(&rl)) {
         struct ds s;
 
         ds_init(&s);
         ds_put_hex_dump(&s, actions, actions_len, 0, false);
-        VLOG_WARN("bad action at offset %#"PRIxPTR" (%s):\n%s",
-                  (char *)bad_action - (char *)actions,
+        VLOG_WARN("bad action at offset %"PRIuSIZE" (%s):\n%s", action_offset,
                   ofperr_get_name(error), ds_cstr(&s));
         ds_destroy(&s);
     }
+}
+
+static enum ofperr
+ofpacts_decode_aligned(struct ofpbuf *openflow, enum ofp_version ofp_version,
+                       const struct vl_mff_map *vl_mff_map,
+                       uint64_t *ofpacts_tlv_bitmap, struct ofpbuf *ofpacts,
+                       size_t *bad_action_offset)
+{
+    size_t decoded_len = 0;
+    enum ofperr error = 0;
+
+    ovs_assert(OFPACT_IS_ALIGNED(openflow->data));
+    while (openflow->size) {
+        /* Ensure the next action data is properly aligned before decoding it.
+         * Some times it's valid to have to decode actions that are not
+         * properly aligned (e.g., when processing OF 1.0 statistics reply
+         * messages which have a header of 12 bytes - struct ofp10_stats_msg).
+         * In other cases the encoder might be buggy.
+         */
+        if (!OFPACT_IS_ALIGNED(openflow->data)) {
+            ofpbuf_align(openflow);
+        }
+
+        const struct ofp_action_header *action = openflow->data;
+        enum ofp_raw_action_type raw;
+        uint64_t arg;
+
+        error = ofpact_pull_raw(openflow, ofp_version, &raw, &arg);
+        if (!error) {
+            error = ofpact_decode(action, raw, ofp_version, arg, vl_mff_map,
+                                  ofpacts_tlv_bitmap, ofpacts);
+        }
+
+        if (error) {
+            *bad_action_offset = decoded_len;
+            goto done;
+        }
+        decoded_len += openflow->size;
+    }
+
+done:
+    return error;
 }
 
 static enum ofperr
@@ -7779,25 +7820,25 @@ ofpacts_decode(const void *actions, size_t actions_len,
                const struct vl_mff_map *vl_mff_map,
                uint64_t *ofpacts_tlv_bitmap, struct ofpbuf *ofpacts)
 {
-    struct ofpbuf openflow = ofpbuf_const_initializer(actions, actions_len);
-    while (openflow.size) {
-        const struct ofp_action_header *action = openflow.data;
-        enum ofp_raw_action_type raw;
-        enum ofperr error;
-        uint64_t arg;
+    size_t bad_action_offset = 0;
+    struct ofpbuf aligned_buf;
 
-        error = ofpact_pull_raw(&openflow, ofp_version, &raw, &arg);
-        if (!error) {
-            error = ofpact_decode(action, raw, ofp_version, arg, vl_mff_map,
-                                  ofpacts_tlv_bitmap, ofpacts);
-        }
-
-        if (error) {
-            log_bad_action(actions, actions_len, action, error);
-            return error;
-        }
+    if (!OFPACT_IS_ALIGNED(actions)) {
+        ofpbuf_init(&aligned_buf, actions_len);
+        ofpbuf_put(&aligned_buf, actions, actions_len);
+    } else {
+        ofpbuf_use_data(&aligned_buf, actions, actions_len);
     }
-    return 0;
+
+    enum ofperr error
+        = ofpacts_decode_aligned(&aligned_buf, ofp_version, vl_mff_map,
+                                 ofpacts_tlv_bitmap, ofpacts,
+                                 &bad_action_offset);
+    if (error) {
+        log_bad_action(actions, actions_len, bad_action_offset, error);
+    }
+    ofpbuf_uninit(&aligned_buf);
+    return error;
 }
 
 static enum ofperr
