@@ -125,7 +125,7 @@ test_list_for_each_safe(void)
             struct element elements[MAX_ELEMS];
             int values[MAX_ELEMS];
             struct ovs_list list;
-            struct element *e, *next;
+            struct element *e;
             size_t values_idx, n_remaining;
             int i;
 
@@ -134,7 +134,7 @@ test_list_for_each_safe(void)
             i = 0;
             values_idx = 0;
             n_remaining = n;
-            LIST_FOR_EACH_SAFE (e, next, node, &list) {
+            LIST_FOR_EACH_SAFE (e, node, &list) {
                 assert(i < n);
                 if (pattern & (1ul << i)) {
                     ovs_list_remove(&e->node);
