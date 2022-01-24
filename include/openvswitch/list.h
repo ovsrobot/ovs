@@ -72,36 +72,43 @@ static inline bool ovs_list_is_empty(const struct ovs_list *);
 static inline bool ovs_list_is_singleton(const struct ovs_list *);
 static inline bool ovs_list_is_short(const struct ovs_list *);
 
-#define LIST_FOR_EACH(ITER, MEMBER, LIST)                               \
-    for (INIT_CONTAINER(ITER, (LIST)->next, MEMBER);                    \
-         &(ITER)->MEMBER != (LIST);                                     \
-         ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.next, MEMBER))
-#define LIST_FOR_EACH_CONTINUE(ITER, MEMBER, LIST)                      \
-    for (ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.next, MEMBER);             \
-         &(ITER)->MEMBER != (LIST);                                     \
-         ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.next, MEMBER))
-#define LIST_FOR_EACH_REVERSE(ITER, MEMBER, LIST)                       \
-    for (INIT_CONTAINER(ITER, (LIST)->prev, MEMBER);                    \
-         &(ITER)->MEMBER != (LIST);                                     \
-         ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.prev, MEMBER))
-#define LIST_FOR_EACH_REVERSE_SAFE(ITER, PREV, MEMBER, LIST)        \
-    for (INIT_CONTAINER(ITER, (LIST)->prev, MEMBER);                \
-         (&(ITER)->MEMBER != (LIST)                                 \
-          ? INIT_CONTAINER(PREV, (ITER)->MEMBER.prev, MEMBER), 1    \
-          : 0);                                                     \
-         (ITER) = (PREV))
-#define LIST_FOR_EACH_REVERSE_CONTINUE(ITER, MEMBER, LIST)              \
-    for (ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.prev, MEMBER);           \
-         &(ITER)->MEMBER != (LIST);                                     \
-         ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.prev, MEMBER))
-#define LIST_FOR_EACH_SAFE(ITER, NEXT, MEMBER, LIST)               \
-    for (INIT_CONTAINER(ITER, (LIST)->next, MEMBER);               \
-         (&(ITER)->MEMBER != (LIST)                                \
-          ? INIT_CONTAINER(NEXT, (ITER)->MEMBER.next, MEMBER), 1   \
-          : 0);                                                    \
-         (ITER) = (NEXT))
-#define LIST_FOR_EACH_POP(ITER, MEMBER, LIST)                      \
-    while (!ovs_list_is_empty(LIST)                                    \
+#define LIST_FOR_EACH(VAR, MEMBER, LIST)                                      \
+    for (INIT_MULTIVAR(VAR, MEMBER, (LIST)->next);                            \
+         CONDITION_MULTIVAR(ITER_VAR(VAR) != (LIST), VAR, MEMBER);            \
+         UPDATE_MULTIVAR((ITER_VAR(VAR) = ITER_VAR(VAR)->next), VAR))
+
+#define LIST_FOR_EACH_CONTINUE(VAR, MEMBER, LIST)                             \
+    for (INIT_MULTIVAR(VAR, MEMBER, VAR->MEMBER.next);                        \
+         CONDITION_MULTIVAR(ITER_VAR(VAR) != (LIST), VAR, MEMBER);            \
+         UPDATE_MULTIVAR((ITER_VAR(VAR) = ITER_VAR(VAR)->next), VAR))
+
+#define LIST_FOR_EACH_REVERSE(VAR, MEMBER, LIST)                              \
+    for (INIT_MULTIVAR(VAR, MEMBER, (LIST)->prev);                            \
+         CONDITION_MULTIVAR(ITER_VAR(VAR) != (LIST), VAR, MEMBER);            \
+         UPDATE_MULTIVAR((ITER_VAR(VAR) = ITER_VAR(VAR)->prev), VAR))
+
+
+#define LIST_FOR_EACH_REVERSE_CONTINUE(VAR, MEMBER, LIST)                     \
+    for (INIT_MULTIVAR(VAR, MEMBER, VAR->MEMBER.prev);                        \
+         CONDITION_MULTIVAR(ITER_VAR(VAR) != (LIST), VAR, MEMBER);            \
+         UPDATE_MULTIVAR((ITER_VAR(VAR) = ITER_VAR(VAR)->prev), VAR))
+
+#define LIST_FOR_EACH_REVERSE_SAFE(VAR, PREV, MEMBER, LIST)                   \
+    for (INIT_MULTIVAR_SAFE_EXP(VAR, MEMBER, (LIST)->prev, (void) PREV);      \
+         CONDITION_MULTIVAR_SAFE(ITER_VAR(VAR) != (LIST),                     \
+                                 ITER_NEXT_VAR(VAR) = ITER_VAR(VAR)->prev,    \
+                                 VAR,  MEMBER);                               \
+         UPDATE_MULTIVAR_SAFE(VAR))
+
+#define LIST_FOR_EACH_SAFE(VAR, NEXT, MEMBER, LIST)                           \
+    for (INIT_MULTIVAR_SAFE_EXP(VAR, MEMBER, (LIST)->next, (void) NEXT);      \
+         CONDITION_MULTIVAR_SAFE(ITER_VAR(VAR) != (LIST),                     \
+                                 ITER_NEXT_VAR(VAR) = ITER_VAR(VAR)->next,    \
+                                 VAR,  MEMBER);                               \
+         UPDATE_MULTIVAR_SAFE(VAR))
+
+#define LIST_FOR_EACH_POP(ITER, MEMBER, LIST)                                 \
+    while (!ovs_list_is_empty(LIST)                                           \
            && (INIT_CONTAINER(ITER, ovs_list_pop_front(LIST), MEMBER), 1))
 
 /* Inline implementations. */

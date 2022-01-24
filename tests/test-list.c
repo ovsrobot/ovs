@@ -61,7 +61,7 @@ check_list(struct ovs_list *list, const int values[], size_t n)
         assert(e->value == values[i]);
         i++;
     }
-    assert(&e->node == list);
+    assert(e == NULL);
     assert(i == n);
 
     i = 0;
@@ -70,7 +70,7 @@ check_list(struct ovs_list *list, const int values[], size_t n)
         assert(e->value == values[n - i - 1]);
         i++;
     }
-    assert(&e->node == list);
+    assert(e == NULL);
     assert(i == n);
 
     assert(ovs_list_is_empty(list) == !n);
@@ -148,7 +148,7 @@ test_list_for_each_safe(void)
                 i++;
             }
             assert(i == n);
-            assert(&e->node == &list);
+            assert(e == NULL);
 
             for (i = 0; i < n; i++) {
                 if (pattern & (1ul << i)) {
