@@ -174,7 +174,7 @@ check_hash_bytes128(void (*hash)(const void *, size_t, uint32_t, ovs_u128 *),
 
             set_bit128(&in2, j, n_bits);
             hash(&in2, sizeof(ovs_u128), 0, &out2);
-            for (ofs = 0; ofs < 128 - min_unique; ofs++) {
+            for (ofs = 1; ofs < 128 - min_unique; ofs++) {
                 uint64_t bits1 = get_range128(&out1, ofs, unique_mask);
                 uint64_t bits2 = get_range128(&out2, ofs, unique_mask);
 
