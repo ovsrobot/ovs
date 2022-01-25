@@ -1702,6 +1702,11 @@ static const struct nl_policy stats_policy[] = {
     [TCA_STATS_BASIC] = { .type = NL_A_UNSPEC,
                           .min_len = sizeof(struct gnet_stats_basic),
                           .optional = false, },
+#ifdef TCA_STATS_PKT64
+    [TCA_STATS_PKT64] = { .type = NL_A_U64,
+                          .min_len = sizeof(uint64_t),
+                          .optional = true, },
+#endif
 };
 
 static int
@@ -1772,8 +1777,17 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower,
     }
 
     bs = nl_attr_get_unspec(stats_attrs[TCA_STATS_BASIC], sizeof *bs);
-    if (bs->packets) {
+    if (bs->bytes) {
+#ifdef TCA_STATS_PKT64
+        if (stats_attrs[TCA_STATS_PKT64]) {
+            uint64_t packets = nl_attr_get_u64(stats_attrs[TCA_STATS_PKT64]);
+            put_32aligned_u64(&stats->n_packets, packets);
+        } else {
+            put_32aligned_u64(&stats->n_packets, bs->packets);
+        }
+#else
         put_32aligned_u64(&stats->n_packets, bs->packets);
+#endif
         put_32aligned_u64(&stats->n_bytes, bs->bytes);
     }
 
