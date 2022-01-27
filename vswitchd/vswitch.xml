@@ -576,7 +576,24 @@
           is set to <code>group</code>.
         </p>
       </column>
-
+      <column name="other_config" key="pmd-rxq-numa"
+              type='{"type": "boolean"}'>
+        <p>
+         Configures if Rx queues will be assigned to cores taken numa into
+         consideration.
+        </p>
+        <p>
+         It uses current scheme of cycle based assignment of RX queues that
+         are not statically pinned to PMDs.
+        </p>
+        <p>
+          The default value is <code>true</code>.
+        </p>
+        <p>
+          Set this value to <code>false</code> to disable this option. It is
+          currently enabled by default.
+        </p>
+      </column>
       <column name="other_config" key="n-handler-threads"
               type='{"type": "integer", "minInteger": 1}'>
         <p>

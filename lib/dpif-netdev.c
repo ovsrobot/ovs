@@ -297,6 +297,7 @@ struct dp_netdev {
     struct ovs_mutex tx_qid_pool_mutex;
     /* Rxq to pmd assignment type. */
     enum sched_assignment_type pmd_rxq_assign_type;
+    bool pmd_rxq_assign_numa;
     bool pmd_iso;
 
     /* Protects the access of the 'struct dp_netdev_pmd_thread'
@@ -1844,6 +1845,7 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
 
     cmap_init(&dp->poll_threads);
     dp->pmd_rxq_assign_type = SCHED_CYCLES;
+    dp->pmd_rxq_assign_numa = true;
 
     ovs_mutex_init(&dp->tx_qid_pool_mutex);
     /* We need 1 Tx queue for each possible core + 1 for non-PMD threads. */
@@ -4867,6 +4869,14 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         dp_netdev_request_reconfigure(dp);
     }
 
+    bool rxq_assign_numa = smap_get_bool(other_config, "pmd-rxq-numa", true);
+    if (dp->pmd_rxq_assign_numa != rxq_assign_numa) {
+        dp->pmd_rxq_assign_numa = rxq_assign_numa;
+        VLOG_INFO("Rxq to PMD numa assignment changed to: \'%s\'.",
+            rxq_assign_numa ? "numa enabled": "numa disabled");
+        dp_netdev_request_reconfigure(dp);
+    }
+
     struct pmd_auto_lb *pmd_alb = &dp->pmd_alb;
 
     rebalance_intvl = smap_get_int(other_config, "pmd-auto-lb-rebal-interval",
@@ -5869,6 +5879,7 @@ static void
 sched_numa_list_schedule(struct sched_numa_list *numa_list,
                          struct dp_netdev *dp,
                          enum sched_assignment_type algo,
+                         bool assign_numa,
                          enum vlog_level level)
     OVS_REQ_RDLOCK(dp->port_rwlock)
 {
@@ -5980,14 +5991,19 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         numa_id = netdev_get_numa_id(rxq->port->netdev);
         numa = sched_numa_list_lookup(numa_list, numa_id);
 
-        /* Check if numa has no PMDs or no non-isolated PMDs. */
-        if (!numa || !sched_numa_noniso_pmd_count(numa)) {
+        /* Check if numa has no PMDs or no non-isolated PMDs.
+           Or if we should ignore the pmd numa attribute */
+        if (!numa || !sched_numa_noniso_pmd_count(numa) || !assign_numa) {
             /* Unable to use this numa to find a PMD. */
             numa = NULL;
-            /* Find any numa with available PMDs. */
+            /* If we ignore rxq pmd numa attribute and it's roundrobin, we
+              should do roundrobin, else find any numa with available PMDs. */
             for (int j = 0; j < n_numa; j++) {
                 numa = sched_numa_list_next(numa_list, last_cross_numa);
                 if (sched_numa_noniso_pmd_count(numa)) {
+                    if (!assign_numa) {
+                        last_cross_numa = numa;
+                    }
                     break;
                 }
                 last_cross_numa = numa;
@@ -5996,7 +6012,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         }
 
         if (numa) {
-            if (numa->numa_id != numa_id) {
+            if (numa->numa_id != numa_id && assign_numa) {
                 VLOG(level, "There's no available (non-isolated) pmd thread "
                             "on numa node %d. Port \'%s\' rx queue %d will "
                             "be assigned to a pmd on numa node %d. "
@@ -6036,9 +6052,10 @@ rxq_scheduling(struct dp_netdev *dp)
 {
     struct sched_numa_list numa_list;
     enum sched_assignment_type algo = dp->pmd_rxq_assign_type;
+    bool assign_numa = dp->pmd_rxq_assign_numa;
 
     sched_numa_list_populate(&numa_list, dp);
-    sched_numa_list_schedule(&numa_list, dp, algo, VLL_INFO);
+    sched_numa_list_schedule(&numa_list, dp, algo, assign_numa, VLL_INFO);
     sched_numa_list_put_in_place(&numa_list);
 
     sched_numa_list_free_entries(&numa_list);
@@ -6164,7 +6181,8 @@ pmd_rebalance_dry_run(struct dp_netdev *dp)
     /* Populate estimated assignments. */
     sched_numa_list_populate(&numa_list_est, dp);
     sched_numa_list_schedule(&numa_list_est, dp,
-                             dp->pmd_rxq_assign_type, VLL_DBG);
+                             dp->pmd_rxq_assign_type,
+                             dp->pmd_rxq_assign_numa, VLL_DBG);
 
     /* Check if cross-numa polling, there is only one numa with PMDs. */
     if (!sched_numa_list_cross_numa_polling(&numa_list_est) ||

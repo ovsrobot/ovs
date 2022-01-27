@@ -317,6 +317,48 @@ pmd thread numa_id 0 core_id 2:
   isolated : false
 ])
 
+# disable pmd-rxq-numa for roundrobin
+TMP=$(($(cat ovs-vswitchd.log | wc -l | tr -d [[:blank:]])+1))
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=false])
+OVS_WAIT_UNTIL([tail -n +$TMP ovs-vswitchd.log | grep "Rxq to PMD numa assignment changed to: 'numa disabled'"])
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show], [0], [dnl
+pmd thread numa_id 1 core_id 1:
+  isolated : false
+  port: p0                queue-id:  1 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  3 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  5 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  7 (enabled)   pmd usage: NOT AVAIL
+  overhead: NOT AVAIL
+pmd thread numa_id 0 core_id 2:
+  isolated : false
+  port: p0                queue-id:  0 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  2 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  4 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  6 (enabled)   pmd usage: NOT AVAIL
+  overhead: NOT AVAIL
+])
+
+# enable pmd-rxq-numa again for roundrobin
+TMP=$(($(cat ovs-vswitchd.log | wc -l | tr -d [[:blank:]])+1))
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=true])
+OVS_WAIT_UNTIL([tail -n +$TMP ovs-vswitchd.log | grep "Rxq to PMD numa assignment changed to: 'numa enabled'"])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show], [0], [dnl
+pmd thread numa_id 1 core_id 1:
+  isolated : false
+  port: p0                queue-id:  0 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  1 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  2 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  3 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  4 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  5 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  6 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  7 (enabled)   pmd usage: NOT AVAIL
+  overhead: NOT AVAIL
+pmd thread numa_id 0 core_id 2:
+  isolated : false
+])
+
 TMP=$(($(cat ovs-vswitchd.log | wc -l | tr -d [[:blank:]])+1))
 AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-rxq-assign=cycles])
 OVS_WAIT_UNTIL([tail -n +$TMP ovs-vswitchd.log | grep "Performing pmd to rx queue assignment using cycles algorithm"])
@@ -336,6 +378,50 @@ pmd thread numa_id 1 core_id 1:
 pmd thread numa_id 0 core_id 2:
   isolated : false
 ])
+
+
+# disable pmd-rxq-numa for cycles
+TMP=$(($(cat ovs-vswitchd.log | wc -l | tr -d [[:blank:]])+1))
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=false])
+OVS_WAIT_UNTIL([tail -n +$TMP ovs-vswitchd.log | grep "Rxq to PMD numa assignment changed to: 'numa disabled'"])
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show], [0], [dnl
+pmd thread numa_id 1 core_id 1:
+  isolated : false
+  port: p0                queue-id:  1 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  3 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  5 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  7 (enabled)   pmd usage: NOT AVAIL
+  overhead: NOT AVAIL
+pmd thread numa_id 0 core_id 2:
+  isolated : false
+  port: p0                queue-id:  0 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  2 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  4 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  6 (enabled)   pmd usage: NOT AVAIL
+  overhead: NOT AVAIL
+])
+
+# enable pmd-rxq-numa again for cycles
+TMP=$(($(cat ovs-vswitchd.log | wc -l | tr -d [[:blank:]])+1))
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=true])
+OVS_WAIT_UNTIL([tail -n +$TMP ovs-vswitchd.log | grep "Rxq to PMD numa assignment changed to: 'numa enabled'"])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show], [0], [dnl
+pmd thread numa_id 1 core_id 1:
+  isolated : false
+  port: p0                queue-id:  0 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  1 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  2 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  3 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  4 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  5 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  6 (enabled)   pmd usage: NOT AVAIL
+  port: p0                queue-id:  7 (enabled)   pmd usage: NOT AVAIL
+  overhead: NOT AVAIL
+pmd thread numa_id 0 core_id 2:
+  isolated : false
+])
+
 
 # Switch back from mixed numa to single numa
 TMP=$(($(cat ovs-vswitchd.log | wc -l | tr -d [[:blank:]])+1))
@@ -925,10 +1011,30 @@ p1 0 0 1
 p1 1 0 2
 ])
 
+dnl for rxq affinity the disable numa assignment should not work
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=false])
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 0 1
+p1 1 0 2
+])
+
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=true])
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 0 1
+p1 1 0 2
+])
+
 AT_CHECK([ovs-vsctl set Interface p1 other_config:pmd-rxq-affinity="0:3,1:4"])
 
 dnl We moved the queues to different contiguous numa node. Expecting threads on
 dnl NUMA node 1 to be created.
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
+p1 0 1 3
+p1 1 1 4
+])
+
+dnl for rxq affinity the disable numa assignment should not work
+AT_CHECK([ovs-vsctl set open . other_config:pmd-rxq-numa=false])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show], [0], [dnl
 p1 0 1 3
 p1 1 1 4
