@@ -157,7 +157,7 @@ _mm512_maskz_permutexvar_epi8_wrap(__mmask64 kmask, __m512i idx, __m512i a)
   0, 0, 0, 0, /* Src IP */                                              \
   0, 0, 0, 0, /* Dst IP */
 
-#define PATTERN_IPV4_MASK PATTERN_IPV4_GEN(0xFF, 0xFE, 0xFF, 0xFF)
+#define PATTERN_IPV4_MASK PATTERN_IPV4_GEN(0xFF, 0xBF, 0xFF, 0xFF)
 #define PATTERN_IPV4_UDP PATTERN_IPV4_GEN(0x45, 0, 0, 0x11)
 #define PATTERN_IPV4_TCP PATTERN_IPV4_GEN(0x45, 0, 0, 0x06)
 
@@ -389,10 +389,27 @@ static const struct mfex_profile mfex_profiles[PROFILE_COUNT] =
         .dp_pkt_offs = {
             14, UINT16_MAX, 18, 38,
         },
-        .dp_pkt_min_size = 46,
+        .dp_pkt_min_size = 58,
     },
 };
 
+
+/* Static data to strip away the DF bit from an Eth/IPv4 miniflow. */
+static union mfex_data eth_ipv4_df_strip_mask = {
+    .u8_data = {
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0xBF, -1, -1, -1,
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+};
+
+static void ALWAYS_INLINE
+mfex_ipv4_strip_df_bit(__m512i v_blk0, __m512i v_df_mask, uint64_t *blocks)
+{
+    /* strip away ipv4 DF bit. */
+    __m512i v_blk0_df_strip = _mm512_and_si512(v_blk0, v_df_mask);
+    _mm512_storeu_si512(&blocks[2], v_blk0_df_strip);
+}
 
 /* Protocol specific helper functions, for calculating offsets/lenghts. */
 static int32_t
@@ -471,6 +488,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
     __m512i v_vals = _mm512_loadu_si512(&profile->probe_data);
     __m512i v_mask = _mm512_loadu_si512(&profile->probe_mask);
     __m512i v_shuf = _mm512_loadu_si512(&profile->store_shuf);
+    __m512i v_ipv4_df_mask = _mm512_loadu_si512(&eth_ipv4_df_strip_mask);
 
     __mmask64 k_shuf = profile->store_kmsk;
     __m128i v_bits = _mm_loadu_si128((void *) &profile->mf_bits);
@@ -498,7 +516,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
 
         __m512i v_pkt0_masked = _mm512_and_si512(v_pkt0, v_mask);
         __mmask64 k_cmp = _mm512_cmpeq_epi8_mask(v_pkt0_masked, v_vals);
-        if (k_cmp != UINT64_MAX) {
+        if (OVS_UNLIKELY(k_cmp != UINT64_MAX)) {
             continue;
         }
 
@@ -526,8 +544,6 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             v_blk0 = _mm512_maskz_permutex2var_epi8_skx(k_shuf, v_pkt0,
                                                         v_shuf, v512_zeros);
         }
-        _mm512_storeu_si512(&blocks[2], v_blk0);
-
 
         /* Perform "post-processing" per profile, handling details not easily
          * handled in the above generic AVX512 code. Examples include TCP flag
@@ -539,6 +555,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             break;
 
         case PROFILE_ETH_VLAN_IPV4_TCP: {
+                mfex_ipv4_strip_df_bit(v_blk0, v_ipv4_df_mask, blocks);
                 mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
 
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
@@ -554,6 +571,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             } break;
 
         case PROFILE_ETH_VLAN_IPV4_UDP: {
+                mfex_ipv4_strip_df_bit(v_blk0, v_ipv4_df_mask, blocks);
                 mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
 
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
@@ -565,6 +583,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             } break;
 
         case PROFILE_ETH_IPV4_TCP: {
+                mfex_ipv4_strip_df_bit(v_blk0, v_ipv4_df_mask, blocks);
                 /* Process TCP flags, and store to blocks. */
                 const struct tcp_header *tcp = (void *)&pkt[34];
                 mfex_handle_tcp_flags(tcp, &blocks[6]);
@@ -579,6 +598,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             } break;
 
         case PROFILE_ETH_IPV4_UDP: {
+                mfex_ipv4_strip_df_bit(v_blk0, v_ipv4_df_mask, blocks);
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv4 = size - sizeof(struct eth_header);
                 struct ip_header *nh = (void *)&pkt[sizeof(struct eth_header)];
