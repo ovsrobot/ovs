@@ -51,6 +51,7 @@ ovs_pyfiles = \
 # so they are not installed.
 EXTRA_DIST += \
 	python/build/__init__.py \
+	python/build/extract_ofp_fields.py \
 	python/build/nroff.py \
 	python/build/soutil.py
 
