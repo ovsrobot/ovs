@@ -1,2 +1,3 @@
 dist/
 *.egg-info
+ovs/flows/ofp_fields.py
