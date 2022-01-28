@@ -28,6 +28,7 @@ ovs_pyfiles = \
 	python/ovs/fcntl_win.py \
 	python/ovs/flows/__init__.py \
 	python/ovs/flows/decoders.py \
+	python/ovs/flows/flow.py \
 	python/ovs/flows/kv.py \
 	python/ovs/flows/list.py \
 	python/ovs/json.py \
