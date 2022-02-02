@@ -4243,7 +4243,7 @@ ovsdb_idl_loop_destroy(struct ovsdb_idl_loop *loop)
 {
     if (loop) {
         if (loop->committing_txn) {
-            ovsdb_idl_txn_abort(loop->committing_txn);
+            ovsdb_idl_txn_disassemble(loop->committing_txn);
             ovsdb_idl_txn_destroy(loop->committing_txn);
         }
         ovsdb_idl_destroy(loop->idl);
