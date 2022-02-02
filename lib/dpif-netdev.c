@@ -1074,7 +1074,9 @@ dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
                 if (!cls) {
                     continue;
                 }
+                ovs_mutex_lock(&pmd->flow_mutex);
                 uint32_t subtbl_changes = dpcls_subtable_lookup_reprobe(cls);
+                ovs_mutex_unlock(&pmd->flow_mutex);
                 if (subtbl_changes) {
                     lookup_dpcls_changed++;
                     lookup_subtable_changed += subtbl_changes;
@@ -9736,9 +9738,14 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
 
     /* Get the preferred subtable search function for this (u0,u1) subtable.
      * The function is guaranteed to always return a valid implementation, and
-     * possibly an ISA optimized, and/or specialized implementation.
+     * possibly an ISA optimized, and/or specialized implementation. Initialize
+     * the subtable search function atomically.
      */
-    subtable->lookup_func = dpcls_subtable_get_best_impl(unit0, unit1);
+    dpcls_subtable_lookup_func best_func = dpcls_subtable_get_best_impl(unit0,
+                                                                        unit1);
+    atomic_uintptr_t *subtable_func = (void *) &subtable->lookup_func;
+    atomic_init(subtable_func, (uintptr_t) best_func);
+
 
     cmap_insert(&cls->subtables_map, &subtable->cmap_node, mask->hash);
     /* Add the new subtable at the end of the pvector (with no hits yet) */
@@ -9779,10 +9786,18 @@ dpcls_subtable_lookup_reprobe(struct dpcls *cls)
         uint32_t u0_bits = subtable->mf_bits_set_unit0;
         uint32_t u1_bits = subtable->mf_bits_set_unit1;
         void *old_func = subtable->lookup_func;
-        subtable->lookup_func = dpcls_subtable_get_best_impl(u0_bits, u1_bits);
+
+        /* Set the best impl to the subtable lookup function atomically. */
+        dpcls_subtable_lookup_func best_func =
+            dpcls_subtable_get_best_impl(u0_bits, u1_bits);
+        atomic_uintptr_t *subtable_func = (void *) &subtable->lookup_func;
+        atomic_store_relaxed(subtable_func, (uintptr_t) best_func);
+
         subtables_changed += (old_func != subtable->lookup_func);
     }
-    pvector_publish(pvec);
+    if (subtables_changed) {
+        pvector_publish(pvec);
+    }
 
     return subtables_changed;
 }
