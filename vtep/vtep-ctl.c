@@ -738,7 +738,7 @@ del_ploc_from_mcast_mac(struct vtep_ctl_mcast_mac *mcast_mac,
 {
     struct vtep_ctl_ploc *ploc;
 
-    LIST_FOR_EACH (ploc, locators_node, &mcast_mac->locators) {
+    LIST_FOR_EACH_SAFE (ploc, locators_node, &mcast_mac->locators) {
         if (ploc->ploc_cfg == ploc_cfg) {
             ovs_list_remove(&ploc->locators_node);
             free(ploc);
