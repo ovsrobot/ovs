@@ -87,12 +87,26 @@ void sset_intersect(struct sset *, const struct sset *);
          NAME != NULL;                          \
          (NAME) = SSET_NEXT(SSET, NAME))
 
-#define SSET_FOR_EACH_SAFE(NAME, NEXT, SSET)        \
+#define SSET_FOR_EACH_SAFE_LONG(NAME, NEXT, SSET)   \
     for ((NAME) = SSET_FIRST(SSET);                 \
          (NAME != NULL                              \
           ? (NEXT) = SSET_NEXT(SSET, NAME), true    \
           : false);                                 \
          (NAME) = (NEXT))
+
+#define SSET_FOR_EACH_SAFE_SHORT(NAME, SSET)           \
+    for (OVS_TYPEOF(NAME) NAME__next =                 \
+         ((NAME) = SSET_FIRST(SSET), NULL);            \
+         (NAME != NULL                                 \
+          ? (NAME__next = SSET_NEXT(SSET, NAME), true) \
+          : (NAME__next = NULL, false));               \
+         (NAME) = NAME__next)
+
+#define SSET_GET_SAFE_MACRO(_1, _2, _3, NAME, ...) NAME
+#define SSET_FOR_EACH_SAFE(...)                              \
+    SSET_GET_SAFE_MACRO(__VA_ARGS__,                         \
+                   SSET_FOR_EACH_SAFE_LONG,                  \
+                   SSET_FOR_EACH_SAFE_SHORT)(__VA_ARGS__)
 
 const char **sset_array(const struct sset *);
 const char **sset_sort(const struct sset *);
