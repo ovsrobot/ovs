@@ -41,11 +41,22 @@ struct simap_node {
                         BUILD_ASSERT_TYPE(SIMAP_NODE, struct simap_node *), \
                         BUILD_ASSERT_TYPE(SIMAP, struct simap *))
 
-#define SIMAP_FOR_EACH_SAFE(SIMAP_NODE, NEXT, SIMAP)                    \
-    HMAP_FOR_EACH_SAFE_INIT (SIMAP_NODE, NEXT, node, &(SIMAP)->map,     \
+#define SIMAP_FOR_EACH_SAFE_SHORT(SIMAP_NODE, SIMAP)                        \
+    HMAP_FOR_EACH_SAFE_SHORT_INIT (SIMAP_NODE, node, &(SIMAP)->map,         \
                         BUILD_ASSERT_TYPE(SIMAP_NODE, struct simap_node *), \
-                        BUILD_ASSERT_TYPE(NEXT, struct simap_node *),   \
                         BUILD_ASSERT_TYPE(SIMAP, struct simap *))
+
+#define SIMAP_FOR_EACH_SAFE_LONG(SIMAP_NODE, NEXT, SIMAP)                    \
+    HMAP_FOR_EACH_SAFE_LONG_INIT (SIMAP_NODE, NEXT, node, &(SIMAP)->map,     \
+                        BUILD_ASSERT_TYPE(SIMAP_NODE, struct simap_node *),  \
+                        BUILD_ASSERT_TYPE(NEXT, struct simap_node *),        \
+                        BUILD_ASSERT_TYPE(SIMAP, struct simap *))
+
+#define SIMAP_GET_SAFE_MACRO(_1, _2, _3, NAME, ...) NAME
+#define SIMAP_FOR_EACH_SAFE(...)                                              \
+    SIMAP_GET_SAFE_MACRO(__VA_ARGS__,                                         \
+                         SIMAP_FOR_EACH_SAFE_LONG,                            \
+                         SIMAP_FOR_EACH_SAFE_SHORT)(__VA_ARGS__)
 
 void simap_init(struct simap *);
 void simap_destroy(struct simap *);

@@ -45,12 +45,24 @@ struct smap_node {
                         BUILD_ASSERT_TYPE(SMAP_NODE, struct smap_node *), \
                         BUILD_ASSERT_TYPE(SMAP, struct smap *))
 
-#define SMAP_FOR_EACH_SAFE(SMAP_NODE, NEXT, SMAP)           \
-    HMAP_FOR_EACH_SAFE_INIT (                               \
+#define SMAP_FOR_EACH_SAFE_SHORT(SMAP_NODE, SMAP)           \
+    HMAP_FOR_EACH_SAFE_SHORT_INIT (                         \
+        SMAP_NODE, node, &(SMAP)->map,                      \
+        BUILD_ASSERT_TYPE(SMAP_NODE, struct smap_node *),   \
+        BUILD_ASSERT_TYPE(SMAP, struct smap *))
+
+#define SMAP_FOR_EACH_SAFE_LONG(SMAP_NODE, NEXT, SMAP)      \
+    HMAP_FOR_EACH_SAFE_LONG_INIT (                          \
         SMAP_NODE, NEXT, node, &(SMAP)->map,                \
         BUILD_ASSERT_TYPE(SMAP_NODE, struct smap_node *),   \
         BUILD_ASSERT_TYPE(NEXT, struct smap_node *),        \
         BUILD_ASSERT_TYPE(SMAP, struct smap *))
+
+#define SMAP_GET_SAFE_MACRO(_1, _2, _3, NAME, ...) NAME
+#define SMAP_FOR_EACH_SAFE(...)                                              \
+    SMAP_GET_SAFE_MACRO(__VA_ARGS__,                                         \
+                        SMAP_FOR_EACH_SAFE_LONG,                             \
+                        SMAP_FOR_EACH_SAFE_SHORT)(__VA_ARGS__)
 
 /* Initializer for an immutable struct smap 'SMAP' that contains one or two
  * key-value pairs, e.g.

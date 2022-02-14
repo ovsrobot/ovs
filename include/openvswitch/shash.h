@@ -41,12 +41,24 @@ struct shash {
                         BUILD_ASSERT_TYPE(SHASH_NODE, struct shash_node *), \
                         BUILD_ASSERT_TYPE(SHASH, struct shash *))
 
-#define SHASH_FOR_EACH_SAFE(SHASH_NODE, NEXT, SHASH)        \
-    HMAP_FOR_EACH_SAFE_INIT (                               \
+#define SHASH_FOR_EACH_SAFE_SHORT(SHASH_NODE, SHASH)        \
+    HMAP_FOR_EACH_SAFE_SHORT_INIT (                         \
+        SHASH_NODE, node, &(SHASH)->map,                    \
+        BUILD_ASSERT_TYPE(SHASH_NODE, struct shash_node *), \
+        BUILD_ASSERT_TYPE(SHASH, struct shash *))
+
+#define SHASH_FOR_EACH_SAFE_LONG(SHASH_NODE, NEXT, SHASH)   \
+    HMAP_FOR_EACH_SAFE_LONG_INIT (                          \
         SHASH_NODE, NEXT, node, &(SHASH)->map,              \
         BUILD_ASSERT_TYPE(SHASH_NODE, struct shash_node *), \
         BUILD_ASSERT_TYPE(NEXT, struct shash_node *),       \
         BUILD_ASSERT_TYPE(SHASH, struct shash *))
+
+#define SHASH_GET_SAFE_MACRO(_1, _2, _3, NAME, ...) NAME
+#define SHASH_FOR_EACH_SAFE(...)                                              \
+    SHASH_GET_SAFE_MACRO(__VA_ARGS__,                                         \
+                         SHASH_FOR_EACH_SAFE_LONG,                            \
+                         SHASH_FOR_EACH_SAFE_SHORT)(__VA_ARGS__)
 
 void shash_init(struct shash *);
 void shash_destroy(struct shash *);
