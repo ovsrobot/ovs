@@ -174,7 +174,7 @@ test_list_for_each_safe(void)
             }
             assert(n == n_remaining);
 
-            /* Test short version (without next variable) */
+            /* Test short version (without next variable). */
             make_list(&list, elements, values, n);
 
             i = 0;
