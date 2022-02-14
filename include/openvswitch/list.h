@@ -110,8 +110,9 @@ static inline bool ovs_list_is_short(const struct ovs_list *);
          UPDATE_MULTIVAR_SAFE_LONG(VAR, NEXT))
 
 #define LIST_FOR_EACH_POP(ITER, MEMBER, LIST)                                 \
-    while (!ovs_list_is_empty(LIST)                                           \
-           && (INIT_CONTAINER(ITER, ovs_list_pop_front(LIST), MEMBER), 1))
+    while (!ovs_list_is_empty(LIST) ?                                         \
+           (INIT_CONTAINER(ITER, ovs_list_pop_front(LIST), MEMBER), 1) :      \
+           (ITER = NULL, 0))
 
 /* Inline implementations. */
 
