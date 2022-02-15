@@ -1683,7 +1683,8 @@ create_dpif_netdev(struct dp_netdev *dp)
     ovs_refcount_ref(&dp->ref_cnt);
 
     dpif = xmalloc(sizeof *dpif);
-    dpif_init(&dpif->dpif, dp->class, dp->name, netflow_id >> 8, netflow_id);
+    dpif_init(&dpif->dpif, dp->class, NULL, dp->name, netflow_id >> 8,
+              netflow_id);
     dpif->dp = dp;
     dpif->last_port_seq = seq_read(dp->port_seq);
 
@@ -9639,6 +9640,10 @@ dpif_dummy_override(const char *type)
     if (error == 0 || error == EAFNOSUPPORT) {
         dpif_dummy_register__(type);
     }
+    error = dp_offload_unregister_provider(type);
+    if (error == 0 || error == EAFNOSUPPORT) {
+        dpif_offload_dummy_register(type);
+    }
 }
 
 void
@@ -9659,6 +9664,7 @@ dpif_dummy_register(enum dummy_level level)
     }
 
     dpif_dummy_register__("dummy");
+    dpif_offload_dummy_register("dummy");
 
     unixctl_command_register("dpif-dummy/change-port-number",
                              "dp port new-number",
