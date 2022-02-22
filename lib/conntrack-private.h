@@ -91,6 +91,11 @@ enum OVS_PACKED_ENUM ct_conn_type {
     CT_CONN_TYPE_UN_NAT,
 };
 
+struct conn_counter {
+    atomic_uint64_t packets;
+    atomic_uint64_t bytes;
+};
+
 struct conn {
     /* Immutable data. */
     struct conn_key key;
@@ -123,6 +128,10 @@ struct conn {
     enum ct_conn_type conn_type;
 
     uint32_t tp_id; /* Timeout policy ID. */
+
+    /* Counters. */
+    struct conn_counter counters_orig;
+    struct conn_counter counters_reply;
 };
 
 enum ct_update_res {

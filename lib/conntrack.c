@@ -1246,6 +1246,21 @@ conn_update_state_alg(struct conntrack *ct, struct dp_packet *pkt,
 }
 
 static void
+conn_update_counters(struct conn *conn,
+                     const struct dp_packet *pkt, bool reply)
+{
+    if (conn) {
+        struct conn_counter *counter = (reply
+                                       ? &conn->counters_reply
+                                       : &conn->counters_orig);
+        uint64_t old;
+
+        atomic_count_inc64(&counter->packets);
+        atomic_add(&counter->bytes, dp_packet_size(pkt), &old);
+    }
+}
+
+static void
 set_cached_conn(const struct nat_action_info_t *nat_action_info,
                 const struct conn_lookup_ctx *ctx, struct conn *conn,
                 struct dp_packet *pkt)
@@ -1283,6 +1298,8 @@ process_one_fast(uint16_t zone, const uint32_t *setmark,
     if (setlabel) {
         set_label(pkt, conn, &setlabel[0], &setlabel[1]);
     }
+
+    conn_update_counters(conn, pkt, pkt->md.reply);
 }
 
 static void
@@ -1419,6 +1436,8 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
     if (conn && setlabel) {
         set_label(pkt, conn, &setlabel[0], &setlabel[1]);
     }
+
+    conn_update_counters(conn, pkt, ctx->reply);
 
     handle_alg_ctl(ct, ctx, pkt, ct_alg_ctl, conn, now, !!nat_action_info);
 
@@ -2640,6 +2659,15 @@ conn_to_ct_dpif_entry(const struct conn *conn, struct ct_dpif_entry *entry,
         class->conn_get_protoinfo(conn, &entry->protoinfo);
     }
     ovs_mutex_unlock(&conn->lock);
+
+    entry->counters_orig.packets = atomic_count_get64(
+            (atomic_uint64_t *)&conn->counters_orig.packets);
+    entry->counters_orig.bytes = atomic_count_get64(
+            (atomic_uint64_t *)&conn->counters_orig.bytes);
+    entry->counters_reply.packets = atomic_count_get64(
+            (atomic_uint64_t *)&conn->counters_reply.packets);
+    entry->counters_reply.bytes = atomic_count_get64(
+            (atomic_uint64_t *)&conn->counters_reply.bytes);
 
     entry->timeout = (expiration > 0) ? expiration / 1000 : 0;
 
