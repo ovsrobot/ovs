@@ -54,7 +54,8 @@ static struct dpif_miniflow_extract_impl mfex_impls[] = {
         .name = "study", },
 
 /* Compile in implementations only if the compiler ISA checks pass. */
-#if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
+#if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && HAVE_AVX512BW_DQ \
+     && __SSE4_2__)
     [MFEX_IMPL_VMBI_IPv4_UDP] = {
         .probe = mfex_avx512_vbmi_probe,
         .extract_func = mfex_avx512_vbmi_ip_udp,
