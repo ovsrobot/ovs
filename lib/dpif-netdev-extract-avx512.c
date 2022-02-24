@@ -110,7 +110,9 @@ _mm512_maskz_permutex2var_epi8_skx(__mmask64 k_mask,
 
 /* Wrapper function required to enable ISA. */
 static inline __m512i
+#if HAVE_AVX512VBMI
 __attribute__((__target__("avx512vbmi")))
+#endif
 _mm512_maskz_permutexvar_epi8_wrap(__mmask64 kmask, __m512i idx, __m512i a)
 {
     return _mm512_maskz_permutexvar_epi8(kmask, idx, a);
@@ -626,10 +628,16 @@ mfex_avx512_process(struct dp_packet_batch *packets,
 }
 
 
+#if HAVE_AVX512VBMI
+#define VBMI_TARGET __attribute__((__target__("avx512vbmi")))
+#else
+#define VBMI_TARGET
+#endif
+
 #define DECLARE_MFEX_FUNC(name, profile)                                \
 uint32_t                                                                \
 __attribute__((__target__("avx512f")))                                  \
-__attribute__((__target__("avx512vbmi")))                               \
+VBMI_TARGET                                                             \
 mfex_avx512_vbmi_##name(struct dp_packet_batch *packets,                \
                         struct netdev_flow_key *keys, uint32_t keys_size,\
                         odp_port_t in_port, struct dp_netdev_pmd_thread \

@@ -100,6 +100,20 @@ AC_DEFUN([OVS_CHECK_AVX512BW_DQ], [
   fi
 ])
 
+dnl OVS_CHECK_AVX512VBMI
+dnl
+dnl Checks if compiler supports AVX512VBMI instructions.
+AC_DEFUN([OVS_CHECK_AVX512VBMI], [
+  OVS_CHECK_CC_OPTION(
+    [-mavx512vbmi], [ovs_have_cc_mavx512vbmi=yes],
+    [ovs_have_cc_mavx512vbmi=no])
+  AM_CONDITIONAL([HAVE_AVX512VBMI], [test $ovs_have_cc_mavx512vbmi = yes])
+  if test "$ovs_have_cc_mavx512vbmi" = yes; then
+    AC_DEFINE([HAVE_AVX512VBMI], [1],
+              [Define to 1 if compiler supports AVX512VBMI.])
+  fi
+])
+
 dnl OVS_ENABLE_WERROR
 AC_DEFUN([OVS_ENABLE_WERROR],
   [AC_ARG_ENABLE(
