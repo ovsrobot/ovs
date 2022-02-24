@@ -85,7 +85,9 @@ _mm512_popcnt_epi64_manual(__m512i v_in)
  * requested ISA level, so fallback to the integer manual implementation.
  */
 static inline __m512i
+#if HAVE_AVX512VPOPCNTDQ
 __attribute__((__target__("avx512vpopcntdq")))
+#endif
 _mm512_popcnt_epi64_wrapper(__m512i v_in)
 {
 #ifdef __AVX512VPOPCNTDQ__
@@ -339,6 +341,12 @@ avx512_lookup_impl(struct dpcls_subtable *subtable,
  * create two functions for each miniflow signature. This allows the runtime
  * CPU detection in probe() to select the ideal implementation.
  */
+#if HAVE_AVX512VPOPCNTDQ
+#define VPOPCNTDQ_TARGET __attribute__((__target__("avx512vpopcntdq")))
+#else
+#define VPOPCNTDQ_TARGET
+#endif
+
 #define DECLARE_OPTIMIZED_LOOKUP_FUNCTION(U0, U1)                             \
     static uint32_t                                                           \
     dpcls_avx512_gather_mf_##U0##_##U1(struct dpcls_subtable *subtable,       \
@@ -351,7 +359,7 @@ avx512_lookup_impl(struct dpcls_subtable *subtable,
                                   U0, U1, use_vpop);                          \
     }                                                                         \
                                                                               \
-    static uint32_t __attribute__((__target__("avx512vpopcntdq")))            \
+    static uint32_t VPOPCNTDQ_TARGET                                          \
     dpcls_avx512_gather_mf_##U0##_##U1##_vpop(struct dpcls_subtable *subtable,\
                                        uint32_t keys_map,                     \
                                        const struct netdev_flow_key *keys[],  \
