@@ -275,6 +275,10 @@ dnl Clean up
 AT_CHECK([ovs-vsctl del-port br0 p1], [], [stdout], [stderr])
 OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
 \@upcall: datapath reached the dynamic limit of .* flows.@d
+\@Unreasonably long .* poll interval@d
+\@context switches: .* voluntary, .* involuntary@d
+\@faults: .* minor, .* major@d
+\@upcall_cb failure: ukey installation fails@d
 ])")
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
