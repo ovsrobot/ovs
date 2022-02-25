@@ -124,8 +124,8 @@ dpif_miniflow_extract_init(void)
     /* For the first call, this will be choosen based on the
      * compile time flag.
      */
-    VLOG_INFO("Default MFEX Extract implementation is %s.\n",
-              mfex_impls[mfex_idx].name);
+    VLOG_DBG("Default MFEX Extract implementation is %s.\n",
+             mfex_impls[mfex_idx].name);
     atomic_store_relaxed(mfex_func, (uintptr_t) mfex_impls
                          [mfex_idx].extract_func);
 }

@@ -274,3 +274,10 @@ AT_CLEANUP
 AT_SETUP([id-fpool module])
 AT_CHECK([ovstest test-id-fpool check], [0], [])
 AT_CLEANUP
+
+AT_SETUP([dpif-mfex])
+AT_KEYWORDS([mfex])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+AT_CHECK([$PYTHON3 $srcdir/mfex_fuzzy.py $srcdir 512 0], [], [])
+AT_CHECK([ovstest test-mfex $srcdir/pcap/fuzzy.pcap])
+AT_CLEANUP
