@@ -128,7 +128,7 @@ OVS_NO_RETURN void ovs_assert_failure(const char *, const char *, const char *);
  * from the type of '*OBJECT'. */
 #define OBJECT_CONTAINING(POINTER, OBJECT, MEMBER)                      \
     ((OVS_TYPEOF(OBJECT)) (void *)                                      \
-     ((char *) (POINTER) - OBJECT_OFFSETOF(OBJECT, MEMBER)))
+     ((uintptr_t)(void *)(POINTER) - OBJECT_OFFSETOF(OBJECT, MEMBER)))
 
 /* Given POINTER, the address of the given MEMBER within an object of the type
  * that that OBJECT points to, assigns the address of the outer object to
