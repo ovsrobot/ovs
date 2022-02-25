@@ -179,7 +179,9 @@ static inline void ofpbuf_delete(struct ofpbuf *b)
 static inline void *ofpbuf_at(const struct ofpbuf *b, size_t offset,
                               size_t size)
 {
-    return offset + size <= b->size ? (char *) b->data + offset : NULL;
+    return (offset + size <= b->size) && b->data
+           ? (char *) b->data + offset
+           : NULL;
 }
 
 /* Returns a pointer to byte 'offset' in 'b', which must contain at least
@@ -188,20 +190,20 @@ static inline void *ofpbuf_at_assert(const struct ofpbuf *b, size_t offset,
                                      size_t size)
 {
     ovs_assert(offset + size <= b->size);
-    return ((char *) b->data) + offset;
+    return b->data ? (char *) b->data + offset : NULL;
 }
 
 /* Returns a pointer to byte following the last byte of data in use in 'b'. */
 static inline void *ofpbuf_tail(const struct ofpbuf *b)
 {
-    return (char *) b->data + b->size;
+    return b->data ? (char *) b->data + b->size : NULL;
 }
 
 /* Returns a pointer to byte following the last byte allocated for use (but
  * not necessarily in use) in 'b'. */
 static inline void *ofpbuf_end(const struct ofpbuf *b)
 {
-    return (char *) b->base + b->allocated;
+    return b->base ? (char *) b->base + b->allocated : NULL;
 }
 
 /* Returns the number of bytes of headroom in 'b', that is, the number of bytes
@@ -249,6 +251,11 @@ static inline void *ofpbuf_pull(struct ofpbuf *b, size_t size)
 {
     ovs_assert(b->size >= size);
     void *data = b->data;
+
+    if (!size) {
+        return data;
+    }
+
     b->data = (char*)b->data + size;
     b->size = b->size - size;
     return data;
@@ -270,7 +277,7 @@ static inline struct ofpbuf *ofpbuf_from_list(const struct ovs_list *list)
 static inline bool ofpbuf_equal(const struct ofpbuf *a, const struct ofpbuf *b)
 {
     return a->size == b->size &&
-           memcmp(a->data, b->data, a->size) == 0;
+           (a->size == 0 || memcmp(a->data, b->data, a->size) == 0);
 }
 
 static inline bool ofpbuf_oversized(const struct ofpbuf *ofpacts)
