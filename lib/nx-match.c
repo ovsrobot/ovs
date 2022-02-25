@@ -31,6 +31,7 @@
 #include "openvswitch/ofp-match.h"
 #include "openvswitch/ofp-port.h"
 #include "openvswitch/ofpbuf.h"
+#include "openvswitch/util.h"
 #include "openvswitch/vlog.h"
 #include "packets.h"
 #include "openvswitch/shash.h"
@@ -1491,8 +1492,14 @@ nx_put_entry(struct ofpbuf *b, const struct mf_field *mff,
              enum ofp_version version, const union mf_value *value,
              const union mf_value *mask)
 {
+    union mf_value aligned_mask;
     bool masked;
     int len, offset;
+
+    if (!IS_PTR_ALIGNED(mask)) {
+        memcpy(&aligned_mask, mask, mff->n_bytes);
+        mask = &aligned_mask;
+    }
 
     len = mf_field_len(mff, value, mask, &masked);
     offset = mff->n_bytes - len;

@@ -3172,6 +3172,8 @@ mf_format(const struct mf_field *mf,
           const struct ofputil_port_map *port_map,
           struct ds *s)
 {
+    union mf_value aligned_mask;
+
     if (mask) {
         if (is_all_zeros(mask, mf->n_bytes)) {
             ds_put_cstr(s, "ANY");
@@ -3207,6 +3209,10 @@ mf_format(const struct mf_field *mf,
         break;
 
     case MFS_ETHERNET:
+        if (!IS_PTR_ALIGNED(mask)) {
+            memcpy(&aligned_mask.mac, mask, sizeof aligned_mask.mac);
+            mask = &aligned_mask;
+        }
         eth_format_masked(value->mac, mask ? &mask->mac : NULL, s);
         break;
 

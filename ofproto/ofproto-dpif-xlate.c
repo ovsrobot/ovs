@@ -7124,10 +7124,15 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
             /* Set the field only if the packet actually has it. */
             if (mf_are_prereqs_ok(mf, flow, wc)) {
-                mf_mask_field_masked(mf, ofpact_set_field_mask(set_field), wc);
-                mf_set_flow_value_masked(mf, set_field->value,
-                                         ofpact_set_field_mask(set_field),
-                                         flow);
+                union mf_value *mask = ofpact_set_field_mask(set_field);
+                union mf_value aligned_mask;
+
+                if (!IS_PTR_ALIGNED(mask)) {
+                    memcpy(&aligned_mask, mask, mf->n_bytes);
+                    mask = &aligned_mask;
+                }
+                mf_mask_field_masked(mf, mask, wc);
+                mf_set_flow_value_masked(mf, set_field->value, mask, flow);
             } else {
                 xlate_report(ctx, OFT_WARN,
                              "unmet prerequisites for %s, set_field ignored",
