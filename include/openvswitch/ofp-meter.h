@@ -79,6 +79,12 @@ char *parse_ofp_meter_mod_str(struct ofputil_meter_mod *, const char *string,
     OVS_WARN_UNUSED_RESULT;
 void ofputil_format_meter_mod(struct ds *, const struct ofputil_meter_mod *);
 
+char *parse_ofp_meter_mod_file(const char *file_name,
+                         int command,
+                         struct ofputil_meter_mod **mms, size_t *n_mms,
+                         enum ofputil_protocol *usable_protocols)
+    OVS_WARN_UNUSED_RESULT;
+
 struct ofputil_meter_stats {
     uint32_t meter_id;
     uint32_t flow_count;

@@ -15,6 +15,7 @@
  */
 
 #include <config.h>
+#include <errno.h>
 #include "openvswitch/ofp-meter.h"
 #include "byte-order.h"
 #include "nx-match.h"
@@ -57,7 +58,7 @@ void
 ofputil_format_meter_band(struct ds *s, enum ofp13_meter_flags flags,
                           const struct ofputil_meter_band *mb)
 {
-    ds_put_cstr(s, "\ntype=");
+    ds_put_cstr(s, " type=");
     switch (mb->type) {
     case OFPMBT13_DROP:
         ds_put_cstr(s, "drop");
@@ -578,6 +579,24 @@ parse_ofp_meter_mod_str__(struct ofputil_meter_mod *mm, char *string,
 
     /* Meters require at least OF 1.3. */
     *usable_protocols = OFPUTIL_P_OF13_UP;
+    if (command == -2) {
+        size_t len;
+
+        string += strspn(string, " \t\r\n");   /* Skip white space. */
+        len = strcspn(string, ", \t\r\n"); /* Get length of the first token. */
+
+        if (!strncmp(string, "add", len)) {
+            command = OFPMC13_ADD;
+        } else if (!strncmp(string, "delete", len)) {
+            command = OFPMC13_DELETE;
+        } else if (!strncmp(string, "modify", len)) {
+            command = OFPMC13_MODIFY;
+        } else {
+            len = 0;
+            command = OFPMC13_ADD;
+        }
+        string += len;
+    }
 
     switch (command) {
     case -1:
@@ -605,6 +624,11 @@ parse_ofp_meter_mod_str__(struct ofputil_meter_mod *mm, char *string,
     mm->meter.flags = 0;
     mm->meter.n_bands = 0;
     mm->meter.bands = NULL;
+
+    if (command == OFPMC13_DELETE && string[0] == '\0') {
+        mm->meter.meter_id = OFPM13_ALL;
+        return NULL;
+    }
 
     if (fields & F_BANDS) {
         band_str = strstr(string, "band");
@@ -806,4 +830,72 @@ ofputil_format_meter_mod(struct ds *s, const struct ofputil_meter_mod *mm)
     }
 
     ofputil_format_meter_config(s, &mm->meter);
+}
+
+/* If 'command' is given as -2, each line may start with a command name ("add",
+ * "modify", "delete").  A missing command name is treated as "add".
+ */
+char * OVS_WARN_UNUSED_RESULT
+parse_ofp_meter_mod_file(const char *file_name,
+                         int command,
+                         struct ofputil_meter_mod **mms, size_t *n_mms,
+                         enum ofputil_protocol *usable_protocols)
+{
+    size_t allocated_mms;
+    int line_number;
+    FILE *stream;
+    struct ds s;
+
+    *mms = NULL;
+    *n_mms = 0;
+
+    stream = !strcmp(file_name, "-") ? stdin : fopen(file_name, "r");
+    if (stream == NULL) {
+        return xasprintf("%s: open failed (%s)",
+                         file_name, ovs_strerror(errno));
+    }
+
+    allocated_mms = *n_mms;
+    ds_init(&s);
+    line_number = 0;
+    *usable_protocols = OFPUTIL_P_ANY;
+    while (!ds_get_preprocessed_line(&s, stream, &line_number)) {
+        enum ofputil_protocol usable;
+        char *error;
+
+        if (*n_mms >= allocated_mms) {
+            *mms = x2nrealloc(*mms, &allocated_mms, sizeof **mms);
+        }
+        error = parse_ofp_meter_mod_str(&(*mms)[ *n_mms], ds_cstr(&s), command,
+                                         &usable);
+        if (error) {
+            size_t i;
+
+            for (i = 0; i < *n_mms; i++) {
+                if (mms[i]->meter.bands) {
+                    free(mms[i]->meter.bands);
+                }
+            }
+            free(*mms);
+            *mms = NULL;
+            *n_mms = 0;
+
+            ds_destroy(&s);
+            if (stream != stdin) {
+                fclose(stream);
+            }
+
+            char *ret = xasprintf("%s:%d: %s", file_name, line_number, error);
+            free(error);
+            return ret;
+        }
+        *usable_protocols &= usable;
+        *n_mms += 1;
+    }
+
+    ds_destroy(&s);
+    if (stream != stdin) {
+        fclose(stream);
+    }
+    return NULL;
 }
