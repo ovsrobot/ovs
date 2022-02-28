@@ -101,6 +101,7 @@ struct json_parser {
     int line_number;
     int column_number;
     int byte_number;
+    const unsigned char *start;
 
     /* Parsing. */
     enum json_parse_state parse_state;
@@ -976,16 +977,18 @@ json_lex_string(struct json_parser *p)
     }
 }
 
-static bool
-json_lex_input(struct json_parser *p, unsigned char c)
+static inline ALWAYS_INLINE bool
+json_lex_input(struct json_parser *p, const unsigned char *ch)
 {
     struct json_token token;
+    unsigned char c = *ch;
 
     switch (p->lex_state) {
     case JSON_LEX_START:
         switch (c) {
         case ' ': case '\t': case '\n': case '\r':
             /* Nothing to do. */
+            p->start = ch + 1;
             return true;
 
         case 'a': case 'b': case 'c': case 'd': case 'e':
@@ -995,21 +998,25 @@ json_lex_input(struct json_parser *p, unsigned char c)
         case 'u': case 'v': case 'w': case 'x': case 'y':
         case 'z':
             p->lex_state = JSON_LEX_KEYWORD;
+            p->start = ch;
             break;
 
         case '[': case '{': case ']': case '}': case ':': case ',':
             token.type = c;
             json_parser_input(p, &token);
+            p->start = ch + 1;
             return true;
 
         case '-':
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
             p->lex_state = JSON_LEX_NUMBER;
+            p->start = ch;
             break;
 
         case '"':
             p->lex_state = JSON_LEX_STRING;
+            p->start = ch + 1;
             return true;
 
         default:
@@ -1024,6 +1031,7 @@ json_lex_input(struct json_parser *p, unsigned char c)
 
     case JSON_LEX_KEYWORD:
         if (!isalpha((unsigned char) c)) {
+            ds_put_buffer(&p->buffer, (const char *) p->start, ch - p->start);
             json_lex_keyword(p);
             return false;
         }
@@ -1031,6 +1039,7 @@ json_lex_input(struct json_parser *p, unsigned char c)
 
     case JSON_LEX_NUMBER:
         if (!strchr(".0123456789eE-+", c)) {
+            ds_put_buffer(&p->buffer, (const char *) p->start, ch - p->start);
             json_lex_number(p);
             return false;
         }
@@ -1040,6 +1049,7 @@ json_lex_input(struct json_parser *p, unsigned char c)
         if (c == '\\') {
             p->lex_state = JSON_LEX_ESCAPE;
         } else if (c == '"') {
+            ds_put_buffer(&p->buffer, (const char *) p->start, ch - p->start);
             json_lex_string(p);
             return true;
         } else if (c < 0x20) {
@@ -1055,7 +1065,6 @@ json_lex_input(struct json_parser *p, unsigned char c)
     default:
         abort();
     }
-    ds_put_char(&p->buffer, c);
     return true;
 }
 
@@ -1164,10 +1173,11 @@ size_t
 json_parser_feed(struct json_parser *p, const char *input, size_t n)
 {
     size_t i;
+    p->start = (const unsigned char *) input;
     for (i = 0; !p->done && i < n; ) {
-        if (json_lex_input(p, input[i])) {
+        if (json_lex_input(p, (unsigned const char *) &input[i])) {
             p->byte_number++;
-            if (input[i] == '\n') {
+            if (OVS_UNLIKELY(input[i] == '\n')) {
                 p->column_number = 0;
                 p->line_number++;
             } else {
@@ -1175,6 +1185,10 @@ json_parser_feed(struct json_parser *p, const char *input, size_t n)
             }
             i++;
         }
+    }
+    if (!p->done) {
+        ds_put_buffer(&p->buffer, (const char *) p->start,
+                (const unsigned char *) &input[i] - p->start);
     }
     return i;
 }
@@ -1189,6 +1203,7 @@ struct json *
 json_parser_finish(struct json_parser *p)
 {
     struct json *json;
+    const unsigned char *space = (const unsigned char *) " ";
 
     switch (p->lex_state) {
     case JSON_LEX_START:
@@ -1201,7 +1216,8 @@ json_parser_finish(struct json_parser *p)
 
     case JSON_LEX_NUMBER:
     case JSON_LEX_KEYWORD:
-        json_lex_input(p, ' ');
+        p->start = space;
+        json_lex_input(p, space);
         break;
     }
 
