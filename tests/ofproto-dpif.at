@@ -9834,8 +9834,7 @@ ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=1 packet=50540000000a50540000000
 # Check that vswitchd hasn't crashed by dumping the meter added above
 AT_CHECK([ovs-ofctl -O OpenFlow13 dump-meters br0 | ofctl_strip], [0], [dnl
 OFPST_METER_CONFIG reply (OF1.3):
-meter=1 pktps bands=
-type=drop rate=1
+meter=1 pktps bands= type=drop rate=1
 ])
 
 OVS_VSWITCHD_STOP

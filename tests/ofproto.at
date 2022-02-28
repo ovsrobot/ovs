@@ -6412,8 +6412,7 @@ OFPST_GROUP_DESC reply (OF1.1) (xid=0x2):
 ])
     AT_CHECK([ovs-ofctl -O OpenFlow13 dump-meters br0], [0], [dnl
 OFPST_METER_CONFIG reply (OF1.3) (xid=0x2):
-meter=1 pktps burst stats bands=
-type=drop rate=1 burst_size=1
+meter=1 pktps burst stats bands= type=drop rate=1 burst_size=1
 ])
 }
 

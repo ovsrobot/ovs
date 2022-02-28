@@ -474,6 +474,7 @@ usage(void)
            "  dump-group-stats SWITCH [GROUP]  print group statistics\n"
            "  queue-get-config SWITCH [PORT]  print queue config for PORT\n"
            "  add-meter SWITCH METER      add meter described by METER\n"
+           "  add-meters SWITCH FILE      add meters from FILE\n"
            "  mod-meter SWITCH METER      modify specific METER\n"
            "  del-meters SWITCH [METER]   delete meters matching METER\n"
            "  dump-meters SWITCH [METER]  print METER configuration\n"
@@ -4012,32 +4013,70 @@ ofctl_diff_flows(struct ovs_cmdl_context *ctx)
 }
 
 static void
-ofctl_meter_mod__(const char *bridge, const char *str, int command)
+ofctl_meter_mod__(const char *remote, struct ofputil_meter_mod *mms,
+                  size_t n_mms, enum ofputil_protocol usable_protocols)
 {
-    struct ofputil_meter_mod mm;
+    struct ofputil_meter_mod *mm;
     struct vconn *vconn;
     enum ofputil_protocol protocol;
-    enum ofputil_protocol usable_protocols;
     enum ofp_version version;
+    struct ofpbuf *request;
+    size_t i;
 
     memset(&mm, 0, sizeof mm);
-    if (str) {
+    protocol = open_vconn_for_flow_mod(remote, &vconn, usable_protocols);
+    version = ofputil_protocol_to_ofp_version(protocol);
+
+     for (i = 0; i < n_mms; i++) {
+        mm = &mms[i];
+        request = ofputil_encode_meter_mod(version, mm);
+        transact_noreply(vconn, request);
+        free(mm->meter.bands);
+    }
+
+    vconn_close(vconn);
+}
+
+static void
+ofctl_meter_mod_file(int argc OVS_UNUSED, char *argv[], int command)
+{
+    enum ofputil_protocol usable_protocols;
+    struct ofputil_meter_mod *mms = NULL;
+    size_t n_mms = 0;
+    char *error;
+
+    if (command == OFPMC13_ADD) {
+        /* Allow the file to specify a mix of commands. If none specified at
+         * the beginning of any given line, then the default is OFPMC13_ADD, so
+         * this is backwards compatible. */
+        command = -2;
+
+    }
+    error = parse_ofp_meter_mod_file(argv[2], command,
+                                    &mms, &n_mms, &usable_protocols);
+    if (error) {
+        ovs_fatal(0, "%s", error);
+    }
+    ofctl_meter_mod__(argv[1], mms, n_mms, usable_protocols);
+    free(mms);
+}
+
+static void
+ofctl_meter_mod(int argc, char *argv[], uint16_t command)
+{
+    if (argc > 2 && !strcmp(argv[2], "-")) {
+        ofctl_meter_mod_file(argc, argv, command);
+    } else {
+        enum ofputil_protocol usable_protocols;
+        struct ofputil_meter_mod mm;
         char *error;
-        error = parse_ofp_meter_mod_str(&mm, str, command, &usable_protocols);
+        error = parse_ofp_meter_mod_str(&mm, argc > 2 ? argv[2] : "", command,
+                                        &usable_protocols);
         if (error) {
             ovs_fatal(0, "%s", error);
         }
-    } else {
-        usable_protocols = OFPUTIL_P_OF13_UP;
-        mm.command = command;
-        mm.meter.meter_id = OFPM13_ALL;
+        ofctl_meter_mod__(argv[1], &mm, 1, usable_protocols);
     }
-
-    protocol = open_vconn_for_flow_mod(bridge, &vconn, usable_protocols);
-    version = ofputil_protocol_to_ofp_version(protocol);
-    transact_noreply(vconn, ofputil_encode_meter_mod(version, &mm));
-    free(mm.meter.bands);
-    vconn_close(vconn);
 }
 
 static void
@@ -4074,19 +4113,26 @@ ofctl_meter_request__(const char *bridge, const char *str,
 static void
 ofctl_add_meter(struct ovs_cmdl_context *ctx)
 {
-    ofctl_meter_mod__(ctx->argv[1], ctx->argv[2], OFPMC13_ADD);
+    ofctl_meter_mod(ctx->argc, ctx->argv, OFPMC13_ADD);
 }
+
+static void
+ofctl_add_meters(struct ovs_cmdl_context *ctx)
+{
+    ofctl_meter_mod_file(ctx->argc, ctx->argv, OFPMC13_ADD);
+}
+
 
 static void
 ofctl_mod_meter(struct ovs_cmdl_context *ctx)
 {
-    ofctl_meter_mod__(ctx->argv[1], ctx->argv[2], OFPMC13_MODIFY);
+    ofctl_meter_mod(ctx->argc, ctx->argv, OFPMC13_MODIFY);
 }
 
 static void
 ofctl_del_meters(struct ovs_cmdl_context *ctx)
 {
-    ofctl_meter_mod__(ctx->argv[1], ctx->argc > 2 ? ctx->argv[2] : NULL, OFPMC13_DELETE);
+    ofctl_meter_mod(ctx->argc, ctx->argv, OFPMC13_DELETE);
 }
 
 static void
@@ -5000,9 +5046,11 @@ static const struct ovs_cmdl_command all_commands[] = {
       2, 2, ofctl_diff_flows, OVS_RW },
     { "add-meter", "switch meter",
       2, 2, ofctl_add_meter, OVS_RW },
+    { "add-meters", "switch file",
+      2, 2, ofctl_add_meters, OVS_RW },
     { "mod-meter", "switch meter",
       2, 2, ofctl_mod_meter, OVS_RW },
-    { "del-meter", "switch meter",
+    { "del-meter", "switch [meter]",
       1, 2, ofctl_del_meters, OVS_RW },
     { "del-meters", "switch",
       1, 2, ofctl_del_meters, OVS_RW },
