@@ -5696,11 +5696,14 @@ sched_numa_list_cross_numa_polling(struct sched_numa_list *numa_list)
             struct sched_pmd *sched_pmd;
 
             sched_pmd = &numa->pmds[i];
+            if (sched_pmd->isolated) {
+                continue;
+            }
             /* For each rxq. */
             for (unsigned k = 0; k < sched_pmd->n_rxq; k++) {
                 struct dp_netdev_rxq *rxq = sched_pmd->rxqs[k];
 
-                if (!sched_pmd->isolated &&
+                if (rxq->core_id == OVS_CORE_UNSPEC &&
                     rxq->pmd->numa_id !=
                         netdev_get_numa_id(rxq->port->netdev)) {
                     return true;
