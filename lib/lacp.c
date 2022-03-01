@@ -387,6 +387,12 @@ lacp_process_packet(struct lacp *lacp, const void *member_,
         goto out;
     }
 
+    if (member->status == LACP_DEFAULTED) {
+        VLOG_INFO("%s: defaulted member %s reestablished connection with LACP partner.",
+                 lacp->name,
+                 member->name);
+    }
+
     member->status = LACP_CURRENT;
     tx_rate = lacp->fast ? LACP_FAST_TIME_TX : LACP_SLOW_TIME_TX;
     timer_set_duration(&member->rx, LACP_RX_MULTIPLIER * tx_rate);
@@ -465,9 +471,15 @@ lacp_member_register(struct lacp *lacp, void *member_,
         if (!lacp->key_member) {
             lacp->key_member = member;
         }
+
+        VLOG_DBG("LACP member %s added.", s->name);
     }
 
     if (!member->name || strcmp(s->name, member->name)) {
+        if (member->name) {
+            VLOG_DBG("LACP member %s renamed from %s.", s->name, member->name);
+        }
+
         free(member->name);
         member->name = xstrdup(s->name);
     }
@@ -530,6 +542,9 @@ lacp_member_carrier_changed(const struct lacp *lacp, const void *member_,
         member->carrier_up = carrier_up;
         member->count_carrier_changed++;
     }
+
+    VLOG_DBG("LACP member %s changed state to %s.",
+             member->name, carrier_up ? "up" : "down");
 
 out:
     lacp_unlock();
