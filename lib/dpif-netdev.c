@@ -297,6 +297,7 @@ struct dp_netdev {
     struct ovs_mutex tx_qid_pool_mutex;
     /* Rxq to pmd assignment type. */
     enum sched_assignment_type pmd_rxq_assign_type;
+    bool pmd_rxq_scaling_single;
     bool pmd_iso;
 
     /* Protects the access of the 'struct dp_netdev_pmd_thread'
@@ -430,6 +431,7 @@ struct dp_netdev_rxq {
     unsigned intrvl_idx;               /* Write index for 'cycles_intrvl'. */
     struct dp_netdev_pmd_thread *pmd;  /* pmd thread that polls this queue. */
     bool is_vhost;                     /* Is rxq of a vhost port. */
+    bool scale;                        /* rxq should be scheduled scalely */
     bool hw_miss_api_supported;        /* hw_miss_packet_recover() supported.*/
 
     /* Counters of cycles spent successfully polling and processing pkts. */
@@ -918,7 +920,8 @@ pmd_info_show_rxq(struct ds *reply, struct dp_netdev_pmd_thread *pmd)
             ds_put_format(reply, "  port: %-16s  queue-id: %2d", name,
                           netdev_rxq_get_queue_id(list[i].rxq->rx));
             ds_put_format(reply, " %s", netdev_rxq_enabled(list[i].rxq->rx)
-                                        ? "(enabled) " : "(disabled)");
+                          ? ((list[i].rxq->scale) ? "(rescaled)"
+                          : "(enabled) ") : "(disabled)");
             ds_put_format(reply, "  pmd usage: ");
             if (total_cycles) {
                 ds_put_format(reply, "%2"PRIu64"",
@@ -1845,6 +1848,7 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
 
     cmap_init(&dp->poll_threads);
     dp->pmd_rxq_assign_type = SCHED_CYCLES;
+    dp->pmd_rxq_scaling_single = false;
 
     ovs_mutex_init(&dp->tx_qid_pool_mutex);
     /* We need 1 Tx queue for each possible core + 1 for non-PMD threads. */
@@ -4772,6 +4776,8 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
     const char *cmask = smap_get(other_config, "pmd-cpu-mask");
     const char *pmd_rxq_assign = smap_get_def(other_config, "pmd-rxq-assign",
                                              "cycles");
+    const char *pmd_rxq_sche = smap_get_def(other_config, "pmd-rxq-schedule",
+                                             "single");
     unsigned long long insert_prob =
         smap_get_ullong(other_config, "emc-insert-inv-prob",
                         DEFAULT_EM_FLOW_INSERT_INV_PROB);
@@ -4857,6 +4863,20 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         dp->pmd_rxq_assign_type = pmd_rxq_assign_type;
         VLOG_INFO("Rxq to PMD assignment mode changed to: \'%s\'.",
                   pmd_rxq_assign);
+        dp_netdev_request_reconfigure(dp);
+    }
+
+    bool pmd_rxq_scale = !strcmp(pmd_rxq_sche, "scaling");
+    if (!pmd_rxq_scale && strcmp(pmd_rxq_sche, "single")) {
+        VLOG_WARN("Unsupported Phy Rxq schedule mode in pmd-rxq-schedule, "
+                    "Defaulting to 'single'.");
+        pmd_rxq_scale = true;
+        pmd_rxq_sche = "single";
+    }
+    if (dp->pmd_rxq_scaling_single != pmd_rxq_scale) {
+        dp->pmd_rxq_scaling_single = pmd_rxq_scale;
+        VLOG_INFO("Phy rxq schedule mode changed to: \'%s\'.",
+                  pmd_rxq_sche);
         dp_netdev_request_reconfigure(dp);
     }
 
@@ -5425,6 +5445,7 @@ port_reconfigure(struct dp_netdev_port *port)
 
         port->rxqs[i].port = port;
         port->rxqs[i].is_vhost = !strncmp(port->type, "dpdkvhost", 9);
+        port->rxqs[i].scale = false;
         port->rxqs[i].hw_miss_api_supported = true;
 
         err = netdev_rxq_open(netdev, &port->rxqs[i].rx, i);
@@ -5891,6 +5912,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
     unsigned n_rxqs = 0;
     bool start_logged = false;
     size_t n_numa;
+    bool scale = dp->pmd_rxq_scaling_single;
 
     /* For each port. */
     HMAP_FOR_EACH (port, node, &dp->ports) {
@@ -5957,6 +5979,23 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
                             netdev_rxq_get_name(rxq->rx),
                             netdev_rxq_get_queue_id(rxq->rx),
                             get_rxq_cyc_log(rxq_cyc_log, algo, proc_cycles));
+                if (!rxq->is_vhost && scale && !rxq->scale) {
+                    VLOG(level, "Enable scaling on pmd %d for \'%s\' "
+                                "rx queue %d\n",
+                                sched_pmd->pmd->core_id,
+                                netdev_rxq_get_name(rxq->rx),
+                                netdev_rxq_get_queue_id(rxq->rx));
+                    rxq->scale = true;
+                    sched_pmd->pmd->need_reload = true;
+                } else if (!rxq->is_vhost && !scale && rxq->scale) {
+                    VLOG(level, "Disable scaling on pmd %d for \'%s\' "
+                                "rx queue %d\n",
+                                sched_pmd->pmd->core_id,
+                                netdev_rxq_get_name(rxq->rx),
+                                netdev_rxq_get_queue_id(rxq->rx));
+                    rxq->scale = false;
+                    sched_pmd->pmd->need_reload = true;
+                }
                 sched_pmd_add_rxq(sched_pmd, rxq, proc_cycles);
             } else {
                 rxqs = xrealloc(rxqs, (n_rxqs + 1) * sizeof *rxqs);
@@ -6028,6 +6067,23 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
                             netdev_rxq_get_queue_id(rxq->rx),
                             get_rxq_cyc_log(rxq_cyc_log, algo, proc_cycles));
                 sched_pmd_add_rxq(sched_pmd, rxq, proc_cycles);
+                if (!rxq->is_vhost && scale && !rxq->scale) {
+                    VLOG_INFO("Enable scaling on pmd %d for \'%s\' "
+                              "rx queue %d\n",
+                              sched_pmd->pmd->core_id,
+                              netdev_rxq_get_name(rxq->rx),
+                              netdev_rxq_get_queue_id(rxq->rx));
+                    sched_pmd->pmd->need_reload = true;
+                    rxq->scale = true;
+                } else if (!rxqs[i]->is_vhost && !scale && rxq->scale) {
+                    VLOG_INFO("Disable scaling on pmd %d for \'%s\' "
+                              "rx queue %d\n",
+                              sched_pmd->pmd->core_id,
+                              netdev_rxq_get_name(rxq->rx),
+                              netdev_rxq_get_queue_id(rxq->rx));
+                    sched_pmd->pmd->need_reload = true;
+                    rxq->scale = false;
+                }
             }
         }
         if (!sched_pmd) {
@@ -6040,6 +6096,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
                     get_rxq_cyc_log(rxq_cyc_log, algo, proc_cycles));
         }
     }
+
     free(rxqs);
 }
 
@@ -6820,23 +6877,77 @@ pmd_load_queues_and_ports(struct dp_netdev_pmd_thread *pmd,
 {
     struct polled_queue *poll_list = *ppoll_list;
     struct rxq_poll *poll;
-    int i;
+    int i = 0, n_scale = 0, start = 0;
 
     ovs_mutex_lock(&pmd->port_mutex);
-    poll_list = xrealloc(poll_list, hmap_count(&pmd->poll_list)
-                                    * sizeof *poll_list);
-
-    i = 0;
     HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
-        poll_list[i].rxq = poll->rxq;
-        poll_list[i].port_no = poll->rxq->port->port_no;
-        poll_list[i].emc_enabled = poll->rxq->port->emc_enabled;
-        poll_list[i].rxq_enabled = netdev_rxq_enabled(poll->rxq->rx);
-        poll_list[i].change_seq =
-                     netdev_get_change_seq(poll->rxq->port->netdev);
-        i++;
+        if (poll->rxq->scale) {
+            n_scale ++;
+        }
     }
 
+    int n_total = hmap_count(&pmd->poll_list);
+    struct polled_queue *scale_queue = NULL;
+    if (n_scale) {
+        scale_queue = xmalloc(sizeof(*scale_queue) * n_scale);
+        HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
+            if (poll->rxq->scale) {
+                scale_queue[i].rxq = poll->rxq;
+                scale_queue[i].port_no = poll->rxq->port->port_no;
+                scale_queue[i].emc_enabled = poll->rxq->port->emc_enabled;
+                scale_queue[i].rxq_enabled = netdev_rxq_enabled(poll->rxq->rx);
+                scale_queue[i].change_seq =
+                            netdev_get_change_seq(poll->rxq->port->netdev);
+                i ++;
+            }
+        }
+    }
+
+    int non_scale = n_total - n_scale;
+    int times = 0;
+    if (n_scale) {
+        times = non_scale / n_scale;
+        times = (times == 0) ? 1: times;
+    }
+    poll_list = xrealloc(poll_list, (non_scale + times * n_scale)
+                                   * (sizeof *poll_list));
+
+    i = 0;
+    start = 0;
+    HMAP_FOR_EACH (poll, node, &pmd->poll_list) {
+        if (!poll->rxq->scale) {
+            if (n_scale && start < times * n_scale) {
+                poll_list[i] = scale_queue[start % n_scale];
+                VLOG_DBG("PMD %d: %d rxq %s %d\n", pmd->core_id, i,
+                         netdev_rxq_get_name(poll_list[i].rxq->rx),
+                         netdev_rxq_get_queue_id(poll_list[i].rxq->rx));
+                i ++;
+                start ++;
+            }
+            poll_list[i].rxq = poll->rxq;
+            poll_list[i].port_no = poll->rxq->port->port_no;
+            poll_list[i].emc_enabled = poll->rxq->port->emc_enabled;
+            poll_list[i].rxq_enabled = netdev_rxq_enabled(poll->rxq->rx);
+            poll_list[i].change_seq =
+                        netdev_get_change_seq(poll->rxq->port->netdev);
+            VLOG_DBG("PMD %d: %d rxq %s %d\n", pmd->core_id, i,
+                     netdev_rxq_get_name(poll_list[i].rxq->rx),
+                     netdev_rxq_get_queue_id(poll_list[i].rxq->rx));
+            i ++;
+        }
+    }
+    if (start == 0 && n_scale && scale_queue) {
+        for (i = 0; i < n_scale; i ++) {
+            poll_list[i] = scale_queue[i];
+            VLOG_DBG("PMD %d: %d rxq %s %d\n", pmd->core_id, i,
+                     netdev_rxq_get_name(poll_list[i].rxq->rx),
+                     netdev_rxq_get_queue_id(poll_list[i].rxq->rx));
+        }
+    }
+
+    if (scale_queue) {
+        free(scale_queue);
+    }
     pmd_load_cached_ports(pmd);
 
     ovs_mutex_unlock(&pmd->port_mutex);
