@@ -85,6 +85,21 @@ AC_DEFUN([OVS_CHECK_AVX512], [
   fi
 ])
 
+dnl OVS_CHECK_AVX512BW_DQ
+dnl
+dnl Checks if compiler and binutils supports AVX512BW and AVX512DQ
+dnl instructions.
+AC_DEFUN([OVS_CHECK_AVX512BW_DQ], [
+  OVS_CHECK_CC_OPTION(
+    [-mavx512bw -mavx512dq], [ovs_have_cc_mavx512bw_dq=yes],
+    [ovs_have_cc_mavx512bw_dq=no])
+  AM_CONDITIONAL([HAVE_AVX512BW_DQ], [test $ovs_have_cc_mavx512bw_dq = yes])
+  if test "$ovs_have_cc_mavx512bw_dq" = yes; then
+    AC_DEFINE([HAVE_AVX512BW_DQ], [1],
+              [Define to 1 if compiler supports AVX512.])
+  fi
+])
+
 dnl OVS_ENABLE_WERROR
 AC_DEFUN([OVS_ENABLE_WERROR],
   [AC_ARG_ENABLE(
