@@ -77,7 +77,7 @@ dnl Checks if compiler and binutils supports AVX512.
 AC_DEFUN([OVS_CHECK_AVX512], [
   OVS_CHECK_BINUTILS_AVX512
   OVS_CHECK_CC_OPTION(
-    [-mavx512f -mavx512vpopcntdq], [ovs_have_cc_mavx512f=yes], [ovs_have_cc_mavx512f=no])
+    [-mavx512f], [ovs_have_cc_mavx512f=yes], [ovs_have_cc_mavx512f=no])
   AM_CONDITIONAL([HAVE_AVX512F], [test $ovs_have_cc_mavx512f = yes])
   if test "$ovs_have_cc_mavx512f" = yes; then
     AC_DEFINE([HAVE_AVX512F], [1],
@@ -111,6 +111,20 @@ AC_DEFUN([OVS_CHECK_AVX512VBMI], [
   if test "$ovs_have_cc_mavx512vbmi" = yes; then
     AC_DEFINE([HAVE_AVX512VBMI], [1],
               [Define to 1 if compiler supports AVX512VBMI.])
+  fi
+])
+
+dnl OVS_CHECK_AVX512VPOPCNTDQ
+dnl
+dnl Checks if compiler supports AVX512VPOPCNTDQ instructions.
+AC_DEFUN([OVS_CHECK_AVX512VPOPCNTDQ], [
+  OVS_CHECK_CC_OPTION(
+    [-mavx512vpopcntdq], [ovs_have_cc_mavx512vpopcntdq=yes],
+    [ovs_have_cc_mavx512vpopcntdq=no])
+  AM_CONDITIONAL([HAVE_AVX512VPOPCNTDQ], [test $ovs_have_cc_mavx512vpopcntdq = yes])
+  if test "$ovs_have_cc_mavx512vpopcntdq" = yes; then
+    AC_DEFINE([HAVE_AVX512VPOPCNTDQ], [1],
+              [Define to 1 if compiler supports AVX512VPOPCNTDQ.])
   fi
 ])
 
