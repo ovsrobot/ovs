@@ -110,7 +110,9 @@ _mm512_maskz_permutex2var_epi8_skx(__mmask64 k_mask,
 
 /* Wrapper function required to enable ISA. */
 static inline __m512i
+#if HAVE_AVX512VBMI
 __attribute__((__target__("avx512vbmi")))
+#endif
 _mm512_maskz_permutexvar_epi8_wrap(__mmask64 kmask, __m512i idx, __m512i a)
 {
     return _mm512_maskz_permutexvar_epi8(kmask, idx, a);
@@ -481,7 +483,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     odp_port_t in_port,
                     void *pmd_handle OVS_UNUSED,
                     const enum MFEX_PROFILES profile_id,
-                    const uint32_t use_vbmi)
+                    const uint32_t use_vbmi OVS_UNUSED)
 {
     uint32_t hitmask = 0;
     struct dp_packet *packet;
@@ -544,7 +546,11 @@ mfex_avx512_process(struct dp_packet_batch *packets,
          */
         __m512i v512_zeros = _mm512_setzero_si512();
         __m512i v_blk0;
+#if HAVE_AVX512VBMI
         if (__builtin_constant_p(use_vbmi) && use_vbmi) {
+#else
+        if (0) {
+#endif
             v_blk0 = _mm512_maskz_permutexvar_epi8_wrap(k_shuf, v_shuf,
                                                         v_pkt0);
         } else {
@@ -626,7 +632,8 @@ mfex_avx512_process(struct dp_packet_batch *packets,
 }
 
 
-#define DECLARE_MFEX_FUNC(name, profile)                                \
+#if HAVE_AVX512VBMI
+#define VBMI_MFEX_FUNC(name, profile)                                   \
 uint32_t                                                                \
 __attribute__((__target__("avx512f")))                                  \
 __attribute__((__target__("avx512vbmi")))                               \
@@ -637,8 +644,12 @@ mfex_avx512_vbmi_##name(struct dp_packet_batch *packets,                \
 {                                                                       \
     return mfex_avx512_process(packets, keys, keys_size, in_port,       \
                                pmd_handle, profile, 1);                 \
-}                                                                       \
-                                                                        \
+}
+#else
+#define VBMI_MFEX_FUNC(name, profile)
+#endif
+
+#define BASIC_MFEX_FUNC(name, profile)                                  \
 uint32_t                                                                \
 __attribute__((__target__("avx512f")))                                  \
 mfex_avx512_##name(struct dp_packet_batch *packets,                     \
@@ -649,6 +660,10 @@ mfex_avx512_##name(struct dp_packet_batch *packets,                     \
     return mfex_avx512_process(packets, keys, keys_size, in_port,       \
                                pmd_handle, profile, 0);                 \
 }
+
+#define DECLARE_MFEX_FUNC(name, profile)                                \
+VBMI_MFEX_FUNC(name, profile)                                           \
+BASIC_MFEX_FUNC(name, profile)                                          \
 
 /* Each profile gets a single declare here, which specializes the function
  * as required.
