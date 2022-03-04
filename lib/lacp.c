@@ -367,12 +367,12 @@ lacp_process_packet(struct lacp *lacp, const void *member_,
             break;
         case SUBTYPE_MARKER:
             member->count_rx_pdus_marker++;
-            VLOG_DBG("%s: received a LACP marker PDU.", lacp->name);
+            VLOG_DBG("%s: received a LACP marker PDU", lacp->name);
             goto out;
         case SUBTYPE_UNUSED:
         default:
             member->count_rx_pdus_bad++;
-            VLOG_WARN_RL(&rl, "%s: received an unparsable LACP PDU.",
+            VLOG_WARN_RL(&rl, "%s: received an unparsable LACP PDU",
                          lacp->name);
             goto out;
     }
@@ -382,9 +382,14 @@ lacp_process_packet(struct lacp *lacp, const void *member_,
      * trigger re-checking of L1 state. */
     if (!member->carrier_up) {
         VLOG_INFO_RL(&rl, "%s: carrier state is DOWN,"
-                     " dropping received LACP PDU.", member->name);
+                     " dropping received LACP PDU", member->name);
         seq_change(connectivity_seq_get());
         goto out;
+    }
+
+    if (member->status == LACP_DEFAULTED) {
+        VLOG_INFO("%s: defaulted member %s reestablished connection with "
+                  "LACP partner", lacp->name, member->name);
     }
 
     member->status = LACP_CURRENT;
@@ -465,9 +470,15 @@ lacp_member_register(struct lacp *lacp, void *member_,
         if (!lacp->key_member) {
             lacp->key_member = member;
         }
+
+        VLOG_DBG("LACP member %s added", s->name);
     }
 
     if (!member->name || strcmp(s->name, member->name)) {
+        if (member->name) {
+            VLOG_DBG("LACP member %s renamed from %s", s->name, member->name);
+        }
+
         free(member->name);
         member->name = xstrdup(s->name);
     }
@@ -530,6 +541,9 @@ lacp_member_carrier_changed(const struct lacp *lacp, const void *member_,
         member->carrier_up = carrier_up;
         member->count_carrier_changed++;
     }
+
+    VLOG_DBG("LACP member %s changed state to %s",
+             member->name, carrier_up ? "up" : "down");
 
 out:
     lacp_unlock();

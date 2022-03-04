@@ -496,7 +496,7 @@ bond_reconfigure(struct bond *bond, const struct bond_settings *s)
         if (s->use_lb_output_action &&
             !ovs_lb_output_action_supported(bond->ofproto)) {
             VLOG_WARN("%s: Datapath does not support 'lb_output' action, "
-                      "disabled.", bond->name);
+                      "disabled", bond->name);
         } else {
             bond->use_lb_output_action = s->use_lb_output_action;
             if (!bond->use_lb_output_action) {
@@ -855,6 +855,8 @@ bond_check_admissibility(struct bond *bond, const void *member_,
     ovs_rwlock_rdlock(&rwlock);
     member = bond_member_lookup(bond, member_);
     if (!member) {
+        VLOG_DBG_RL(&rl, "bond %s: lookup for member on bond failed",
+                    bond->name);
         goto out;
     }
 
@@ -1127,8 +1129,13 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
             if (ds.length) {
                 ds_put_char(&ds, ',');
             }
-            ds_put_format(&ds, " %s %"PRIu64"kB",
-                          member->name, member->tx_bytes / 1024);
+            if (member->tx_bytes > 1024) {
+                ds_put_format(&ds, " %s %"PRIu64" kB",
+                              member->name, member->tx_bytes / 1024);
+            } else {
+                ds_put_format(&ds, " %s %"PRIu64" B",
+                              member->name, member->tx_bytes);
+            }
 
             if (!member->enabled) {
                 ds_put_cstr(&ds, " (disabled)");
@@ -1141,13 +1148,20 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
                     if (&e->list_node != ovs_list_front(&member->entries)) {
                         ds_put_cstr(&ds, " + ");
                     }
-                    ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64"kB",
-                                  e - bond->hash, e->tx_bytes / 1024);
+                    if (e->tx_bytes > 1024) {
+                        ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64" kB",
+                                      e - bond->hash, e->tx_bytes / 1024);
+                    } else {
+                        ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64" B",
+                                      e - bond->hash, e->tx_bytes);
+                    }
                 }
                 ds_put_cstr(&ds, ")");
             }
         }
-        VLOG_DBG("bond %s:%s", bond->name, ds_cstr(&ds));
+        if (ds.length) {
+            VLOG_DBG("bond %s:%s", bond->name, ds_cstr(&ds));
+        }
         ds_destroy(&ds);
     }
 }
@@ -1160,14 +1174,6 @@ bond_shift_load(struct bond_entry *hash, struct bond_member *to)
     struct bond_member *from = hash->member;
     struct bond *bond = from->bond;
     uint64_t delta = hash->tx_bytes;
-
-    VLOG_INFO("bond %s: shift %"PRIu64"kB of load (with hash %"PRIdPTR") "
-              "from %s to %s (now carrying %"PRIu64"kB and "
-              "%"PRIu64"kB load, respectively)",
-              bond->name, delta / 1024, hash - bond->hash,
-              from->name, to->name,
-              (from->tx_bytes - delta) / 1024,
-              (to->tx_bytes + delta) / 1024);
 
     /* Shift load away from 'from' to 'to'. */
     from->tx_bytes -= delta;
@@ -1300,6 +1306,8 @@ bond_rebalance(struct bond *bond)
     struct ovs_list bals;
     bool rebalanced = false;
     bool use_recirc;
+    uint64_t delta_start;
+    uint64_t delta_end;
 
     ovs_rwlock_wrlock(&rwlock);
     if (!bond_is_balanced(bond) || time_msec() < bond->next_rebalance) {
@@ -1345,6 +1353,16 @@ bond_rebalance(struct bond *bond)
             insert_bal(&bals, member);
         }
     }
+
+    if (ovs_list_is_empty(&bals)) {
+        goto done;
+    }
+
+    delta_start = (bond_member_from_bal_node(
+                   ovs_list_front(&bals))->tx_bytes -
+                   bond_member_from_bal_node(
+                   ovs_list_back(&bals))->tx_bytes) / 1024;
+
     log_bals(bond, &bals);
 
     /* Shift load from the most-loaded members to the least-loaded members. */
@@ -1388,7 +1406,25 @@ bond_rebalance(struct bond *bond)
             reinsert_bal(&bals, from);
             reinsert_bal(&bals, to);
         }
+        VLOG_INFO("shifted %"PRIuSIZE" hashes totaling %"PRIu64" kB "
+                  "from %s (%"PRIu64" kB) to %s (%"PRIu64" kB)",
+                  cnt, (overload + to->tx_bytes - from->tx_bytes) >> 1,
+                  from->name, from->tx_bytes, to->name, to->tx_bytes);
+
         rebalanced = true;
+    }
+
+    if (rebalanced) {
+        delta_end = (bond_member_from_bal_node(
+                     ovs_list_front(&bals))->tx_bytes -
+                     bond_member_from_bal_node(
+                     ovs_list_back(&bals))->tx_bytes) / 1024;
+
+        if (delta_start > (delta_end * 2)) {
+            /* Bond was significantly imbalanced. */
+            VLOG_INFO("bond %s rebalanced, deviation reduced from %"PRIu64" kB"
+                      "to %"PRIu64" kB", bond->name, delta_start, delta_end);
+        }
     }
 
     /* Implement exponentially weighted moving average.  A weight of 1/2 causes
@@ -1565,6 +1601,9 @@ bond_print_details(struct ds *ds, const struct bond *bond)
             if (be_tx_k) {
                 ds_put_format(ds, "  hash %d: %"PRIu64" kB load\n",
                           hash, be_tx_k);
+            } else if (be->tx_bytes) {
+                ds_put_format(ds, "  hash %d: %"PRIu64" B load\n",
+                          hash, be->tx_bytes);
             }
 
             /* XXX How can we list the MACs assigned to hashes of SLB bonds? */
@@ -1952,14 +1991,15 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
 {
     struct bond_entry *e;
     int balance;
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
 
     balance = bond->balance;
     if (bond->lacp_status == LACP_CONFIGURED) {
         /* LACP has been configured on this bond but negotiations were
-         * unsuccussful. If lacp_fallback_ab is enabled use active-
+         * unsuccessful. If lacp_fallback_ab is enabled use active-
          * backup mode else drop all traffic. */
         if (!bond->lacp_fallback_ab) {
-            return NULL;
+            goto error;
         }
         balance = BM_AB;
     }
@@ -1971,7 +2011,7 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
     case BM_TCP:
         if (bond->lacp_status != LACP_NEGOTIATED) {
             /* Must have LACP negotiations for TCP balanced bonds. */
-            return NULL;
+            goto error;
         }
         if (wc) {
             flow_mask_hash_fields(flow, wc, NX_HASH_FIELDS_SYMMETRIC_L3L4_UDP);
@@ -1990,6 +2030,18 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
     default:
         OVS_NOT_REACHED();
     }
+error:
+    if (VLOG_IS_DBG_ENABLED()) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        flow_format(&ds, flow, NULL);
+        VLOG_DBG_RL(&rl, "cannot choose output member on bond %s for flow %s "
+                    "with LACP status %s",
+                    bond->name,
+                    ds_cstr(&ds),
+                    lacp_status_description(bond->lacp_status));
+        ds_destroy(&ds);
+    }
+    return NULL;
 }
 
 static struct bond_member *
