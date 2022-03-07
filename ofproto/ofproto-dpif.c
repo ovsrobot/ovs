@@ -6779,6 +6779,7 @@ free_meter_id(struct free_meter_id_args *args)
 
     dpif_meter_del(ofproto->backer->dpif, args->meter_id, NULL, 0);
     id_pool_free_id(ofproto->backer->meter_ids, args->meter_id.uint32);
+    ofproto_unref(&ofproto->up);
     free(args);
 }
 
@@ -6794,6 +6795,7 @@ meter_del(struct ofproto *ofproto_, ofproto_meter_id meter_id)
      * especially by the handler and revalidator threads.
      * Postpone meter deletion after RCU grace period, so that ongoing
      * upcall translation or flow revalidation can complete. */
+    ofproto_ref(ofproto_);
     arg->ofproto = ofproto_dpif_cast(ofproto_);
     arg->meter_id = meter_id;
     ovsrcu_postpone(free_meter_id, arg);
