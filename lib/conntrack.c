@@ -44,10 +44,10 @@
 VLOG_DEFINE_THIS_MODULE(conntrack);
 
 COVERAGE_DEFINE(conntrack_full);
-COVERAGE_DEFINE(conntrack_long_cleanup);
 COVERAGE_DEFINE(conntrack_l3csum_err);
 COVERAGE_DEFINE(conntrack_l4csum_err);
 COVERAGE_DEFINE(conntrack_lookup_natted_miss);
+COVERAGE_DEFINE(conntrack_zone_clean);
 
 struct conn_lookup_ctx {
     struct conn_key key;
@@ -85,6 +85,8 @@ struct zone_limit {
     struct conntrack_zone_limit czl;
 };
 
+static unsigned hash_scale(uint32_t hash);
+static void conn_clean(struct conntrack *ct, struct conn *conn);
 static bool conn_key_extract(struct conntrack *, struct dp_packet *,
                              ovs_be16 dl_type, struct conn_lookup_ctx *,
                              uint16_t zone);
@@ -109,8 +111,9 @@ static void set_label(struct dp_packet *, struct conn *,
 static void *clean_thread_main(void *f_);
 
 static bool
-nat_get_unique_tuple(struct conntrack *ct, struct conn *conn,
-                     const struct nat_action_info_t *nat_info);
+nat_get_unique_tuple_lock(struct conntrack *ct, struct conn *conn,
+                          const struct nat_action_info_t *nat_info,
+                          uint32_t *rev_hash);
 
 static uint8_t
 reverse_icmp_type(uint8_t type);
@@ -249,16 +252,17 @@ conntrack_init(void)
     ovs_rwlock_unlock(&ct->resources_lock);
 
     ovs_mutex_init_adaptive(&ct->ct_lock);
-    ovs_mutex_lock(&ct->ct_lock);
-    cmap_init(&ct->conns);
-    for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
-        ovs_list_init(&ct->exp_lists[i]);
+
+    ct->next_bucket = 0;
+    for (unsigned i = 0; i < CONNTRACK_BUCKETS; i++) {
+        struct ct_bucket *bucket = &ct->buckets[i];
+        cmap_init(&bucket->conns);
+        ovs_mutex_init_adaptive(&bucket->lock);
     }
+
     cmap_init(&ct->zone_limits);
     ct->zone_limit_seq = 0;
     timeout_policy_init(ct);
-    ovs_mutex_unlock(&ct->ct_lock);
-
     atomic_count_init(&ct->n_conn, 0);
     atomic_init(&ct->n_conn_limit, DEFAULT_N_CONN_LIMIT);
     atomic_init(&ct->tcp_seq_chk, true);
@@ -353,6 +357,8 @@ zone_limit_create(struct conntrack *ct, int32_t zone, uint32_t limit)
         zl->czl.limit = limit;
         zl->czl.zone = zone;
         zl->czl.zone_limit_seq = ct->zone_limit_seq++;
+        cmap_init(&zl->czl.conns);
+        ovs_mutex_init_adaptive(&zl->czl.conns_lock);
         uint32_t hash = zone_key_hash(zone, ct->hash_basis);
         cmap_insert(&ct->zone_limits, &zl->node, hash);
         return 0;
@@ -384,12 +390,52 @@ zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
 }
 
 static void
+destroy_zl(struct zone_limit *zl)
+{
+    struct conn_key_node *keyn;
+
+    CMAP_FOR_EACH (keyn, cm_node, &zl->czl.conns) {
+        cmap_remove(&zl->czl.conns, &keyn[CT_DIR_FWD].cm_node,
+                    keyn[CT_DIR_FWD].key_hash);
+    }
+
+    ovs_mutex_destroy(&zl->czl.conns_lock);
+    cmap_destroy(&zl->czl.conns);
+    free(zl);
+}
+
+static void
 zone_limit_clean(struct conntrack *ct, struct zone_limit *zl)
     OVS_REQUIRES(ct->ct_lock)
 {
     uint32_t hash = zone_key_hash(zl->czl.zone, ct->hash_basis);
     cmap_remove(&ct->zone_limits, &zl->node, hash);
-    ovsrcu_postpone(free, zl);
+    ovsrcu_postpone(destroy_zl, zl);
+}
+
+static int
+zone_clean(struct conntrack *ct, struct zone_limit *zl, long long now)
+{
+    struct conn_key_node *keyn;
+    struct conn *conn;
+    int evicted = 0;
+
+    CMAP_FOR_EACH (keyn, cm_node, &zl->czl.conns) {
+        conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
+        if (!conn_expired(conn, now)) {
+            continue;
+        }
+
+        conn_clean(ct, conn);
+
+        if (++evicted >= 5) {
+            return evicted;
+        }
+    }
+
+    COVERAGE_INC(conntrack_zone_clean);
+
+    return evicted;
 }
 
 int
@@ -410,9 +456,9 @@ zone_limit_delete(struct conntrack *ct, uint16_t zone)
 }
 
 static void
-conn_clean(struct conntrack *ct, struct conn *conn)
-    OVS_REQUIRES(ct->ct_lock)
+conn_clean__(struct conntrack *ct, struct conn *conn)
 {
+    struct ct_bucket *bucket;
     struct zone_limit *zl;
     uint32_t hash;
 
@@ -420,21 +466,24 @@ conn_clean(struct conntrack *ct, struct conn *conn)
         expectation_clean(ct, &conn->key_node[CT_DIR_FWD].key);
     }
 
-    hash = conn_key_hash(&conn->key_node[CT_DIR_FWD].key, ct->hash_basis);
-    cmap_remove(&ct->conns, &conn->key_node[CT_DIR_FWD].cm_node, hash);
+    hash = conn->key_node[CT_DIR_FWD].key_hash;
+    bucket = &ct->buckets[hash_scale(hash)];
+    cmap_remove(&bucket->conns, &conn->key_node[CT_DIR_FWD].cm_node, hash);
 
     zl = zone_limit_lookup(ct, conn->admit_zone);
     if (zl && zl->czl.zone_limit_seq == conn->zone_limit_seq) {
+        ovs_mutex_lock(&zl->czl.conns_lock);
+        cmap_remove(&zl->czl.conns, &conn->key_node[CT_DIR_FWD].cm_node, hash);
+        ovs_mutex_unlock(&zl->czl.conns_lock);
+
         atomic_count_dec(&zl->czl.count);
     }
 
     if (conn->nat_action) {
-        hash = conn_key_hash(&conn->key_node[CT_DIR_REV].key,
-                             ct->hash_basis);
-        cmap_remove(&ct->conns, &conn->key_node[CT_DIR_REV].cm_node, hash);
+        hash = conn->key_node[CT_DIR_REV].key_hash;
+        bucket = &ct->buckets[hash_scale(hash)];
+        cmap_remove(&bucket->conns, &conn->key_node[CT_DIR_REV].cm_node, hash);
     }
-    ovs_list_remove(&conn->exp_node);
-    conn->cleaned = true;
     ovsrcu_postpone(delete_conn, conn);
     atomic_count_dec(&ct->n_conn);
 }
@@ -446,28 +495,41 @@ void
 conntrack_destroy(struct conntrack *ct)
 {
     struct conn_key_node *keyn;
+    struct ct_bucket *bucket;
     struct conn *conn;
+    int i;
 
     latch_set(&ct->clean_thread_exit);
     pthread_join(ct->clean_thread, NULL);
     latch_destroy(&ct->clean_thread_exit);
 
-    ovs_mutex_lock(&ct->ct_lock);
-    CMAP_FOR_EACH (keyn, cm_node, &ct->conns) {
-        if (keyn->key.dir != CT_DIR_FWD) {
-            continue;
+    for (i = 0; i < CONNTRACK_BUCKETS; i++) {
+        bucket = &ct->buckets[i];
+        CMAP_FOR_EACH (keyn, cm_node, &bucket->conns) {
+            if (keyn->key.dir != CT_DIR_FWD) {
+                continue;
+            }
+            conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
+            conn_clean(ct, conn);
         }
-        conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
-        conn_clean(ct, conn);
     }
-    cmap_destroy(&ct->conns);
 
+    /* XXX: we need this loop because connections may be in multiple
+     * buckets.  The former loop should probably use conn_clean__()
+     * or an unlocked version of conn_clean(). */
+    for (i = 0; i < CONNTRACK_BUCKETS; i++) {
+        bucket = &ct->buckets[i];
+        ovs_mutex_destroy(&bucket->lock);
+        cmap_destroy(&ct->buckets[i].conns);
+    }
+
+    ovs_mutex_lock(&ct->ct_lock);
     struct zone_limit *zl;
     CMAP_FOR_EACH (zl, node, &ct->zone_limits) {
         uint32_t hash = zone_key_hash(zl->czl.zone, ct->hash_basis);
 
         cmap_remove(&ct->zone_limits, &zl->node, hash);
-        ovsrcu_postpone(free, zl);
+        ovsrcu_postpone(destroy_zl, zl);
     }
     cmap_destroy(&ct->zone_limits);
 
@@ -498,37 +560,131 @@ conntrack_destroy(struct conntrack *ct)
 }
 
 
-static bool
-conn_key_lookup(struct conntrack *ct, const struct conn_key *key,
-                uint32_t hash, long long now, struct conn **conn_out,
-                bool *reply)
+static unsigned hash_scale(uint32_t hash)
 {
-    struct conn_key_node *keyn;
-    struct conn *conn = NULL;
-    bool found = false;
+    return hash >> (32 - CONNTRACK_BUCKETS_SHIFT);
+}
 
-    CMAP_FOR_EACH_WITH_HASH (keyn, cm_node, hash, &ct->conns) {
+static bool
+conn_key_lookup__(struct conntrack *ct, unsigned bucket,
+                  const struct conn_key *key, uint32_t hash,
+                  long long now, bool clean,
+                  struct conn **conn_out, bool *reply)
+{
+    struct ct_bucket *ctb = &ct->buckets[bucket];
+    struct conn_key_node *keyn;
+    bool found = false;
+    struct conn *conn;
+
+    CMAP_FOR_EACH_WITH_HASH (keyn, cm_node, hash, &ctb->conns) {
         conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
+        if (clean && conn_expired(conn, now)) {
+            conn_clean(ct, conn);
+            continue;
+        }
+
         for (int i = CT_DIR_FWD; i < CT_DIR_MAX; i++) {
-            if (!conn_key_cmp(&conn->key_node[i].key, key) &&
-                !conn_expired(conn, now)) {
+            if (!conn_key_cmp(&conn->key_node[i].key, key)) {
                 found = true;
                 if (reply) {
                     *reply = i;
                 }
-                goto out_found;
+
+                goto conn_out_found;
             }
         }
     }
 
-out_found:
-    if (found && conn_out) {
-        *conn_out = conn;
-    } else if (conn_out) {
-        *conn_out = NULL;
+conn_out_found:
+    if (conn_out) {
+        *conn_out = found ? conn : NULL;
     }
 
     return found;
+}
+
+static bool
+conn_key_lookup(struct conntrack *ct, unsigned bucket,
+                const struct conn_key *key, uint32_t hash,
+                long long now, struct conn **conn_out,
+                bool *reply)
+{
+    return conn_key_lookup__(ct, bucket, key, hash, now, true, conn_out, reply);
+}
+
+static void
+ct_buckets_unlock__(struct conntrack *ct, uint32_t p1, uint32_t p2)
+    OVS_RELEASES(ct->buckets[p1].lock, ct->buckets[p2].lock)
+{
+    if (p1 < p2) {
+        ovs_mutex_unlock(&ct->buckets[p2].lock);
+        ovs_mutex_unlock(&ct->buckets[p1].lock);
+    } else if (p1 > p2) {
+        ovs_mutex_unlock(&ct->buckets[p1].lock);
+        ovs_mutex_unlock(&ct->buckets[p2].lock);
+    } else {
+        ovs_mutex_unlock(&ct->buckets[p1].lock);
+    }
+}
+
+static void
+ct_buckets_unlock(struct conntrack *ct, uint32_t h1, uint32_t h2)
+{
+    unsigned p1 = hash_scale(h1),
+        p2 = hash_scale(h2);
+
+    ct_buckets_unlock__(ct, p1, p2);
+}
+
+/* Acquires both locks in an ordered way. */
+static void
+ct_buckets_lock__(struct conntrack *ct, unsigned p1, unsigned p2)
+    OVS_ACQUIRES(ct->buckets[p1].lock, ct->buckets[p2].lock)
+{
+    if (p1 < p2) {
+        ovs_mutex_lock(&ct->buckets[p1].lock);
+        ovs_mutex_lock(&ct->buckets[p2].lock);
+    } else if (p1 > p2) {
+        ovs_mutex_lock(&ct->buckets[p2].lock);
+        ovs_mutex_lock(&ct->buckets[p1].lock);
+    } else {
+        ovs_mutex_lock(&ct->buckets[p1].lock);
+    }
+}
+
+static void
+ct_buckets_lock(struct conntrack *ct, uint32_t h1, uint32_t h2)
+{
+    unsigned p1 = hash_scale(h1),
+        p2 = hash_scale(h2);
+
+    ct_buckets_lock__(ct, p1, p2);
+}
+
+static void
+conn_clean(struct conntrack *ct, struct conn *conn)
+{
+    uint32_t h1, h2;
+
+    if (atomic_flag_test_and_set(&conn->cleaned)) {
+        return;
+    }
+
+    h1 = conn->key_node[CT_DIR_FWD].key_hash;
+    h2 = conn->key_node[CT_DIR_REV].key_hash;
+    ct_buckets_lock(ct, h1, h2);
+    conn_clean__(ct, conn);
+    ct_buckets_unlock(ct, h1, h2);
+}
+
+static bool
+conn_lookup_gc(struct conntrack *ct, const struct conn_key *key,
+               long long now, struct conn **conn_out, bool *reply)
+{
+    uint32_t hash = conn_key_hash(key, ct->hash_basis);
+    unsigned bucket = hash_scale(hash);
+
+    return conn_key_lookup__(ct, bucket, key, hash, now, true, conn_out, reply);
 }
 
 static bool
@@ -536,7 +692,9 @@ conn_lookup(struct conntrack *ct, const struct conn_key *key,
             long long now, struct conn **conn_out, bool *reply)
 {
     uint32_t hash = conn_key_hash(key, ct->hash_basis);
-    return conn_key_lookup(ct, key, hash, now, conn_out, reply);
+    unsigned bucket = hash_scale(hash);
+
+    return conn_key_lookup__(ct, bucket, key, hash, now, false, conn_out, reply);
 }
 
 static void
@@ -909,7 +1067,7 @@ conn_seq_skew_set(struct conntrack *ct, const struct conn *conn_in,
 {
     struct conn *conn;
     ovs_mutex_unlock(&conn_in->lock);
-    conn_lookup(ct, &conn_in->key_node[CT_DIR_FWD].key, now, &conn, NULL);
+    conn_lookup_gc(ct, &conn_in->key_node[CT_DIR_FWD].key, now, &conn, NULL);
     ovs_mutex_lock(&conn_in->lock);
 
     if (conn && seq_skew) {
@@ -944,7 +1102,6 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
                const struct nat_action_info_t *nat_action_info,
                const char *helper, const struct alg_exp_node *alg_exp,
                enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
-    OVS_REQUIRES(ct->ct_lock)
 {
     struct conn *nc = NULL;
     uint32_t rev_hash = ctx->hash;
@@ -961,11 +1118,13 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
     }
 
     if (commit) {
-        struct conn_key_node *fwd_key_node, *rev_key_node;
-
         struct zone_limit *zl = zone_limit_lookup_or_default(ct,
                                                              ctx->key.zone);
-        if (zl && atomic_count_get(&zl->czl.count) >= zl->czl.limit) {
+        struct conn_key_node *fwd_key_node, *rev_key_node;
+        bool handle_tuple = false;
+
+        if (zl && atomic_count_get(&zl->czl.count) >= zl->czl.limit &&
+            !zone_clean(ct, zl, now)) {
             return nc;
         }
 
@@ -1007,47 +1166,72 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
                     nc->nat_action = NAT_ACTION_DST;
                 }
             } else {
-                bool nat_res = nat_get_unique_tuple(ct, nc, nat_action_info);
-
-                if (!nat_res) {
-                    goto nat_res_exhaustion;
-                }
+                handle_tuple = true;
             }
-
-            nat_packet(pkt, nc, ctx->icmp_related);
-            rev_hash = conn_key_hash(&rev_key_node->key, ct->hash_basis);
-            rev_key_node->key.dir = CT_DIR_REV;
-            cmap_insert(&ct->conns, &rev_key_node->cm_node, rev_hash);
         }
 
         ovs_mutex_init_adaptive(&nc->lock);
+        atomic_flag_clear(&nc->cleaned);
         fwd_key_node->key.dir = CT_DIR_FWD;
-        cmap_insert(&ct->conns, &fwd_key_node->cm_node, ctx->hash);
+        rev_key_node->key.dir = CT_DIR_REV;
+
+        if (handle_tuple) {
+            bool nat_res = nat_get_unique_tuple_lock(ct, nc, nat_action_info,
+                                                     &rev_hash);
+
+            if (!nat_res) {
+                goto out_error;
+            }
+        } else {
+            rev_hash = conn_key_hash(&rev_key_node->key, ct->hash_basis);
+            ct_buckets_lock(ct, ctx->hash, rev_hash);
+        }
+
+        if (conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
+            goto out_error_unlock;
+        }
+
+        fwd_key_node->key_hash = ctx->hash;
+        cmap_insert(&ct->buckets[hash_scale(ctx->hash)].conns,
+                    &fwd_key_node->cm_node, ctx->hash);
+        if (nat_action_info) {
+            rev_key_node->key_hash = rev_hash;
+            cmap_insert(&ct->buckets[hash_scale(rev_hash)].conns,
+                        &rev_key_node->cm_node, rev_hash);
+            nat_packet(pkt, nc, ctx->icmp_related);
+        }
 
         atomic_count_inc(&ct->n_conn);
         ctx->conn = nc; /* For completeness. */
         if (zl) {
             nc->admit_zone = zl->czl.zone;
             nc->zone_limit_seq = zl->czl.zone_limit_seq;
+
+            ovs_mutex_lock(&zl->czl.conns_lock);
+            cmap_insert(&zl->czl.conns, &fwd_key_node->cm_node, ctx->hash);
+            ovs_mutex_unlock(&zl->czl.conns_lock);
+
             atomic_count_inc(&zl->czl.count);
         } else {
             nc->admit_zone = INVALID_ZONE;
         }
+        ct_buckets_unlock(ct, ctx->hash, rev_hash);
     }
 
     return nc;
 
+out_error_unlock:
+    ct_buckets_unlock(ct, ctx->hash, rev_hash);
     /* This would be a user error or a DOS attack.  A user error is prevented
      * by allocating enough combinations of NAT addresses when combined with
      * ephemeral ports.  A DOS attack should be protected against with
      * firewall rules or a separate firewall.  Also using zone partitioning
      * can limit DoS impact. */
-nat_res_exhaustion:
-    ovs_list_remove(&nc->exp_node);
+out_error:
+    ovs_mutex_destroy(&nc->lock);
     delete_conn_cmn(nc);
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
-    VLOG_WARN_RL(&rl, "Unable to NAT due to tuple space exhaustion - "
-                 "if DoS attack, use firewalling and/or zone partitioning.");
+    VLOG_WARN_RL(&rl, "Unable to insert a new connection.");
     return NULL;
 }
 
@@ -1082,12 +1266,7 @@ conn_update_state(struct conntrack *ct, struct dp_packet *pkt,
             pkt->md.ct_state = CS_INVALID;
             break;
         case CT_UPDATE_NEW:
-            ovs_mutex_lock(&ct->ct_lock);
-            if (conn_lookup(ct, &conn->key_node[CT_DIR_FWD].key,
-                            now, NULL, NULL)) {
-                conn_clean(ct, conn);
-            }
-            ovs_mutex_unlock(&ct->ct_lock);
+            conn_clean(ct, conn);
             create_new_conn = true;
             break;
         case CT_UPDATE_VALID_NEW:
@@ -1172,7 +1351,7 @@ check_orig_tuple(struct conntrack *ct, struct dp_packet *pkt,
 
     key.dl_type = ctx_in->key.dl_type;
     key.zone = pkt->md.ct_zone;
-    conn_lookup(ct, &key, now, conn, NULL);
+    conn_lookup_gc(ct, &key, now, conn, NULL);
     return *conn ? true : false;
 }
 
@@ -1253,6 +1432,8 @@ static void
 initial_conn_lookup(struct conntrack *ct, struct conn_lookup_ctx *ctx,
                     long long now, bool natted)
 {
+    unsigned bucket = hash_scale(ctx->hash);
+
     if (natted) {
         /* If the packet has been already natted (e.g. a previous
          * action took place), retrieve it performing a lookup of its
@@ -1260,7 +1441,8 @@ initial_conn_lookup(struct conntrack *ct, struct conn_lookup_ctx *ctx,
         conn_key_reverse(&ctx->key);
     }
 
-    conn_key_lookup(ct, &ctx->key, ctx->hash, now, &ctx->conn, &ctx->reply);
+    conn_key_lookup(ct, bucket, &ctx->key, ctx->hash,
+                    now, &ctx->conn, &ctx->reply);
 
     if (natted) {
         if (OVS_LIKELY(ctx->conn)) {
@@ -1287,24 +1469,20 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
             ovs_be16 tp_src, ovs_be16 tp_dst, const char *helper,
             uint32_t tp_id)
 {
+    bool create_new_conn = false;
+
     /* Reset ct_state whenever entering a new zone. */
     if (pkt->md.ct_state && pkt->md.ct_zone != zone) {
         pkt->md.ct_state = 0;
     }
 
-    bool create_new_conn = false;
     initial_conn_lookup(ct, ctx, now, !!(pkt->md.ct_state &
                                          (CS_SRC_NAT | CS_DST_NAT)));
     struct conn *conn = ctx->conn;
 
     /* Delete found entry if in wrong direction. 'force' implies commit. */
     if (OVS_UNLIKELY(force && ctx->reply && conn)) {
-        ovs_mutex_lock(&ct->ct_lock);
-        if (conn_lookup(ct, &conn->key_node[CT_DIR_FWD].key,
-                        now, NULL, NULL)) {
-            conn_clean(ct, conn);
-        }
-        ovs_mutex_unlock(&ct->ct_lock);
+        conn_clean(ct, conn);
         conn = NULL;
     }
 
@@ -1338,7 +1516,6 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
     struct alg_exp_node alg_exp_entry;
 
     if (OVS_UNLIKELY(create_new_conn)) {
-
         ovs_rwlock_rdlock(&ct->resources_lock);
         alg_exp = expectation_lookup(&ct->alg_expectations, &ctx->key,
                                      ct->hash_basis,
@@ -1349,12 +1526,9 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
         }
         ovs_rwlock_unlock(&ct->resources_lock);
 
-        ovs_mutex_lock(&ct->ct_lock);
-        if (!conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
-            conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
-                                  helper, alg_exp, ct_alg_ctl, tp_id);
-        }
-        ovs_mutex_unlock(&ct->ct_lock);
+        conn = conn_not_found(ct, pkt, ctx, commit, now,
+                              nat_action_info, helper, alg_exp,
+                              ct_alg_ctl, tp_id);
     }
 
     write_ct_md(pkt, zone, conn, &ctx->key, alg_exp);
@@ -1467,83 +1641,92 @@ set_label(struct dp_packet *pkt, struct conn *conn,
 }
 
 
-/* Delete the expired connections from 'ctb', up to 'limit'. Returns the
- * earliest expiration time among the remaining connections in 'ctb'.  Returns
- * LLONG_MAX if 'ctb' is empty.  The return value might be smaller than 'now',
- * if 'limit' is reached */
+/* Delete the expired connections from 'bucket', up to 'limit'.
+ * Returns the earliest expiration time among the remaining
+ * connections in 'bucket'.  Returns LLONG_MAX if 'bucket' is empty.
+ * The return value might be smaller than 'now', if 'limit' is
+ * reached. */
 static long long
-ct_sweep(struct conntrack *ct, long long now, size_t limit)
+sweep_bucket(struct conntrack *ct, struct ct_bucket *bucket,
+             long long now)
 {
-    struct conn *conn, *next;
-    long long min_expiration = LLONG_MAX;
-    size_t count = 0;
+    struct conn_key_node *keyn;
+    unsigned int conn_count = 0;
+    struct conn *conn;
+    long long expiration;
 
-    ovs_mutex_lock(&ct->ct_lock);
-
-    for (unsigned i = 0; i < N_CT_TM; i++) {
-        LIST_FOR_EACH_SAFE (conn, next, exp_node, &ct->exp_lists[i]) {
-            ovs_mutex_lock(&conn->lock);
-            if (now < conn->expiration || count >= limit) {
-                min_expiration = MIN(min_expiration, conn->expiration);
-                ovs_mutex_unlock(&conn->lock);
-                if (count >= limit) {
-                    /* Do not check other lists. */
-                    COVERAGE_INC(conntrack_long_cleanup);
-                    goto out;
-                }
-                break;
-            } else {
-                ovs_mutex_unlock(&conn->lock);
-                conn_clean(ct, conn);
-            }
-            count++;
+    CMAP_FOR_EACH (keyn, cm_node, &bucket->conns) {
+        if (keyn->key.dir != CT_DIR_FWD) {
+            continue;
         }
+
+        conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
+        ovs_mutex_lock(&conn->lock);
+        expiration = conn->expiration;
+        ovs_mutex_unlock(&conn->lock);
+
+        if (now >= expiration) {
+            conn_clean(ct, conn);
+        }
+
+        conn_count++;
     }
 
-out:
-    VLOG_DBG("conntrack cleanup %"PRIuSIZE" entries in %lld msec", count,
-             time_msec() - now);
-    ovs_mutex_unlock(&ct->ct_lock);
-    return min_expiration;
+    return conn_count;
 }
 
-/* Cleans up old connection entries from 'ct'.  Returns the time when the
- * next expiration might happen.  The return value might be smaller than
- * 'now', meaning that an internal limit has been reached, and some expired
- * connections have not been deleted. */
+/* Cleans up old connection entries from 'ct'.  Returns the the next
+ * wake up time.  The return value might be smaller than 'now', meaning
+ * that an internal limit has been reached, that is, the table
+ * hasn't been entirely scanned. */
 static long long
 conntrack_clean(struct conntrack *ct, long long now)
 {
-    unsigned int n_conn_limit;
+    long long next_wakeup = now + 90 * 1000;
+    unsigned int n_conn_limit, i, count = 0;
+    size_t clean_end;
+
     atomic_read_relaxed(&ct->n_conn_limit, &n_conn_limit);
-    size_t clean_max = n_conn_limit > 10 ? n_conn_limit / 10 : 1;
-    long long min_exp = ct_sweep(ct, now, clean_max);
-    long long next_wakeup = MIN(min_exp, now + CT_DPIF_NETDEV_TP_MIN);
+    clean_end = n_conn_limit / 64;
+
+    for (i = ct->next_bucket; i < CONNTRACK_BUCKETS; i++) {
+        struct ct_bucket *bucket = &ct->buckets[i];
+
+        count += sweep_bucket(ct, bucket, now);
+
+        if (count > clean_end) {
+            next_wakeup = 0;
+            break;
+        }
+    }
+
+    ct->next_bucket = (i < CONNTRACK_BUCKETS) ? i : 0;
 
     return next_wakeup;
 }
 
 /* Cleanup:
  *
- * We must call conntrack_clean() periodically.  conntrack_clean() return
- * value gives an hint on when the next cleanup must be done (either because
- * there is an actual connection that expires, or because a new connection
- * might be created with the minimum timeout).
+ * We must call conntrack_clean() periodically.  conntrack_clean()
+ * return value gives an hint on when the next cleanup must be done
+ * (either because there is still work to do, or because a new
+ * connection might be created).
  *
  * The logic below has two goals:
  *
- * - We want to reduce the number of wakeups and batch connection cleanup
- *   when the load is not very high.  CT_CLEAN_INTERVAL ensures that if we
- *   are coping with the current cleanup tasks, then we wait at least
- *   5 seconds to do further cleanup.
+ * - When the load is high, we want to avoid to hog the CPU scanning
+ *   all the buckets and their respective CMAPs "at once". For this
+ *   reason, every batch cleanup aims to scan at most n_conn_limit /
+ *   64 entries (more if the buckets contains many entrie) before
+ *   yielding the CPU. In this case, the next wake up will happen in
+ *   CT_CLEAN_MIN_INTERVAL_MS and the scan will resume starting from
+ *   the first bucket not scanned.
  *
- * - We don't want to keep the map locked too long, as we might prevent
- *   traffic from flowing.  CT_CLEAN_MIN_INTERVAL ensures that if cleanup is
- *   behind, there is at least some 200ms blocks of time when the map will be
- *   left alone, so the datapath can operate unhindered.
- */
-#define CT_CLEAN_INTERVAL 5000 /* 5 seconds */
-#define CT_CLEAN_MIN_INTERVAL 200  /* 0.2 seconds */
+ * - We also don't want to scan the buckets so frequently, as going
+ *   through all the connections, during high loads, may be costly in
+ *   terms of CPU time. In this case the next wake up is set to 90
+ *   seconds. */
+#define CT_CLEAN_MIN_INTERVAL_MS 100  /* 0.1 seconds */
 
 static void *
 clean_thread_main(void *f_)
@@ -1556,9 +1739,9 @@ clean_thread_main(void *f_)
         next_wake = conntrack_clean(ct, now);
 
         if (next_wake < now) {
-            poll_timer_wait_until(now + CT_CLEAN_MIN_INTERVAL);
+            poll_timer_wait_until(now + CT_CLEAN_MIN_INTERVAL_MS);
         } else {
-            poll_timer_wait_until(MAX(next_wake, now + CT_CLEAN_INTERVAL));
+            poll_timer_wait_until(next_wake);
         }
         latch_wait(&ct->clean_thread_exit);
         poll_block();
@@ -2346,18 +2529,24 @@ next_addr_in_range_guarded(union ct_addr *curr, union ct_addr *min,
 }
 
 static bool
-nat_get_unique_l4(struct conntrack *ct, struct conn_key *rev_key,
-                  ovs_be16 *port, uint16_t curr, uint16_t min,
-                  uint16_t max)
+nat_get_unique_l4(struct conntrack *ct, struct conn_key *fwd_key,
+                  struct conn_key *rev_key, ovs_be16 *port,
+                  uint16_t curr, uint16_t min,
+                  uint16_t max, uint32_t *rev_hash)
 {
     uint16_t orig = curr;
 
     FOR_EACH_PORT_IN_RANGE (curr, min, max) {
         *port = htons(curr);
-        if (!conn_lookup(ct, rev_key, time_msec(),
-                         NULL, NULL)) {
+        uint32_t key_hash = conn_key_hash(fwd_key, ct->hash_basis);
+        *rev_hash = conn_key_hash(rev_key, ct->hash_basis);
+
+        ct_buckets_lock(ct, key_hash, *rev_hash);
+        if (!conn_lookup(ct, rev_key,
+                         time_msec(), NULL, NULL)) {
             return true;
         }
+        ct_buckets_unlock(ct, key_hash, *rev_hash);
     }
 
     *port = htons(orig);
@@ -2387,8 +2576,9 @@ nat_get_unique_l4(struct conntrack *ct, struct conn_key *rev_key,
  *
  * If none can be found, return exhaustion to the caller. */
 static bool
-nat_get_unique_tuple(struct conntrack *ct, struct conn *conn,
-                     const struct nat_action_info_t *nat_info)
+nat_get_unique_tuple_lock(struct conntrack *ct, struct conn *conn,
+                          const struct nat_action_info_t *nat_info,
+                          uint32_t *rev_hash)
 {
     union ct_addr min_addr = {0}, max_addr = {0}, curr_addr = {0},
                   guard_addr = {0};
@@ -2427,23 +2617,30 @@ another_round:
                       nat_info->nat_action);
 
     if (!pat_proto) {
+        uint32_t key_hash = conn_key_hash(fwd_key, ct->hash_basis);
+        *rev_hash = conn_key_hash(rev_key, ct->hash_basis);
+
+        ct_buckets_lock(ct, key_hash, *rev_hash);
         if (!conn_lookup(ct, rev_key,
                          time_msec(), NULL, NULL)) {
             return true;
         }
+        ct_buckets_unlock(ct, key_hash, *rev_hash);
 
         goto next_addr;
     }
 
     bool found = false;
     if (nat_info->nat_action & NAT_ACTION_DST_PORT) {
-        found = nat_get_unique_l4(ct, rev_key, &rev_key->src.port,
-                                  curr_dport, min_dport, max_dport);
+        found = nat_get_unique_l4(ct, fwd_key, rev_key, &rev_key->src.port,
+                                  curr_dport, min_dport, max_dport,
+                                  rev_hash);
     }
 
     if (!found) {
-        found = nat_get_unique_l4(ct, rev_key, &rev_key->dst.port,
-                                  curr_sport, min_sport, max_sport);
+        found = nat_get_unique_l4(ct, fwd_key, rev_key, &rev_key->dst.port,
+                                  curr_sport, min_sport, max_sport,
+                                  rev_hash);
     }
 
     if (found) {
@@ -2654,20 +2851,39 @@ conntrack_dump_next(struct conntrack_dump *dump, struct ct_dpif_entry *entry)
 {
     struct conntrack *ct = dump->ct;
     long long now = time_msec();
+    struct ct_bucket *bucket;
 
-    for (;;) {
-        struct cmap_node *cm_node = cmap_next_position(&ct->conns,
-                                                       &dump->cm_pos);
-        if (!cm_node) {
-            break;
+    while (dump->bucket < CONNTRACK_BUCKETS) {
+        struct cmap_node *cm_node;
+        bucket = &ct->buckets[dump->bucket];
+
+        for (;;) {
+            cm_node = cmap_next_position(&bucket->conns,
+                                         &dump->cm_pos);
+            if (!cm_node) {
+                break;
+            }
+            struct conn_key_node *keyn;
+            struct conn *conn;
+            INIT_CONTAINER(keyn, cm_node, cm_node);
+            conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
+
+            if (conn_expired(conn, now)) {
+                /* XXX: ideally this should call conn_clean(). */
+                continue;
+            }
+
+            if ((!dump->filter_zone || keyn->key.zone == dump->zone) &&
+                (keyn->key.dir == CT_DIR_FWD)) {
+                conn_to_ct_dpif_entry(conn, entry, now);
+                break;
+            }
         }
-        struct conn_key_node *keyn;
-        struct conn *conn;
-        INIT_CONTAINER(keyn, cm_node, cm_node);
-        conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
-        if ((!dump->filter_zone || keyn->key.zone == dump->zone) &&
-            (keyn->key.dir == CT_DIR_FWD)) {
-            conn_to_ct_dpif_entry(conn, entry, now);
+
+        if (!cm_node) {
+            memset(&dump->cm_pos, 0, sizeof dump->cm_pos);
+            dump->bucket++;
+        } else {
             return 0;
         }
     }
@@ -2687,17 +2903,18 @@ conntrack_flush(struct conntrack *ct, const uint16_t *zone)
     struct conn_key_node *keyn;
     struct conn *conn;
 
-    ovs_mutex_lock(&ct->ct_lock);
-    CMAP_FOR_EACH (keyn, cm_node, &ct->conns) {
-        if (keyn->key.dir != CT_DIR_FWD) {
-            continue;
-        }
-        conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
-        if (!zone || *zone == keyn->key.zone) {
-            conn_clean(ct, conn);
+    for (unsigned i = 0; i < CONNTRACK_BUCKETS; i++) {
+        CMAP_FOR_EACH (keyn, cm_node, &ct->buckets[i].conns) {
+            if (keyn->key.dir != CT_DIR_FWD) {
+                continue;
+            }
+
+            conn = CONTAINER_OF(keyn, struct conn, key_node[keyn->key.dir]);
+            if (!zone || *zone == keyn->key.zone) {
+                conn_clean(ct, conn);
+            }
         }
     }
-    ovs_mutex_unlock(&ct->ct_lock);
 
     return 0;
 }
@@ -2706,15 +2923,19 @@ int
 conntrack_flush_tuple(struct conntrack *ct, const struct ct_dpif_tuple *tuple,
                       uint16_t zone)
 {
-    int error = 0;
     struct conn_key key;
-    struct conn *conn;
+    struct conn *conn = NULL;
+    unsigned bucket;
+    uint32_t hash;
+    int error = 0;
 
     memset(&key, 0, sizeof(key));
     tuple_to_conn_key(tuple, zone, &key);
-    ovs_mutex_lock(&ct->ct_lock);
-    conn_lookup(ct, &key, time_msec(), &conn, NULL);
 
+    hash = conn_key_hash(&key, ct->hash_basis);
+    bucket = hash_scale(hash);
+
+    conn_key_lookup(ct, bucket, &key, hash, time_msec(), &conn, NULL);
     if (conn) {
         conn_clean(ct, conn);
     } else {
@@ -2722,7 +2943,6 @@ conntrack_flush_tuple(struct conntrack *ct, const struct ct_dpif_tuple *tuple,
         error = ENOENT;
     }
 
-    ovs_mutex_unlock(&ct->ct_lock);
     return error;
 }
 

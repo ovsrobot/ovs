@@ -5084,9 +5084,8 @@ AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | sed -e 's/dst=
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.2XX,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP(["dnl
-/Unable to NAT due to tuple space exhaustion - if DoS attack, use firewalling and\/or zone partitioning./d
-/Dropped .* log messages in last .* seconds \(most recently, .* seconds ago\) due to excessive rate/d"])
+OVS_TRAFFIC_VSWITCHD_STOP(["/dnl
+Unable to insert a new connection./d"])
 AT_CLEANUP
 
 AT_SETUP([conntrack - more complex SNAT])
