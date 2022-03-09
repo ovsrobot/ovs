@@ -7049,8 +7049,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     struct dp_meter *meter;
     struct dp_meter_band *band;
     struct dp_packet *packet;
-    long long int long_delta_t; /* msec */
-    uint32_t delta_t; /* msec */
+    long long int long_delta_t, delta_t;
     const size_t cnt = dp_packet_batch_size(packets_);
     uint32_t bytes, volume;
     int exceeded_band[NETDEV_MAX_BURST];
@@ -7073,7 +7072,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
 
     ovs_mutex_lock(&meter->lock);
     /* All packets will hit the meter at the same time. */
-    long_delta_t = now / 1000 - meter->used / 1000; /* msec */
+    long_delta_t = now - meter->used;
 
     if (long_delta_t < 0) {
         /* This condition means that we have several threads fighting for a
@@ -7085,11 +7084,11 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
 
     /* Make sure delta_t will not be too large, so that bucket will not
      * wrap around below. */
-    delta_t = (long_delta_t > (long long int)meter->max_delta_t)
-        ? meter->max_delta_t : (uint32_t)long_delta_t;
+    delta_t = (long_delta_t > (long long int)meter->max_delta_t * 1000)
+        ? (meter->max_delta_t * 1000) : long_delta_t;
 
     /* Update meter stats. */
-    meter->used = now;
+    meter->used += long_delta_t;
     meter->packet_count += cnt;
     bytes = 0;
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
@@ -7117,7 +7116,7 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
         band = &meter->bands[m];
         max_bucket_size = band->burst_size * 1000ULL;
         /* Update band's bucket. */
-        band->bucket += (uint64_t) delta_t * band->rate;
+        band->bucket += (delta_t * band->rate / 1000);
         if (band->bucket > max_bucket_size) {
             band->bucket = max_bucket_size;
         }
