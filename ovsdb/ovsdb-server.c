@@ -228,8 +228,7 @@ main_loop(struct server_config *config,
 
         ovsdb_relay_run();
 
-        struct shash_node *next;
-        SHASH_FOR_EACH_SAFE (node, next, all_dbs) {
+        SHASH_FOR_EACH_SAFE (node, all_dbs) {
             struct db *db = node->data;
             ovsdb_txn_history_run(db->db);
             ovsdb_storage_run(db->db->storage);
@@ -321,7 +320,7 @@ main(int argc, char *argv[])
     FILE *config_tmpfile;
     struct server_config server_config;
     struct shash all_dbs;
-    struct shash_node *node, *next;
+    struct shash_node *node;
     int replication_probe_interval = REPLICATION_DEFAULT_PROBE_INTERVAL;
 
     ovs_cmdl_proctitle_init(argc, argv);
@@ -490,7 +489,7 @@ main(int argc, char *argv[])
     main_loop(&server_config, jsonrpc, &all_dbs, unixctl, &remotes,
               run_process, &exiting, &is_backup);
 
-    SHASH_FOR_EACH_SAFE(node, next, &all_dbs) {
+    SHASH_FOR_EACH_SAFE (node, &all_dbs) {
         struct db *db = node->data;
         close_db(&server_config, db, NULL);
         shash_delete(&all_dbs, node);
@@ -1242,8 +1241,8 @@ update_server_status(struct shash *all_dbs)
 
     /* Update rows for databases that still exist.
      * Delete rows for databases that no longer exist. */
-    const struct ovsdb_row *row, *next_row;
-    HMAP_FOR_EACH_SAFE (row, next_row, hmap_node, &database_table->rows) {
+    const struct ovsdb_row *row;
+    HMAP_FOR_EACH_SAFE (row, hmap_node, &database_table->rows) {
         const char *name;
         ovsdb_util_read_string_column(row, "name", &name);
         struct db *db = shash_find_data(all_dbs, name);
