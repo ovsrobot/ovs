@@ -4566,6 +4566,9 @@ dpif_netdev_execute(struct dpif *dpif, struct dpif_execute *execute)
     /* Making a copy because the packet might be stolen during the execution
      * and caller might still need it.  */
     struct dp_packet *packet_clone = dp_packet_clone(execute->packet);
+    /* change execute->flow->in_port into odp_port */
+    *CONST_CAST(union flow_in_port *, &execute->flow->in_port)
+                                          = packet_clone->md.in_port;
     dp_packet_batch_init_packet(&pp, packet_clone);
     dp_netdev_execute_actions(pmd, &pp, false, execute->flow,
                               execute->actions, execute->actions_len);
