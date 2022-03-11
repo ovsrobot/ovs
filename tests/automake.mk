@@ -19,8 +19,10 @@ EXTRA_DIST += \
 	$(OVSDB_CLUSTER_TESTSUITE) \
 	tests/atlocal.in \
 	$(srcdir)/package.m4 \
+	$(srcdir)/tests/ovs-test-ofparse.py \
 	$(srcdir)/tests/testsuite \
 	$(srcdir)/tests/testsuite.patch
+
 
 COMMON_MACROS_AT = \
 	tests/ovsdb-macros.at \
@@ -523,6 +525,7 @@ CHECK_PYFILES = \
 	tests/flowgen.py \
 	tests/mfex_fuzzy.py \
 	tests/ovsdb-monitor-sort.py \
+	tests/ovs-test-ofparse.py \
 	tests/test-daemon.py \
 	tests/test-json.py \
 	tests/test-jsonrpc.py \
