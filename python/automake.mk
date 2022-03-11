@@ -28,6 +28,7 @@ ovs_pyfiles = \
 	python/ovs/fcntl_win.py \
 	python/ovs/flows/__init__.py \
 	python/ovs/flows/decoders.py \
+	python/ovs/flows/deps.py \
 	python/ovs/flows/filter.py \
 	python/ovs/flows/flow.py \
 	python/ovs/flows/kv.py \
@@ -57,6 +58,7 @@ ovs_pyfiles = \
 EXTRA_DIST += \
 	python/build/__init__.py \
 	python/build/extract_ofp_fields.py \
+	python/build/flow-parse-deps.py \
 	python/build/nroff.py \
 	python/build/soutil.py
 
@@ -77,6 +79,7 @@ FLAKE8_PYFILES += \
 	$(filter-out python/ovs/compat/% python/ovs/dirs.py,$(PYFILES)) \
 	python/build/__init__.py \
 	python/build/extract_ofp_fields.py \
+	python/build/flow-parse-deps.py \
 	python/build/nroff.py \
 	python/build/soutil.py \
 	python/ovs/dirs.py.template \
@@ -137,3 +140,9 @@ $(srcdir)/python/ovs/flows/ofp_fields.py: $(srcdir)/build-aux/gen_ofp_field_deco
 EXTRA_DIST += python/ovs/flows/ofp_fields.py
 CLEANFILES += python/ovs/flows/ofp_fields.py
 
+ALL_LOCAL += flowparse-deps-check
+DEPS = $(shell $(AM_V_GEN)$(run_python) $(srcdir)/python/build/flow-parse-deps.py list)
+flowparse-deps-check: $(srcdir)/python/build/flow-parse-deps.py $(DEPS)
+	$(AM_V_GEN)$(run_python) $(srcdir)/python/build/flow-parse-deps.py check
+	touch $@
+CLEANFILES += flowparse-deps-check
