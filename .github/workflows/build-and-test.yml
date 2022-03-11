@@ -123,6 +123,9 @@ jobs:
       with:
         python-version: '3.9'
 
+    - name: install python dependencies
+      run: pip install -r python/test_requirements.txt
+
     - name: create ci signature file for the dpdk cache key
       if:   matrix.dpdk != '' || matrix.dpdk_shared != ''
       # This will collect most of DPDK related lines, so hash will be different
