@@ -2238,7 +2238,7 @@ miniflow_hash_5tuple(const struct miniflow *flow, uint32_t basis)
 
     if (flow) {
         ovs_be16 dl_type = MINIFLOW_GET_BE16(flow, dl_type);
-        uint8_t nw_proto;
+        uint8_t nw_proto,nw_frag;
 
         if (dl_type == htons(ETH_TYPE_IPV6)) {
             struct flowmap map = FLOWMAP_EMPTY_INITIALIZER;
@@ -2260,6 +2260,14 @@ miniflow_hash_5tuple(const struct miniflow *flow, uint32_t basis)
 
         nw_proto = MINIFLOW_GET_U8(flow, nw_proto);
         hash = hash_add(hash, nw_proto);
+        /* Skip l4 header fields if IP packet is fragmented since
+         * only first fragment will carry l4 header.
+         */
+        nw_frag = MINIFLOW_GET_U8(flow, nw_frag);
+        if ((nw_frag)) {
+            goto out;
+        }
+
         if (nw_proto != IPPROTO_TCP && nw_proto != IPPROTO_UDP
             && nw_proto != IPPROTO_SCTP && nw_proto != IPPROTO_ICMP
             && nw_proto != IPPROTO_ICMPV6) {
