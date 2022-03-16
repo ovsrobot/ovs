@@ -466,6 +466,7 @@ struct dp_netdev_port {
     char *type;                 /* Port type as requested by user. */
     char *rxq_affinity_list;    /* Requested affinity of rx queues. */
     enum txq_req_mode txq_requested_mode;
+    bool cross_numa_polling;    /* If true cross polling will be enabled */
 };
 
 static bool dp_netdev_flow_ref(struct dp_netdev_flow *);
@@ -5018,6 +5019,7 @@ dpif_netdev_port_set_config(struct dpif *dpif, odp_port_t port_no,
     bool emc_enabled = smap_get_bool(cfg, "emc-enable", true);
     const char *tx_steering_mode = smap_get(cfg, "tx-steering");
     enum txq_req_mode txq_mode;
+    bool cross_numa_polling = smap_get_bool(cfg, "cross-numa-polling", false);
 
     ovs_rwlock_wrlock(&dp->port_rwlock);
     error = get_port_by_number(dp, port_no, &port);
@@ -5083,6 +5085,14 @@ dpif_netdev_port_set_config(struct dpif *dpif, odp_port_t port_no,
         VLOG_INFO("%s: Tx packet steering mode has been set to '%s'.",
                   netdev_get_name(port->netdev),
                   (txq_mode == TXQ_REQ_MODE_THREAD) ? "thread" : "hash");
+        dp_netdev_request_reconfigure(dp);
+    }
+
+    if (cross_numa_polling != port->cross_numa_polling) {
+        port->cross_numa_polling = cross_numa_polling;
+        VLOG_INFO("%s:cross-numa-polling has been %s.",
+                  netdev_get_name(port->netdev),
+                  (cross_numa_polling)? "enabled" : "disabled");
         dp_netdev_request_reconfigure(dp);
     }
 
@@ -5885,7 +5895,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
 {
     struct dp_netdev_port *port;
     struct dp_netdev_rxq **rxqs = NULL;
-    struct sched_numa *last_cross_numa;
+    struct sched_numa *next_numa = NULL;
     unsigned n_rxqs = 0;
     bool start_logged = false;
     size_t n_numa;
@@ -5969,7 +5979,7 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         qsort(rxqs, n_rxqs, sizeof *rxqs, compare_rxq_cycles);
     }
 
-    last_cross_numa = NULL;
+    next_numa = NULL;
     n_numa = sched_numa_list_count(numa_list);
     for (unsigned i = 0; i < n_rxqs; i++) {
         struct dp_netdev_rxq *rxq = rxqs[i];
@@ -5989,20 +5999,25 @@ sched_numa_list_schedule(struct sched_numa_list *numa_list,
         proc_cycles = dp_netdev_rxq_get_cycles(rxq, RXQ_CYCLES_PROC_HIST);
         /* Select the numa that should be used for this rxq. */
         numa_id = netdev_get_numa_id(rxq->port->netdev);
-        numa = sched_numa_list_lookup(numa_list, numa_id);
+
+        if (!(rxqs[i]->port->cross_numa_polling)) {
+            /* Try to find a local pmd. */
+            numa = sched_numa_list_lookup(numa_list, numa_id);
+        } else {
+            /* Allow polling by any pmd. */
+            numa = NULL;
+        }
 
         /* Check if numa has no PMDs or no non-isolated PMDs. */
         if (!numa || !sched_numa_noniso_pmd_count(numa)) {
             /* Unable to use this numa to find a PMD. */
-            numa = NULL;
             /* Find any numa with available PMDs. */
             for (int j = 0; j < n_numa; j++) {
-                numa = sched_numa_list_next(numa_list, last_cross_numa);
-                if (sched_numa_noniso_pmd_count(numa)) {
+                next_numa = sched_numa_list_next(numa_list, next_numa);
+                if (sched_numa_noniso_pmd_count(next_numa)) {
+                    numa = next_numa;
                     break;
                 }
-                last_cross_numa = numa;
-                numa = NULL;
             }
         }
 
