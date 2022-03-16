@@ -600,7 +600,7 @@ parse_tc_flower_to_attrs(struct tc_flower *flower,
                         flower->offloaded_state ==
                         TC_OFFLOADED_STATE_UNDEFINED);
     attrs->dp_layer = "tc";
-    attrs->dp_extra_info = NULL;
+    attrs->dp_extra_info = FLOWMAP_EMPTY_MAP;
 }
 
 static int

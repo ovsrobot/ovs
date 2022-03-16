@@ -876,8 +876,17 @@ format_dpif_flow(struct ds *ds, const struct dpif_flow *f, struct hmap *ports,
     }
     ds_put_cstr(ds, ", actions:");
     format_odp_actions(ds, f->actions, f->actions_len, ports);
-    if (dpctl_p->verbosity && f->attrs.dp_extra_info) {
-        ds_put_format(ds, ", dp-extra-info:%s", f->attrs.dp_extra_info);
+    if (dpctl_p->verbosity && !flowmap_is_empty(f->attrs.dp_extra_info)) {
+        size_t unit;
+        ds_put_cstr(ds, ", dp-extra-info:miniflow_bits(");
+        FLOWMAP_FOR_EACH_UNIT (unit) {
+            if (unit) {
+                ds_put_char(ds, ',');
+            }
+            ds_put_format(ds, "%d",
+                          count_1bits(f->attrs.dp_extra_info.bits[unit]));
+        }
+        ds_put_char(ds, ')');
     }
 }
 

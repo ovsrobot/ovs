@@ -2458,7 +2458,7 @@ netdev_offload_dpdk_flow_get(struct netdev *netdev,
     struct rte_flow_error error;
     int ret = 0;
 
-    attrs->dp_extra_info = NULL;
+    attrs->dp_extra_info = FLOWMAP_EMPTY_MAP;
 
     rte_flow_data = ufid_to_rte_flow_data_find(netdev, ufid, false);
     if (!rte_flow_data || !rte_flow_data->rte_flow ||

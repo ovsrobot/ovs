@@ -283,6 +283,7 @@ struct flowmap {
 };
 
 #define FLOWMAP_EMPTY_INITIALIZER { { 0 } }
+static const struct flowmap FLOWMAP_EMPTY_MAP = FLOWMAP_EMPTY_INITIALIZER;
 
 static inline void flowmap_init(struct flowmap *);
 static inline bool flowmap_equal(struct flowmap, struct flowmap);

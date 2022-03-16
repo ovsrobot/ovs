@@ -123,7 +123,7 @@ struct dp_netdev_flow {
     struct packet_batch_per_flow *batch;
 
     /* Packet classification. */
-    char *dp_extra_info;         /* String to return in a flow dump/get. */
+    struct flowmap dp_extra_info;
     struct dpcls_rule cr;        /* In owning dp_netdev's 'cls'. */
     /* 'cr' must be the last member. */
 };

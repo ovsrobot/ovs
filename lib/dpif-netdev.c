@@ -2380,7 +2380,6 @@ static void
 dp_netdev_flow_free(struct dp_netdev_flow *flow)
 {
     dp_netdev_actions_free(dp_netdev_flow_get_actions(flow));
-    free(flow->dp_extra_info);
     free(flow);
 }
 
@@ -4058,11 +4057,9 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
                    odp_port_t orig_in_port)
     OVS_REQUIRES(pmd->flow_mutex)
 {
-    struct ds extra_info = DS_EMPTY_INITIALIZER;
     struct dp_netdev_flow *flow;
     struct netdev_flow_key mask;
     struct dpcls *cls;
-    size_t unit;
 
     /* Make sure in_port is exact matched before we read it. */
     ovs_assert(match->wc.masks.in_port.odp_port == ODPP_NONE);
@@ -4106,17 +4103,7 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
     cls = dp_netdev_pmd_find_dpcls(pmd, in_port);
     dpcls_insert(cls, &flow->cr, &mask);
 
-    ds_put_cstr(&extra_info, "miniflow_bits(");
-    FLOWMAP_FOR_EACH_UNIT (unit) {
-        if (unit) {
-            ds_put_char(&extra_info, ',');
-        }
-        ds_put_format(&extra_info, "%d",
-                      count_1bits(flow->cr.mask->mf.map.bits[unit]));
-    }
-    ds_put_char(&extra_info, ')');
-    flow->dp_extra_info = ds_steal_cstr(&extra_info);
-    ds_destroy(&extra_info);
+    flow->dp_extra_info = flow->cr.mask->mf.map;
 
     cmap_insert(&pmd->flow_table, CONST_CAST(struct cmap_node *, &flow->node),
                 dp_netdev_flow_hash(&flow->ufid));
