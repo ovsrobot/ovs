@@ -99,9 +99,10 @@ dnl Check if necessary Libreswan dependencies are available on the test machine
 m4_define([CHECK_LIBRESWAN],
       [dnl Skip tests if system has not been set up for Libreswan
       AT_SKIP_IF([!(ipsec --version | grep Libreswan)])
-      AT_SKIP_IF([test ! -x $(which certutil)])
-      AT_SKIP_IF([test ! -x $(which pk12util)])
-      AT_SKIP_IF([test ! -x $(which openssl)])
+      AT_SKIP_IF([test ! $(which certutil)])
+      AT_SKIP_IF([test ! $(which pk12util)])
+      AT_SKIP_IF([test ! $(which openssl)])
+      AT_SKIP_IF([test ! $(which tcpdump)])
       dnl If '$ovs_base' is too long, the following Libreswan issue will trigger
       dnl so we check that it is not too long and skip test if it is.
       dnl https://github.com/libreswan/libreswan/issues/428
