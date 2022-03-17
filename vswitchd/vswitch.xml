@@ -2083,6 +2083,26 @@
         <code>true</code>).
       </column>
 
+      <column name="other_config" key="all_slaves_active"
+              type='{"type": "boolean"}'>
+        <p>
+          Enable/Disable delivery of broadcast/multicast packets on secondary
+          interface of a bond. Relevant only when <ref column="lacp"/> is
+          <code>off</code>.
+        </p>
+
+        <p>
+          This parameter is identical to <code>all_slaves_active</code> for
+          kernel bonds. This is useful when we need to share 2 physical functions
+          between an ovs bond and a linux bond, as 2 LACP sessions can't
+          be negotiated over the same physical link. LACP session will be managed
+          by the kernel bond, while an active-active bond is used for ovs.
+          In that particular configuration, the physical switch will send a unique
+          copy of a broadcast packet over the 2 physical links, eventually to
+          the secondary link of the bond. 
+        </p>
+      </column>
+
       <group title="Link Failure Detection">
         <p>
           An important part of link bonding is detecting that links are down so

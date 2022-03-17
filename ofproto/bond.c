@@ -145,6 +145,7 @@ struct bond {
     struct eth_addr active_member_mac; /* MAC address of the active member. */
     /* Legacy compatibility. */
     bool lacp_fallback_ab; /* Fallback to active-backup on LACP failure. */
+    bool all_slaves_active;
 
     struct ovs_refcount ref_cnt;
 };
@@ -448,6 +449,7 @@ bond_reconfigure(struct bond *bond, const struct bond_settings *s)
 
     bond->updelay = s->up_delay;
     bond->downdelay = s->down_delay;
+    bond->all_slaves_active = s->all_slaves_active;
 
     if (bond->lacp_fallback_ab != s->lacp_fallback_ab_cfg) {
         bond->lacp_fallback_ab = s->lacp_fallback_ab_cfg;
@@ -893,7 +895,8 @@ bond_check_admissibility(struct bond *bond, const void *member_,
 
     /* Drop all multicast packets on inactive members. */
     if (eth_addr_is_multicast(eth_dst)) {
-        if (bond->active_member != member) {
+        if (bond->active_member != member &&
+            bond->all_slaves_active == false) {
             goto out;
         }
     }

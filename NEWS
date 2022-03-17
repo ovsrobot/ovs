@@ -16,6 +16,7 @@ v2.17.0 - xx xxx xxxx
      * Removed experimental tag for PMD Auto Load Balance.
      * New configuration knob 'other_config:n-offload-threads' to change the
        number of HW offloading threads.
+     * New configuration knob 'all_slaves_active' for non lacp bonds
    - DPDK:
      * EAL argument --socket-mem is no longer configured by default upon
        start-up.  If dpdk-socket-mem and dpdk-alloc-mem are not specified,
