@@ -31,6 +31,9 @@ struct netdev;
 void netdev_dpdk_register(void);
 void free_dpdk_buf(struct dp_packet *);
 
+void *netdev_dpdk_extbuf_allocate(uint32_t *);
+void netdev_dpdk_extbuf_replace(struct dp_packet *, void *, uint32_t);
+
 bool netdev_dpdk_flow_api_supported(struct netdev *);
 
 int
