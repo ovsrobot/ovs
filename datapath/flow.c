@@ -98,17 +98,17 @@ void ovs_flow_stats_update(struct sw_flow *flow, __be16 tcp_flags,
 			 * allocated stats as we have already locked them.
 			 */
 			if (likely(flow->stats_last_writer != -1) &&
-			    likely(!rcu_access_pointer(flow->stats[cpu]))) {
+				likely(!rcu_access_pointer(flow->stats[cpu]))) {
 				/* Try to allocate CPU-specific stats. */
 				struct sw_flow_stats *new_stats;
 
 				new_stats =
 					kmem_cache_alloc_node(flow_stats_cache,
-                                                              GFP_NOWAIT |
-                                                              __GFP_THISNODE |
-                                                              __GFP_NOWARN |
-							      __GFP_NOMEMALLOC,
-							      numa_node_id());
+															  GFP_NOWAIT |
+															  __GFP_THISNODE |
+															  __GFP_NOWARN |
+								  __GFP_NOMEMALLOC,
+								  numa_node_id());
 				if (likely(new_stats)) {
 					new_stats->used = jiffies;
 					new_stats->packet_count = 1;
@@ -211,7 +211,7 @@ static int check_iphdr(struct sk_buff *skb)
 
 	ip_len = ip_hdrlen(skb);
 	if (unlikely(ip_len < sizeof(struct iphdr) ||
-		     skb->len < nh_ofs + ip_len))
+			 skb->len < nh_ofs + ip_len))
 		return -EINVAL;
 
 	skb_set_transport_header(skb, nh_ofs + ip_len);
@@ -228,7 +228,7 @@ static bool tcphdr_ok(struct sk_buff *skb)
 
 	tcp_len = tcp_hdrlen(skb);
 	if (unlikely(tcp_len < sizeof(struct tcphdr) ||
-		     skb->len < th_ofs + tcp_len))
+			 skb->len < th_ofs + tcp_len))
 		return false;
 
 	return true;
@@ -252,6 +252,144 @@ static bool icmphdr_ok(struct sk_buff *skb)
 				  sizeof(struct icmphdr));
 }
 
+/**
+ * get_ipv6_ext_hdrs() - Parses packet and sets IPv6 extension header flags.
+ *
+ * @skb: buffer where extension header data starts in packet
+ * @nh: ipv6 header
+ * @ext_hdrs: flags are stored here
+ *
+ * OFPIEH12_UNREP is set if more than one of a given IPv6 extension header
+ * is unexpectedly encountered. (Two destination options headers may be
+ * expected and would not cause this bit to be set.)
+ *
+ * OFPIEH12_UNSEQ is set if IPv6 extension headers were not in the order
+ * preferred (but not required) by RFC 2460:
+ *
+ * When more than one extension header is used in the same packet, it is
+ * recommended that those headers appear in the following order:
+ *      IPv6 header
+ *      Hop-by-Hop Options header
+ *      Destination Options header
+ *      Routing header
+ *      Fragment header
+ *      Authentication header
+ *      Encapsulating Security Payload header
+ *      Destination Options header
+ *      upper-layer header
+ */
+static void get_ipv6_ext_hdrs(struct sk_buff *skb, struct ipv6hdr *nh,
+							  u16 *ext_hdrs)
+{
+	u8 next_type = nh->nexthdr;
+	unsigned int start = skb_network_offset(skb) + sizeof(struct ipv6hdr);
+	int dest_options_header_count = 0;
+
+	*ext_hdrs = 0;
+
+	while (ipv6_ext_hdr(next_type)) {
+		struct ipv6_opt_hdr _hdr, *hp;
+
+		switch (next_type) {
+			case IPPROTO_NONE:
+				*ext_hdrs |= OFPIEH12_NONEXT;
+				/* stop parsing */
+				return;
+
+			case IPPROTO_ESP:
+				if (*ext_hdrs & OFPIEH12_ESP)
+					*ext_hdrs |= OFPIEH12_UNREP;
+				if ((*ext_hdrs & ~(OFPIEH12_HOP | OFPIEH12_DEST |
+								   OFPIEH12_ROUTER | IPPROTO_FRAGMENT |
+								   OFPIEH12_AUTH | OFPIEH12_UNREP)) ||
+					dest_options_header_count >= 2) {
+					*ext_hdrs |= OFPIEH12_UNSEQ;
+				}
+				*ext_hdrs |= OFPIEH12_ESP;
+				break;
+
+			case IPPROTO_AH:
+				if (*ext_hdrs & OFPIEH12_AUTH)
+					*ext_hdrs |= OFPIEH12_UNREP;
+				if ((*ext_hdrs &
+					 ~(OFPIEH12_HOP | OFPIEH12_DEST | OFPIEH12_ROUTER |
+					   IPPROTO_FRAGMENT | OFPIEH12_UNREP)) ||
+					dest_options_header_count >= 2) {
+					*ext_hdrs |= OFPIEH12_UNSEQ;
+				}
+				*ext_hdrs |= OFPIEH12_AUTH;
+				break;
+
+			case IPPROTO_DSTOPTS:
+				if (dest_options_header_count == 0) {
+					if (*ext_hdrs &
+						~(OFPIEH12_HOP | OFPIEH12_UNREP))
+						*ext_hdrs |= OFPIEH12_UNSEQ;
+					*ext_hdrs |= OFPIEH12_DEST;
+				} else if (dest_options_header_count == 1) {
+					if (*ext_hdrs &
+						~(OFPIEH12_HOP | OFPIEH12_DEST |
+						  OFPIEH12_ROUTER | OFPIEH12_FRAG |
+						  OFPIEH12_AUTH | OFPIEH12_ESP |
+						  OFPIEH12_UNREP)) {
+						*ext_hdrs |= OFPIEH12_UNSEQ;
+					}
+				} else {
+					*ext_hdrs |= OFPIEH12_UNREP;
+				}
+				dest_options_header_count++;
+				break;
+
+			case IPPROTO_FRAGMENT:
+				if (*ext_hdrs & OFPIEH12_FRAG)
+					*ext_hdrs |= OFPIEH12_UNREP;
+				if ((*ext_hdrs & ~(OFPIEH12_HOP |
+								   OFPIEH12_DEST |
+								   OFPIEH12_ROUTER |
+								   OFPIEH12_UNREP)) ||
+					dest_options_header_count >= 2) {
+					*ext_hdrs |= OFPIEH12_UNSEQ;
+				}
+				*ext_hdrs |= OFPIEH12_FRAG;
+				break;
+
+			case IPPROTO_ROUTING:
+				if (*ext_hdrs & OFPIEH12_ROUTER)
+					*ext_hdrs |= OFPIEH12_UNREP;
+				if ((*ext_hdrs & ~(OFPIEH12_HOP |
+								   OFPIEH12_DEST |
+								   OFPIEH12_UNREP)) ||
+					dest_options_header_count >= 2) {
+					*ext_hdrs |= OFPIEH12_UNSEQ;
+				}
+				*ext_hdrs |= OFPIEH12_ROUTER;
+				break;
+
+			case IPPROTO_HOPOPTS:
+				if (*ext_hdrs & OFPIEH12_HOP)
+					*ext_hdrs |= OFPIEH12_UNREP;
+				/* OFPIEH12_HOP is set to 1 if a hop-by-hop IPv6
+				 * extension header is present as the first
+				 * extension header in the packet.
+				 */
+				if (*ext_hdrs == 0)
+					*ext_hdrs |= OFPIEH12_HOP;
+				else
+					*ext_hdrs |= OFPIEH12_UNSEQ;
+				break;
+
+			default:
+				return;
+		}
+
+		hp = skb_header_pointer(skb, start, sizeof(_hdr), &_hdr);
+		if (!hp)
+			break;
+		next_type = hp->nexthdr;
+		start += ipv6_optlen(hp);
+	}
+}
+
 static int parse_ipv6hdr(struct sk_buff *skb, struct sw_flow_key *key)
 {
 	unsigned short frag_off;
@@ -266,6 +404,8 @@ static int parse_ipv6hdr(struct sk_buff *skb, struct sw_flow_key *key)
 		return err;
 
 	nh = ipv6_hdr(skb);
+
+	get_ipv6_ext_hdrs(skb, nh, &key->ipv6.exthdrs);
 
 	key->ip.proto = NEXTHDR_NONE;
 	key->ip.tos = ipv6_get_dsfield(nh);
@@ -408,8 +548,8 @@ static __be16 parse_ethertype(struct sk_buff *skb)
 
 	llc = (struct llc_snap_hdr *) skb->data;
 	if (llc->dsap != LLC_SAP_SNAP ||
-	    llc->ssap != LLC_SAP_SNAP ||
-	    (llc->oui[0] | llc->oui[1] | llc->oui[2]) != 0)
+		llc->ssap != LLC_SAP_SNAP ||
+		(llc->oui[0] | llc->oui[1] | llc->oui[2]) != 0)
 		return htons(ETH_P_802_2);
 
 	__skb_pull(skb, sizeof(struct llc_snap_hdr));
@@ -433,8 +573,8 @@ static int parse_icmpv6(struct sk_buff *skb, struct sw_flow_key *key,
 	memset(&key->ipv6.nd, 0, sizeof(key->ipv6.nd));
 
 	if (icmp->icmp6_code == 0 &&
-	    (icmp->icmp6_type == NDISC_NEIGHBOUR_SOLICITATION ||
-	     icmp->icmp6_type == NDISC_NEIGHBOUR_ADVERTISEMENT)) {
+		(icmp->icmp6_type == NDISC_NEIGHBOUR_SOLICITATION ||
+		 icmp->icmp6_type == NDISC_NEIGHBOUR_ADVERTISEMENT)) {
 		int icmp_len = skb->len - skb_transport_offset(skb);
 		struct nd_msg *nd;
 		int offset;
@@ -466,7 +606,7 @@ static int parse_icmpv6(struct sk_buff *skb, struct sw_flow_key *key,
 			 * the same link layer option is specified twice.
 			 */
 			if (nd_opt->nd_opt_type == ND_OPT_SOURCE_LL_ADDR
-			    && opt_len == 8) {
+				&& opt_len == 8) {
 				if (unlikely(!is_zero_ether_addr(key->ipv6.nd.sll)))
 					goto invalid;
 				ether_addr_copy(key->ipv6.nd.sll,
@@ -527,11 +667,11 @@ static int parse_nsh(struct sk_buff *skb, struct sw_flow_key *key)
 		if (length != NSH_M_TYPE1_LEN)
 			return -EINVAL;
 		memcpy(key->nsh.context, nh->md1.context,
-		       sizeof(nh->md1));
+			   sizeof(nh->md1));
 		break;
 	case NSH_M_TYPE2:
 		memset(key->nsh.context, 0,
-		       sizeof(nh->md1));
+			   sizeof(nh->md1));
 		break;
 	default:
 		return -EINVAL;
@@ -639,10 +779,10 @@ static int key_extract_l3l4(struct sk_buff *skb, struct sw_flow_key *key)
 		arp = (struct arp_eth_header *)skb_network_header(skb);
 
 		if (arp_available &&
-		    arp->ar_hrd == htons(ARPHRD_ETHER) &&
-		    arp->ar_pro == htons(ETH_P_IP) &&
-		    arp->ar_hln == ETH_ALEN &&
-		    arp->ar_pln == 4) {
+			arp->ar_hrd == htons(ARPHRD_ETHER) &&
+			arp->ar_pro == htons(ETH_P_IP) &&
+			arp->ar_hln == ETH_ALEN &&
+			arp->ar_pln == 4) {
 
 			/* We only match on the lower 8 bits of the opcode. */
 			if (ntohs(arp->ar_op) <= 0xff)
@@ -667,7 +807,7 @@ static int key_extract_l3l4(struct sk_buff *skb, struct sw_flow_key *key)
 			__be32 lse;
 
 			error = check_header(skb, skb->mac_len +
-					     label_count * MPLS_HLEN);
+						 label_count * MPLS_HLEN);
 			if (unlikely(error))
 				return 0;
 
@@ -675,10 +815,10 @@ static int key_extract_l3l4(struct sk_buff *skb, struct sw_flow_key *key)
 
 			if (label_count <= MPLS_LABEL_DEPTH)
 				memcpy(&key->mpls.lse[label_count - 1], &lse,
-				       MPLS_HLEN);
+					   MPLS_HLEN);
 
 			skb_set_inner_network_header(skb, skb->mac_len +
-						     label_count * MPLS_HLEN);
+							 label_count * MPLS_HLEN);
 			if (lse & htonl(MPLS_LS_S_MASK))
 				break;
 
@@ -884,7 +1024,7 @@ int ovs_flow_key_extract(const struct ip_tunnel_info *tun_info,
 		key->tun_proto = ip_tunnel_info_af(tun_info);
 		memcpy(&key->tun_key, &tun_info->key, sizeof(key->tun_key));
 		BUILD_BUG_ON(((1 << (sizeof(tun_info->options_len) * 8)) - 1) >
-			     sizeof(key->tun_opts));
+				 sizeof(key->tun_opts));
 
 		if (tun_info->options_len) {
 			ip_tunnel_info_opts_get(TUN_METADATA_OPTS(key, tun_info->options_len),
@@ -961,11 +1101,11 @@ int ovs_flow_key_extract_userspace(struct net *net, const struct nlattr *attr,
 	 * corrupted due to overlapping key fields.
 	 */
 	if (attrs & (1 << OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4) &&
-	    key->eth.type != htons(ETH_P_IP))
+		key->eth.type != htons(ETH_P_IP))
 		return -EINVAL;
 	if (attrs & (1 << OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6) &&
-	    (key->eth.type != htons(ETH_P_IPV6) ||
-	     sw_flow_key_is_nd(key)))
+		(key->eth.type != htons(ETH_P_IPV6) ||
+		 sw_flow_key_is_nd(key)))
 		return -EINVAL;
 
 	return 0;

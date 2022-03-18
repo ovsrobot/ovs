@@ -7143,3 +7143,34 @@ OVS_WAIT_UNTIL([cat p2.pcap | egrep "0x0050: *0000 *0000 *5002 *2000 *b85e *0000
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([ipv6 extension headers])
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns1, at_ns2)
+
+AT_CHECK([ovs-vsctl add-port br0 p1 -- set interface p1 type=internal])
+AT_CHECK([ip link set p1 netns at_ns1])
+AT_CHECK([ip netns exec at_ns1 ip -6 addr add dev p1 fe80::1/64])
+AT_CHECK([ip netns exec at_ns1 ip link set p1 up])
+
+AT_CHECK([ovs-vsctl add-port br0 p2 -- set interface p2 type=internal])
+AT_CHECK([ip link set p2 netns at_ns2])
+AT_CHECK([ip netns exec at_ns2 ip -6 addr add dev p2 fe80::2/64])
+AT_CHECK([ip netns exec at_ns2 ip link set p2 up])
+
+AT_CHECK([ovs-ofctl add-flow br0 "priority=2,ipv6_ext=frag,action=normal"])
+
+NS_CHECK_EXEC([at_ns2], [tcpdump -l -n -xx -U -i p2 > p2.pcap &])
+
+sleep 1
+
+NS_CHECK_EXEC([at_ns1], [$PYTHON3 $srcdir/sendpkt.py p1 8E 07 06 D3 C9 B5 F2 AF 1A 44 D3 5B 86 DD 60 00 00 00 00 08 2C 40 FE 80 00 00 00 00 00 00 00 00 00 00 00 00 00 01 FE 80 00 00 00 00 00 00 00 00 00 00 00 00 00 02 3B 00 00 00 00 00 00 00 > /dev/null])
+
+OVS_WAIT_UNTIL([cat p2.pcap | egrep "0x0000:  8e07 06d3 c9b5 f2af 1a44 d35b 86dd 6000" 2>&1 1>/dev/null])
+OVS_WAIT_UNTIL([cat p2.pcap | egrep "0x0010:  0000 0008 2c40 fe80 0000 0000 0000 0000" 2>&1 1>/dev/null])
+OVS_WAIT_UNTIL([cat p2.pcap | egrep "0x0020:  0000 0000 0001 fe80 0000 0000 0000 0000" 2>&1 1>/dev/null])
+OVS_WAIT_UNTIL([cat p2.pcap | egrep "0x0030:  0000 0000 0002 3b00 0000 0000 0000" 2>&1 1>/dev/null])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP

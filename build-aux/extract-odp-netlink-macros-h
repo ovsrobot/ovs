@@ -55,6 +55,7 @@ generate_fields_macros "ovs_key_icmpv6"
 generate_fields_macros "ovs_key_arp"
 generate_fields_macros "ovs_key_nd"
 generate_fields_macros "ovs_key_nd_extensions"
+generate_fields_macros "ovs_key_ipv6_exthdrs"
 
 echo
 echo "#endif"

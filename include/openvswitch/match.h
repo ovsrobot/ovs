@@ -234,6 +234,8 @@ void match_set_ipv6_dst_masked(struct match *, const struct in6_addr *,
                                const struct in6_addr *);
 void match_set_ipv6_label(struct match *, ovs_be32);
 void match_set_ipv6_label_masked(struct match *, ovs_be32, ovs_be32);
+void match_set_ipv6_exthdr(struct match *, uint16_t);
+void match_set_ipv6_exthdr_masked(struct match *, uint16_t, uint16_t);
 void match_set_nd_target(struct match *, const struct in6_addr *);
 void match_set_nd_target_masked(struct match *, const struct in6_addr *,
                                 const struct in6_addr *);
