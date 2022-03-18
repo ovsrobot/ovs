@@ -901,6 +901,17 @@ struct tcp_header {
 };
 BUILD_ASSERT_DECL(TCP_HEADER_LEN == sizeof(struct tcp_header));
 
+/* IPV6 extension header OpenFlow flags */
+#define OFPIEH12_NONEXT 0x001
+#define OFPIEH12_ESP    0x002
+#define OFPIEH12_AUTH   0x004
+#define OFPIEH12_DEST   0x008
+#define OFPIEH12_FRAG   0x010
+#define OFPIEH12_ROUTER 0x020
+#define OFPIEH12_HOP    0x040
+#define OFPIEH12_UNREP  0x080
+#define OFPIEH12_UNSEQ  0x100
+
 /* Connection states.
  *
  * Names like CS_RELATED are bit values, e.g. 1 << 2.
@@ -1612,6 +1623,7 @@ void packet_set_igmp3_query(struct dp_packet *, uint8_t max_resp,
                             uint8_t qqic);
 void packet_format_tcp_flags(struct ds *, uint16_t);
 const char *packet_tcp_flag_to_string(uint32_t flag);
+const char *packet_ipv6_exthdr_flag_to_string(uint32_t flag);
 void *compose_ipv6(struct dp_packet *packet, uint8_t proto,
                    const struct in6_addr *src, const struct in6_addr *dst,
                    uint8_t key_tc, ovs_be32 key_fl, uint8_t key_hl, int size);

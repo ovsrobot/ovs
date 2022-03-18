@@ -1392,6 +1392,22 @@ enum OVS_PACKED_ENUM mf_field_id {
      */
     MFF_IPV6_LABEL,
 
+    /* "ipv6_ext".
+     *
+     * IPV6 extension headers flags.
+     *
+     * Currently there are 9 IPV6 extension headers flags.
+     *
+     * Type: u16.
+     * Maskable: bitwise.
+     * Formatting: IPV6 ext hdr.
+     * Prerequisites: IPv6.
+     * Access: read-only.
+     * NXM: NXM_NX_IPV6_EXTHDR(126) since v2.11.
+     * OXM: OXM_OF_IPV6_EXTHDR(39) since OF1.2 and v2.11.
+     */
+    MFF_IPV6_EXTHDR,
+
 /* ## ----------------------- ## */
 /* ## IPv4/IPv6 common fields ## */
 /* ## ----------------------- ## */
@@ -2112,6 +2128,7 @@ enum OVS_PACKED_ENUM mf_string {
     MFS_TNL_FLAGS,              /* FLOW_TNL_F_* flags */
     MFS_TCP_FLAGS,              /* TCP_* flags */
     MFS_PACKET_TYPE,            /* "(NS,NS_TYPE)" */
+    MFS_IPV6_EXTHDR,
 };
 
 struct mf_field {
@@ -2169,6 +2186,7 @@ union mf_value {
     ovs_be64 be64;
     ovs_be32 be32;
     ovs_be16 be16;
+    uint16_t u16;
     uint8_t u8;
 };
 BUILD_ASSERT_DECL(sizeof(union mf_value) == 128);

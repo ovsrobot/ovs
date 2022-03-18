@@ -1121,13 +1121,27 @@ match_set_ipv6_label(struct match *match, ovs_be32 ipv6_label)
     match->flow.ipv6_label = ipv6_label;
 }
 
-
 void
 match_set_ipv6_label_masked(struct match *match, ovs_be32 ipv6_label,
                             ovs_be32 mask)
 {
     match->flow.ipv6_label = ipv6_label & mask;
     match->wc.masks.ipv6_label = mask;
+}
+
+void
+match_set_ipv6_exthdr(struct match *match, uint16_t ipv6_exthdr)
+{
+    match->flow.ipv6_exthdr = ipv6_exthdr;
+    match->wc.masks.ipv6_exthdr = UINT16_MAX;
+}
+
+void
+match_set_ipv6_exthdr_masked(struct match *match, uint16_t ipv6_exthdr,
+                             uint16_t mask)
+{
+    match->flow.ipv6_exthdr = ipv6_exthdr & mask;
+    match->wc.masks.ipv6_exthdr = mask;
 }
 
 void
@@ -1462,7 +1476,7 @@ match_format(const struct match *match,
     bool is_megaflow = false;
     int i;
 
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     if (priority != OFP_DEFAULT_PRIORITY) {
         ds_put_format(s, "%spriority=%s%d,",
@@ -1680,6 +1694,13 @@ match_format(const struct match *match,
                               colors.param, colors.end, ntohl(f->ipv6_label),
                               ntohl(wc->masks.ipv6_label));
             }
+        }
+        if (f->ipv6_exthdr && wc->masks.ipv6_exthdr) {
+            format_flags_masked(s, "ipv6_ext",
+                                packet_ipv6_exthdr_flag_to_string,
+                                f->ipv6_exthdr, wc->masks.ipv6_exthdr,
+                                UINT16_MAX);
+            ds_put_char(s, ',');
         }
     } else if (dl_type == htons(ETH_TYPE_ARP) ||
                dl_type == htons(ETH_TYPE_RARP)) {

@@ -4078,6 +4078,20 @@ r r c c c.
         </header>
       </diagram>
     </field>
+    <field id="MFF_IPV6_EXTHDR" title="IPv6 Extension Headers">
+      <p>
+        The least significant 9 bits hold the presence of extension headers
+        in packet header, duplication and order correctness. Other bits are
+        zero:
+      </p>
+
+      <diagram>
+        <header name="MFF_IPV6_EXTHDR">
+          <bits name="zero" above="7" below="0" width=".8"/>
+          <bits name="label" above="9" width="1.0"/>
+        </header>
+      </diagram>
+    </field>
 
     <h2>IPv4/IPv6 Fields</h2>
 

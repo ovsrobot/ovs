@@ -138,16 +138,17 @@ void odp_portno_name_format(const struct hmap *portno_names,
  *  OVS_KEY_ATTR_ENCAP                   0    --     4      4  (VLAN encapsulation)
  *  OVS_KEY_ATTR_ETHERTYPE               2     2     4      8  (inner VLAN ethertype)
  *  OVS_KEY_ATTR_IPV6                   40    --     4     44
+ *  OVS_KEY_ATTR_IPV6_EXTHDRS            2     2     4      8
  *  OVS_KEY_ATTR_ICMPV6                  2     2     4      8
  *  OVS_KEY_ATTR_ND                     28    --     4     32
  *  ----------------------------------------------------------
- *  total                                                 616
+ *  total                                                 624
  *
  * We include some slack space in case the calculation isn't quite right or we
  * add another field and forget to adjust this value.
  */
-#define ODPUTIL_FLOW_KEY_BYTES 640
-BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+#define ODPUTIL_FLOW_KEY_BYTES 648
+BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
 /* A buffer with sufficient size and alignment to hold an nlattr-formatted flow
  * key.  An array of "struct nlattr" might not, in theory, be sufficiently
@@ -207,7 +208,9 @@ int odp_flow_from_string(const char *s, const struct simap *port_names,
                                                                              \
     /* If true, it means that the datapath supports the IPv6 Neigh           \
      * Discovery Extension bits. */                                          \
-    ODP_SUPPORT_FIELD(bool, nd_ext, "IPv6 ND Extension")
+    ODP_SUPPORT_FIELD(bool, nd_ext, "IPv6 ND Extension")                     \
+                                                                             \
+    ODP_SUPPORT_FIELD(bool, ipv6_exthdrs, "IPv6 Extension headers")
 
 /* Indicates support for various fields. This defines how flows will be
  * serialised. */

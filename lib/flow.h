@@ -133,6 +133,10 @@ void packet_expand(struct dp_packet *, const struct flow *, size_t size);
 bool parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,
                          uint8_t *nw_frag,
                          const struct ovs_16aligned_ip6_frag **frag_hdr);
+uint16_t ipv6_ext_header_size__(uint8_t header_type, uint8_t len);
+void get_ipv6_ext_hdrs(const void *datap,
+                       const struct ovs_16aligned_ip6_hdr *nh,
+                       uint16_t *ext_hdrs);
 bool parse_nsh(const void **datap, size_t *sizep, struct ovs_key_nsh *key);
 uint16_t parse_tcp_flags(struct dp_packet *packet, ovs_be16 *dl_type_p,
                          uint8_t *nw_frag_p, ovs_be16 *first_vlan_tci_p);
@@ -965,7 +969,7 @@ static inline void
 pkt_metadata_from_flow(struct pkt_metadata *md, const struct flow *flow)
 {
     /* Update this function whenever struct flow changes. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     md->recirc_id = flow->recirc_id;
     md->dp_hash = flow->dp_hash;
