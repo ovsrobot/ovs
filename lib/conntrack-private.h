@@ -95,6 +95,7 @@ struct alg_exp_node {
 
 struct conn_key_node {
     struct conn_key key;
+    uint32_t key_hash;
     struct cmap_node cm_node;
 };
 
@@ -102,7 +103,6 @@ struct conn {
     /* Immutable data. */
     struct conn_key_node key_node[CT_DIR_MAX];
     struct conn_key parent_key; /* Only used for orig_tuple support. */
-    struct ovs_list exp_node;
 
     uint16_t nat_action;
     char *alg;
@@ -121,7 +121,9 @@ struct conn {
     /* Mutable data. */
     bool seq_skew_dir; /* TCP sequence skew direction due to NATTing of FTP
                         * control messages; true if reply direction. */
-    bool cleaned; /* True if cleaned from expiry lists. */
+    atomic_flag cleaned; /* True if the entry was stale and one of the
+                          * cleaner (i.e. packet path or sweeper) took
+                          * charge of it. */
 
     /* Immutable data. */
     bool alg_related; /* True if alg data connection. */
@@ -192,10 +194,25 @@ enum ct_timeout {
     N_CT_TM
 };
 
-struct conntrack {
-    struct ovs_mutex ct_lock; /* Protects 2 following fields. */
+#define CONNTRACK_BUCKETS_SHIFT 10
+#define CONNTRACK_BUCKETS (1 << CONNTRACK_BUCKETS_SHIFT)
+
+struct ct_bucket {
+    /* Protects 'conns'. In case of natted conns, there's a high
+     * chance that the forward and the reverse key stand in different
+     * buckets. buckets_lock() should be the preferred way to acquire
+     * these locks (unless otherwise needed), as it deals with the
+     * acquisition order. */
+    struct ovs_mutex lock;
+    /* Contains the connections in the bucket, indexed by
+     * 'struct conn_key'. */
     struct cmap conns OVS_GUARDED;
-    struct ovs_list exp_lists[N_CT_TM] OVS_GUARDED;
+};
+
+struct conntrack {
+    struct ct_bucket buckets[CONNTRACK_BUCKETS];
+    unsigned int next_bucket;
+    struct ovs_mutex ct_lock;
     struct cmap zone_limits OVS_GUARDED;
     struct cmap timeout_policies OVS_GUARDED;
     uint32_t hash_basis; /* Salt for hashing a connection key. */
@@ -220,9 +237,10 @@ struct conntrack {
 };
 
 /* Lock acquisition order:
- *    1. 'ct_lock'
- *    2. 'conn->lock'
- *    3. 'resources_lock'
+ *    1. 'buckets[p1]->lock'
+ *    2  'buckets[p2]->lock' (with p1 < p2)
+ *    3. 'conn->lock'
+ *    4. 'resources_lock'
  */
 
 extern struct ct_l4_proto ct_proto_tcp;

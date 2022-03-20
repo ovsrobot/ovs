@@ -110,6 +110,8 @@ struct conntrack_zone_limit {
     uint32_t limit;
     atomic_count count;
     uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
+    struct ovs_mutex conns_lock;
+    struct cmap conns; /* per zone connections. */
 };
 
 struct timeout_policy {
