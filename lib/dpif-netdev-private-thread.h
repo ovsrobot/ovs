@@ -133,6 +133,9 @@ struct dp_netdev_pmd_thread {
     /* Function pointer to call for miniflow_extract() functionality. */
     ATOMIC(miniflow_extract_func) miniflow_extract_opt;
 
+    /* Function pointer to call for miniflow_extract() inner functionality. */
+    ATOMIC(miniflow_extract_func) miniflow_extract_inner_opt;
+
     struct seq *reload_seq;
     uint64_t last_reload_seq;
 
