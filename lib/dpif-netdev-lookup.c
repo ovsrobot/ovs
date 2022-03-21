@@ -93,11 +93,11 @@ dpcls_subtable_set_prio(const char *name, uint8_t priority)
 }
 
 dpcls_subtable_lookup_func
-dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
+dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count,
+                             const char **subtable_name_out)
 {
     /* Iter over each subtable impl, and get highest priority one. */
     int32_t prio = -1;
-    const char *name = NULL;
     dpcls_subtable_lookup_func best_func = NULL;
 
     for (int i = 0; i < ARRAY_SIZE(subtable_lookups); i++) {
@@ -109,13 +109,15 @@ dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
             if (probed_func) {
                 best_func = probed_func;
                 prio = probed_prio;
-                name = subtable_lookups[i].name;
+                if (subtable_name_out) {
+                    *subtable_name_out = subtable_lookups[i].name;
+                }
             }
         }
     }
 
     VLOG_DBG("Subtable lookup function '%s' with units (%d,%d), priority %d\n",
-             name, u0_bit_count, u1_bit_count, prio);
+             *subtable_name_out, u0_bit_count, u1_bit_count, prio);
 
     /* Programming error - we must always return a valid func ptr. */
     ovs_assert(best_func != NULL);

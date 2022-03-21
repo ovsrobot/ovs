@@ -624,6 +624,9 @@ inline struct dpcls *
 dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
                            odp_port_t in_port);
 
+static inline struct dpcls_subtable *
+dpcls_find_subtable(struct dpcls *cls, const struct netdev_flow_key *mask);
+
 static void dp_netdev_request_reconfigure(struct dp_netdev *dp);
 static inline bool
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd);
@@ -4115,6 +4118,11 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
                       count_1bits(flow->cr.mask->mf.map.bits[unit]));
     }
     ds_put_char(&extra_info, ')');
+
+    struct dpcls_subtable *subtable = dpcls_find_subtable(cls, &mask);
+    ds_put_format(&extra_info, ", lookup(%s) ",
+                  subtable->subtable_name);
+
     flow->dp_extra_info = ds_steal_cstr(&extra_info);
     ds_destroy(&extra_info);
 
@@ -9748,8 +9756,8 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
      * by the PMD thread.
      */
     atomic_init(&subtable->lookup_func,
-                dpcls_subtable_get_best_impl(unit0, unit1));
-
+                dpcls_subtable_get_best_impl(unit0, unit1,
+                &subtable->subtable_name));
     cmap_insert(&cls->subtables_map, &subtable->cmap_node, mask->hash);
     /* Add the new subtable at the end of the pvector (with no hits yet) */
     pvector_insert(&cls->subtables, subtable, 0);
@@ -9797,7 +9805,8 @@ dpcls_subtable_lookup_reprobe(struct dpcls *cls)
         /* Set the subtable lookup function atomically to avoid garbage data
          * being read by the PMD thread. */
         atomic_store_relaxed(&subtable->lookup_func,
-                    dpcls_subtable_get_best_impl(u0_bits, u1_bits));
+                    dpcls_subtable_get_best_impl(u0_bits, u1_bits,
+                                                 &subtable->subtable_name));
         subtables_changed += (old_func != subtable->lookup_func);
     }
 

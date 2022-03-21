@@ -66,8 +66,14 @@ struct dpcls_subtable_lookup_info_t {
 
 int32_t dpcls_subtable_set_prio(const char *name, uint8_t priority);
 
+/* Retrieve the best implementation for dpcls subtable.
+ * subtable_name_out parameter is used to fetch the name of dpcls subtable
+ * selected by the function.
+ * The function can also be called with subtable_name_out as NULL.
+ */
 dpcls_subtable_lookup_func
-dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count);
+dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count,
+                             const char **subtable_name_out);
 
 /* Retrieve the array of lookup implementations for iteration.
  * On error, returns a negative number.

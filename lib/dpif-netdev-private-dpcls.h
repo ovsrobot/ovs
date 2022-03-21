@@ -93,6 +93,9 @@ struct dpcls_subtable {
 
     struct netdev_flow_key mask; /* Wildcards for fields (const). */
     /* 'mask' must be the last field, additional space is allocated here. */
+
+    /* Holds the name of the DPCLS implementation slected. */
+    const char *subtable_name;
 };
 
 /* Iterate through netdev_flow_key TNL u64 values specified by 'FLOWMAP'. */
