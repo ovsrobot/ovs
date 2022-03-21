@@ -80,7 +80,7 @@ dp_netdev_input_avx512_probe(void)
 static inline int32_t ALWAYS_INLINE
 dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
                          struct dp_packet_batch *packets,
-                         bool md_is_valid OVS_UNUSED, odp_port_t in_port)
+                         bool md_is_valid, odp_port_t in_port)
 {
     /* Allocate DPIF userdata. */
     if (OVS_UNLIKELY(!pmd->netdev_input_func_userdata)) {
@@ -92,6 +92,7 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
     struct netdev_flow_key *keys = ud->keys;
     struct netdev_flow_key **key_ptrs = ud->key_ptrs;
     struct pkt_flow_meta *pkt_meta = ud->pkt_meta;
+    const uint32_t recirc_depth = *recirc_depth_get();
 
     /* The AVX512 DPIF implementation handles rules in a way that is optimized
      * for reducing data-movement between HWOL/EMC/SMC and DPCLS. This is
@@ -179,7 +180,9 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
 
         /* Get packet pointer from bitmask and packet md. */
         struct dp_packet *packet = packets->packets[i];
-        pkt_metadata_init(&packet->md, in_port);
+        if (!md_is_valid) {
+            pkt_metadata_init(&packet->md, in_port);
+        }
 
         struct dp_netdev_flow *f = NULL;
         struct netdev_flow_key *key = &keys[i];
@@ -191,7 +194,7 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         bool mfex_hit = !!(mf_mask & (1 << i));
 
         /* Check for a partial hardware offload match. */
-        if (hwol_enabled) {
+        if (hwol_enabled && recirc_depth == 0) {
             if (OVS_UNLIKELY(dp_netdev_hw_flow(pmd, packet, &f))) {
                 /* Packet restoration failed and it was dropped, do not
                  * continue processing. */
@@ -224,7 +227,9 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         pkt_meta[i].tcp_flags = miniflow_get_tcp_flags(&key->mf);
 
         key->len = netdev_flow_key_size(miniflow_n_values(&key->mf));
-        key->hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf);
+        key->hash = (md_is_valid == false)
+                ? dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf)
+                : dpif_netdev_packet_get_rss_hash(packet, &key->mf);
 
         if (emc_enabled) {
             f = emc_lookup(&cache->emc_cache, key);
@@ -262,7 +267,8 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
      * dpcls_rules[] array.
      */
     if (dpcls_key_idx > 0) {
-        struct dpcls *cls = dp_netdev_pmd_lookup_dpcls(pmd, in_port);
+        odp_port_t port_no = packets->packets[0]->md.in_port.odp_port;
+        struct dpcls *cls = dp_netdev_pmd_lookup_dpcls(pmd, port_no);
         if (OVS_UNLIKELY(!cls)) {
             return -1;
         }
@@ -318,7 +324,9 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
 
     /* At this point we don't return error anymore, so commit stats here. */
     uint32_t mfex_hit_cnt = __builtin_popcountll(mf_mask);
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_RECV, batch_size);
+    pmd_perf_update_counter(&pmd->perf_stats,
+                            md_is_valid ? PMD_STAT_RECIRC : PMD_STAT_RECV,
+                            batch_size);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_PHWOL_HIT, phwol_hits);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MFEX_OPT_HIT,
                             mfex_hit_cnt);
