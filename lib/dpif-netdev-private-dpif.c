@@ -153,3 +153,5 @@ dp_netdev_impl_set_default_by_name(const char *name)
     return err;
 
 }
+
+DEFINE_EXTERN_PER_THREAD_DATA(recirc_depth, 0);

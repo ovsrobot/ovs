@@ -25,6 +25,7 @@
 
 #include "cmap.h"
 #include "openvswitch/thread.h"
+#include "dpif-netdev-private-dpif.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -121,6 +122,28 @@ dpif_netdev_packet_get_rss_hash_orig_pkt(struct dp_packet *packet,
         dp_packet_set_rss_hash(packet, hash);
     }
 
+    return hash;
+}
+
+static inline uint32_t
+dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
+                                const struct miniflow *mf)
+{
+    uint32_t hash;
+
+    if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
+        hash = dp_packet_get_rss_hash(packet);
+    } else {
+        hash = miniflow_hash_5tuple(mf, 0);
+        dp_packet_set_rss_hash(packet, hash);
+    }
+
+    /* The RSS hash must account for the recirculation depth to avoid
+     * collisions in the exact match cache */
+    uint32_t recirc_depth = *recirc_depth_get();
+    if (OVS_UNLIKELY(recirc_depth)) {
+        hash = hash_finish(hash, recirc_depth);
+    }
     return hash;
 }
 

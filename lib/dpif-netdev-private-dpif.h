@@ -18,6 +18,11 @@
 #define DPIF_NETDEV_PRIVATE_DPIF_H 1
 
 #include "openvswitch/types.h"
+#include "ovs-thread.h"
+
+
+#define MAX_RECIRC_DEPTH 6
+DECLARE_EXTERN_PER_THREAD_DATA(uint32_t, recirc_depth);
 
 /* Forward declarations to avoid including files. */
 struct dp_netdev_pmd_thread;
@@ -75,5 +80,9 @@ int32_t
 dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                              struct dp_packet_batch *packets,
                              odp_port_t in_port);
+
+int32_t
+dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
+                      struct dp_packet_batch *);
 
 #endif /* netdev-private.h */

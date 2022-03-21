@@ -98,8 +98,6 @@ VLOG_DEFINE_THIS_MODULE(dpif_netdev);
 
 #define FLOW_DUMP_MAX_BATCH 50
 /* Use per thread recirc_depth to prevent recirculation loop. */
-#define MAX_RECIRC_DEPTH 6
-DEFINE_STATIC_PER_THREAD_DATA(uint32_t, recirc_depth, 0)
 
 /* Use instant packet send by default. */
 #define DEFAULT_TX_FLUSH_INTERVAL 0
@@ -547,8 +545,6 @@ static void dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
                                       const struct flow *flow,
                                       const struct nlattr *actions,
                                       size_t actions_len);
-static void dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
-                                  struct dp_packet_batch *);
 
 static void dp_netdev_disable_upcall(struct dp_netdev *);
 static void dp_netdev_pmd_reload_done(struct dp_netdev_pmd_thread *pmd);
@@ -7789,28 +7785,6 @@ dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
                          actions, wc, put_actions, dp->upcall_aux);
 }
 
-static inline uint32_t
-dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
-                                const struct miniflow *mf)
-{
-    uint32_t hash, recirc_depth;
-
-    if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
-        hash = dp_packet_get_rss_hash(packet);
-    } else {
-        hash = miniflow_hash_5tuple(mf, 0);
-        dp_packet_set_rss_hash(packet, hash);
-    }
-
-    /* The RSS hash must account for the recirculation depth to avoid
-     * collisions in the exact match cache */
-    recirc_depth = *recirc_depth_get_unsafe();
-    if (OVS_UNLIKELY(recirc_depth)) {
-        hash = hash_finish(hash, recirc_depth);
-    }
-    return hash;
-}
-
 struct packet_batch_per_flow {
     unsigned int byte_count;
     uint16_t tcp_flags;
@@ -8497,11 +8471,12 @@ dp_netdev_input(struct dp_netdev_pmd_thread *pmd,
     return 0;
 }
 
-static void
+int32_t
 dp_netdev_recirculate(struct dp_netdev_pmd_thread *pmd,
                       struct dp_packet_batch *packets)
 {
     dp_netdev_input__(pmd, packets, true, 0);
+    return 0;
 }
 
 struct dp_netdev_execute_aux {
