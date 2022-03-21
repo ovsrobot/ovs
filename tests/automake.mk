@@ -145,6 +145,7 @@ $(srcdir)/tests/fuzz-regression-list.at: tests/automake.mk
 
 EXTRA_DIST += $(MFEX_AUTOVALIDATOR_TESTS)
 MFEX_AUTOVALIDATOR_TESTS = \
+	tests/pcap/dpif_vxlan.pcap \
 	tests/pcap/mfex_test.pcap \
 	tests/mfex_fuzzy.py
 

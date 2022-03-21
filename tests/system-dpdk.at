@@ -389,6 +389,28 @@ Error: invalid study_pkt_cnt value: -pmd.
 ovs-appctl: ovs-vswitchd: server returned an error
 ])
 
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-set -pmd 1 study -recirc 1], [2],
+[], [dnl
+Error: miniflow extract parser not changed, PMD thread 1 not in use, pass a valid pmd thread ID.
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-set -pmd 3 study -recirc], [0], [dnl
+Miniflow extract implementation set to study, on pmd thread 3, studying 128 packets.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-set study -recirc], [0], [dnl
+Miniflow extract implementation set to study, studying 128 packets.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-set study 2048 -recirc], [0], [dnl
+Miniflow extract implementation set to study, studying 2048 packets.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-set -pmd 3 study -recirc 2048], [0], [dnl
+Miniflow extract implementation set to study, on pmd thread 3, studying 2048 packets.
+])
+
 dnl Clean up
 AT_CHECK([ovs-vsctl del-port br0 p1], [], [stdout], [stderr])
 OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
@@ -401,6 +423,60 @@ OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
 \@Error: no miniflow extract name provided. Output of miniflow-parser-get shows implementation list.@d
 \@Error: unknown miniflow extract implementation superstudy.@d
 \@Error: invalid study_pkt_cnt value: -pmd.@d
+\@Error: miniflow extract parser not changed, PMD thread 1 not in use, pass a valid pmd thread ID.@d
+])")
+AT_CLEANUP dnl
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+AT_SETUP([OVS-DPDK - Dpif Vxlan_decap])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_START()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:pmd-cpu-mask=0xC])
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-br br-phy -- set bridge br-phy datapath_type=netdev])
+
+AT_CHECK([ovs-vsctl set bridge br-phy other_config:hwaddr=10:22:33:44:55:77])
+AT_CHECK([ip addr add 1.2.3.5/24 dev br-phy])
+AT_CHECK([ip link set br-phy up])
+
+AT_CHECK([ovs-vsctl add-port br-phy p1 -- set Interface p1 type=dpdk options:dpdk-devargs=net_pcap1,rx_pcap=$srcdir/pcap/dpif_vxlan.pcap,infinite_rx=1], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl add-port br0 vxlan0 -- set Interface vxlan0 type=vxlan options:remote_ip=1.2.3.4 options:key=1000], [], [stdout], [stderr])
+
+AT_CHECK([ovs-appctl ovs/route/add 1.2.3.5/24 br-phy], [], [stdout], [stderr])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-flow br-phy in_port=p1,action=LOCAL])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-flow br0 in_port=vxlan0,action=drop])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+AT_SKIP_IF([! ovs-appctl dpif-netdev/miniflow-parser-get | sed 1,4d | grep "True"], [], [dnl
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-set dpif_avx512], [0], [dnl
+DPIF implementation set to dpif_avx512.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-set autovalidator], [0], [dnl
+Miniflow extract implementation set to autovalidator.
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/dpif-impl-get | grep "dpif_avx512"], [], [dnl
+  dpif_avx512 (pmds: 2,3)
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/miniflow-parser-get | grep "autovalidator"], [], [dnl
+  autovalidator (available: True pmds: 2,2,3,3)
+])
+
+OVS_WAIT_UNTIL([test `ovs-vsctl get interface p1 statistics | grep -oP 'rx_packets=\s*\K\d+'` -ge 100000])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br0 vxlan0], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl del-port br-phy p1], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@netdev@ovs-netdev: failed to put[modify] (Invalid argument) ufid:@d
+\@receive tunnel port not found@d
+\@internal error parsing flow key skb_priority@d
 ])")
 AT_CLEANUP dnl
 dnl --------------------------------------------------------------------------
