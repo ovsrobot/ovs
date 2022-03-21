@@ -508,6 +508,8 @@ mfex_avx512_process(struct dp_packet_batch *packets,
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
         /* If the packet is smaller than the probe size, skip it. */
         const uint32_t size = dp_packet_size(packet);
+        const struct pkt_metadata *md = &packet->md;
+        bool tunnel_present = flow_tnl_dst_is_set(&md->tunnel);
         if (size < dp_pkt_min_size) {
             continue;
         }
@@ -554,7 +556,17 @@ mfex_avx512_process(struct dp_packet_batch *packets,
         }
 
         __m512i v_blk0_strip = _mm512_and_si512(v_blk0, v_strp);
-        _mm512_storeu_si512(&blocks[2], v_blk0_strip);
+
+        /* Handle inner meta-data if valid. */
+        if (tunnel_present) {
+            __m512i v_tun = _mm512_loadu_si512(&md->tunnel);
+            _mm512_storeu_si512(&blocks[0], v_tun);
+            _mm512_storeu_si512(&blocks[11], v_blk0_strip);
+            blocks[9] = md->dp_hash |
+                        ((uint64_t) odp_to_u32(md->in_port.odp_port) << 32);
+        } else {
+            _mm512_storeu_si512(&blocks[2], v_blk0_strip);
+        }
 
         /* Perform "post-processing" per profile, handling details not easily
          * handled in the above generic AVX512 code. Examples include TCP flag
@@ -566,8 +578,6 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             break;
 
         case PROFILE_ETH_VLAN_IPV4_TCP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
                 struct ip_header *nh = (void *)&pkt[VLAN_ETH_HEADER_LEN];
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
@@ -577,25 +587,41 @@ mfex_avx512_process(struct dp_packet_batch *packets,
 
                 /* Process TCP flags, and store to blocks. */
                 const struct tcp_header *tcp = (void *)&pkt[38];
-                mfex_handle_tcp_flags(tcp, &blocks[7]);
+                if (!tunnel_present) {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
+                    mfex_handle_tcp_flags(tcp, &blocks[7]);
+                } else {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[13]);
+                    mfex_handle_tcp_flags(tcp, &blocks[16]);
+                    mf->map.bits[0] = 0x38a00000000001ff;
+                }
             } break;
 
         case PROFILE_ETH_VLAN_IPV4_UDP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
                 struct ip_header *nh = (void *)&pkt[VLAN_ETH_HEADER_LEN];
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               UDP_HEADER_LEN)) {
                     continue;
                 }
+
+                if (!tunnel_present) {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
+                } else {
+                    mf->map.bits[0] = 0x38a00000000001ff;
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[13]);
+                }
             } break;
 
         case PROFILE_ETH_IPV4_TCP: {
                 /* Process TCP flags, and store to blocks. */
                 const struct tcp_header *tcp = (void *)&pkt[34];
-                mfex_handle_tcp_flags(tcp, &blocks[6]);
-
+                if (!tunnel_present) {
+                    mfex_handle_tcp_flags(tcp, &blocks[6]);
+                } else {
+                    mfex_handle_tcp_flags(tcp, &blocks[15]);
+                    mf->map.bits[0] = 0x18a00000000001ff;
+                }
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv4 = size - sizeof(struct eth_header);
                 struct ip_header *nh = (void *)&pkt[sizeof(struct eth_header)];
@@ -614,6 +640,9 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
+                if (tunnel_present) {
+                    mf->map.bits[0] = 0x18a00000000001ff;
+                }
             } break;
         default:
             break;

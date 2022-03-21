@@ -273,7 +273,10 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
 
     /* Run scalar miniflow_extract to get default result. */
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
-        pkt_metadata_init(&packet->md, in_port);
+        const struct pkt_metadata *md = &packet->md;
+        if (!flow_tnl_dst_is_set(&md->tunnel)) {
+            pkt_metadata_init(&packet->md, in_port);
+        }
         miniflow_extract(packet, &keys[i].mf);
 
         /* Store known good metadata to compare with optimized metadata. */
