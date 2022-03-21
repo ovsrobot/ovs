@@ -36,7 +36,8 @@ typedef uint32_t (*miniflow_extract_func)(struct dp_packet_batch *batch,
                                           uint32_t keys_size,
                                           odp_port_t in_port,
                                           struct dp_netdev_pmd_thread
-                                          *pmd_handle);
+                                          *pmd_handle,
+                                          bool md_is_valid);
 
 
 /* The function pointer miniflow_extract_func depends on batch size. */
@@ -157,7 +158,8 @@ uint32_t
 dpif_miniflow_extract_autovalidator(struct dp_packet_batch *batch,
                                     struct netdev_flow_key *keys,
                                     uint32_t keys_size, odp_port_t in_port,
-                                    struct dp_netdev_pmd_thread *pmd_handle);
+                                    struct dp_netdev_pmd_thread *pmd_handle,
+                                    bool md_is_valid);
 
 /* Retrieve the number of packets by studying packets using different miniflow
  * implementations to choose the best implementation using the maximum hitmask
@@ -169,7 +171,8 @@ uint32_t
 mfex_study_traffic(struct dp_packet_batch *packets,
                    struct netdev_flow_key *keys,
                    uint32_t keys_size, odp_port_t in_port,
-                   struct dp_netdev_pmd_thread *pmd_handle);
+                   struct dp_netdev_pmd_thread *pmd_handle,
+                   bool md_is_valid);
 
 /* Sets the packet count from user to the stats for use in
  * study function to match against the classified packets to choose
@@ -192,12 +195,12 @@ int32_t mfex_avx512_vbmi_probe(void);
     mfex_avx512_vbmi_##name(struct dp_packet_batch *packets,                \
                             struct netdev_flow_key *keys, uint32_t keys_size,\
                             odp_port_t in_port, struct dp_netdev_pmd_thread \
-                            *pmd_handle);                                   \
+                            *pmd_handle, bool md_is_valid);                 \
     uint32_t                                                                \
     mfex_avx512_##name(struct dp_packet_batch *packets,                     \
                         struct netdev_flow_key *keys, uint32_t keys_size,   \
                         odp_port_t in_port, struct dp_netdev_pmd_thread     \
-                        *pmd_handle);                                       \
+                        *pmd_handle, bool md_is_valid);                     \
 
 DECLARE_AVX512_MFEX_PROTOTYPE(ip_udp);
 DECLARE_AVX512_MFEX_PROTOTYPE(ip_tcp);
