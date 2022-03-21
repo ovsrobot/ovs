@@ -6972,6 +6972,13 @@ reload:
 
         atomic_read_explicit(&pmd->reload, &reload, memory_order_acquire);
         if (OVS_UNLIKELY(reload)) {
+            /* Drain all rxq before pmd is reloaded. */
+            for (i = 0; i < poll_cnt; i++) {
+                if (!poll_list[i].rxq_enabled) {
+                    continue;
+                }
+                netdev_rxq_drain(poll_list[i].rxq->rx);
+            }
             break;
         }
 
