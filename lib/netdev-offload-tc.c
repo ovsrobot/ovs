@@ -167,6 +167,9 @@ struct ufid_tc_data {
     struct netdev *netdev;
 };
 
+static void parse_tc_flower_to_stats(struct tc_flower *flower,
+                                     struct dpif_flow_stats *stats);
+
 static void
 del_ufid_tc_mapping_unlocked(const ovs_u128 *ufid)
 {
@@ -200,11 +203,24 @@ del_ufid_tc_mapping(const ovs_u128 *ufid)
 
 /* Wrapper function to delete filter and ufid tc mapping */
 static int
-del_filter_and_ufid_mapping(struct tcf_id *id, const ovs_u128 *ufid)
+del_filter_and_ufid_mapping(struct tcf_id *id, const ovs_u128 *ufid,
+                            struct dpif_flow_stats *stats)
 {
-    int err;
+    struct tc_flower flower;
+    int err = 0, get_err;
 
-    err = tc_del_filter(id);
+    get_err = tc_get_flower(id, &flower);
+    if (!get_err) {
+        err = tc_del_filter(id);
+    }
+
+    if (stats) {
+        memset(stats, 0, sizeof *stats);
+        if (!get_err) {
+            parse_tc_flower_to_stats(&flower, stats);
+        }
+    }
+
     if (!err) {
         del_ufid_tc_mapping(ufid);
     }
@@ -1946,7 +1962,8 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     if (get_ufid_tc_mapping(ufid, &id) == 0) {
         VLOG_DBG_RL(&rl, "updating old handle: %d prio: %d",
                     id.handle, id.prio);
-        info->tc_modify_flow_deleted = !del_filter_and_ufid_mapping(&id, ufid);
+        info->tc_modify_flow_deleted =
+                    !del_filter_and_ufid_mapping(&id, ufid, NULL);
     }
 
     prio = get_prio_for_tc_flower(&flower);
@@ -2017,7 +2034,6 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
                    const ovs_u128 *ufid,
                    struct dpif_flow_stats *stats)
 {
-    struct tc_flower flower;
     struct tcf_id id;
     int error;
 
@@ -2026,16 +2042,7 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
         return error;
     }
 
-    if (stats) {
-        memset(stats, 0, sizeof *stats);
-        if (!tc_get_flower(&id, &flower)) {
-            parse_tc_flower_to_stats(&flower, stats);
-        }
-    }
-
-    error = del_filter_and_ufid_mapping(&id, ufid);
-
-    return error;
+    return del_filter_and_ufid_mapping(&id, ufid, stats);
 }
 
 static int
