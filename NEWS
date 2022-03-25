@@ -3,6 +3,10 @@ Post-v2.17.0
    - OVSDB:
      * 'relay' service model now supports transaction history, i.e. honors the
        'last-txn-id' field in 'monitor_cond_since' requests from clients.
+   - ovs-ctl:
+     * New option '--dump-hugepages' to include hugepages in core dumps. This
+       can assist with postmortem analysis involving DPDK, but may also produce
+       significantly larger core dump files.
 
 
 v2.17.0 - 17 Feb 2022
