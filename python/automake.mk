@@ -42,6 +42,9 @@ ovs_pyfiles = \
 	python/ovs/version.py \
 	python/ovs/vlog.py \
 	python/ovs/winutils.py
+
+EXTRA_DIST += $(ovs_pyfiles) $(ovstest_pyfiles)
+
 # These python files are used at build time but not runtime,
 # so they are not installed.
 EXTRA_DIST += \
@@ -59,7 +62,6 @@ EXTRA_DIST += \
 EXTRA_DIST += python/ovs/_json.c
 
 PYFILES = $(ovs_pyfiles) python/ovs/dirs.py $(ovstest_pyfiles)
-EXTRA_DIST += $(PYFILES)
 PYCOV_CLEAN_FILES += $(PYFILES:.py=.py,cover)
 
 FLAKE8_PYFILES += \
