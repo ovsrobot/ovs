@@ -104,7 +104,7 @@ $(srcdir)/python/ovs/version.py: config.status
 	if cmp -s $(@F).tmp $@; then touch $@; rm $(@F).tmp; else mv $(@F).tmp $@; fi
 
 ALL_LOCAL += $(srcdir)/python/ovs/dirs.py
-$(srcdir)/python/ovs/dirs.py: python/ovs/dirs.py.template
+$(srcdir)/python/ovs/dirs.py: python/ovs/dirs.py.template Makefile
 	$(AM_V_GEN)sed \
 		-e '/^##/d' \
 		-e 's,[@]pkgdatadir[@],$(pkgdatadir),g' \
@@ -113,7 +113,7 @@ $(srcdir)/python/ovs/dirs.py: python/ovs/dirs.py.template
 		-e 's,[@]bindir[@],$(bindir),g' \
 		-e 's,[@]sysconfdir[@],$(sysconfdir),g' \
 		-e 's,[@]DBDIR[@],$(sysconfdir)/openvswitch,g' \
-		< $? > $@.tmp && \
+		<  $(srcdir)/python/ovs/dirs.py.template > $@.tmp && \
 	mv $@.tmp $@
 EXTRA_DIST += python/ovs/dirs.py.template
 CLEANFILES += python/ovs/dirs.py
