@@ -231,6 +231,15 @@ tm_to_ct_dpif_tp(enum ct_timeout tm)
 }
 
 static void
+conn_schedule_expiration(struct conn *conn, enum ct_timeout tm, long long now,
+                         uint32_t tp_value)
+{
+    conn->expiration = now + tp_value * 1000;
+    conn->exp.tm = tm;
+    ignore(atomic_flag_test_and_set(&conn->exp.reschedule));
+}
+
+static void
 conn_update_expiration__(struct conntrack *ct, struct conn *conn,
                          enum ct_timeout tm, long long now,
                          uint32_t tp_value)
@@ -240,11 +249,7 @@ conn_update_expiration__(struct conntrack *ct, struct conn *conn,
 
     ovs_mutex_lock(&ct->ct_lock);
     ovs_mutex_lock(&conn->lock);
-    if (!conn->cleaned) {
-        conn->expiration = now + tp_value * 1000;
-        ovs_list_remove(&conn->exp_node);
-        ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
-    }
+    conn_schedule_expiration(conn, tm, now, tp_value);
     ovs_mutex_unlock(&conn->lock);
     ovs_mutex_unlock(&ct->ct_lock);
 
@@ -281,15 +286,6 @@ conn_update_expiration(struct conntrack *ct, struct conn *conn,
     conn_update_expiration__(ct, conn, tm, now, val);
 }
 
-static void
-conn_init_expiration__(struct conntrack *ct, struct conn *conn,
-                       enum ct_timeout tm, long long now,
-                       uint32_t tp_value)
-{
-    conn->expiration = now + tp_value * 1000;
-    ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
-}
-
 /* ct_lock must be held. */
 void
 conn_init_expiration(struct conntrack *ct, struct conn *conn,
@@ -309,5 +305,7 @@ conn_init_expiration(struct conntrack *ct, struct conn *conn,
     VLOG_DBG_RL(&rl, "Init timeout %s zone=%u with policy id=%d val=%u sec.",
                 ct_timeout_str[tm], conn->key.zone, conn->tp_id, val);
 
-    conn_init_expiration__(ct, conn, tm, now, val);
+    atomic_flag_clear(&conn->exp.reschedule);
+    ovs_refcount_init(&conn->exp.refcount);
+    conn_schedule_expiration(conn, tm, now, val);
 }
