@@ -1798,6 +1798,16 @@ add_internal_flows(struct ofproto_dpif *ofproto)
 }
 
 static void
+ofproto_rcu_barrier(void)
+{
+    struct seq *seq = seq_create();
+    while(!ovsrcu_barrier(seq, 1000)) {
+        /* do nothing */
+    }
+    seq_destroy(seq);
+}
+
+static void
 destruct(struct ofproto *ofproto_, bool del)
 {
     struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
@@ -1848,6 +1858,9 @@ destruct(struct ofproto *ofproto_, bool del)
 
     seq_destroy(ofproto->ams_seq);
 
+    /* wait for all the meter destroy work finished
+     */
+    ofproto_rcu_barrier();
     close_dpif_backer(ofproto->backer, del);
 }
 
