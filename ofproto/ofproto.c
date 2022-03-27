@@ -30,6 +30,7 @@
 #include "connmgr.h"
 #include "coverage.h"
 #include "dp-packet.h"
+#include "dpif-netdev-private-dpcls.h"
 #include "hash.h"
 #include "openvswitch/hmap.h"
 #include "netdev.h"
@@ -3629,10 +3630,7 @@ ofproto_packet_out_init(struct ofproto *ofproto,
 {
     enum ofperr error;
     struct match match;
-    struct {
-        struct miniflow mf;
-        uint64_t buf[FLOW_U64S];
-    } m;
+    struct netdev_flow_key key;
 
     uint16_t in_port = ofp_to_u16(po->flow_metadata.flow.in_port.ofp_port);
     if (in_port >= ofproto->max_ports && in_port < ofp_to_u16(OFPP_MAX)) {
@@ -3653,8 +3651,8 @@ ofproto_packet_out_init(struct ofproto *ofproto,
     /* Store struct flow. */
     opo->flow = xmalloc(sizeof *opo->flow);
     *opo->flow = po->flow_metadata.flow;
-    miniflow_extract(opo->packet, &m.mf);
-    flow_union_with_miniflow(opo->flow, &m.mf);
+    miniflow_extract(opo->packet, &key);
+    flow_union_with_miniflow(opo->flow, &key.mf);
 
     /* Check actions like for flow mods.  We pass a 'table_id' of 0 to
      * ofproto_check_consistency(), which isn't strictly correct because these

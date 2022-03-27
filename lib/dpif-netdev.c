@@ -8144,7 +8144,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
             }
         }
 
-        miniflow_extract(packet, &key->mf);
+        miniflow_extract(packet, key);
         key->len = 0; /* Not computed yet. */
         key->hash =
                 (md_is_valid == false)
