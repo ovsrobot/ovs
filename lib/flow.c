@@ -37,6 +37,7 @@
 #include "dp-packet.h"
 #include "dpif-netdev-private-thread.h"
 #include "dpif-netdev-private-dpcls.h"
+#include "dpif-netdev-private-extract.h"
 #include "openflow/openflow.h"
 #include "packets.h"
 #include "odp-util.h"
@@ -1121,7 +1122,30 @@ miniflow_extract_(struct dp_packet *packet, struct netdev_flow_key *key)
 void
 miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key)
 {
+#ifdef MFEX_AUTOVALIDATOR_DEFAULT
+    static struct ovsthread_once once_enable = OVSTHREAD_ONCE_INITIALIZER;
+    if (ovsthread_once_start(&once_enable)) {
+        dpif_miniflow_extract_init();
+        ovsthread_once_done(&once_enable);
+    }
+    struct dp_packet_batch packets;
+    const struct pkt_metadata *md = &packet->md;
+    dp_packet_batch_init(&packets);
+    dp_packet_batch_add(&packets, packet);
+    const uint32_t recirc_depth = *recirc_depth_get();
+    /* Currently AVX512 DPIF dont support recirculation
+     * Once the support will be added the condition would
+     * be removed.
+     */
+    if (recirc_depth) {
+        miniflow_extract_(packet, key);
+    } else {
+        dpif_miniflow_extract_autovalidator(&packets, key, 1,
+                                    odp_to_u32(md->in_port.odp_port), NULL);
+    }
+#else
     miniflow_extract_(packet, key);
+#endif
 }
 static ovs_be16
 parse_dl_type(const void **datap, size_t *sizep, ovs_be16 *first_vlan_tci_p)
