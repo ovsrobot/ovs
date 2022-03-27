@@ -7787,28 +7787,6 @@ dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
                          actions, wc, put_actions, dp->upcall_aux);
 }
 
-static inline uint32_t
-dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
-                                const struct miniflow *mf)
-{
-    uint32_t hash, recirc_depth;
-
-    if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
-        hash = dp_packet_get_rss_hash(packet);
-    } else {
-        hash = miniflow_hash_5tuple(mf, 0);
-        dp_packet_set_rss_hash(packet, hash);
-    }
-
-    /* The RSS hash must account for the recirculation depth to avoid
-     * collisions in the exact match cache */
-    recirc_depth = *recirc_depth_get_unsafe();
-    if (OVS_UNLIKELY(recirc_depth)) {
-        hash = hash_finish(hash, recirc_depth);
-    }
-    return hash;
-}
-
 struct packet_batch_per_flow {
     unsigned int byte_count;
     uint16_t tcp_flags;
