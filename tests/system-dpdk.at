@@ -9,6 +9,8 @@ m4_define([SYSTEM_DPDK_ALLOWED_LOGS],[
 \@EAL: No \(available\|free\) .*hugepages reported@d
 \@Failed to enable flow control@d
 \@Rx checksum offload is not supported on@d
+\@Rx interrupts are broken for device@d
+\@Rx Intr handle unset@d
 \@TELEMETRY: No legacy callbacks, legacy socket not created@d
 ])
 

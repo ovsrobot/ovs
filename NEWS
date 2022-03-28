@@ -1,5 +1,9 @@
 Post-v2.17.0
 ---------------------
+   - Userspace datapath:
+     * Introduced sleeping for PMD threads that only do empty polls and have
+       no other task. 'other_config:rx-idle-threshold" can be set as the
+       threshold (in ms) before sleeping.
    - OVSDB:
      * 'relay' service model now supports transaction history, i.e. honors the
        'last-txn-id' field in 'monitor_cond_since' requests from clients.
