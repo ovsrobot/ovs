@@ -85,6 +85,7 @@ bool ovsdb_idl_has_ever_connected(const struct ovsdb_idl *);
 void ovsdb_idl_enable_reconnect(struct ovsdb_idl *);
 void ovsdb_idl_force_reconnect(struct ovsdb_idl *);
 void ovsdb_idl_verify_write_only(struct ovsdb_idl *);
+void ovsdb_idl_track_changes_noalert(struct ovsdb_idl *);
 
 bool ovsdb_idl_is_alive(const struct ovsdb_idl *);
 bool ovsdb_idl_is_connected(const struct ovsdb_idl *idl);

@@ -93,6 +93,8 @@ struct ovsdb_idl {
     struct ovsdb_idl_txn *txn;
     struct hmap outstanding_txns;
     bool verify_write_only;
+    bool track_changes_noalert; /* If true then the IDL allows change tracking
+                                 * of write-only columns. */
     struct ovs_list deleted_untracked_rows; /* Stores rows deleted in the
                                              * current run, that are not yet
                                              * added to the track_list. */
@@ -264,6 +266,7 @@ ovsdb_idl_create_unconnected(const struct ovsdb_idl_class *class,
         .txn = NULL,
         .outstanding_txns = HMAP_INITIALIZER(&idl->outstanding_txns),
         .verify_write_only = false,
+        .track_changes_noalert = false,
         .deleted_untracked_rows
             = OVS_LIST_INITIALIZER(&idl->deleted_untracked_rows),
         .rows_to_reparse
@@ -586,6 +589,19 @@ ovsdb_idl_verify_write_only(struct ovsdb_idl *idl)
     idl->verify_write_only = true;
 }
 
+/* In regular operation mode, IDL change tracking of a column implies
+ * that the column is read-write (OVSDB_IDL_MONITOR | OVSDB_IDL_ALERT set).
+ * This comes at a cost as no-op updates to read-write columns cannot be
+ * easily optimized out (see ovsdb_idl_txn_write()).  This function allows
+ * users to enable a mode in which change tracking is allowed for write-only
+ * columns.
+ */
+void
+ovsdb_idl_track_changes_noalert(struct ovsdb_idl *idl)
+{
+    idl->track_changes_noalert = true;
+}
+
 /* Returns true if 'idl' is currently connected or trying to connect
  * and a negative response to a schema request has not been received */
 bool
@@ -889,6 +905,16 @@ add_ref_table(struct ovsdb_idl *idl, const struct ovsdb_base_type *base)
     }
 }
 
+static void
+ovsdb_idl_add_column__(struct ovsdb_idl *idl,
+                       const struct ovsdb_idl_column *column,
+                       unsigned char mode)
+{
+    ovsdb_idl_set_mode(idl, column, mode);
+    add_ref_table(idl, &column->type.key);
+    add_ref_table(idl, &column->type.value);
+}
+
 /* Turns on OVSDB_IDL_MONITOR and OVSDB_IDL_ALERT for 'column' in 'idl'.  Also
  * ensures that any tables referenced by 'column' will be replicated, even if
  * no columns in that table are selected for replication (see
@@ -902,9 +928,7 @@ void
 ovsdb_idl_add_column(struct ovsdb_idl *idl,
                      const struct ovsdb_idl_column *column)
 {
-    ovsdb_idl_set_mode(idl, column, OVSDB_IDL_MONITOR | OVSDB_IDL_ALERT);
-    add_ref_table(idl, &column->type.key);
-    add_ref_table(idl, &column->type.value);
+    ovsdb_idl_add_column__(idl, column, OVSDB_IDL_MONITOR | OVSDB_IDL_ALERT);
 }
 
 /* Ensures that the table with class 'tc' will be replicated on 'idl' even if
@@ -1236,15 +1260,25 @@ ovsdb_idl_row_get_seqno(const struct ovsdb_idl_row *row,
  * functions.
  *
  * This function should be called between ovsdb_idl_create() and
- * the first call to ovsdb_idl_run(). The column to be tracked
- * should have OVSDB_IDL_ALERT turned on.
+ * the first call to ovsdb_idl_run(). The column to be traked should
+ * have:
+ * a. OVSDB_IDL_ALERT turned on if 'track_changes_noalert' is 'false'
+ * OR
+ * b. OVSDB_IDL_MONITOR turned on if 'track_changes_noalert' is 'true'
  */
 void
 ovsdb_idl_track_add_column(struct ovsdb_idl *idl,
                            const struct ovsdb_idl_column *column)
 {
-    if (!(*ovsdb_idl_get_mode(idl, column) & OVSDB_IDL_ALERT)) {
-        ovsdb_idl_add_column(idl, column);
+    if (idl->track_changes_noalert) {
+        if (!(*ovsdb_idl_get_mode(idl, column) & OVSDB_IDL_MONITOR)) {
+            ovsdb_idl_add_column__(idl, column, OVSDB_IDL_MONITOR);
+        }
+    } else {
+        if (!(*ovsdb_idl_get_mode(idl, column) & OVSDB_IDL_ALERT)) {
+            ovsdb_idl_add_column__(idl, column,
+                                   OVSDB_IDL_MONITOR | OVSDB_IDL_ALERT);
+        }
     }
     *ovsdb_idl_get_mode(idl, column) |= OVSDB_IDL_TRACK;
 }
@@ -1694,11 +1728,13 @@ ovsdb_idl_row_change(struct ovsdb_idl_row *row, const struct shash *values,
             continue;
         }
 
-        if (datum_changed && table->modes[column_idx] & OVSDB_IDL_ALERT) {
-            changed = true;
-            row->change_seqno[change]
-                = row->table->change_seqno[change]
-                = row->table->idl->change_seqno + 1;
+        if (datum_changed) {
+            if (table->modes[column_idx] & OVSDB_IDL_ALERT) {
+                changed = true;
+                row->change_seqno[change]
+                    = row->table->change_seqno[change]
+                    = row->table->idl->change_seqno + 1;
+            }
 
             if (table->modes[column_idx] & OVSDB_IDL_TRACK) {
                 if (ovs_list_is_empty(&row->track_node) &&
@@ -3501,7 +3537,7 @@ ovsdb_idl_txn_write__(const struct ovsdb_idl_row *row_,
 
     class = row->table->class_;
     column_idx = column - class->columns;
-    write_only = row->table->modes[column_idx] == OVSDB_IDL_MONITOR;
+    write_only = !(row->table->modes[column_idx] & OVSDB_IDL_ALERT);
 
     ovs_assert(row->new_datum != NULL);
     ovs_assert(column_idx < class->n_columns);
