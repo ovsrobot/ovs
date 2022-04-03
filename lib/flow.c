@@ -534,13 +534,10 @@ parse_ipv6_ext_hdrs__(const void **datap, size_t *sizep, uint8_t *nw_proto,
                 return false;
             }
 
-            /* We only process the first fragment. */
             if ((*frag_hdr)->ip6f_offlg != htons(0)) {
                 *nw_frag = FLOW_NW_FRAG_ANY;
                 if (((*frag_hdr)->ip6f_offlg & IP6F_OFF_MASK) != htons(0)) {
                     *nw_frag |= FLOW_NW_FRAG_LATER;
-                    *nw_proto = IPPROTO_FRAGMENT;
-                    return true;
                 }
             }
         }
