@@ -663,6 +663,41 @@ count_cpu_cores(void)
     return n_cores > 0 ? n_cores : 0;
 }
 
+int
+count_total_cores(int *core_map, size_t n_core_map) {
+    long int n_cores;
+
+#ifndef _WIN32
+    n_cores = sysconf(_SC_NPROCESSORS_CONF);
+#ifdef __linux__
+    if (core_map && n_cores > 0) {
+        cpu_set_t *set = CPU_ALLOC(n_cores);
+
+        memset(core_map, -1, n_core_map * sizeof(int));
+
+        if (set) {
+            size_t size = CPU_ALLOC_SIZE(n_cores);
+
+            if (!sched_getaffinity(0, size, set)) {
+                for (; n_core_map > 0; n_core_map -= 1) {
+                    core_map[n_core_map - 1] = -1;
+                    if (CPU_ISSET_S(n_core_map - 1, size, set)) {
+                        core_map[n_core_map - 1] = n_core_map - 1;
+                    }
+                }
+            }
+            CPU_FREE(set);
+        }
+    }
+#endif
+#else
+    n_cores = 0;
+    errno = ENOTSUP;
+#endif
+
+    return n_cores > 0 ? n_cores : 0;
+}
+
 /* Returns 'true' if current thread is PMD thread. */
 bool
 thread_is_pmd(void)

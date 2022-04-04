@@ -522,6 +522,7 @@ bool may_fork(void);
 /* Useful functions related to threading. */
 
 int count_cpu_cores(void);
+int count_total_cores(int *, size_t);
 bool thread_is_pmd(void);
 
 #endif /* ovs-thread.h */
