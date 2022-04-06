@@ -5806,7 +5806,9 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
 
     if (reversible_actions(actions, actions_len) || is_last_action) {
         old_flow = ctx->xin->flow;
+        ctx->depth++;
         do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
+        ctx->depth--;
         if (!ctx->freezing) {
             xlate_action_set(ctx);
         }
@@ -5830,7 +5832,9 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
     if (ctx->xbridge->support.clone) { /* Use clone action */
         /* Use clone action as datapath clone. */
         offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_CLONE);
+        ctx->depth++;
         do_xlate_actions(actions, actions_len, ctx, true, false);
+        ctx->depth--;
         if (!ctx->freezing) {
             xlate_action_set(ctx);
         }
@@ -5846,7 +5850,9 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
         offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_SAMPLE);
         ac_offset = nl_msg_start_nested(ctx->odp_actions,
                                         OVS_SAMPLE_ATTR_ACTIONS);
+        ctx->depth++;
         do_xlate_actions(actions, actions_len, ctx, true, false);
+        ctx->depth--;
         if (!ctx->freezing) {
             xlate_action_set(ctx);
         }
@@ -6412,7 +6418,18 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
         ctx->odp_actions, OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER);
     value.u8_val = 1;
     mf_write_subfield_flow(&check_pkt_larger->dst, &value, &ctx->xin->flow);
+    ctx->depth++;
     do_xlate_actions(remaining_acts, remaining_acts_len, ctx, true, false);
+    ctx->depth--;
+
+    if (!xlate_resubmit_resource_check(ctx)) {
+        if (!ctx->error) {
+            /* If we don't set an error here, we end up with corrupted
+             * odp actions in the slow path. */
+            ctx->error = XLATE_RECURSION_TOO_DEEP;
+        }
+        return;
+    }
     if (!ctx->freezing) {
         xlate_action_set(ctx);
     }
@@ -6437,7 +6454,16 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
         ctx->odp_actions, OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_LESS_EQUAL);
     value.u8_val = 0;
     mf_write_subfield_flow(&check_pkt_larger->dst, &value, &ctx->xin->flow);
+    ctx->depth++;
     do_xlate_actions(remaining_acts, remaining_acts_len, ctx, true, false);
+    ctx->depth--;
+
+    if (!xlate_resubmit_resource_check(ctx)) {
+        if (!ctx->error) {
+            ctx->error = XLATE_RECURSION_TOO_DEEP;
+        }
+        return;
+    }
     if (!ctx->freezing) {
         xlate_action_set(ctx);
     }

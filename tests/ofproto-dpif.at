@@ -11640,3 +11640,55 @@ AT_CHECK([test 1 = `ovs-ofctl parse-pcap p2-tx.pcap | wc -l`])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([ofproto-dpif - discard large flows])
+OVS_VSWITCHD_START
+add_of_ports --pcap br0 `seq 1 2`
+
+AT_DATA([flows.txt], [dnl
+table=0,in_port=1 actions=clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl Over 64 recursions
+                          clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl
+                          clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl
+                          clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl
+                          clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl
+                          clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl
+                          clone(clone(clone(clone(clone(clone(clone(clone(clone( dnl
+                          clone(resubmit(,2))                                    dnl
+                          )))))))))                                              dnl
+                          )))))))))                                              dnl
+                          )))))))))                                              dnl
+                          )))))))))                                              dnl
+                          )))))))))                                              dnl
+                          )))))))))                                              dnl
+                          )))))))))
+table=0,in_port=2 actions=check_pkt_larger(20)->NXM_NX_REG0[[1]],                dnl Over 64 kB of actions
+                          check_pkt_larger(40)->NXM_NX_REG1[[1]],                dnl
+                          check_pkt_larger(60)->NXM_NX_REG2[[1]],                dnl
+                          check_pkt_larger(80)->NXM_NX_REG3[[1]],                dnl
+                          check_pkt_larger(100)->NXM_NX_REG4[[1]],               dnl
+                          check_pkt_larger(110)->NXM_NX_REG5[[1]],               dnl
+                          check_pkt_larger(120)->NXM_NX_REG6[[1]],               dnl
+                          check_pkt_larger(140)->NXM_NX_REG7[[1]],               dnl
+                          check_pkt_larger(160)->NXM_NX_REG8[[1]],               dnl
+                          check_pkt_larger(180)->NXM_NX_REG9[[1]],               dnl
+                          check_pkt_larger(200)->NXM_NX_REG10[[1]],              dnl
+                          check_pkt_larger(210)->NXM_NX_REG11[[1]],resubmit(,2)
+table=2,reg0=0x0 actions=normal
+])
+
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=50:54:00:00:00:0a,dst=50:54:00:00:00:09),dnl
+eth_type(0x0800),ipv4(src=10.10.10.1,dst=10.10.10.2,proto=1,dnl
+tos=1,ttl=128,frag=no),icmp(type=8,code=0)' | grep -c ">>>> resubmits yielded over 64 kB of actions <<<<"], , [dnl
+13
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),dnl
+eth_type(0x0800),ipv4(src=10.10.10.2,dst=10.10.10.1,proto=1,dnl
+tos=1,ttl=128,frag=no),icmp(type=8,code=0)' | grep -c ">>>> over max translation depth 64 <<<<"], , [dnl
+1
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
