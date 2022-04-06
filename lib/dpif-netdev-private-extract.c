@@ -252,6 +252,9 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
         pkt_metadata_init(&packet->md, in_port);
         miniflow_extract(packet, &keys[i].mf);
+        keys[i].len = netdev_flow_key_size(miniflow_n_values(&keys[i].mf));
+        keys[i].hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet,
+                                                                &keys[i].mf);
 
         /* Store known good metadata to compare with optimized metadata. */
         good_l2_5_ofs[i] = packet->l2_5_ofs;
@@ -266,10 +269,11 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
         if (!mfex_impls[j].available) {
             continue;
         }
-        /* Reset keys and offsets before each implementation. */
+        /* Reset keys, offsets and hash before each implementation. */
         memset(test_keys, 0, keys_size * sizeof(struct netdev_flow_key));
         DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
             dp_packet_reset_offsets(packet);
+            *dp_packet_ol_flags_ptr(packet) &= ~DP_PACKET_OL_RSS_HASH;
         }
         /* Call optimized miniflow for each batch of packet. */
         uint32_t hit_mask = mfex_impls[j].extract_func(packets, test_keys,
@@ -335,6 +339,15 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
                 failed = 1;
             }
 
+            /* Check hashes are equal. */
+            if ((keys[i].hash != test_keys[i].hash) ||
+                (keys[i].len != test_keys[i].len)) {
+                ds_put_format(&log_msg, "Good hash: %d len: %d\tTest hash:%d"
+                              " len:%d\n", keys[i].hash, keys[i].len,
+                              test_keys[i].hash, test_keys[i].len);
+                failed = 1;
+            }
+
             if (failed) {
                 VLOG_ERR("Autovalidation for %s failed in pkt %d,"
                          " disabling.", mfex_impls[j].name, i);
@@ -351,13 +364,10 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
         atomic_store_relaxed(&pmd->miniflow_extract_opt, NULL);
     }
 
-    /* Preserve packet correctness by storing back the good offsets in
-     * packets back. */
+    /* Reset all packet values. */
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
-        packet->l2_5_ofs = good_l2_5_ofs[i];
-        packet->l3_ofs = good_l3_ofs[i];
-        packet->l4_ofs = good_l4_ofs[i];
-        packet->l2_pad_size = good_l2_pad_size[i];
+        dp_packet_reset_offsets(packet);
+        *dp_packet_ol_flags_ptr(packet) &= ~DP_PACKET_OL_RSS_HASH;
     }
 
     /* Returning zero implies no packets were hit by autovalidation. This
