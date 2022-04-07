@@ -779,9 +779,10 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
                         [OVS_GREP_IFELSE([$KSRC/include/net/ip_tunnels.h],
                                          [iptunnel_pull_offloads],
                         [OVS_GREP_IFELSE([$KSRC/include/net/dst_cache.h], [dst_cache],
-                        [OVS_GREP_IFELSE([$KSRC/include/net/erspan.h], [erspan_md2],
-                                         [OVS_DEFINE([USE_UPSTREAM_TUNNEL])])])])])
+                                         [OVS_DEFINE([USE_UPSTREAM_TUNNEL])])])])
 
+  OVS_GREP_IFELSE([$KSRC/include/net/erspan.h], [erspan_md2],
+                  [OVS_DEFINE([USE_BUILTIN_ERSPAN_MD2])])
   OVS_GREP_IFELSE([$KSRC/include/net/dst_cache.h], [dst_cache],
                   [OVS_DEFINE([USE_BUILTIN_DST_CACHE])])
   OVS_GREP_IFELSE([$KSRC/include/net/mpls.h], [mpls_hdr],
