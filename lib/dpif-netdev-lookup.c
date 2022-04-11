@@ -20,6 +20,8 @@
 
 #include "openvswitch/vlog.h"
 
+#define SUBTABLE_STRING_OFFSET 18
+
 VLOG_DEFINE_THIS_MODULE(dpif_netdev_lookup);
 
 /* Actual list of implementations goes here */
@@ -93,11 +95,11 @@ dpcls_subtable_set_prio(const char *name, uint8_t priority)
 }
 
 dpcls_subtable_lookup_func
-dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
+dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count,
+                             const char **name)
 {
     /* Iter over each subtable impl, and get highest priority one. */
     int32_t prio = -1;
-    const char *name = NULL;
     dpcls_subtable_lookup_func best_func = NULL;
 
     for (int i = 0; i < ARRAY_SIZE(subtable_lookups); i++) {
@@ -109,16 +111,45 @@ dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count)
             if (probed_func) {
                 best_func = probed_func;
                 prio = probed_prio;
-                name = subtable_lookups[i].name;
+                if (name) {
+                    *name = subtable_lookups[i].name;
+                }
             }
         }
     }
 
     VLOG_DBG("Subtable lookup function '%s' with units (%d,%d), priority %d\n",
-             name, u0_bit_count, u1_bit_count, prio);
+             *name, u0_bit_count, u1_bit_count, prio);
 
     /* Programming error - we must always return a valid func ptr. */
     ovs_assert(best_func != NULL);
 
     return best_func;
+}
+
+void
+dpcls_update_flow_dump(struct cmap flow_table,
+                       struct dpcls_subtable_lookup_info_t *lookup_funcs,
+                       int impls_count)
+{
+    struct dp_netdev_flow *flow;
+    const char *name = NULL;
+    int32_t prio = -1;
+
+    for (int i = 0; i < impls_count; i++) {
+        int32_t probed_prio = lookup_funcs[i].prio;
+        if (probed_prio > prio) {
+            name = lookup_funcs[i].name;
+            prio = probed_prio;
+        }
+    }
+    CMAP_FOR_EACH (flow, node, &flow_table) {
+        struct ds info = DS_EMPTY_INITIALIZER;
+        char *extra_info = ovsrcu_get(char *, &flow->dp_extra_info);
+        ds_put_cstr(&info, extra_info);
+        ds_truncate(&info, SUBTABLE_STRING_OFFSET);
+        ds_put_format(&info,",lookup(%s)", name);
+        ovsrcu_set(&flow->dp_extra_info, ds_steal_cstr(&info));
+        ds_destroy(&info);
+    }
 }

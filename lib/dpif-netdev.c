@@ -623,6 +623,8 @@ static int dpif_netdev_xps_get_tx_qid(const struct dp_netdev_pmd_thread *pmd,
 inline struct dpcls *
 dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
                            odp_port_t in_port);
+static inline struct dpcls_subtable *
+dpcls_find_subtable(struct dpcls *cls, const struct netdev_flow_key *mask);
 
 static void dp_netdev_request_reconfigure(struct dp_netdev *dp);
 static inline bool
@@ -1034,6 +1036,7 @@ dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
     uint32_t new_prio = strtoul(argv[2], &err_char, 10);
     uint32_t lookup_dpcls_changed = 0;
     uint32_t lookup_subtable_changed = 0;
+    struct dpcls_subtable_lookup_info_t *lookup_funcs = NULL;
     struct shash_node *node;
     if (errno != 0 || new_prio > UINT8_MAX) {
         unixctl_command_reply_error(conn,
@@ -1075,6 +1078,11 @@ dpif_netdev_subtable_lookup_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
                 }
                 ovs_mutex_lock(&pmd->flow_mutex);
                 uint32_t subtbl_changes = dpcls_subtable_lookup_reprobe(cls);
+                if (subtbl_changes) {
+                    int count = dpcls_subtable_lookup_info_get(&lookup_funcs);
+                    dpcls_update_flow_dump(pmd->flow_table, lookup_funcs,
+                                           count);
+                }
                 ovs_mutex_unlock(&pmd->flow_mutex);
                 if (subtbl_changes) {
                     lookup_dpcls_changed++;
@@ -2380,7 +2388,8 @@ static void
 dp_netdev_flow_free(struct dp_netdev_flow *flow)
 {
     dp_netdev_actions_free(dp_netdev_flow_get_actions(flow));
-    free(flow->dp_extra_info);
+        ovsrcu_postpone(free,
+                     ovsrcu_get_protected(char *, &flow->dp_extra_info));
     free(flow);
 }
 
@@ -3746,7 +3755,8 @@ dp_netdev_flow_to_dpif_flow(const struct dp_netdev *dp,
     flow->pmd_id = netdev_flow->pmd_id;
 
     get_dpif_flow_status(dp, netdev_flow, &flow->stats, &flow->attrs);
-    flow->attrs.dp_extra_info = netdev_flow->dp_extra_info;
+    flow->attrs.dp_extra_info = ovsrcu_get(char *,
+                                           &netdev_flow->dp_extra_info);
 }
 
 static int
@@ -4116,7 +4126,11 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
                       count_1bits(flow->cr.mask->mf.map.bits[unit]));
     }
     ds_put_char(&extra_info, ')');
-    flow->dp_extra_info = ds_steal_cstr(&extra_info);
+    struct dpcls_subtable *subtable = dpcls_find_subtable(cls, &mask);
+    ds_put_format(&extra_info, ",lookup(%s)", subtable->subtable_lookup_name);
+
+    ovsrcu_set(&flow->dp_extra_info, ds_steal_cstr(&extra_info));
+
     ds_destroy(&extra_info);
 
     cmap_insert(&pmd->flow_table, CONST_CAST(struct cmap_node *, &flow->node),
@@ -9753,7 +9767,8 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
      * by the PMD thread.
      */
     atomic_init(&subtable->lookup_func,
-                dpcls_subtable_get_best_impl(unit0, unit1));
+                dpcls_subtable_get_best_impl(unit0, unit1,
+                                             &subtable->subtable_lookup_name));
 
     cmap_insert(&cls->subtables_map, &subtable->cmap_node, mask->hash);
     /* Add the new subtable at the end of the pvector (with no hits yet) */
@@ -9802,7 +9817,8 @@ dpcls_subtable_lookup_reprobe(struct dpcls *cls)
         /* Set the subtable lookup function atomically to avoid garbage data
          * being read by the PMD thread. */
         atomic_store_relaxed(&subtable->lookup_func,
-                    dpcls_subtable_get_best_impl(u0_bits, u1_bits));
+                            dpcls_subtable_get_best_impl(u0_bits, u1_bits,
+                                            &subtable->subtable_lookup_name));
         subtables_changed += (old_func != subtable->lookup_func);
     }
 

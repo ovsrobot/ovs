@@ -123,8 +123,10 @@ struct dp_netdev_flow {
      * packet_batch_per_flow_init() and packet_batch_per_flow_execute()). */
     struct packet_batch_per_flow *batch;
 
-    /* Packet classification. */
-    char *dp_extra_info;         /* String to return in a flow dump/get. */
+    /* Packet classification.
+     * String to return in a flow dump/get.
+     */
+    OVSRCU_TYPE(char *) dp_extra_info;
     struct dpcls_rule cr;        /* In owning dp_netdev's 'cls'. */
     /* 'cr' must be the last member. */
 };

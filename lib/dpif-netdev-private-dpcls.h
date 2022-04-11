@@ -88,6 +88,9 @@ struct dpcls_subtable {
      * here to prevent garbage from being read. */
     ATOMIC(dpcls_subtable_lookup_func) lookup_func;
 
+    /* Holds the name of the DPCLS implementation slected. */
+    const char *subtable_lookup_name;
+
     /* Caches the masks to match a packet to, reducing runtime calculations. */
     uint64_t *mf_masks;
 

@@ -20,6 +20,7 @@
 #include <config.h>
 #include "dpif-netdev.h"
 #include "dpif-netdev-private-dpcls.h"
+#include "dpif-netdev-private-flow.h"
 
 /* Function to perform a probe for the subtable bit fingerprint.
  * Returns NULL if not valid, or a valid function pointer to call for this
@@ -66,8 +67,14 @@ struct dpcls_subtable_lookup_info_t {
 
 int32_t dpcls_subtable_set_prio(const char *name, uint8_t priority);
 
+/* Retrieve the best implementation for dpcls subtable.
+ * Name parameter is used to fetch the name of dpcls subtable
+ * selected by the function.
+ * The function can also be called with name as NULL.
+ */
 dpcls_subtable_lookup_func
-dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count);
+dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count,
+                             const char **name);
 
 /* Retrieve the array of lookup implementations for iteration.
  * On error, returns a negative number.
@@ -75,5 +82,10 @@ dpcls_subtable_get_best_impl(uint32_t u0_bit_count, uint32_t u1_bit_count);
  */
 int32_t
 dpcls_subtable_lookup_info_get(struct dpcls_subtable_lookup_info_t **out_ptr);
+
+void
+dpcls_update_flow_dump(struct cmap flow_table,
+                       struct dpcls_subtable_lookup_info_t *lookup_funcs,
+                       int impls_count);
 
 #endif /* dpif-netdev-lookup.h */
