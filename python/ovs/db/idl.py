@@ -140,6 +140,21 @@ class ConditionState(object):
         return False
 
 
+def get_condition(self):
+    return self._condition
+
+
+def set_condition(self, condition):
+    if isinstance(condition, ConditionState):
+        self._condition = condition
+    else:
+        vlog.warn("Setting table.condition directly is unsupported! "
+                  "Use Idl.cond_change() instead.")
+        if not hasattr(self, '_condition'):
+            self._condition = ConditionState()
+        self.idl.cond_change(self.name, condition)
+
+
 class Idl(object):
     """Open vSwitch Database Interface Definition Language (OVSDB IDL).
 
@@ -204,6 +219,9 @@ class Idl(object):
         Monitor.monitor: IDL_S_SERVER_MONITOR_REQUESTED,
         Monitor.monitor_cond: IDL_S_DATA_MONITOR_COND_REQUESTED,
         Monitor.monitor_cond_since: IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED}
+
+    ovs.db.schema.TableSchema.condition = property(get_condition,
+                                                   set_condition)
 
     def __init__(self, remote, schema_helper, probe_interval=None,
                  leader_only=True):
