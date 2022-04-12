@@ -1,0 +1,125 @@
+AT_BANNER([bond])
+
+# Strips out Recirculation ID information since it may change over time.
+m4_define([STRIP_RECIRC_ID], [[sed '
+    s/Recirc-ID.*$/<del>/
+' ]])
+
+# Strips out rebalance time information since it changes over time.
+m4_define([STRIP_REBALANCE_TIME], [[sed '
+    s/next rebalance.*$/<next rebalance del>/
+' ]])
+
+# Strips out active member mac address since it may change over time.
+m4_define([STRIP_ACTIVE_MEMBER_MAC], [[sed '
+    s/active member mac.*$/<active member mac del>/
+' ]])
+
+AT_SETUP([bond - discard duplicated frames])
+# With an active/active non-lacp bond, the default behaviour
+# is to discard multicast frames on the secondary interface
+OVS_VSWITCHD_START([dnl
+        add-bond br0 bond0 p1 p2 --\
+        set Port bond0 bond-mode=balance-slb --\
+        set Interface p1 type=dummy ofport_request=1 --\
+        set Interface p2 type=dummy ofport_request=2 ])
+
+ovs-appctl bond/set-active-member bond0 p1
+ovs-ofctl add-flow br0 actions=NORMAL
+
+AT_CHECK([ovs-appctl bond/show bond0 | STRIP_REBALANCE_TIME | STRIP_ACTIVE_MEMBER_MAC], [0], [dnl
+---- bond0 ----
+bond_mode: balance-slb
+bond may use recirculation: no, Recirc-ID : -1
+bond-hash-basis: 0
+lb_output action: disabled, bond-id: -1
+updelay: 0 ms
+downdelay: 0 ms
+<next rebalance del>
+lacp_status: off
+lacp_fallback_ab: false
+active-backup primary: <none>
+<active member mac del>
+
+member p1: enabled
+  active member
+  may_enable: true
+
+member p2: enabled
+  may_enable: true
+
+])
+
+AT_CHECK([ovs-appctl ofproto/trace br0 in_port=1,dl_dst=ff:ff:ff:ff:ff:ff], [0], [dnl
+Flow: in_port=1,vlan_tci=0x0000,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+
+bridge("br0")
+-------------
+ 0. priority 32768
+    NORMAL
+     -> no learned MAC for destination, flooding
+
+Final flow: unchanged
+Megaflow: recirc_id=0,eth,in_port=1,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+Datapath actions: 100
+])
+
+AT_CHECK([ovs-appctl ofproto/trace br0 in_port=2,dl_dst=ff:ff:ff:ff:ff:ff], [0], [stdout])
+AT_CHECK([cat stdout], [0], [dnl
+Flow: in_port=2,vlan_tci=0x0000,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+
+bridge("br0")
+-------------
+ 0. priority 32768
+    NORMAL
+     -> bonding refused admissibility, dropping
+
+Final flow: unchanged
+Megaflow: recirc_id=0,eth,in_port=2,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+Datapath actions: drop
+])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([bond - allow duplicated frames])
+# In some specific deployments, we may want to allow these multicast
+# frames on the second interface
+OVS_VSWITCHD_START([dnl
+        add-bond br0 bond0 p1 p2 --\
+        set Port bond0 bond-mode=balance-slb \
+                       other_config:all_members_active=true --\
+        set Interface p1 type=dummy ofport_request=1 --\
+        set Interface p2 type=dummy ofport_request=2 ])
+
+ovs-appctl bond/set-active-member bond0 p1
+ovs-ofctl add-flow br0 actions=NORMAL
+AT_CHECK([ovs-appctl ofproto/trace br0 in_port=1,dl_dst=ff:ff:ff:ff:ff:ff], [0], [dnl
+Flow: in_port=1,vlan_tci=0x0000,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+
+bridge("br0")
+-------------
+ 0. priority 32768
+    NORMAL
+     -> no learned MAC for destination, flooding
+
+Final flow: unchanged
+Megaflow: recirc_id=0,eth,in_port=1,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+Datapath actions: 100
+])
+
+AT_CHECK([ovs-appctl ofproto/trace br0 in_port=2,dl_dst=ff:ff:ff:ff:ff:ff], [0], [dnl
+Flow: in_port=2,vlan_tci=0x0000,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+
+bridge("br0")
+-------------
+ 0. priority 32768
+    NORMAL
+     -> no learned MAC for destination, flooding
+
+Final flow: unchanged
+Megaflow: recirc_id=0,eth,in_port=2,dl_src=00:00:00:00:00:00,dl_dst=ff:ff:ff:ff:ff:ff,dl_type=0x0000
+Datapath actions: 100
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
