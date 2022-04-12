@@ -200,8 +200,8 @@ ds_put_strftime_msec(struct ds *ds, const char *template, long long int when,
 
     for (;;) {
         size_t avail = ds->string ? ds->allocated - ds->length + 1 : 0;
-        size_t used = strftime_msec(&ds->string[ds->length], avail, template,
-                                    &tm);
+        char *dest = ds->string ? &ds->string[ds->length] : NULL;
+        size_t used = strftime_msec(dest, avail, template, &tm);
         if (used) {
             ds->length += used;
             return;
