@@ -18,6 +18,8 @@
 #include <config.h>
 #include "dpdk.h"
 
+#include <stdint.h>
+
 #include "smap.h"
 #include "ovs-thread.h"
 #include "openvswitch/vlog.h"
@@ -91,4 +93,10 @@ dpdk_status(const struct ovsrec_open_vswitch *cfg)
         ovsrec_open_vswitch_set_dpdk_initialized(cfg, false);
         ovsrec_open_vswitch_set_dpdk_version(cfg, "none");
     }
+}
+
+uint32_t
+dpdk_buf_size(int mtu)
+{
+    return 0;
 }

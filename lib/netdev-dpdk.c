@@ -82,21 +82,7 @@ COVERAGE_DEFINE(vhost_notification);
 #define OVS_CACHE_LINE_SIZE CACHE_LINE_SIZE
 #define OVS_VPORT_DPDK "ovs_dpdk"
 
-/*
- * need to reserve tons of extra space in the mbufs so we can align the
- * DMA addresses to 4KB.
- * The minimum mbuf size is limited to avoid scatter behaviour and drop in
- * performance for standard Ethernet MTU.
- */
-#define ETHER_HDR_MAX_LEN           (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN \
-                                     + (2 * VLAN_HEADER_LEN))
-#define MTU_TO_FRAME_LEN(mtu)       ((mtu) + RTE_ETHER_HDR_LEN + \
-                                     RTE_ETHER_CRC_LEN)
-#define MTU_TO_MAX_FRAME_LEN(mtu)   ((mtu) + ETHER_HDR_MAX_LEN)
-#define FRAME_LEN_TO_MTU(frame_len) ((frame_len)                    \
-                                     - RTE_ETHER_HDR_LEN - RTE_ETHER_CRC_LEN)
-#define NETDEV_DPDK_MBUF_ALIGN      1024
-#define NETDEV_DPDK_MAX_PKT_LEN     9728
+
 
 /* Max and min number of packets in the mempool. OVS tries to allocate a
  * mempool with MAX_NB_MBUF: if this fails (because the system doesn't have
@@ -554,22 +540,6 @@ is_dpdk_class(const struct netdev_class *class)
 {
     return class->destruct == netdev_dpdk_destruct
            || class->destruct == netdev_dpdk_vhost_destruct;
-}
-
-/* DPDK NIC drivers allocate RX buffers at a particular granularity, typically
- * aligned at 1k or less. If a declared mbuf size is not a multiple of this
- * value, insufficient buffers are allocated to accomodate the packet in its
- * entirety. Furthermore, certain drivers need to ensure that there is also
- * sufficient space in the Rx buffer to accommodate two VLAN tags (for QinQ
- * frames). If the RX buffer is too small, then the driver enables scatter RX
- * behaviour, which reduces performance. To prevent this, use a buffer size
- * that is closest to 'mtu', but which satisfies the aforementioned criteria.
- */
-static uint32_t
-dpdk_buf_size(int mtu)
-{
-    return ROUND_UP(MTU_TO_MAX_FRAME_LEN(mtu), NETDEV_DPDK_MBUF_ALIGN)
-            + RTE_PKTMBUF_HEADROOM;
 }
 
 /* Allocates an area of 'sz' bytes from DPDK.  The memory is zero'ed.
