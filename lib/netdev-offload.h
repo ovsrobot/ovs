@@ -124,7 +124,8 @@ int netdev_get_hw_info(struct netdev *, int);
 void netdev_set_hw_info(struct netdev *, int, int);
 bool netdev_any_oor(void);
 bool netdev_is_flow_api_enabled(void);
-void netdev_set_flow_api_enabled(const struct smap *ovs_other_config);
+void netdev_set_flow_api_enabled(const struct smap *ovs_other_config,
+                                 bool flow_restore_wait);
 bool netdev_is_offload_rebalance_policy_enabled(void);
 int netdev_flow_get_n_flows(struct netdev *netdev, uint64_t *n_flows);
 

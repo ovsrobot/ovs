@@ -813,7 +813,8 @@ datapath_reconfigure(const struct ovsrec_open_vswitch *cfg)
 }
 
 static void
-bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
+bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg,
+                   bool flow_restore_wait)
 {
     struct sockaddr_in *managers;
     struct bridge *br;
@@ -922,7 +923,9 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
                 /* Clear eventual previous errors */
                 ovsrec_interface_set_error(iface->cfg, NULL);
                 iface_configure_cfm(iface);
-                iface_configure_qos(iface, port->cfg->qos);
+                if (!flow_restore_wait) {
+                    iface_configure_qos(iface, port->cfg->qos);
+                }
                 iface_set_mac(br, port, iface);
                 ofproto_port_set_bfd(br->ofproto, iface->ofp_port,
                                      &iface->cfg->bfd);
@@ -3289,7 +3292,8 @@ bridge_run(void)
     cfg = ovsrec_open_vswitch_first(idl);
 
     if (cfg) {
-        netdev_set_flow_api_enabled(&cfg->other_config);
+        netdev_set_flow_api_enabled(&cfg->other_config,
+                                    ofproto_get_flow_restore_wait());
         dpdk_init(&cfg->other_config);
         userspace_tso_init(&cfg->other_config);
     }
@@ -3328,7 +3332,8 @@ bridge_run(void)
 
         idl_seqno = ovsdb_idl_get_seqno(idl);
         txn = ovsdb_idl_txn_create(idl);
-        bridge_reconfigure(cfg ? cfg : &null_cfg);
+        bridge_reconfigure(cfg ? cfg : &null_cfg,
+                           ofproto_get_flow_restore_wait());
 
         if (cfg) {
             ovsrec_open_vswitch_set_cur_cfg(cfg, cfg->next_cfg);
