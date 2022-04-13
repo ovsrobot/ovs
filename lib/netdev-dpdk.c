@@ -765,6 +765,10 @@ dpdk_mp_get(struct netdev_dpdk *dev, int mtu, bool per_port_mp)
     /* Check if shared memory is being used, if so check existing mempools
      * to see if reuse is possible. */
     if (!per_port_mp) {
+        /* If user has provided defined mempools, check if one is suitable
+         * and get new buffer size.*/
+        mtu = dpdk_get_user_adjusted_mtu(mtu, dev->requested_mtu,
+                                         dev->requested_socket_id);
         LIST_FOR_EACH (dmp, list_node, &dpdk_mp_list) {
             if (dmp->socket_id == dev->requested_socket_id
                 && dmp->mtu == mtu) {

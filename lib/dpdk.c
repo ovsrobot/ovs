@@ -35,6 +35,7 @@
 #include "netdev-dpdk.h"
 #include "netdev-offload-provider.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/ofp-parse.h"
 #include "openvswitch/vlog.h"
 #include "ovs-atomic.h"
 #include "ovs-numa.h"
@@ -56,6 +57,14 @@ static bool per_port_memory = false; /* Status of per port memory support */
 
 /* Indicates successful initialization of DPDK. */
 static atomic_bool dpdk_initialized = ATOMIC_VAR_INIT(false);
+
+struct user_mempool_config {
+    int adj_mtu;
+    int socket_id;
+};
+
+static struct user_mempool_config *user_mempools = NULL;
+static int n_user_mempools;
 
 static int
 process_vhost_flags(char *flag, const char *default_val, int size,
@@ -343,6 +352,63 @@ malloc_dump_stats_wrapper(FILE *stream)
     rte_malloc_dump_stats(stream, NULL);
 }
 
+static int
+parse_user_mempools_list(const char *mtus)
+{
+    char *list, *key, *value;
+    int error = 0;
+
+    if (!mtus) {
+        return 0;
+    }
+
+    n_user_mempools = 0;
+    list = xstrdup(mtus);
+
+    while (ofputil_parse_key_value(&list, &key, &value)) {
+        int socket_id, mtu, i, adj_mtu;
+
+        if (!str_to_int(key, 0, &mtu) || mtu < 0) {
+            error = EINVAL;
+            break;
+        }
+
+        if (!str_to_int(value, 0, &socket_id)) {
+            /* No socket specified. It will apply for all numas. */
+            socket_id = INT_MAX;
+        } else if (socket_id < 0) {
+            error = EINVAL;
+            break;
+        }
+
+        adj_mtu = FRAME_LEN_TO_MTU(dpdk_buf_size(mtu));
+
+        for (i = 0; i < n_user_mempools; i++) {
+            if (user_mempools[i].adj_mtu == adj_mtu &&
+                    (user_mempools[i].socket_id == INT_MAX ||
+                    user_mempools[i].socket_id == socket_id)) {
+                /* Already have this adjusted mtu. */
+                VLOG_INFO("User configured shared memory mempool with "
+                          "mbuf size of %d already set that caters for: "
+                          "MTU %d, NUMA %s." ,adj_mtu, mtu,
+                          socket_id == INT_MAX ? "ALL" : value);
+                break;
+            }
+        }
+        if (i == n_user_mempools) {
+            /* Existing entry does not cover this mtu, create a new one. */
+            user_mempools = xrealloc(user_mempools, (n_user_mempools + 1) *
+                                     sizeof(struct user_mempool_config));
+            user_mempools[n_user_mempools].adj_mtu = adj_mtu;
+            user_mempools[n_user_mempools++].socket_id = socket_id;
+            VLOG_INFO("User configured shared memory mempool set for: "
+                      "MTU %d, NUMA %s.",mtu,
+                      socket_id == INT_MAX ? "ALL" : value);
+        }
+    }
+    return error;
+}
+
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
 {
@@ -353,6 +419,8 @@ dpdk_init__(const struct smap *ovs_other_config)
     int err = 0;
     struct ovs_numa_dump *affinity = NULL;
     struct svec args = SVEC_EMPTY_INITIALIZER;
+    const char *mempoolcfg = smap_get(ovs_other_config,
+                                      "dpdk-shared-memory-config");
 
     log_stream = fopencookie(NULL, "w+", dpdk_log_func);
     if (log_stream == NULL) {
@@ -404,6 +472,8 @@ dpdk_init__(const struct smap *ovs_other_config)
                                     "per-port-memory", false);
     VLOG_INFO("Per port memory for DPDK devices %s.",
               per_port_memory ? "enabled" : "disabled");
+
+    parse_user_mempools_list(mempoolcfg);
 
     svec_add(&args, ovs_get_program_name());
     construct_dpdk_args(ovs_other_config, &args);
@@ -651,4 +721,38 @@ dpdk_buf_size(int mtu)
 {
     return ROUND_UP(MTU_TO_MAX_FRAME_LEN(mtu), NETDEV_DPDK_MBUF_ALIGN)
             + RTE_PKTMBUF_HEADROOM;
+}
+
+int
+dpdk_get_user_adjusted_mtu(int port_adj_mtu, int port_mtu, int port_socket_id)
+{
+    int best_adj_user_mtu = INT_MAX;
+
+    for (unsigned i = 0; i < n_user_mempools; i++) {
+        int user_adj_mtu, user_socket_id;
+
+        user_adj_mtu = user_mempools[i].adj_mtu;
+        user_socket_id = user_mempools[i].socket_id;
+        if (port_adj_mtu > user_adj_mtu ||
+                (user_socket_id != INT_MAX &&
+                 user_socket_id != port_socket_id)) {
+            continue;
+        }
+        if (user_adj_mtu - port_adj_mtu < best_adj_user_mtu - port_adj_mtu) {
+            /* This is the is the lowest valid user MTU. */
+            best_adj_user_mtu  = user_adj_mtu;
+        }
+    }
+
+    if (best_adj_user_mtu == INT_MAX) {
+        VLOG_DBG("No user configured shared memory mempool mbuf sizes found "
+                 "suitable for port with MTU %d, NUMA %d.", port_mtu,
+                 port_socket_id);
+        best_adj_user_mtu = port_adj_mtu;
+    } else {
+        VLOG_DBG("Found user configured shared memory mempool with mbufs "
+                 "of size %d, suitable for port with MTU %d, NUMA %d.",
+                 best_adj_user_mtu, port_mtu, port_socket_id);
+    }
+    return best_adj_user_mtu;
 }

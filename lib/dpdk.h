@@ -63,5 +63,7 @@ bool dpdk_available(void);
 void print_dpdk_version(void);
 void dpdk_status(const struct ovsrec_open_vswitch *);
 uint32_t dpdk_buf_size(int mtu);
+int dpdk_get_user_adjusted_mtu(int port_adj_mtu, int port_mtu,
+                               int port_socket_id);
 
 #endif /* dpdk.h */

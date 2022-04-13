@@ -100,3 +100,11 @@ dpdk_buf_size(int mtu OVS_UNUSED)
 {
     return 0;
 }
+
+int
+dpdk_get_user_adjusted_mtu(int port_adj_mtu OVS_UNUSED,
+                           int port_mtu OVS_UNUSED,
+                           int port_socket_id OVS_UNUSED)
+{
+    return 0;
+}
