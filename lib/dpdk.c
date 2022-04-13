@@ -24,6 +24,7 @@
 
 #include <rte_cpuflags.h>
 #include <rte_errno.h>
+#include <rte_ether.h>
 #include <rte_log.h>
 #include <rte_malloc.h>
 #include <rte_memzone.h>
@@ -634,4 +635,20 @@ dpdk_status(const struct ovsrec_open_vswitch *cfg)
         ovsrec_open_vswitch_set_dpdk_initialized(cfg, dpdk_available());
         ovsrec_open_vswitch_set_dpdk_version(cfg, rte_version());
     }
+}
+
+/* DPDK NIC drivers allocate RX buffers at a particular granularity, typically
+ * aligned at 1k or less. If a declared mbuf size is not a multiple of this
+ * value, insufficient buffers are allocated to accomodate the packet in its
+ * entirety. Furthermore, certain drivers need to ensure that there is also
+ * sufficient space in the Rx buffer to accommodate two VLAN tags (for QinQ
+ * frames). If the RX buffer is too small, then the driver enables scatter RX
+ * behaviour, which reduces performance. To prevent this, use a buffer size
+ * that is closest to 'mtu', but which satisfies the aforementioned criteria.
+ */
+uint32_t
+dpdk_buf_size(int mtu)
+{
+    return ROUND_UP(MTU_TO_MAX_FRAME_LEN(mtu), NETDEV_DPDK_MBUF_ALIGN)
+            + RTE_PKTMBUF_HEADROOM;
 }

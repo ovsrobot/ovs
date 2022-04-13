@@ -18,6 +18,7 @@
 #define DPDK_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef DPDK_NETDEV
 
@@ -32,6 +33,22 @@
 
 #endif /* DPDK_NETDEV */
 
+/*
+ * need to reserve tons of extra space in the mbufs so we can align the
+ * DMA addresses to 4KB.
+ * The minimum mbuf size is limited to avoid scatter behaviour and drop in
+ * performance for standard Ethernet MTU.
+ */
+#define ETHER_HDR_MAX_LEN           (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN \
+                                     + (2 * VLAN_HEADER_LEN))
+#define MTU_TO_FRAME_LEN(mtu)       ((mtu) + RTE_ETHER_HDR_LEN + \
+                                     RTE_ETHER_CRC_LEN)
+#define MTU_TO_MAX_FRAME_LEN(mtu)   ((mtu) + ETHER_HDR_MAX_LEN)
+#define FRAME_LEN_TO_MTU(frame_len) ((frame_len)                    \
+                                     - RTE_ETHER_HDR_LEN - RTE_ETHER_CRC_LEN)
+#define NETDEV_DPDK_MBUF_ALIGN      1024
+#define NETDEV_DPDK_MAX_PKT_LEN     9728
+
 struct smap;
 struct ovsrec_open_vswitch;
 
@@ -45,5 +62,6 @@ bool dpdk_per_port_memory(void);
 bool dpdk_available(void);
 void print_dpdk_version(void);
 void dpdk_status(const struct ovsrec_open_vswitch *);
+uint32_t dpdk_buf_size(int mtu);
 
 #endif /* dpdk.h */
