@@ -4101,6 +4101,15 @@ r r c c c.
         opcodes greater than 255 are treated as 0; this works adequately
         because in practice ARP and RARP only use opcodes 1 through 4.
       </p>
+
+      <p>
+        In the case of fragmented traffic, a difference exists in the way
+        the field acts for IPv4 and IPv6 later fragments. Because of the
+        headers structure, the protocol type is not processed for IPv6
+        fragments with nonzero offset, meaning that matches based on this
+        field are not effective for those packets. Conversely, this limitation
+        does not apply to IPv4.
+      </p>
     </field>
 
     <field id="MFF_IP_TTL" title="IPv4/v6 TTL/Hop Limit">
