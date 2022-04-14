@@ -192,6 +192,7 @@ ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
     case OVS_KEY_ATTR_RECIRC_ID: return "recirc_id";
     case OVS_KEY_ATTR_PACKET_TYPE: return "packet_type";
     case OVS_KEY_ATTR_NSH: return "nsh";
+    case OVS_KEY_ATTR_IPV6_EXTHDRS: return "ipv6_exthdrs";
 
     case OVS_KEY_ATTR_TUNNEL_INFO: return "<error: kernel-only tunnel_info>";
     case __OVS_KEY_ATTR_MAX:
@@ -2747,6 +2748,7 @@ const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = {
     [OVS_KEY_ATTR_NSH]       = { .len = ATTR_LEN_NESTED,
                                  .next = ovs_nsh_key_attr_lens,
                                  .next_max = OVS_NSH_KEY_ATTR_MAX },
+    [OVS_KEY_ATTR_IPV6_EXTHDRS] = { .len = sizeof(struct ovs_key_ipv6_exthdrs) },
 };
 
 /* Returns the correct length of the payload for a flow key attribute of the
@@ -3263,6 +3265,7 @@ odp_mask_is_constant__(enum ovs_key_attr attr, const void *mask, size_t size,
     case OVS_KEY_ATTR_UNSPEC:
     case OVS_KEY_ATTR_ENCAP:
     case OVS_KEY_ATTR_TUNNEL_INFO:
+    case OVS_KEY_ATTR_IPV6_EXTHDRS:
     case __OVS_KEY_ATTR_MAX:
     default:
         return false;
@@ -4415,6 +4418,7 @@ format_odp_key_attr__(const struct nlattr *a, const struct nlattr *ma,
     }
     case OVS_KEY_ATTR_UNSPEC:
     case OVS_KEY_ATTR_TUNNEL_INFO:
+    case OVS_KEY_ATTR_IPV6_EXTHDRS:
     case __OVS_KEY_ATTR_MAX:
     default:
         format_generic_odp_key(a, ds);
@@ -6620,6 +6624,7 @@ odp_key_to_dp_packet(const struct nlattr *key, size_t key_len,
         case OVS_KEY_ATTR_PACKET_TYPE:
         case OVS_KEY_ATTR_NSH:
         case OVS_KEY_ATTR_TUNNEL_INFO:
+        case OVS_KEY_ATTR_IPV6_EXTHDRS:
         case __OVS_KEY_ATTR_MAX:
         default:
             break;
@@ -6977,6 +6982,12 @@ parse_l2_5_onward(const struct nlattr *attrs[OVS_KEY_ATTR_MAX + 1],
                 check_start = ipv6_key;
                 check_len = sizeof *ipv6_key;
                 expected_bit = OVS_KEY_ATTR_IPV6;
+            }
+        }
+        if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_IPV6_EXTHDRS)) {
+            if (!is_mask) {
+                *expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_IPV6_EXTHDRS;
+                VLOG_WARN_RL(&rl, "not parsing ipv6 exthdrs");
             }
         }
     } else if (src_flow->dl_type == htons(ETH_TYPE_ARP) ||
