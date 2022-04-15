@@ -14,6 +14,10 @@ Post-v2.17.0
    - OVSDB:
      * 'relay' service model now supports transaction history, i.e. honors the
        'last-txn-id' field in 'monitor_cond_since' requests from clients.
+   - OVSDB-IDL:
+     * New interfaces for explcitly setting column modes.  The combination
+       'OVSDB_IDL_MONITOR | OVSDB_IDL_TRACK' is now considered valid and
+       enables change tracking of write-only columns.
 
 
 v2.17.0 - 17 Feb 2022

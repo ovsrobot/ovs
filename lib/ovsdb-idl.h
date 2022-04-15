@@ -180,7 +180,8 @@ bool ovsdb_idl_server_has_column(const struct ovsdb_idl *,
  *
  *   - (OVSDB_IDL_MONITOR | OVSDB_IDL_ALERT | OVSDB_IDL_TRACK), for a column
  *     that a client wants to track using the change tracking
- *     ovsdb_idl_track_get_*() functions.
+ *     ovsdb_idl_track_get_*() functions.  OVSDB_IDL_ALERT can be omitted for
+ *     write-only columns.
  */
 #define OVSDB_IDL_MONITOR (1 << 0) /* Replicate this column? */
 #define OVSDB_IDL_ALERT   (1 << 1) /* Alert client when column changes? */
@@ -192,6 +193,11 @@ void ovsdb_idl_add_table(struct ovsdb_idl *,
 
 void ovsdb_idl_omit(struct ovsdb_idl *, const struct ovsdb_idl_column *);
 void ovsdb_idl_omit_alert(struct ovsdb_idl *, const struct ovsdb_idl_column *);
+
+void ovsdb_idl_set_column_mode(struct ovsdb_idl *,
+                               const struct ovsdb_idl_column *,
+                               unsigned char mode);
+void ovsdb_idl_set_column_mode_all(struct ovsdb_idl *, unsigned char mode);
 
 /* Change tracking.
  *

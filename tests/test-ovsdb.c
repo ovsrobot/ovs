@@ -56,6 +56,7 @@
 VLOG_DEFINE_THIS_MODULE(test_ovsdb);
 
 struct test_ovsdb_pvt_context {
+    bool track_alert;
     bool track;
 };
 
@@ -122,6 +123,15 @@ parse_options(int argc, char *argv[], struct test_ovsdb_pvt_context *pvt)
             break;
 
         case 'c':
+            if (optarg) {
+                if (!strcmp(optarg, "noalert")) {
+                    pvt->track_alert = false;
+                } else if (!strcmp(optarg, "alert")) {
+                    pvt->track_alert = true;
+                } else {
+                    ovs_fatal(0, "value %s is invalid", optarg);
+                }
+            }
             pvt->track = true;
             break;
 
@@ -2610,6 +2620,7 @@ update_conditions(struct ovsdb_idl *idl, char *commands)
 static void
 do_idl(struct ovs_cmdl_context *ctx)
 {
+    struct test_ovsdb_pvt_context *pvt = ctx->pvt;
     struct jsonrpc *rpc;
     struct ovsdb_idl *idl;
     unsigned int seqno = 0;
@@ -2618,9 +2629,6 @@ do_idl(struct ovs_cmdl_context *ctx)
     int step = 0;
     int error;
     int i;
-    bool track;
-
-    track = ((struct test_ovsdb_pvt_context *)(ctx->pvt))->track;
 
     idl = ovsdb_idl_create(ctx->argv[1], &idltest_idl_class, true, true);
     ovsdb_idl_set_leader_only(idl, false);
@@ -2637,8 +2645,13 @@ do_idl(struct ovs_cmdl_context *ctx)
         rpc = NULL;
     }
 
-    if (track) {
-        ovsdb_idl_track_add_all(idl);
+    if (pvt->track) {
+        unsigned char mode = OVSDB_IDL_MONITOR | OVSDB_IDL_TRACK;
+
+        if (pvt->track_alert) {
+            mode |= OVSDB_IDL_ALERT;
+        }
+        ovsdb_idl_set_column_mode_all(idl, mode);
     }
 
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -2683,7 +2696,7 @@ do_idl(struct ovs_cmdl_context *ctx)
             }
 
             /* Print update. */
-            if (track) {
+            if (pvt->track) {
                 print_idl_track(idl, step++, terse);
                 ovsdb_idl_track_clear(idl);
             } else {
