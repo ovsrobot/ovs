@@ -2784,16 +2784,16 @@ netdev_linux_set_policing(struct netdev *netdev_, uint32_t kbits_rate,
         goto out;
     }
 
-    /* Remove any existing ingress qdisc. */
-    error = tc_add_del_qdisc(ifindex, false, 0, TC_INGRESS);
-    if (error) {
-        VLOG_WARN_RL(&rl, "%s: removing policing failed: %s",
-                     netdev_name, ovs_strerror(error));
-        goto out;
-    }
-
     if (kbits_rate || kpkts_rate) {
         const char *cls_name = "matchall";
+
+        /* Remove any existing ingress qdisc. */
+        error = tc_add_del_qdisc(ifindex, false, 0, TC_INGRESS);
+        if (error) {
+            VLOG_WARN_RL(&rl, "%s: removing policing failed: %s",
+                         netdev_name, ovs_strerror(error));
+            goto out;
+        }
 
         error = tc_add_del_qdisc(ifindex, true, 0, TC_INGRESS);
         if (error) {

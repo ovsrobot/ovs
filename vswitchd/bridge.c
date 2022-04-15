@@ -3288,8 +3288,17 @@ bridge_run(void)
     }
     cfg = ovsrec_open_vswitch_first(idl);
 
+    /* Once the value of flow-restore-wait is false, we no longer should
+     * check its value from the database. */
+    if (cfg && ofproto_get_flow_restore_wait()) {
+        ofproto_set_flow_restore_wait(smap_get_bool(&cfg->other_config,
+                                        "flow-restore-wait", false));
+    }
+
     if (cfg) {
-        netdev_set_flow_api_enabled(&cfg->other_config);
+        if (!ofproto_get_flow_restore_wait()) {
+            netdev_set_flow_api_enabled(&cfg->other_config);
+        }
         dpdk_init(&cfg->other_config);
         userspace_tso_init(&cfg->other_config);
     }
@@ -3299,13 +3308,6 @@ bridge_run(void)
      * initialization has already occurred, bridge_init_ofproto()
      * returns immediately. */
     bridge_init_ofproto(cfg);
-
-    /* Once the value of flow-restore-wait is false, we no longer should
-     * check its value from the database. */
-    if (cfg && ofproto_get_flow_restore_wait()) {
-        ofproto_set_flow_restore_wait(smap_get_bool(&cfg->other_config,
-                                        "flow-restore-wait", false));
-    }
 
     bridge_run__();
 
