@@ -183,7 +183,7 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
          * classifed by vector mfex else do a scalar miniflow extract
          * for that packet.
          */
-        bool mfex_hit = !!(mf_mask & (1 << i));
+        bool mfex_hit = !!(mf_mask & (1ULL << i));
 
         /* Check for a partial hardware offload match. */
         if (hwol_enabled) {
@@ -204,7 +204,7 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
 
                 pkt_meta[i].bytes = dp_packet_size(packet);
                 phwol_hits++;
-                hwol_emc_smc_hitmask |= (1 << i);
+                hwol_emc_smc_hitmask |= (1ULL << i);
                 continue;
             }
         }
@@ -227,7 +227,7 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
             if (f) {
                 rules[i] = &f->cr;
                 emc_hits++;
-                hwol_emc_smc_hitmask |= (1 << i);
+                hwol_emc_smc_hitmask |= (1ULL << i);
                 continue;
             }
         }
@@ -237,7 +237,7 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
             if (f) {
                 rules[i] = &f->cr;
                 smc_hits++;
-                smc_hitmask |= (1 << i);
+                smc_hitmask |= (1ULL << i);
                 continue;
             }
         }
