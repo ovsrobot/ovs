@@ -183,6 +183,13 @@
         </p>
       </column>
 
+      <column name="other_config" key="ct-maxconns"
+              type='{"type": "integer", "minInteger": 0}'>
+        The maximum number of connection tracker entries allowed in the
+        datapath.  Only supported for userspace datapath.  This deprecates
+        "ovs-appctl dpctl/ct-set-maxconns" command.
+      </column>
+
       <column name="other_config" key="max-idle"
               type='{"type": "integer", "minInteger": 500}'>
         <p>
