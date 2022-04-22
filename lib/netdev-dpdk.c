@@ -2753,7 +2753,6 @@ dpdk_copy_dp_packet_to_mbuf(struct rte_mempool *mp, struct dp_packet *pkt_orig)
 /* Tx function. Transmit packets indefinitely */
 static void
 dpdk_do_tx_copy(struct netdev *netdev, int qid, struct dp_packet_batch *batch)
-    OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     const size_t batch_cnt = dp_packet_batch_size(batch);
 #if !defined(__CHECKER__) && !defined(_WIN32)
