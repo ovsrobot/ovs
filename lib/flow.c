@@ -539,7 +539,6 @@ parse_ipv6_ext_hdrs__(const void **datap, size_t *sizep, uint8_t *nw_proto,
                 *nw_frag = FLOW_NW_FRAG_ANY;
                 if (((*frag_hdr)->ip6f_offlg & IP6F_OFF_MASK) != htons(0)) {
                     *nw_frag |= FLOW_NW_FRAG_LATER;
-                    *nw_proto = IPPROTO_FRAGMENT;
                     return true;
                 }
             }
@@ -557,9 +556,8 @@ parse_ipv6_ext_hdrs__(const void **datap, size_t *sizep, uint8_t *nw_proto,
  * If a fragment header is found, '*frag_hdr' is set to the fragment
  * header and otherwise set to NULL.  If it is the first fragment,
  * extension header parsing otherwise continues as usual.  If it's not
- * the first fragment, 'nw_proto' is set to IPPROTO_FRAGMENT and 'nw_frag'
- * has FLOW_NW_FRAG_LATER set.  Both first and later fragments have
- * FLOW_NW_FRAG_ANY set in 'nw_frag'.
+ * the first fragment, 'nw_frag' has FLOW_NW_FRAG_LATER set. Both first
+ * and later fragments have FLOW_NW_FRAG_ANY set in 'nw_frag'.
  *
  * A return value of false indicates that there was a problem parsing
  * the extension headers.*/
