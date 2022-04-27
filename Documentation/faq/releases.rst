@@ -305,9 +305,8 @@ Q: Why are UDP tunnel checksums not computed for VXLAN or Geneve?
 
 Q: What features are not available when using the userspace datapath?
 
-    A: Tunnel virtual ports are not supported, as described in the previous
-    answer.  It is also not possible to use queue-related actions.  On Linux
-    kernels before 2.6.39, maximum-sized VLAN packets may not be transmitted.
+    A: It is not possible to use queue-related actions.  On Linux kernels
+    before 2.6.39, maximum-sized VLAN packets may not be transmitted.
 
 Q: Should userspace or kernel be upgraded first to minimize downtime?
 
