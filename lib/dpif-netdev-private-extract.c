@@ -124,8 +124,8 @@ dpif_miniflow_extract_init(void)
     /* For the first call, this will be choosen based on the
      * compile time flag.
      */
-    VLOG_INFO("Default MFEX Extract implementation is %s.\n",
-              mfex_impls[mfex_idx].name);
+    VLOG_DBG("Default MFEX Extract implementation is %s.\n",
+             mfex_impls[mfex_idx].name);
     atomic_store_relaxed(mfex_func, (uintptr_t) mfex_impls
                          [mfex_idx].extract_func);
 }
@@ -251,7 +251,7 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
     /* Run scalar miniflow_extract to get default result. */
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
         pkt_metadata_init(&packet->md, in_port);
-        miniflow_extract(packet, &keys[i]);
+        miniflow_extract_(packet, &keys[i]);
 
         /* Store known good metadata to compare with optimized metadata. */
         good_l2_5_ofs[i] = packet->l2_5_ofs;
@@ -347,7 +347,7 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
     }
 
     /* Having dumped the debug info for the batch, disable autovalidator. */
-    if (batch_failed) {
+    if (batch_failed && (pmd != NULL)) {
         atomic_store_relaxed(&pmd->miniflow_extract_opt, NULL);
     }
 

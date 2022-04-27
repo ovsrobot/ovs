@@ -543,6 +543,10 @@ struct pkt_metadata;
  * were extracted. */
 void
 miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key);
+
+void
+miniflow_extract_(struct dp_packet *packet, struct netdev_flow_key *key);
+
 void miniflow_map_init(struct miniflow *, const struct flow *);
 void flow_wc_map(const struct flow *, struct flowmap *);
 size_t miniflow_alloc(struct miniflow *dsts[], size_t n,

@@ -36,6 +36,8 @@
 #include "openvswitch/match.h"
 #include "dp-packet.h"
 #include "dpif-netdev-private-dpcls.h"
+#include "dpif-netdev-private-dpif.h"
+#include "dpif-netdev-private-extract.h"
 #include "openflow/openflow.h"
 #include "packets.h"
 #include "odp-util.h"
@@ -757,7 +759,7 @@ dump_invalid_packet(struct dp_packet *packet, const char *reason)
  *      of interest for the flow, otherwise UINT16_MAX.
  */
 void
-miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key)
+miniflow_extract_(struct dp_packet *packet, struct netdev_flow_key *key)
 {
     /* Add code to this function (or its callees) to extract new fields. */
     BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
@@ -1110,6 +1112,36 @@ miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key)
     }
  out:
     key->mf.map = mf.map;
+}
+
+void
+miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key)
+{
+#ifdef MFEX_AUTOVALIDATOR_DEFAULT
+    static struct ovsthread_once once_enable = OVSTHREAD_ONCE_INITIALIZER;
+    if (ovsthread_once_start(&once_enable)) {
+        dpif_miniflow_extract_init();
+        ovsthread_once_done(&once_enable);
+    }
+    struct dp_packet_batch packets;
+    const struct pkt_metadata *md = &packet->md;
+    dp_packet_batch_init(&packets);
+    dp_packet_batch_add(&packets, packet);
+    const uint32_t recirc_depth = *recirc_depth_get();
+
+    /* Currently AVX512 DPIF dont support recirculation
+     * Once the support will be added the condition would
+     * be removed.
+     */
+    if (recirc_depth) {
+        miniflow_extract_(packet, key);
+    } else {
+        dpif_miniflow_extract_autovalidator(&packets, key, 1,
+                                    odp_to_u32(md->in_port.odp_port), NULL);
+    }
+#else
+    miniflow_extract_(packet, key);
+#endif
 }
 
 static ovs_be16
