@@ -35,6 +35,7 @@
 #include "jhash.h"
 #include "openvswitch/match.h"
 #include "dp-packet.h"
+#include "dpif-netdev-private-dpcls.h"
 #include "openflow/openflow.h"
 #include "packets.h"
 #include "odp-util.h"
@@ -633,15 +634,13 @@ parse_nsh(const void **datap, size_t *sizep, struct ovs_key_nsh *key)
 void
 flow_extract(struct dp_packet *packet, struct flow *flow)
 {
-    struct {
-        struct miniflow mf;
-        uint64_t buf[FLOW_U64S];
-    } m;
+
+    struct netdev_flow_key key;
 
     COVERAGE_INC(flow_extract);
 
-    miniflow_extract(packet, &m.mf);
-    miniflow_expand(&m.mf, flow);
+    miniflow_extract(packet, &key);
+    miniflow_expand(&key.mf, flow);
 }
 
 static inline bool
@@ -758,7 +757,7 @@ dump_invalid_packet(struct dp_packet *packet, const char *reason)
  *      of interest for the flow, otherwise UINT16_MAX.
  */
 void
-miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
+miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key)
 {
     /* Add code to this function (or its callees) to extract new fields. */
     BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
@@ -767,7 +766,7 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
     const void *data = dp_packet_data(packet);
     size_t size = dp_packet_size(packet);
     ovs_be32 packet_type = packet->packet_type;
-    uint64_t *values = miniflow_values(dst);
+    uint64_t *values = miniflow_values(&key->mf);
     struct mf_ctx mf = { FLOWMAP_EMPTY_INITIALIZER, values,
                          values + FLOW_U64S };
     const char *frame;
@@ -1110,7 +1109,7 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         }
     }
  out:
-    dst->map = mf.map;
+    key->mf.map = mf.map;
 }
 
 static ovs_be16

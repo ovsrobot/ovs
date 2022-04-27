@@ -41,6 +41,7 @@ struct dp_packet;
 struct ofputil_port_map;
 struct pkt_metadata;
 struct match;
+struct netdev_flow_key;
 
 /* Some flow fields are mutually exclusive or only appear within the flow
  * pipeline.  IPv6 headers are bigger than IPv4 and MPLS, and IPv6 ND packets
@@ -540,7 +541,8 @@ struct pkt_metadata;
 /* The 'dst' must follow with buffer space for FLOW_U64S 64-bit units.
  * 'dst->map' is ignored on input and set on output to indicate which fields
  * were extracted. */
-void miniflow_extract(struct dp_packet *packet, struct miniflow *dst);
+void
+miniflow_extract(struct dp_packet *packet, struct netdev_flow_key *key);
 void miniflow_map_init(struct miniflow *, const struct flow *);
 void flow_wc_map(const struct flow *, struct flowmap *);
 size_t miniflow_alloc(struct miniflow *dsts[], size_t n,
