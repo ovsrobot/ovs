@@ -423,7 +423,7 @@ Helpful Tools
 There are a number of tools, online and offline, which can be used to preview
 documents are you edit them:
 
-- `rst.ninjs.org <http://rst.ninjs.org/>`__
+- `rst.ninjs.org <https://github.com/anru/rsted>`__
 
   An online rST editor/previewer
 

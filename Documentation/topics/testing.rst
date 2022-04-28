@@ -447,7 +447,7 @@ datapath testsuite.
   an updated iproute2 utilities package.  The package is available from
   the Linux kernel organization open source git repositories.
 
-  https://git.kernel.org/pub/scm/linux/kernel/git/shemminger/iproute2.git
+  https://git.kernel.org/pub/scm/linux/kernel/git/jkirsher/iproute2.git
 
 .. _testing-static-analysis:
 

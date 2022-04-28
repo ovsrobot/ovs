@@ -501,7 +501,7 @@ References
 
 .. [1] Hyper-V Extensible Switch https://msdn.microsoft.com/windows/hardware/drivers/network/hyper-v-extensible-switch
 .. [2] Hyper-V Extensible Switch Extensions https://msdn.microsoft.com/windows/hardware/drivers/network/hyper-v-extensible-switch-extensions
-.. [3] DPIF Provider http://openvswitch.sourcearchive.com/documentation/1.1.0-1/dpif-provider_8h_source.html
+.. [3] DPIF Provider https://github.com/openvswitch/ovs/blob/branch-2.17/lib/dpif-provider.h
 .. [4] Hyper-V Extensible Switch Components https://msdn.microsoft.com/windows/hardware/drivers/network/hyper-v-extensible-switch-components
 .. [5] Windows Filtering Platform https://msdn.microsoft.com/en-us/library/windows/desktop/aa366510(v=vs.85).aspx
 .. [6] IP Helper https://msdn.microsoft.com/windows/hardware/drivers/network/ip-helper
