@@ -628,8 +628,6 @@ mfex_avx512_process(struct dp_packet_batch *packets,
 
 #define DECLARE_MFEX_FUNC(name, profile)                                \
 uint32_t                                                                \
-__attribute__((__target__("avx512f")))                                  \
-__attribute__((__target__("avx512vl")))                                 \
 __attribute__((__target__("avx512vbmi")))                               \
 mfex_avx512_vbmi_##name(struct dp_packet_batch *packets,                \
                         struct netdev_flow_key *keys, uint32_t keys_size,\
@@ -641,8 +639,6 @@ mfex_avx512_vbmi_##name(struct dp_packet_batch *packets,                \
 }                                                                       \
                                                                         \
 uint32_t                                                                \
-__attribute__((__target__("avx512f")))                                  \
-__attribute__((__target__("avx512vl")))                                 \
 mfex_avx512_##name(struct dp_packet_batch *packets,                     \
                    struct netdev_flow_key *keys, uint32_t keys_size,    \
                    odp_port_t in_port, struct dp_netdev_pmd_thread      \
