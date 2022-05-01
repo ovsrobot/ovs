@@ -159,6 +159,7 @@
 
 #include "compiler.h"
 #include "ovs-atomic.h"
+#include "seq.h"
 
 #if __GNUC__
 #define OVSRCU_TYPE(TYPE) struct { ATOMIC(TYPE) p; }
@@ -309,5 +310,8 @@ bool ovsrcu_is_quiescent(void);
 void ovsrcu_synchronize(void);
 
 void ovsrcu_exit(void);
+
+void ovsrcu_barrier(void);
+
 
 #endif /* ovs-rcu.h */

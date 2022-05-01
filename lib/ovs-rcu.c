@@ -444,3 +444,31 @@ ovsrcu_init_module(void)
         ovsthread_once_done(&once);
     }
 }
+
+static void
+ovsrcu_barrier_func(void *seq_)
+{
+    struct seq *seq = (struct seq*)seq_;
+    seq_change(seq);
+}
+
+void
+ovsrcu_barrier(void)
+{
+    struct seq *seq = seq_create();
+    /* first let all threads flush their cbset */
+    ovsrcu_synchronize();
+
+    /* then register a new cbset, ensure this cbset
+     * is at the tail of global list
+     */
+    uint64_t seqno = seq_read(seq);
+    ovsrcu_postpone__(ovsrcu_barrier_func, (void*)seq);
+
+    do {
+        seq_wait(seq, seqno);
+        poll_block();
+    } while (seqno == seq_read(seq));
+
+    seq_destroy(seq);
+}
