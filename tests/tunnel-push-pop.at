@@ -808,6 +808,55 @@ NXST_FLOW reply:
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([tunnel_push_pop - multiple output])
+
+OVS_VSWITCHD_START([add-port br0 p0 -- set Interface p0 type=dummy ofport_request=1 other-config:hwaddr=aa:55:aa:55:00:00])
+AT_CHECK([ovs-vsctl add-port br0 m0 -- set Interface m0 type=dummy ofport_request=2])
+AT_CHECK([ovs-vsctl add-br int-br -- set bridge int-br datapath_type=dummy], [0])
+AT_CHECK([ovs-vsctl add-port int-br t1 -- set Interface t1 type=gre \
+                       options:remote_ip=1.1.2.92 options:key=456 options:seq=true ofport_request=4], [0])
+
+AT_CHECK([ovs-appctl dpif/show], [0], [dnl
+dummy@ovs-dummy: hit:0 missed:0
+  br0:
+    br0 65534/100: (dummy-internal)
+    m0 2/2: (dummy)
+    p0 1/1: (dummy)
+  int-br:
+    int-br 65534/3: (dummy-internal)
+    t1 4/4: (gre: key=456, remote_ip=1.1.2.92, seq=true)
+])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr m0 1.1.3.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 1.1.2.92/24 br0], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 1.1.3.92/24 m0], [0], [OK
+])
+AT_CHECK([ovs-ofctl add-flow br0 'arp,priority=1,action=normal'])
+
+dnl Use arp reply to achieve tunnel next hop mac binding
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 'recirc_id(0),in_port(1),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x0806),arp(sip=1.1.2.92,tip=1.1.2.88,op=2,sha=f8:bc:12:44:34:b6,tha=00:00:00:00:00:00)'])
+
+dnl Ouput gre pkt to both br0 port and m0 port
+dnl m0 port to simulate mirror port, or flood case
+AT_CHECK([ovs-ofctl add-flow br0 'in_port(1),ip,ip_proto=47,priority=99,action=br0,m0'])
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 'recirc_id(0),in_port(1),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x0800),ipv4(src=1.1.2.92,dst=1.1.2.88,proto=47,tos=0,ttl=64,frag=no)'])
+
+dnl port br0: has the configured ip address of tnl port t1, so 'tnl_pop(4)'
+dnl port m0: does not have a configured tnl ip address, so 'output:2'
+AT_CHECK([ovs-appctl dpctl/dump-flows], [0], [dnl
+flow-dump from the main thread:
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x0806),arp(sip=1.1.2.92,tip=1.1.2.88,op=2,sha=f8:bc:12:44:34:b6), packets:0, bytes:0, used:never, actions:100,2
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth(dst=aa:55:aa:55:00:00),eth_type(0x0800),ipv4(dst=1.1.2.88,proto=47,frag=no), packets:0, bytes:0, used:never, actions:tnl_pop(4),2
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([tunnel_push_pop - flow translation on unrelated bridges])
 
 OVS_VSWITCHD_START(

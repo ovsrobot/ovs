@@ -4107,18 +4107,26 @@ is_neighbor_reply_correct(const struct xlate_ctx *ctx, const struct flow *flow)
 }
 
 static bool
-xport_has_ip(const struct xport *xport)
+xport_has_ip(const struct xport *xport, const struct in6_addr ip6)
 {
     struct in6_addr *ip_addr, *mask;
     int n_in6 = 0;
+    int i;
+    bool hasip = false;
 
     if (netdev_get_addr_list(xport->netdev, &ip_addr, &mask, &n_in6)) {
         n_in6 = 0;
     } else {
+        for (i = 0; i < n_in6; i++) {
+            if (IN6_ARE_ADDR_EQUAL(ip_addr + i, &ip6)) {
+                hasip = true;
+                break;
+            }
+        }
         free(ip_addr);
         free(mask);
     }
-    return n_in6 ? true : false;
+    return hasip;
 }
 
 static bool
@@ -4127,26 +4135,35 @@ terminate_native_tunnel(struct xlate_ctx *ctx, const struct xport *xport,
                         odp_port_t *tnl_port)
 {
     *tnl_port = ODPP_NONE;
+    bool ip_pkt = true;
+    struct in6_addr ip_dst;
+
+    if (flow->dl_type == htons(ETH_TYPE_IP)) {
+        ip_dst = in6_addr_mapped_ipv4(flow->nw_dst);
+    } else if (flow->dl_type == htons(ETH_TYPE_IPV6)) {
+        ip_dst = flow->ipv6_dst;
+    } else {
+        ip_pkt = false;
+    }
 
     /* XXX: Write better Filter for tunnel port. We can use in_port
      * in tunnel-port flow to avoid these checks completely.
      *
-     * Port without an IP address cannot be a tunnel termination point.
-     * Not performing a lookup in this case to avoid unwildcarding extra
-     * flow fields (dl_dst). */
-    if (ovs_native_tunneling_is_on(ctx->xbridge->ofproto)
-        && xport_has_ip(xport)) {
+     * Not performing a lookup if dst ip not match, to avoid unwildcarding
+     * extra flow fields (dl_dst). Also avoid duplicate tnl_pop. */
+    if ((flow->dl_type == htons(ETH_TYPE_ARP) ||
+                flow->nw_proto == IPPROTO_ICMPV6) &&
+                is_neighbor_reply_correct(ctx, flow)) {
+            tnl_neigh_snoop(flow, wc, ctx->xbridge->name,
+                            ctx->xin->allow_side_effects);
+
+    } else if (ovs_native_tunneling_is_on(ctx->xbridge->ofproto)
+        && ip_pkt && xport_has_ip(xport, ip_dst)) {
         *tnl_port = tnl_port_map_lookup(flow, wc);
 
         /* If no tunnel port was found and it's about an ARP or ICMPv6 packet,
          * do tunnel neighbor snooping. */
-        if (*tnl_port == ODPP_NONE &&
-            (flow->dl_type == htons(ETH_TYPE_ARP) ||
-             flow->nw_proto == IPPROTO_ICMPV6) &&
-             is_neighbor_reply_correct(ctx, flow)) {
-            tnl_neigh_snoop(flow, wc, ctx->xbridge->name,
-                            ctx->xin->allow_side_effects);
-        } else if (*tnl_port != ODPP_NONE &&
+        if (*tnl_port != ODPP_NONE &&
                    ctx->xin->allow_side_effects &&
                    dl_type_is_ip_any(flow->dl_type)) {
             struct eth_addr mac = flow->dl_src;
