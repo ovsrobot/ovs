@@ -20,6 +20,17 @@ case $0 in
 esac
 . "$dir0/ovs-lib" || exit 1
 
+for dir in "$bindir" /sbin /bin /usr/sbin /usr/bin; do
+    case :$PATH: in
+        *:$dir:*) ;;
+        *)
+        case $dir in
+            $bindir) PATH=$dir:$PATH ;;
+            *) PATH=$PATH:$dir ;;
+        esac
+    esac
+done
+
 usage() {
     UTIL=$(basename $0)
     cat <<EOF
