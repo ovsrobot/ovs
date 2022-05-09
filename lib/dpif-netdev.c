@@ -4827,6 +4827,17 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         }
     }
 
+    uint32_t ct_maxconns, cur_maxconns;
+    ct_maxconns = smap_get_int(other_config, "userspace-ct-maxconns",
+                               UINT32_MAX);
+    /* Leave runtime value as it is when cfg is removed. */
+    if (ct_maxconns < UINT32_MAX) {
+        conntrack_get_maxconns(dp->conntrack, &cur_maxconns);
+        if (ct_maxconns != cur_maxconns) {
+            conntrack_set_maxconns(dp->conntrack, ct_maxconns);
+        }
+    }
+
     bool smc_enable = smap_get_bool(other_config, "smc-enable", false);
     bool cur_smc;
     atomic_read_relaxed(&dp->smc_enable_db, &cur_smc);
