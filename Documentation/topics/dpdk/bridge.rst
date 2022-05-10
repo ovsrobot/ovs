@@ -321,3 +321,28 @@ following command::
 ``scalar`` can be selected on core ``3`` by the following command::
 
     $ ovs-appctl dpif-netdev/miniflow-parser-set -pmd 3 scalar
+
+Actions Performance
+-------------------
+
+Actions are used in OpenFlow flows to describe what to do when the flow
+matches a packet. Just like with the datapath interface, SIMD instructions
+can be applied to the action implementation to improve performance.
+
+OVS provides multiple implementations of the actions.
+Available implementations can be listed with the following command::
+
+    $ ovs-appctl dpif-netdev/action-impl-get
+        Available Actions implementations:
+            scalar (available: True, active: True)
+            autovalidator (available: True, active: False)
+            avx512 (available: True, active: False)
+
+By default, ``scalar`` is used.  Implementations can be selected by
+name::
+
+    $ ovs-appctl dpif-netdev/action-impl-set avx512
+    action implementation set to avx512.
+
+    $ ovs-appctl dpif-netdev/action-impl-set scalar
+    action implementation set to scalar.

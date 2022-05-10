@@ -71,6 +71,9 @@ enum odp_execute_action_impl_idx {
      * Do not change the autovalidator position in this list without updating
      * the define below.
      */
+    #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
+    ACTION_IMPL_AVX512,
+    #endif
 
     ACTION_IMPL_MAX,
 };
@@ -95,5 +98,11 @@ int32_t odp_execute_action_set(const char *name,
  * file, and initializes the function pointers for optimized action types.
  */
 int32_t odp_action_scalar_init(struct odp_execute_action_impl *self);
+
+/* Init function for the optimized with AVX512 actions. */
+int32_t action_avx512_init(void);
+
+/* Probe function to check ISA requirements. */
+int32_t action_avx512_probe(void);
 
 #endif /* ODP_EXTRACT_PRIVATE */
