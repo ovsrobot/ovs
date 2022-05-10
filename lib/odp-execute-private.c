@@ -82,6 +82,20 @@ odp_execute_action_set(const char *name,
 }
 
 void
+odp_execute_action_get(struct ds *string)
+{
+    uint32_t i;
+
+    ds_put_cstr(string, "Available Actions implementations:\n");
+    for (i = 0; i < ACTION_IMPL_MAX; i++) {
+        ds_put_format(string, "  %s (available: %s, active: %s)\n",
+                      action_impls[i].name,
+                      action_impls[i].available ? "True" : "False",
+                      i == active_action_impl_index ? "True" : "False");
+    }
+}
+
+void
 odp_execute_action_init(void)
 {
     /* Call probe on each impl, and cache the result. */

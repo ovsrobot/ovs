@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include "openvswitch/types.h"
 
+struct ds;
 struct nlattr;
 struct dp_packet;
 struct pkt_metadata;
@@ -32,6 +33,8 @@ struct dp_packet_batch;
 /* Called once at initialization time. */
 void odp_execute_init(void);
 
+/* Runtime update get/set functionality. */
+int32_t odp_actions_impl_get(struct ds *name);
 int32_t odp_actions_impl_set(const char *name);
 
 typedef void (*odp_execute_cb)(void *dp, struct dp_packet_batch *batch,
