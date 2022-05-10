@@ -31,6 +31,8 @@ int32_t action_autoval_init(struct odp_execute_action_impl *self);
 VLOG_DEFINE_THIS_MODULE(odp_execute_private);
 static uint32_t active_action_impl_index;
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+static struct odp_execute_action_impl active_impl;
+static bool set_masked = false;
 
 static struct odp_execute_action_impl action_impls[] = {
     [ACTION_IMPL_AUTOVALIDATOR] = {
@@ -63,6 +65,11 @@ action_impl_init_funcs(struct odp_execute_action_impl *to)
     for (uint32_t i = 0; i < __OVS_ACTION_ATTR_MAX; i++) {
         atomic_init(&to->funcs[i], NULL);
     }
+
+    for (uint32_t i = 0; i < __OVS_KEY_ATTR_MAX; i++) {
+        atomic_init(&to->set_masked_funcs[i], NULL);
+    }
+
 }
 
 static void
@@ -71,6 +78,11 @@ action_impl_copy_funcs(struct odp_execute_action_impl *to,
 {
     for (uint32_t i = 0; i < __OVS_ACTION_ATTR_MAX; i++) {
         atomic_store_relaxed(&to->funcs[i], from->funcs[i]);
+    }
+
+    for (uint32_t i = 0; i < __OVS_KEY_ATTR_MAX; i++) {
+        atomic_store_relaxed(&to->set_masked_funcs[i],
+                             from->set_masked_funcs[i]);
     }
 }
 
@@ -155,21 +167,40 @@ action_autoval_generic(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
     uint32_t failed = 0;
 
     int type = nl_attr_type(a);
-    enum ovs_action_attr attr_type = (enum ovs_action_attr) type;
+    enum ovs_action_attr action_attr_type = (enum ovs_action_attr) type;
+    enum ovs_key_attr key_attr_type = (enum ovs_key_attr) type;
+
+    if (action_attr_type == OVS_ACTION_ATTR_SET_MASKED) {
+        set_masked = true;
+        const struct nlattr *key = nl_attr_get(a);
+        key_attr_type = nl_attr_type(key);
+    }
 
     struct odp_execute_action_impl *scalar = &action_impls[ACTION_IMPL_SCALAR];
 
     struct dp_packet_batch good_batch;
     dp_packet_batch_clone(&good_batch, batch);
-
-    scalar->funcs[attr_type](NULL, &good_batch, a, should_steal);
+    if (!set_masked) {
+        scalar->funcs[action_attr_type](NULL, &good_batch, a, should_steal);
+    } else {
+        scalar->set_masked_funcs[key_attr_type](NULL, &good_batch, a,
+                                                should_steal);
+    }
 
     for (uint32_t impl = ACTION_IMPL_BEGIN; impl < ACTION_IMPL_MAX; impl++) {
         /* Clone original batch and execute implementation under test. */
         struct dp_packet_batch test_batch;
         dp_packet_batch_clone(&test_batch, batch);
-        action_impls[impl].funcs[attr_type](NULL, &test_batch, a,
-                                            should_steal);
+
+        if (!set_masked) {
+            action_impls[impl].funcs[action_attr_type](NULL, &test_batch, a,
+                                                       should_steal);
+        } else {
+            action_impls[impl].set_masked_funcs[key_attr_type](NULL,
+                                                               &test_batch,
+                                                               a,
+                                                               should_steal);
+        }
 
         /* Loop over implementations, checking each one. */
         for (uint32_t pidx = 0; pidx < batch->count; pidx++) {
@@ -221,7 +252,29 @@ action_autoval_generic(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
     dp_packet_delete_batch(&good_batch, 1);
 
     /* Apply the action to the original batch for continued processing. */
-    scalar->funcs[attr_type](NULL, batch, a, should_steal);
+    if (!set_masked) {
+        scalar->funcs[action_attr_type](NULL, batch, a, should_steal);
+    } else {
+        scalar->set_masked_funcs[key_attr_type](NULL, batch, a, should_steal);
+    }
+
+    set_masked = false;
+}
+
+static void
+action_set_masked_init(void *dp OVS_UNUSED,
+                       struct dp_packet_batch *batch OVS_UNUSED,
+                       const struct nlattr *a,
+                       bool should_steal OVS_UNUSED)
+{
+    a = nl_attr_get(a);
+    enum ovs_key_attr attr_type = nl_attr_type(a);
+
+    if (active_impl.set_masked_funcs[attr_type]) {
+        set_masked = true;
+        active_impl.set_masked_funcs[attr_type](NULL, batch, a, should_steal);
+    }
+
 }
 
 int32_t
@@ -229,6 +282,9 @@ action_autoval_init(struct odp_execute_action_impl *self)
 {
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_autoval_generic;
     self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_autoval_generic;
+    self->funcs[OVS_ACTION_ATTR_SET_MASKED] = action_set_masked_init;
+    self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] = action_autoval_generic;
+    active_impl = *self;
 
     return 0;
 }

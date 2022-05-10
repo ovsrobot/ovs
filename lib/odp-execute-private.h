@@ -60,7 +60,9 @@ struct odp_execute_action_impl {
     odp_execute_action_init_func init_func;
 
     /* An array of callback functions, one for each action. */
-    ATOMIC(odp_execute_cb) funcs[__OVS_KEY_ATTR_MAX];
+    ATOMIC(odp_execute_cb) funcs[__OVS_ACTION_ATTR_MAX];
+    /* An array of callback functions, one for each key. */
+    ATOMIC(odp_execute_cb) set_masked_funcs[__OVS_KEY_ATTR_MAX];
 };
 
 /* Order of Actions implementations. */
@@ -93,7 +95,6 @@ void odp_execute_action_init(void);
 void odp_execute_action_get(struct ds *name);
 int32_t odp_execute_action_set(const char *name,
                                struct odp_execute_action_impl *active);
-
 /* Init function for the scalar implementation. Calls into the odp-execute.c
  * file, and initializes the function pointers for optimized action types.
  */

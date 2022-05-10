@@ -561,8 +561,6 @@ odp_execute_set_action(struct dp_packet *packet, const struct nlattr *a)
     }
 }
 
-#define get_mask(a, type) ((const type *)(const void *)(a + 1) + 1)
-
 static void
 odp_execute_masked_set_action(struct dp_packet *packet,
                               const struct nlattr *a)
@@ -580,11 +578,6 @@ odp_execute_masked_set_action(struct dp_packet *packet,
     case OVS_KEY_ATTR_SKB_MARK:
         md->pkt_mark = nl_attr_get_u32(a)
             | (md->pkt_mark & ~*get_mask(a, uint32_t));
-        break;
-
-    case OVS_KEY_ATTR_ETHERNET:
-        odp_eth_set_addrs(packet, nl_attr_get(a),
-                          get_mask(a, struct ovs_key_ethernet));
         break;
 
     case OVS_KEY_ATTR_NSH: {
@@ -661,6 +654,7 @@ odp_execute_masked_set_action(struct dp_packet *packet,
     case OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4:
     case OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6:
     case OVS_KEY_ATTR_ENCAP:
+    case OVS_KEY_ATTR_ETHERNET:
     case OVS_KEY_ATTR_ETHERTYPE:
     case OVS_KEY_ATTR_IN_PORT:
     case OVS_KEY_ATTR_VLAN:
@@ -833,6 +827,11 @@ requires_datapath_assistance(const struct nlattr *a)
 
     return false;
 }
+/* The active function pointers on the datapath. ISA optimized implementations
+ * are enabled by plugging them into this static arary, which is consulted when
+ * applying actions on the datapath.
+ */
+static struct odp_execute_action_impl actions_active_impl;
 
 static void
 action_pop_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
@@ -858,6 +857,41 @@ action_push_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
     }
 }
 
+static void
+action_set_masked(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                const struct nlattr *a OVS_UNUSED,
+                bool should_steal OVS_UNUSED)
+{
+    struct dp_packet *packet;
+
+    const struct nlattr *key = nl_attr_get(a);
+    enum ovs_key_attr key_type = nl_attr_type(key);
+
+    if (actions_active_impl.set_masked_funcs[key_type]) {
+        actions_active_impl.set_masked_funcs[key_type](NULL, batch, a,
+                                                       should_steal);
+    } else {
+        a = nl_attr_get(a);
+        DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+            odp_execute_masked_set_action(packet, a);
+        }
+    }
+}
+
+static void
+action_mod_eth(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                const struct nlattr *a OVS_UNUSED,
+                bool should_steal OVS_UNUSED)
+{
+    a = nl_attr_get(a);
+    struct dp_packet *packet;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        odp_eth_set_addrs(packet, nl_attr_get(a),
+                          get_mask(a, struct ovs_key_ethernet));
+    }
+}
+
 /* Implementation of the scalar actions impl init function. Build up the
  * array of func ptrs here.
  */
@@ -866,15 +900,13 @@ odp_action_scalar_init(struct odp_execute_action_impl *self)
 {
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_pop_vlan;
     self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_push_vlan;
+    self->funcs[OVS_ACTION_ATTR_SET_MASKED] = action_set_masked;
+    self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] = action_mod_eth;
+    actions_active_impl = *self;
 
     return 0;
 }
 
-/* The active function pointers on the datapath. ISA optimized implementations
- * are enabled by plugging them into this static arary, which is consulted when
- * applying actions on the datapath.
- */
-static struct odp_execute_action_impl actions_active_impl;
 
 void
 odp_execute_init(void)
@@ -952,7 +984,11 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
          * function-pointer and continue to the next action.
          */
         enum ovs_action_attr attr_type = (enum ovs_action_attr) type;
-        if (actions_active_impl.funcs[attr_type]) {
+
+        if (attr_type == OVS_ACTION_ATTR_SET_MASKED) {
+            action_set_masked(NULL, batch, a, should_steal);
+            continue;
+        } else if (actions_active_impl.funcs[attr_type]) {
             actions_active_impl.funcs[attr_type](NULL, batch, a, should_steal);
             continue;
         }
@@ -1026,12 +1062,6 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_SET:
             DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
                 odp_execute_set_action(packet, nl_attr_get(a));
-            }
-            break;
-
-        case OVS_ACTION_ATTR_SET_MASKED:
-            DP_PACKET_BATCH_FOR_EACH(i, packet, batch) {
-                odp_execute_masked_set_action(packet, nl_attr_get(a));
             }
             break;
 
@@ -1153,6 +1183,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_LB_OUTPUT:
         case OVS_ACTION_ATTR_POP_VLAN:
         case OVS_ACTION_ATTR_PUSH_VLAN:
+        case OVS_ACTION_ATTR_SET_MASKED:
         case OVS_ACTION_ATTR_TUNNEL_PUSH:
         case OVS_ACTION_ATTR_TUNNEL_POP:
         case OVS_ACTION_ATTR_USERSPACE:

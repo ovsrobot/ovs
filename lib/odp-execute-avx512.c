@@ -38,6 +38,12 @@ BUILD_ASSERT_DECL(offsetof(struct dp_packet, l3_ofs) +
                            MEMBER_SIZEOF(struct dp_packet, l3_ofs) ==
                            offsetof(struct dp_packet, l4_ofs));
 
+BUILD_ASSERT_DECL(offsetof(struct ovs_key_ethernet, eth_dst) +
+                  MEMBER_SIZEOF(struct ovs_key_ethernet, eth_dst) ==
+                  offsetof(struct ovs_key_ethernet, eth_src));
+
+static struct odp_execute_action_impl active_impl;
+
 static inline void ALWAYS_INLINE
 avx512_dp_packet_resize_l2(struct dp_packet *b, int resize_by_bytes)
 {
@@ -139,6 +145,51 @@ action_avx512_push_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
     }
 }
 
+static void
+action_avx512_eth_set_addrs(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                       const struct nlattr *a,
+                       bool should_steal OVS_UNUSED)
+{
+    a = nl_attr_get(a);
+    const struct ovs_key_ethernet *key = nl_attr_get(a);
+    const struct ovs_key_ethernet *mask = get_mask(a, struct ovs_key_ethernet);
+    struct dp_packet *packet;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+
+        struct eth_header *eh = dp_packet_eth(packet);
+
+        if (!eh) {
+            continue;
+        }
+
+        __m128i v_src = _mm_maskz_loadu_epi16(0x3F, key);
+        __m128i v_mask = _mm_maskz_loadu_epi16(0x3F, mask);
+        __m128i v_dst = _mm_maskz_loadu_epi16(0xFF, eh);
+
+        __m128i dst_masked = _mm_andnot_si128(v_mask, v_dst);
+        __m128i res = _mm_or_si128(v_src, dst_masked);
+
+        __m128i res_blend = _mm_blend_epi16(v_dst, res, 0x3F);
+        _mm_storeu_si128((void *) eh, res_blend);
+    }
+}
+
+static void
+action_avx512_set_masked(void *dp OVS_UNUSED,
+                         struct dp_packet_batch *batch OVS_UNUSED,
+                         const struct nlattr *a,
+                         bool should_steal OVS_UNUSED)
+{
+    a = nl_attr_get(a);
+    enum ovs_key_attr attr_type = nl_attr_type(a);
+
+    if (active_impl.set_masked_funcs[attr_type]) {
+        active_impl.set_masked_funcs[attr_type](NULL, batch, a, should_steal);
+    }
+
+}
+
 /* Probe functions to check ISA requirements. */
 static int32_t
 avx512_isa_probe(uint32_t needs_vbmi)
@@ -173,13 +224,16 @@ action_avx512_probe(void)
     return avx512_isa_probe(needs_vbmi);
 }
 
-
 int32_t
 action_avx512_init(struct odp_execute_action_impl *self)
 {
     avx512_isa_probe(0);
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_avx512_pop_vlan;
     self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_avx512_push_vlan;
+    self->funcs[OVS_ACTION_ATTR_SET_MASKED] = action_avx512_set_masked;
+    self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] =
+                            action_avx512_eth_set_addrs;
+    active_impl = *self;
 
     return 0;
 }

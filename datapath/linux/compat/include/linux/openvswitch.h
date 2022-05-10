@@ -473,8 +473,8 @@ enum ovs_frag_type {
 #define OVS_FRAG_TYPE_MAX (__OVS_FRAG_TYPE_MAX - 1)
 
 struct ovs_key_ethernet {
-	__u8	 eth_src[ETH_ALEN];
 	__u8	 eth_dst[ETH_ALEN];
+	__u8	 eth_src[ETH_ALEN];
 };
 
 struct ovs_key_mpls {
