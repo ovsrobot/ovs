@@ -284,6 +284,7 @@ action_autoval_init(struct odp_execute_action_impl *self)
     self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_autoval_generic;
     self->funcs[OVS_ACTION_ATTR_SET_MASKED] = action_set_masked_init;
     self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] = action_autoval_generic;
+    self->set_masked_funcs[OVS_KEY_ATTR_IPV4] = action_autoval_generic;
     active_impl = *self;
 
     return 0;

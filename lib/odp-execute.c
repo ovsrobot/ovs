@@ -585,11 +585,6 @@ odp_execute_masked_set_action(struct dp_packet *packet,
         break;
     }
 
-    case OVS_KEY_ATTR_IPV4:
-        odp_set_ipv4(packet, nl_attr_get(a),
-                     get_mask(a, struct ovs_key_ipv4));
-        break;
-
     case OVS_KEY_ATTR_IPV6:
         odp_set_ipv6(packet, nl_attr_get(a),
                      get_mask(a, struct ovs_key_ipv6));
@@ -657,6 +652,7 @@ odp_execute_masked_set_action(struct dp_packet *packet,
     case OVS_KEY_ATTR_ETHERNET:
     case OVS_KEY_ATTR_ETHERTYPE:
     case OVS_KEY_ATTR_IN_PORT:
+    case OVS_KEY_ATTR_IPV4:
     case OVS_KEY_ATTR_VLAN:
     case OVS_KEY_ATTR_ICMP:
     case OVS_KEY_ATTR_ICMPV6:
@@ -892,6 +888,20 @@ action_mod_eth(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
     }
 }
 
+static void
+action_mod_ipv4(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                const struct nlattr *a OVS_UNUSED,
+                bool should_steal OVS_UNUSED)
+{
+    a = nl_attr_get(a);
+    struct dp_packet *packet;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        odp_set_ipv4(packet, nl_attr_get(a),
+                     get_mask(a, struct ovs_key_ipv4));
+    }
+}
+
 /* Implementation of the scalar actions impl init function. Build up the
  * array of func ptrs here.
  */
@@ -902,6 +912,7 @@ odp_action_scalar_init(struct odp_execute_action_impl *self)
     self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_push_vlan;
     self->funcs[OVS_ACTION_ATTR_SET_MASKED] = action_set_masked;
     self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] = action_mod_eth;
+    self->set_masked_funcs[OVS_KEY_ATTR_IPV4] = action_mod_ipv4;
     actions_active_impl = *self;
 
     return 0;
