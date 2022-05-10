@@ -30,8 +30,16 @@
 int32_t action_autoval_init(struct odp_execute_action_impl *self);
 VLOG_DEFINE_THIS_MODULE(odp_execute_private);
 static uint32_t active_action_impl_index;
+static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
 
 static struct odp_execute_action_impl action_impls[] = {
+    [ACTION_IMPL_AUTOVALIDATOR] = {
+        .available = 1,
+        .name = "autovalidator",
+        .probe = NULL,
+        .init_func = action_autoval_init,
+    },
+
     [ACTION_IMPL_SCALAR] = {
         .available = 1,
         .name = "scalar",
@@ -108,4 +116,95 @@ odp_execute_action_init(void)
             action_impls[i].init_func(&action_impls[i]);
         }
     }
+}
+
+/* Init sequence required to be scalar first to pick up the default scalar
+* implementations, allowing over-riding of the optimized functions later.
+*/
+BUILD_ASSERT_DECL(ACTION_IMPL_SCALAR == 0);
+BUILD_ASSERT_DECL(ACTION_IMPL_AUTOVALIDATOR == 1);
+
+/* Loop over packets, and validate each one for the given action. */
+static void
+action_autoval_generic(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                       const struct nlattr *a, bool should_steal)
+{
+    uint32_t failed = 0;
+
+    int type = nl_attr_type(a);
+    enum ovs_action_attr attr_type = (enum ovs_action_attr) type;
+
+    struct odp_execute_action_impl *scalar = &action_impls[ACTION_IMPL_SCALAR];
+
+    struct dp_packet_batch good_batch;
+    dp_packet_batch_clone(&good_batch, batch);
+
+    scalar->funcs[attr_type](NULL, &good_batch, a, should_steal);
+
+    for (uint32_t impl = ACTION_IMPL_BEGIN; impl < ACTION_IMPL_MAX; impl++) {
+        /* Clone original batch and execute implementation under test. */
+        struct dp_packet_batch test_batch;
+        dp_packet_batch_clone(&test_batch, batch);
+        action_impls[impl].funcs[attr_type](NULL, &test_batch, a,
+                                            should_steal);
+
+        /* Loop over implementations, checking each one. */
+        for (uint32_t pidx = 0; pidx < batch->count; pidx++) {
+            struct dp_packet *good_pkt = good_batch.packets[pidx];
+            struct dp_packet *test_pkt = test_batch.packets[pidx];
+
+            struct ds log_msg = DS_EMPTY_INITIALIZER;
+
+            /* Compare packet length and payload contents. */
+            bool eq = dp_packet_equal(good_pkt, test_pkt);
+
+            if (!eq) {
+                ds_put_format(&log_msg, "Packet: %d\nAction : ", pidx);
+                format_odp_actions(&log_msg, a, a->nla_len, NULL);
+                ds_put_format(&log_msg, "\nGood hex:\n");
+                ds_put_hex_dump(&log_msg, dp_packet_data(good_pkt),
+                                dp_packet_size(good_pkt), 0, false);
+                ds_put_format(&log_msg, "Test hex:\n");
+                ds_put_hex_dump(&log_msg, dp_packet_data(test_pkt),
+                                dp_packet_size(test_pkt), 0, false);
+
+                failed = 1;
+            }
+
+            /* Compare offsets and RSS */
+            if (!dp_packet_compare_and_log(good_pkt, test_pkt, &log_msg)) {
+                failed = 1;
+            }
+
+            uint32_t good_hash = dp_packet_get_rss_hash(good_pkt);
+            uint32_t test_hash = dp_packet_get_rss_hash(test_pkt);
+
+            if (good_hash != test_hash) {
+                ds_put_format(&log_msg, "Autovalidation rss hash failed"
+                              "\n");
+                ds_put_format(&log_msg, "Good RSS hash : %u\n", good_hash);
+                ds_put_format(&log_msg, "Test RSS hash : %u\n", test_hash);
+
+                failed = 1;
+            }
+
+            if (failed) {
+                VLOG_ERR_RL(&rl, "\nAutovalidation failed details:\n%s",
+                            ds_cstr(&log_msg));
+            }
+        }
+        dp_packet_delete_batch(&test_batch, 1);
+    }
+    dp_packet_delete_batch(&good_batch, 1);
+
+    /* Apply the action to the original batch for continued processing. */
+    scalar->funcs[attr_type](NULL, batch, a, should_steal);
+}
+
+int32_t
+action_autoval_init(struct odp_execute_action_impl *self)
+{
+    self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_autoval_generic;
+
+    return 0;
 }

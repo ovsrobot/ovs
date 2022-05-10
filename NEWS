@@ -58,6 +58,8 @@ v2.17.0 - 17 Feb 2022
      * Add support for DPDK 21.11.
      * Forbid use of DPDK multiprocess feature.
      * Add support for running threads on cores >= RTE_MAX_LCORE.
+     * Add actions auto-validator function to compare different actions
+       implementations against default implementation.
    - Python:
      * For SSL support, the use of the pyOpenSSL library has been replaced
        with the native 'ssl' module.
