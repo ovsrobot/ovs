@@ -29,13 +29,14 @@
 
 int32_t action_autoval_init(struct odp_execute_action_impl *self);
 VLOG_DEFINE_THIS_MODULE(odp_execute_private);
+static uint32_t active_action_impl_index;
 
 static struct odp_execute_action_impl action_impls[] = {
     [ACTION_IMPL_SCALAR] = {
         .available = 1,
         .name = "scalar",
         .probe = NULL,
-        .init_func = NULL,
+        .init_func = odp_action_scalar_init,
     },
 };
 
@@ -54,6 +55,22 @@ action_impl_copy_funcs(struct odp_execute_action_impl *to,
     for (uint32_t i = 0; i < __OVS_ACTION_ATTR_MAX; i++) {
         atomic_store_relaxed(&to->funcs[i], from->funcs[i]);
     }
+}
+
+int32_t
+odp_execute_action_set(const char *name,
+                       struct odp_execute_action_impl *active)
+{
+    uint32_t i;
+    for (i = 0; i < ACTION_IMPL_MAX; i++) {
+        /* String compare, and set ptrs atomically. */
+        if (strcmp(action_impls[i].name, name) == 0) {
+            action_impl_copy_funcs(active, &action_impls[i]);
+            active_action_impl_index = i;
+            return 0;
+        }
+    }
+    return -1;
 }
 
 void

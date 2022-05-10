@@ -834,6 +834,28 @@ requires_datapath_assistance(const struct nlattr *a)
     return false;
 }
 
+static void
+action_pop_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                const struct nlattr *a OVS_UNUSED,
+                bool should_steal OVS_UNUSED)
+{
+    struct dp_packet *packet;
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        eth_pop_vlan(packet);
+    }
+}
+
+/* Implementation of the scalar actions impl init function. Build up the
+ * array of func ptrs here.
+ */
+int32_t
+odp_action_scalar_init(struct odp_execute_action_impl *self)
+{
+    self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_pop_vlan;
+
+    return 0;
+}
+
 /* The active function pointers on the datapath. ISA optimized implementations
  * are enabled by plugging them into this static arary, which is consulted when
  * applying actions on the datapath.
@@ -846,10 +868,22 @@ odp_execute_init(void)
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     if (ovsthread_once_start(&once)) {
         odp_execute_action_init();
+        odp_actions_impl_set("scalar");
         ovsthread_once_done(&once);
     }
 }
 
+int32_t
+odp_actions_impl_set(const char *name)
+{
+
+    int err = odp_execute_action_set(name, &actions_active_impl);
+    if (err) {
+        VLOG_ERR("error %d from action set to %s\n", err, name);
+        return -1;
+    }
+    return 0;
+}
 
 /* Executes all of the 'actions_len' bytes of datapath actions in 'actions' on
  * the packets in 'batch'.  If 'steal' is true, possibly modifies and
@@ -964,12 +998,6 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             }
             break;
         }
-
-        case OVS_ACTION_ATTR_POP_VLAN:
-            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
-                eth_pop_vlan(packet);
-            }
-            break;
 
         case OVS_ACTION_ATTR_PUSH_MPLS: {
             const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
@@ -1114,6 +1142,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         }
         case OVS_ACTION_ATTR_OUTPUT:
         case OVS_ACTION_ATTR_LB_OUTPUT:
+        case OVS_ACTION_ATTR_POP_VLAN:
         case OVS_ACTION_ATTR_TUNNEL_PUSH:
         case OVS_ACTION_ATTR_TUNNEL_POP:
         case OVS_ACTION_ATTR_USERSPACE:
