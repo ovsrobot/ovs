@@ -100,7 +100,7 @@ int32_t odp_execute_action_set(const char *name,
 int32_t odp_action_scalar_init(struct odp_execute_action_impl *self);
 
 /* Init function for the optimized with AVX512 actions. */
-int32_t action_avx512_init(void);
+int32_t action_avx512_init(struct odp_execute_action_impl *self);
 
 /* Probe function to check ISA requirements. */
 int32_t action_avx512_probe(void);
