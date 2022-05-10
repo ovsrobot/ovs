@@ -42,6 +42,13 @@ static inline void ALWAYS_INLINE
 avx512_dp_packet_resize_l2(struct dp_packet *b, int resize_by_bytes)
 {
     /* Update packet size/data pointers */
+    if (resize_by_bytes >= 0) {
+        dp_packet_prealloc_headroom(b, resize_by_bytes);
+    } else {
+        ovs_assert(dp_packet_size(b) - dp_packet_l2_pad_size(b) >=
+                    -resize_by_bytes);
+    }
+
     dp_packet_set_data(b, (char *) dp_packet_data(b) - resize_by_bytes);
     dp_packet_set_size(b, dp_packet_size(b) + resize_by_bytes);
 
@@ -51,7 +58,7 @@ avx512_dp_packet_resize_l2(struct dp_packet *b, int resize_by_bytes)
 
     /* Only these lanes can be incremented/decremented for L2. */
     const uint8_t k_lanes = 0b1110;
-    __m128i v_offset = _mm_set1_epi16(VLAN_HEADER_LEN);
+    __m128i v_offset = _mm_set1_epi16(abs(resize_by_bytes));
 
     /* Load packet and compare with UINT16_MAX */
     void *adjust_ptr = &b->l2_pad_size;
@@ -63,8 +70,16 @@ avx512_dp_packet_resize_l2(struct dp_packet *b, int resize_by_bytes)
                                                     v_u16_max);
 
     /* Update VLAN_HEADER_LEN using compare mask, store results. */
-    __m128i v_adjust_wip = _mm_mask_sub_epi16(v_adjust_src, k_cmp,
-                                              v_adjust_src, v_offset);
+    __m128i v_adjust_wip;
+
+    if (resize_by_bytes >= 0) {
+        v_adjust_wip = _mm_mask_add_epi16(v_adjust_src, k_cmp,
+                                            v_adjust_src, v_offset);
+    } else {
+        v_adjust_wip = _mm_mask_sub_epi16(v_adjust_src, k_cmp,
+                                            v_adjust_src, v_offset);
+    }
+
     _mm_storeu_si128(adjust_ptr, v_adjust_wip);
 }
 
@@ -87,6 +102,40 @@ action_avx512_pop_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
             _mm_storeu_si128((void *) veh, v_realign);
             avx512_dp_packet_resize_l2(packet, -VLAN_HEADER_LEN);
         }
+    }
+}
+
+static void
+action_avx512_push_vlan(void *dp OVS_UNUSED, struct dp_packet_batch *batch,
+                       const struct nlattr *a,
+                       bool should_steal OVS_UNUSED)
+{
+    struct dp_packet *packet;
+    const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
+    ovs_be16 tpid, tci;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        tpid = vlan->vlan_tpid;
+        tci = vlan->vlan_tci;
+
+        avx512_dp_packet_resize_l2(packet, VLAN_HEADER_LEN);
+
+        /* Build up the VLAN TCI/TPID, and merge with the moving of Ether. */
+        char *pkt_data = (char *) dp_packet_data(packet);
+        const uint16_t tci_proc = tci & htons(~VLAN_CFI);
+        const uint32_t tpid_tci = (tci_proc << 16) | tpid;
+
+        static const uint8_t vlan_push_shuffle_mask[16] = {
+        4, 5, 6, 7, 8, 9, 10, 11,
+        12, 13, 14, 15, 0xFF, 0xFF, 0xFF, 0xFF
+        };
+
+        __m128i v_ether = _mm_loadu_si128((void *) pkt_data);
+        __m128i v_index = _mm_loadu_si128((void *) vlan_push_shuffle_mask);
+        __m128i v_shift = _mm_shuffle_epi8(v_ether, v_index);
+        __m128i v_vlan_hdr = _mm_insert_epi32(v_shift, tpid_tci, 3);
+        _mm_storeu_si128((void *) pkt_data, v_vlan_hdr);
+
     }
 }
 
@@ -130,6 +179,7 @@ action_avx512_init(struct odp_execute_action_impl *self)
 {
     avx512_isa_probe(0);
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_avx512_pop_vlan;
+    self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_avx512_push_vlan;
 
     return 0;
 }

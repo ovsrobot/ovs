@@ -228,6 +228,7 @@ int32_t
 action_autoval_init(struct odp_execute_action_impl *self)
 {
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_autoval_generic;
+    self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_autoval_generic;
 
     return 0;
 }
