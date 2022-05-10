@@ -62,6 +62,8 @@ v2.17.0 - 17 Feb 2022
        implementations against default implementation.
      * Add command line option to switch between different actions
        implementations available at run time.
+     * Add build time configure command to enable auto-validator as default
+       actions implementation at build time.
    - Python:
      * For SSL support, the use of the pyOpenSSL library has been replaced
        with the native 'ssl' module.

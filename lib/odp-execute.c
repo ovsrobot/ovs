@@ -868,7 +868,11 @@ odp_execute_init(void)
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     if (ovsthread_once_start(&once)) {
         odp_execute_action_init();
+#ifdef ACTIONS_AUTOVALIDATOR_DEFAULT
+        odp_actions_impl_set("autovalidator");
+#else
         odp_actions_impl_set("scalar");
+#endif
         ovsthread_once_done(&once);
     }
 }
