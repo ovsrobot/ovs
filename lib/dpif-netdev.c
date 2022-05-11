@@ -4879,8 +4879,8 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
 
     struct pmd_auto_lb *pmd_alb = &dp->pmd_alb;
 
-    rebalance_intvl = smap_get_int(other_config, "pmd-auto-lb-rebal-interval",
-                                   ALB_REBALANCE_INTERVAL);
+    rebalance_intvl = smap_get_ullong(other_config, "pmd-auto-lb-rebal-interval",
+                                      ALB_REBALANCE_INTERVAL);
 
     /* Input is in min, convert it to msec. */
     rebalance_intvl =
@@ -4893,9 +4893,9 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         log_autolb = true;
     }
 
-    rebalance_improve = smap_get_int(other_config,
-                                     "pmd-auto-lb-improvement-threshold",
-                                     ALB_IMPROVEMENT_THRESHOLD);
+    rebalance_improve = smap_get_uint(other_config,
+                                      "pmd-auto-lb-improvement-threshold",
+                                      ALB_IMPROVEMENT_THRESHOLD);
     if (rebalance_improve > 100) {
         rebalance_improve = ALB_IMPROVEMENT_THRESHOLD;
     }
@@ -4906,8 +4906,8 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
         log_autolb = true;
     }
 
-    rebalance_load = smap_get_int(other_config, "pmd-auto-lb-load-threshold",
-                                  ALB_LOAD_THRESHOLD);
+    rebalance_load = smap_get_uint(other_config, "pmd-auto-lb-load-threshold",
+                                   ALB_LOAD_THRESHOLD);
     if (rebalance_load > 100) {
         rebalance_load = ALB_LOAD_THRESHOLD;
     }
