@@ -179,7 +179,7 @@ BUILD_ASSERT_DECL(offsetof(struct flow, igmp_group_ip4) + sizeof(uint32_t)
 enum {
     FLOW_SEGMENT_1_ENDS_AT = offsetof(struct flow, dl_dst),
     FLOW_SEGMENT_2_ENDS_AT = offsetof(struct flow, nw_src),
-    FLOW_SEGMENT_3_ENDS_AT = offsetof(struct flow, tp_src),
+    FLOW_SEGMENT_3_ENDS_AT = offsetof(struct flow, nd_target),
 };
 BUILD_ASSERT_DECL(FLOW_SEGMENT_1_ENDS_AT % sizeof(uint64_t) == 0);
 BUILD_ASSERT_DECL(FLOW_SEGMENT_2_ENDS_AT % sizeof(uint64_t) == 0);
