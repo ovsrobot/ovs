@@ -3926,7 +3926,8 @@ new_device(int vid)
 
             if (dev->requested_n_txq < qp_num
                 || dev->requested_n_rxq < qp_num
-                || dev->requested_socket_id != newnode) {
+                || dev->requested_socket_id != newnode
+                || dev->dpdk_mp == NULL) {
                 dev->requested_socket_id = newnode;
                 dev->requested_n_rxq = qp_num;
                 dev->requested_n_txq = qp_num;
@@ -4974,9 +4975,10 @@ static int
 dpdk_vhost_reconfigure_helper(struct netdev_dpdk *dev)
     OVS_REQUIRES(dev->mutex)
 {
+    int vid, n_numas;
+
     dev->up.n_txq = dev->requested_n_txq;
     dev->up.n_rxq = dev->requested_n_rxq;
-    int err;
 
     /* Always keep RX queue 0 enabled for implementations that won't
      * report vring states. */
@@ -4994,14 +4996,24 @@ dpdk_vhost_reconfigure_helper(struct netdev_dpdk *dev)
 
     netdev_dpdk_remap_txqs(dev);
 
-    err = netdev_dpdk_mempool_configure(dev);
-    if (!err) {
-        /* A new mempool was created or re-used. */
-        netdev_change_seq_changed(&dev->up);
-    } else if (err != EEXIST) {
-        return err;
+    vid = netdev_dpdk_get_vid(dev);
+    n_numas = ovs_numa_get_n_numas();
+
+    if (n_numas == 1
+        || (n_numas > 1 && vid >= 0)) {
+
+        int err;
+
+        err = netdev_dpdk_mempool_configure(dev);
+        if (!err) {
+            /* A new mempool was created or re-used. */
+            netdev_change_seq_changed(&dev->up);
+        } else if (err != EEXIST) {
+            return err;
+        }
     }
-    if (netdev_dpdk_get_vid(dev) >= 0) {
+
+    if (vid >= 0) {
         if (dev->vhost_reconfigured == false) {
             dev->vhost_reconfigured = true;
             /* Carrier status may need updating. */
