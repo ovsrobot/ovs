@@ -343,7 +343,9 @@ system due to connection tracking or simply limiting connection
 tracking.  If the number of connections is already over the new maximum
 limit request then the new maximum limit will be enforced when the
 number of connections decreases to that limit, which normally happens
-due to connection expiry.  Only supported for userspace datapath.
+due to connection expiry.  Only supported for userspace datapath. This
+command is deprecated by ovsdb cfg other_config:userspace-ct-maxconns
+because of persistence capability.
 .
 .TP
 \*(DX\fBct\-get\-maxconns\fR [\fIdp\fR]

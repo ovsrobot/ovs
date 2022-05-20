@@ -1990,6 +1990,9 @@ dpctl_ct_set_maxconns(int argc, const char *argv[],
     struct dpif *dpif;
     int error = opt_dpif_open(argc, argv, dpctl_p, 3, &dpif);
     if (!error) {
+        dpctl_print(dpctl_p,
+                    "Warning: dpctl/ct-set-maxconns is deprecated by "
+                    "other_config:userspace-ct-maxconns");
         uint32_t maxconns;
         if (ovs_scan(argv[argc - 1], "%"SCNu32, &maxconns)) {
             error = ct_dpif_set_maxconns(dpif, maxconns);
