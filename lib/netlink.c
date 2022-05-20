@@ -536,7 +536,7 @@ nl_msg_end_nested(struct ofpbuf *msg, size_t offset)
 /* Cancel a nested Netlink attribute in 'msg'.  'offset' should be the value
  * returned by nl_msg_start_nested(). */
 void
-nl_msg_cancel_nested(struct ofpbuf *msg, size_t offset)
+nl_msg_reset_size(struct ofpbuf *msg, size_t offset)
 {
     msg->size = offset;
 }
@@ -552,7 +552,7 @@ nl_msg_end_non_empty_nested(struct ofpbuf *msg, size_t offset)
 
     struct nlattr *attr = ofpbuf_at_assert(msg, offset, sizeof *attr);
     if (!nl_attr_get_size(attr)) {
-        nl_msg_cancel_nested(msg, offset);
+        nl_msg_reset_size(msg, offset);
         return true;
     } else {
         return false;
