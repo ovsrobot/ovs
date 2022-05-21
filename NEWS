@@ -29,6 +29,11 @@ Post-v2.17.0
    - Windows:
      * Conntrack support for TCPv6, UDPv6, ICMPv6, FTPv6.
      * IPv6 Geneve tunnel support.
+   - Userspace datapath:
+     * 'ovs-appctl dpctl/ct-set-maxconns' is deprecated for lack of persistence
+       capabilitiy.
+     * New configuration knob 'other_config:userspace-ct-maxconns' to set
+       maximum number of connection tracker entries for userspace datapath.
 
 
 v2.17.0 - 17 Feb 2022

@@ -2305,6 +2305,16 @@ AT_CHECK([ovs-appctl dpctl/ct-get-maxconns], [], [dnl
 10
 ])
 
+AT_CHECK([ovs-vsctl set Open_vswitch . other_config:userspace-ct-maxconns=20], [0])
+AT_CHECK([ovs-appctl dpctl/ct-get-maxconns], [], [dnl
+20
+])
+
+AT_CHECK([ovs-vsctl remove Open_vswitch . other_config userspace-ct-maxconns], [0])
+AT_CHECK([ovs-appctl dpctl/ct-get-maxconns], [], [dnl
+20
+])
+
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
