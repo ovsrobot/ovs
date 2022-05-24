@@ -81,4 +81,8 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                              struct dp_packet_batch *packets,
                              odp_port_t in_port);
 
+int32_t
+dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
+                      struct dp_packet_batch *);
+
 #endif /* netdev-private.h */
