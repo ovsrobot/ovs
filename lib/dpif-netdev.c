@@ -1152,6 +1152,10 @@ dpif_netdev_impl_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
              * default. */
             atomic_store_relaxed(&pmd->netdev_input_func,
                                  dp_netdev_impl_get_default());
+            /* Initialize recirc DPIF function pointer to the newly configured
+             * default. */
+            atomic_store_relaxed(&pmd->netdev_input_recirc_func,
+                                 dp_netdev_recirc_impl_get_default());
         };
 
         free(pmd_list);
@@ -7448,6 +7452,14 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     /* Initialize DPIF function pointer to the default configured version. */
     atomic_init(&pmd->netdev_input_func, dp_netdev_impl_get_default());
 
+    /* Initialize recirculate DPIF function pointer to the default configured
+     * version. */
+    dp_netdev_recirc_func default_dpif_recirc_func =
+                                        dp_netdev_recirc_impl_get_default();
+    atomic_uintptr_t *pmd_recirc_func =
+                                    (void *) &pmd->netdev_input_recirc_func;
+    atomic_init(pmd_recirc_func, (uintptr_t) default_dpif_recirc_func);
+
     /* Init default miniflow_extract function */
     atomic_init(&pmd->miniflow_extract_opt, dp_mfex_impl_get_default());
 
@@ -8792,7 +8804,10 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                 }
 
                 (*depth)++;
-                dp_netdev_recirculate(pmd, packets_);
+                int ret = pmd->netdev_input_recirc_func(pmd, packets_);
+                if (ret) {
+                    dp_netdev_recirculate(pmd, packets_);
+                }
                 (*depth)--;
                 return;
             }
@@ -8864,7 +8879,10 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
             }
 
             (*depth)++;
-            dp_netdev_recirculate(pmd, packets_);
+            int ret = pmd->netdev_input_recirc_func(pmd, packets_);
+            if (ret) {
+                dp_netdev_recirculate(pmd, packets_);
+            }
             (*depth)--;
 
             return;

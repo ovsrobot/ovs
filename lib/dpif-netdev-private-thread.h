@@ -124,6 +124,9 @@ struct dp_netdev_pmd_thread {
     /* Function pointer to call for dp_netdev_input() functionality. */
     ATOMIC(dp_netdev_input_func) netdev_input_func;
 
+    /* Function pointer to call for dp_netdev_recirculate() functionality. */
+    ATOMIC(dp_netdev_recirc_func) netdev_input_recirc_func;
+
     /* Pointer for per-DPIF implementation scratch space. */
     void *netdev_input_func_userdata;
 
