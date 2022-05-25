@@ -1130,11 +1130,11 @@ OVS_VSWITCHD_START([], [], [], [--dummy-numa 0,0])
 AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dummy-pmd])
 
 AT_CHECK([ovs-vsctl show], [], [stdout])
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep generic], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep generic], [], [dnl
   generic (Use count: 0, Priority: 1)
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep autovalidator], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep autovalidator], [], [dnl
   autovalidator (Use count: 0, Priority: 0)
 ])
 
@@ -1142,7 +1142,7 @@ AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set autovalidator 3], [0],
 Lookup priority change affected 0 dpcls ports and 0 subtables.
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep autovalidator], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep autovalidator], [], [dnl
   autovalidator (Use count: 0, Priority: 3)
 ])
 
@@ -1150,7 +1150,7 @@ AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set generic 4], [0], [dnl
 Lookup priority change affected 0 dpcls ports and 0 subtables.
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep generic], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep generic], [], [dnl
   generic (Use count: 0, Priority: 4)
 ])
 
@@ -1158,7 +1158,7 @@ AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set generic 8], [0], [dnl
 Lookup priority change affected 0 dpcls ports and 0 subtables.
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep generic], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep generic], [], [dnl
   generic (Use count: 0, Priority: 8)
 ])
 
@@ -1166,7 +1166,7 @@ AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set autovalidator 8], [0],
 Lookup priority change affected 0 dpcls ports and 0 subtables.
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep autovalidator], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep autovalidator], [], [dnl
   autovalidator (Use count: 0, Priority: 8)
 ])
 
@@ -1174,7 +1174,7 @@ AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set generic 0], [0], [dnl
 Lookup priority change affected 0 dpcls ports and 0 subtables.
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep generic], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep generic], [], [dnl
   generic (Use count: 0, Priority: 0)
 ])
 
@@ -1182,7 +1182,7 @@ AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-set generic 255], [0], [dn
 Lookup priority change affected 0 dpcls ports and 0 subtables.
 ])
 
-AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-info-get | grep generic], [], [dnl
+AT_CHECK([ovs-appctl dpif-netdev/subtable-lookup-prio-get | grep generic], [], [dnl
   generic (Use count: 0, Priority: 255)
 ])
 

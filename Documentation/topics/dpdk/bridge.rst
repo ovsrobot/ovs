@@ -179,7 +179,7 @@ these CPU ISA additions are available, and to allow the user to enable them.
 OVS provides multiple implementations of dpcls. The following command enables
 the user to check what implementations are available in a running instance::
 
-    $ ovs-appctl dpif-netdev/subtable-lookup-info-get
+    $ ovs-appctl dpif-netdev/subtable-lookup-prio-get
     Available dpcls implementations:
             autovalidator (Use count: 1, Priority: 5)
             generic (Use count: 0, Priority: 1)
@@ -195,7 +195,7 @@ above indicates that one subtable of one DPCLS port is has changed its lookup
 function due to the command being run. To verify the prioritization, re-run the
 get command, note the updated priority of the ``avx512_gather`` function::
 
-    $ ovs-appctl dpif-netdev/subtable-lookup-info-get
+    $ ovs-appctl dpif-netdev/subtable-lookup-prio-get
     Available dpcls implementations:
             autovalidator (Use count: 1, Priority: 5)
             generic (Use count: 0, Priority: 1)
