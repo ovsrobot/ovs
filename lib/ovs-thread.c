@@ -18,6 +18,7 @@
 #include "ovs-thread.h"
 #include <errno.h>
 #include <poll.h>
+#include <math.h>
 #ifndef _WIN32
 #include <signal.h>
 #endif
@@ -661,6 +662,74 @@ count_cpu_cores(void)
     }
 
     return n_cores > 0 ? n_cores : 0;
+}
+
+/* Returns the total number of cores on the system, or 0 if the
+ * number cannot be determined. */
+int
+count_total_cores(void) {
+    long int n_cores;
+
+#ifndef _WIN32
+    n_cores = sysconf(_SC_NPROCESSORS_CONF);
+#else
+    n_cores = 0;
+    errno = ENOTSUP;
+#endif
+
+    return n_cores > 0 ? n_cores : 0;
+}
+
+/*
+ * Returns 1 if num is a prime number,
+ * Otherwise return 0
+ */
+uint32_t
+is_prime(uint32_t num)
+{
+    if ((num % 2) == 0) {
+        return num == 2;
+    }
+
+    uint32_t i;
+    uint32_t limit = sqrt((float) num);
+    for (i = 3; i <= limit; i += 2) {
+        if (num % i == 0) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/*
+ * Returns num if num is a prime number. Otherwise returns the next
+ * prime greater than num. Search is limited by the limit variable.
+ *
+ * Returns 0 if num >= limit, or if no prime has been found between
+ * num and limit
+ */
+uint32_t
+next_prime(uint32_t num, uint32_t limit)
+{
+    if (num < 2) {
+        return 2;
+    }
+    if (num == 2) {
+        return 3;
+    }
+    if (num % 2 == 0) {
+        num++;
+    }
+
+    uint32_t i;
+    for (i = num; i < limit; i += 2) {
+        if (is_prime(i)) {
+            return i;
+        }
+    }
+
+    return 0;
 }
 
 /* Returns 'true' if current thread is PMD thread. */

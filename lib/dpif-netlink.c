@@ -2506,6 +2506,36 @@ dpif_netlink_handler_uninit(struct dpif_handler *handler)
 }
 #endif
 
+/*
+ * Calcuales and returns the number of handler threads needed based
+ * the following formula:
+ *
+ * handlers_n = min(next_prime(active_cores+1), total_cores)
+ *
+ * Where next_prime is a function that returns the next numeric prime
+ * number that is strictly greater than active_cores
+ */
+static uint32_t
+dpif_netlink_calculate_handlers_num(void)
+{
+    uint32_t next_prime_num;
+    uint32_t n_handlers = count_cpu_cores();
+    uint32_t total_cores = count_total_cores();
+
+    /*
+     * If we have isolated cores, add additional handler threads to
+     * service inactive cores in the unlikely event that traffic goes
+     * through inactive cores
+     */
+    if (n_handlers < total_cores) {
+        next_prime_num = next_prime(n_handlers +1, 10000000);
+        n_handlers = next_prime_num >= total_cores ?
+                                            total_cores : next_prime_num;
+    }
+
+    return n_handlers;
+}
+
 static int
 dpif_netlink_refresh_handlers_cpu_dispatch(struct dpif_netlink *dpif)
     OVS_REQ_WRLOCK(dpif->upcall_lock)
@@ -2755,7 +2785,7 @@ dpif_netlink_number_handlers_required(struct dpif *dpif_, uint32_t *n_handlers)
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
 
     if (dpif_netlink_upcall_per_cpu(dpif)) {
-        *n_handlers = count_cpu_cores();
+        *n_handlers = dpif_netlink_calculate_handlers_num();
         return true;
     }
 
