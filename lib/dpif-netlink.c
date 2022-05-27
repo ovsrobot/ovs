@@ -2759,9 +2759,23 @@ static bool
 dpif_netlink_number_handlers_required(struct dpif *dpif_, uint32_t *n_handlers)
 {
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+    uint32_t total_cores, next_prime_num;
 
     if (dpif_netlink_upcall_per_cpu(dpif)) {
         *n_handlers = count_cpu_cores();
+        total_cores = count_total_cores();
+
+        /*
+         * If we have isolated cores, add additional handler threads to
+         * service inactive cores in the unlikely event that traffic goes
+         * through inactive cores
+         */
+        if (*n_handlers < total_cores) {
+            next_prime_num = next_prime(*n_handlers +1, 10000000);
+            *n_handlers = next_prime_num >= total_cores ?
+                                                total_cores : next_prime_num;
+        }
+
         return true;
     }
 

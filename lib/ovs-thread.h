@@ -523,6 +523,10 @@ bool may_fork(void);
 
 int count_cpu_cores(void);
 int count_total_cores(void);
+
+uint32_t is_prime(uint32_t num);
+uint32_t next_prime(uint32_t num, uint32_t limit);
+
 bool thread_is_pmd(void);
 
 #endif /* ovs-thread.h */
