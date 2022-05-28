@@ -28,6 +28,7 @@
 #include "Vport.h"
 #include "Vxlan.h"
 #include "Geneve.h"
+#include "Erspan.h"
 
 #ifdef OVS_DBG_MOD
 #undef OVS_DBG_MOD
@@ -1088,6 +1089,9 @@ OvsInitTunnelVport(PVOID userContext,
     case OVS_VPORT_TYPE_GRE:
         status = OvsInitGreTunnel(vport);
         break;
+    case OVS_VPORT_TYPE_ERSPAN:
+        status = OvsInitErspanTunnel(vport);
+        break;
     case OVS_VPORT_TYPE_VXLAN:
     {
         POVS_TUNFLT_INIT_CONTEXT tunnelContext = NULL;
@@ -1253,6 +1257,7 @@ InitOvsVportCommon(POVS_SWITCH_CONTEXT switchContext,
 
     switch(vport->ovsType) {
     case OVS_VPORT_TYPE_GRE:
+    case OVS_VPORT_TYPE_ERSPAN:
     case OVS_VPORT_TYPE_VXLAN:
     case OVS_VPORT_TYPE_STT:
     case OVS_VPORT_TYPE_GENEVE:
@@ -1341,6 +1346,9 @@ OvsRemoveAndDeleteVport(PVOID usrParamsContext,
         break;
     case OVS_VPORT_TYPE_GRE:
         OvsCleanupGreTunnel(vport);
+        break;
+    case OVS_VPORT_TYPE_ERSPAN:
+        OvsCleanupErspanTunnel(vport);
         break;
     case OVS_VPORT_TYPE_NETDEV:
         if (vport->isExternal) {
@@ -2290,6 +2298,9 @@ OvsNewVportCmdHandler(POVS_USER_PARAMS_CONTEXT usrParamsCtx,
 
             switch (portType) {
             case OVS_VPORT_TYPE_GRE:
+                nwProto = IPPROTO_GRE;
+                break;
+            case OVS_VPORT_TYPE_ERSPAN:
                 nwProto = IPPROTO_GRE;
                 break;
             case OVS_VPORT_TYPE_VXLAN:

@@ -44,7 +44,7 @@ typedef struct _OVS_GRE_VPORT {
  * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 
-typedef struct GREHdr {
+typedef struct _GREHdr {
     UINT16 flags;
     UINT16 protocolType;
 } GREHdr, *PGREHdr;
@@ -54,6 +54,7 @@ typedef struct GREHdr {
 /* GRE Flags*/
 #define GRE_CSUM    0x0080
 #define GRE_KEY     0x0020
+#define GRE_SEQ     0x0010
 /* The maximum GRE header length that we can process */
 #define OVS_MAX_GRE_LGTH (sizeof(EthHdr) + sizeof(IPHdr) + sizeof(GREHdr) + 12)
 
@@ -99,6 +100,7 @@ GreTunHdrSize(UINT16 flags)
     UINT32 sum = sizeof(EthHdr) + sizeof(IPHdr) + sizeof(GREHdr);
     sum += (flags & GRE_CSUM) ? 4 : 0;
     sum += (flags & GRE_KEY) ? 4 : 0;
+    sum += (flags & GRE_SEQ) ? 4 : 0;
 
     return sum;
 }
@@ -109,6 +111,7 @@ GreTunHdrSizeFromLayers(UINT16 flags, POVS_PACKET_HDR_INFO layers)
     UINT32 sum = layers->l4Offset + sizeof(GREHdr);
     sum += (flags & GRE_CSUM) ? 4 : 0;
     sum += (flags & GRE_KEY) ? 4 : 0;
+    sum += (flags & GRE_SEQ) ? 4 : 0;
 
     return sum;
 }

@@ -29,6 +29,7 @@ Post-v2.17.0
    - Windows:
      * Conntrack support for TCPv6, UDPv6, ICMPv6, FTPv6.
      * IPv6 Geneve tunnel support.
+     * IPv4 ERSPAN tunnel support.
 
 
 v2.17.0 - 17 Feb 2022

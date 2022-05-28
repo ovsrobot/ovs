@@ -28,6 +28,8 @@ EXTRA_DIST += \
 	datapath-windows/ovsext/Debug.h \
 	datapath-windows/ovsext/DpInternal.h\
 	datapath-windows/ovsext/Driver.c \
+	datapath-windows/ovsext/Erspan.c \
+	datapath-windows/ovsext/Erspan.h \
 	datapath-windows/ovsext/Ethernet.h \
 	datapath-windows/ovsext/Event.c \
 	datapath-windows/ovsext/Event.h \

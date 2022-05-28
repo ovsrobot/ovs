@@ -146,7 +146,7 @@ Q: Are all features available with all datapaths?
     Tunnel - GRE-IPv6               4.18           2.6          2.6      NO
     Tunnel - VXLAN-IPv6             4.3            2.6          2.6      NO
     Tunnel - Geneve-IPv6            4.4            2.6          2.6      2.18
-    Tunnel - ERSPAN                 4.18           2.10         2.10     NO
+    Tunnel - ERSPAN                 4.18           2.10         2.10     2.18
     Tunnel - ERSPAN-IPv6            4.18           2.10         2.10     NO
     Tunnel - GTP-U                  NO             NO           2.14     NO
     Tunnel - Bareudp                5.7            NO           NO       NO

@@ -97,7 +97,9 @@ OvsTunnelAttrToIPTunnelKey(PNL_ATTR attr, OvsIPTunnelKey *tunKey);
 #define OVS_TNL_F_CRT_OPT               (1 << 4)
 #define OVS_TNL_F_GENEVE_OPT            (1 << 5)
 #define OVS_TNL_F_VXLAN_OPT             (1 << 6)
+#define OVS_TNL_F_ERSPAN_OPT             (1 << 7)
 
-#define OVS_TNL_HAS_OPTIONS             (OVS_TNL_F_GENEVE_OPT | OVS_TNL_F_VXLAN_OPT)
+#define OVS_TNL_HAS_OPTIONS             (OVS_TNL_F_GENEVE_OPT | OVS_TNL_F_VXLAN_OPT | \
+                                         OVS_TNL_F_ERSPAN_OPT)
 
 #endif /* __FLOW_H_ */
