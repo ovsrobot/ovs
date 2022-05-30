@@ -35,7 +35,7 @@ bool netdev_dpdk_flow_api_supported(struct netdev *);
 
 int
 netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
-                             struct rte_flow *rte_flow,
+                             bool transfer, struct rte_flow *rte_flow,
                              struct rte_flow_error *error);
 struct rte_flow *
 netdev_dpdk_rte_flow_create(struct netdev *netdev,

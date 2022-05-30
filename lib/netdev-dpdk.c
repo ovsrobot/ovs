@@ -420,6 +420,7 @@ enum dpdk_hw_ol_features {
 
 struct netdev_dpdk {
     PADDED_MEMBERS_CACHELINE_MARKER(CACHE_LINE_SIZE, cacheline0,
+        dpdk_port_t flow_transfer_proxy_port_id;
         dpdk_port_t port_id;
 
         /* If true, device was attached by rte_eth_dev_attach(). */
@@ -1115,6 +1116,23 @@ dpdk_eth_dev_init_rx_metadata(struct netdev_dpdk *dev)
                   DPDK_PORT_ID_FMT, dev->port_id);
     }
 }
+
+static void
+dpdk_eth_dev_init_flow_transfer_proxy(struct netdev_dpdk *dev)
+{
+    int ret;
+
+    ret = rte_flow_pick_transfer_proxy(dev->port_id,
+                                       &dev->flow_transfer_proxy_port_id, NULL);
+    if (ret == 0)
+        return;
+
+    /*
+     * The PMD does not indicate the proxy port.
+     * It is OK to assume the proxy is unneeded.
+     */
+    dev->flow_transfer_proxy_port_id = dev->port_id;
+}
 #endif /* ALLOW_EXPERIMENTAL_API */
 
 static int
@@ -1141,6 +1159,19 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
      * Request delivery of such metadata.
      */
     dpdk_eth_dev_init_rx_metadata(dev);
+
+    /*
+     * Managing "transfer" flows requires that the user communicate them
+     * via a port which has the privilege to control the embedded switch.
+     * For some vendors, all ports in a given switching domain have
+     * this privilege. For other vendors, it's only one port.
+     *
+     * Get the proxy port ID and remember it for later use.
+     */
+    dpdk_eth_dev_init_flow_transfer_proxy(dev);
+#else /* ! ALLOW_EXPERIMENTAL_API */
+    /* It is OK to assume the proxy is unneeded. */
+    dev->flow_transfer_proxy_port_id = dev->port_id;
 #endif /* ALLOW_EXPERIMENTAL_API */
 
     rte_eth_dev_info_get(dev->port_id, &info);
@@ -5214,13 +5245,15 @@ out:
 
 int
 netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
-                             struct rte_flow *rte_flow,
+                             bool transfer, struct rte_flow *rte_flow,
                              struct rte_flow_error *error)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     int ret;
 
-    ret = rte_flow_destroy(dev->port_id, rte_flow, error);
+    ret = rte_flow_destroy(transfer ?
+                           dev->flow_transfer_proxy_port_id : dev->port_id,
+                           rte_flow, error);
     return ret;
 }
 
@@ -5234,7 +5267,19 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
     struct rte_flow *flow;
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
 
-    flow = rte_flow_create(dev->port_id, attr, items, actions, error);
+#ifdef ALLOW_EXPERIMENTAL_API
+    if (!attr->transfer) {
+        /*
+         * The 1st item in any pattern is a traffic source one.
+         * It is unnecessary in the case of non-transfer rules.
+         */
+        ++(items);
+    }
+#endif /* ALLOW_EXPERIMENTAL_API */
+
+    flow = rte_flow_create(attr->transfer ?
+                           dev->flow_transfer_proxy_port_id : dev->port_id,
+                           attr, items, actions, error);
     return flow;
 }
 
@@ -5262,7 +5307,8 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
     }
 
     dev = netdev_dpdk_cast(netdev);
-    ret = rte_flow_query(dev->port_id, rte_flow, actions, query, error);
+    ret = rte_flow_query(dev->flow_transfer_proxy_port_id, rte_flow,
+                         actions, query, error);
     return ret;
 }
 
@@ -5284,8 +5330,8 @@ netdev_dpdk_rte_flow_tunnel_decap_set(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_decap_set(dev->port_id, tunnel, actions,
-                                    num_of_actions, error);
+    ret = rte_flow_tunnel_decap_set(dev->flow_transfer_proxy_port_id, tunnel,
+                                    actions, num_of_actions, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5306,8 +5352,8 @@ netdev_dpdk_rte_flow_tunnel_match(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_match(dev->port_id, tunnel, items, num_of_items,
-                                error);
+    ret = rte_flow_tunnel_match(dev->flow_transfer_proxy_port_id, tunnel,
+                                items, num_of_items, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5328,7 +5374,8 @@ netdev_dpdk_rte_flow_get_restore_info(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_get_restore_info(dev->port_id, m, info, error);
+    ret = rte_flow_get_restore_info(dev->flow_transfer_proxy_port_id,
+                                    m, info, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5349,8 +5396,8 @@ netdev_dpdk_rte_flow_tunnel_action_decap_release(
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_action_decap_release(dev->port_id, actions,
-                                               num_of_actions, error);
+    ret = rte_flow_tunnel_action_decap_release(dev->flow_transfer_proxy_port_id,
+                                               actions, num_of_actions, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
@@ -5370,8 +5417,8 @@ netdev_dpdk_rte_flow_tunnel_item_release(struct netdev *netdev,
 
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
-    ret = rte_flow_tunnel_item_release(dev->port_id, items, num_of_items,
-                                       error);
+    ret = rte_flow_tunnel_item_release(dev->flow_transfer_proxy_port_id,
+                                       items, num_of_items, error);
     ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
