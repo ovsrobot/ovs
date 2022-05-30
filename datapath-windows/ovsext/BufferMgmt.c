@@ -1610,7 +1610,7 @@ copymultiple_error:
  * OvsCompleteNBL --
  *
  *     This function tries to free the NBL allocated by OVS buffer
- *     management module. If it trigger the completion of the parent
+ *     management module. If it triggers the completion of the parent
  *     NBL, it will recursively call itself. If it trigger the completion
  *     of external NBL, it will be returned to the caller. The caller
  *     is responsible to call API to return to upper layer.

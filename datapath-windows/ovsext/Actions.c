@@ -34,6 +34,7 @@
 #include "Vport.h"
 #include "Vxlan.h"
 #include "Geneve.h"
+#include "Erspan.h"
 #include "IpFragment.h"
 
 #ifdef OVS_DBG_MOD
@@ -46,6 +47,8 @@
 typedef struct _OVS_ACTION_STATS {
     UINT64 rxGre;
     UINT64 txGre;
+    UINT64 rxErspan;
+    UINT64 txErspan;
     UINT64 rxVxlan;
     UINT64 txVxlan;
     UINT64 rxStt;
@@ -223,6 +226,9 @@ OvsDetectTunnelRxPkt(OvsForwardingContext *ovsFwdCtx,
             case OVS_VPORT_TYPE_GRE:
                 ovsActionStats.rxGre++;
                 break;
+            case OVS_VPORT_TYPE_ERSPAN:
+                ovsActionStats.rxErspan++;
+                break;
             }
         }
     }
@@ -309,6 +315,9 @@ OvsDetectTunnelPkt(OvsForwardingContext *ovsFwdCtx,
             switch(dstVport->ovsType) {
             case OVS_VPORT_TYPE_GRE:
                 ovsActionStats.txGre++;
+                break;
+            case OVS_VPORT_TYPE_ERSPAN:
+                ovsActionStats.txErspan++;
                 break;
             case OVS_VPORT_TYPE_VXLAN:
                 ovsActionStats.txVxlan++;
@@ -665,6 +674,11 @@ OvsTunnelPortTx(OvsForwardingContext *ovsFwdCtx)
                              &ovsFwdCtx->tunKey, ovsFwdCtx->switchContext,
                              &ovsFwdCtx->layers, &newNbl, &switchFwdInfo);
         break;
+    case OVS_VPORT_TYPE_ERSPAN:
+        status = OvsEncapErspan(ovsFwdCtx->tunnelTxNic, ovsFwdCtx->curNbl,
+                                &ovsFwdCtx->tunKey, ovsFwdCtx->switchContext,
+                                &ovsFwdCtx->layers, &newNbl, &switchFwdInfo);
+        break;
     case OVS_VPORT_TYPE_VXLAN:
         status = OvsEncapVxlan(ovsFwdCtx->tunnelTxNic, ovsFwdCtx->curNbl,
                                &ovsFwdCtx->tunKey, ovsFwdCtx->switchContext,
@@ -761,6 +775,10 @@ OvsTunnelPortRx(OvsForwardingContext *ovsFwdCtx)
     case OVS_VPORT_TYPE_GRE:
         status = OvsDecapGre(ovsFwdCtx->switchContext, ovsFwdCtx->curNbl,
                              &ovsFwdCtx->tunKey, &newNbl);
+        break;
+    case OVS_VPORT_TYPE_ERSPAN:
+        status = OvsDecapErspan(ovsFwdCtx->switchContext, ovsFwdCtx->curNbl,
+                                &ovsFwdCtx->tunKey, &newNbl);
         break;
     case OVS_VPORT_TYPE_VXLAN:
         status = OvsDecapVxlan(ovsFwdCtx->switchContext, ovsFwdCtx->curNbl,
