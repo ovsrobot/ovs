@@ -733,6 +733,14 @@ dump_flow_action(struct ds *s, struct ds *s_extra,
         ds_put_cstr(s, "rss / ");
     } else if (actions->type == RTE_FLOW_ACTION_TYPE_COUNT) {
         ds_put_cstr(s, "count / ");
+#ifdef ALLOW_EXPERIMENTAL_API
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT) {
+        const struct rte_flow_action_ethdev *ethdev = actions->conf;
+
+        ds_put_cstr(s, "represented_port ");
+        if (ethdev) {
+            ds_put_format(s, "ethdev_port_id %d ", ethdev->port_id);
+#else /* ! ALLOW_EXPERIMENTAL_API */
     } else if (actions->type == RTE_FLOW_ACTION_TYPE_PORT_ID) {
         const struct rte_flow_action_port_id *port_id = actions->conf;
 
@@ -740,6 +748,7 @@ dump_flow_action(struct ds *s, struct ds *s_extra,
         if (port_id) {
             ds_put_format(s, "original %d id %d ",
                           port_id->original, port_id->id);
+#endif /* ALLOW_EXPERIMENTAL_API */
         }
         ds_put_cstr(s, "/ ");
     } else if (actions->type == RTE_FLOW_ACTION_TYPE_DROP) {
@@ -1767,6 +1776,24 @@ add_count_action(struct flow_actions *actions)
     add_flow_action(actions, RTE_FLOW_ACTION_TYPE_COUNT, count);
 }
 
+#ifdef ALLOW_EXPERIMENTAL_API
+static int
+add_represented_port_action(struct flow_actions *actions,
+                            struct netdev *outdev)
+{
+    struct rte_flow_action_ethdev *ethdev;
+    int outdev_id;
+
+    outdev_id = netdev_dpdk_get_port_id(outdev);
+    if (outdev_id < 0) {
+        return -1;
+    }
+    ethdev = xzalloc(sizeof *ethdev);
+    ethdev->port_id = outdev_id;
+    add_flow_action(actions, RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT, ethdev);
+    return 0;
+}
+#else /* ! ALLOW_EXPERIMENTAL_API */
 static int
 add_port_id_action(struct flow_actions *actions,
                    struct netdev *outdev)
@@ -1783,6 +1810,7 @@ add_port_id_action(struct flow_actions *actions,
     add_flow_action(actions, RTE_FLOW_ACTION_TYPE_PORT_ID, port_id);
     return 0;
 }
+#endif /* ALLOW_EXPERIMENTAL_API */
 
 static int
 add_output_action(struct netdev *netdev,
@@ -1800,7 +1828,11 @@ add_output_action(struct netdev *netdev,
         return -1;
     }
     if (!netdev_flow_api_equals(netdev, outdev) ||
+#ifdef ALLOW_EXPERIMENTAL_API
+        add_represented_port_action(actions, outdev)) {
+#else /* ! ALLOW_EXPERIMENTAL_API */
         add_port_id_action(actions, outdev)) {
+#endif /* ALLOW_EXPERIMENTAL_API */
         VLOG_DBG_RL(&rl, "%s: Output to port \'%s\' cannot be offloaded.",
                     netdev_get_name(netdev), netdev_get_name(outdev));
         ret = -1;
