@@ -32,6 +32,11 @@ Post-v2.17.0
    - DPDK:
      * OVS validated with DPDK 21.11.1.  It is recommended to use this version
        until further releases.
+   - Userspace datapath:
+     * Add AVX512 optimized profiles to miniflow extract for IPv6/UDP and
+       IPv6/TCP.
+     * Add AVX512 optimized profiles to miniflow extract for VLAN/IPv6/UDP
+       and VLAN/IPv6/TCP.
 
 
 v2.17.0 - 17 Feb 2022
