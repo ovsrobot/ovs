@@ -1436,6 +1436,9 @@ OvsExecuteConntrackAction(OvsForwardingContext *fwdCtx,
                     }
                 }
                 break;
+            case OVS_CT_ATTR_TIMEOUT:
+                return NDIS_STATUS_NOT_SUPPORTED;
+                break;
             default:
                 OVS_LOG_TRACE("Invalid netlink attr type: %u", NlAttrType(ctAttr));
                 break;
