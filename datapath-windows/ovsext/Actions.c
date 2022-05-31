@@ -2502,6 +2502,11 @@ OvsDoExecuteActions(POVS_SWITCH_CONTEXT switchContext,
             }
             break;
         }
+        case OVS_ACTION_ATTR_TRUNC:
+            status = NDIS_STATUS_NOT_SUPPORTED;
+            dropReason = L"OVS-truncate action not supported";
+            goto dropit;
+            break;
         default:
             status = NDIS_STATUS_NOT_SUPPORTED;
             break;
