@@ -32,7 +32,9 @@ Post-v2.17.0
    - DPDK:
      * OVS validated with DPDK 21.11.1.  It is recommended to use this version
        until further releases.
-
+     * Delay creating or reusing a mempool for vhost ports until the vhost
+       device has been added. A failure to create a mempool will now also be
+       logged when the vhost device is added.
 
 v2.17.0 - 17 Feb 2022
 ---------------------
