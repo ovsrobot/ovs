@@ -3739,7 +3739,11 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     size_t clone_ofs = 0;
     size_t push_action_size;
 
-    clone_ofs = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_CLONE);
+    if (!is_last_action) {
+        clone_ofs = nl_msg_start_nested(ctx->odp_actions,
+                                        OVS_ACTION_ATTR_CLONE);
+    }
+    size_t pre_patch_port_outp_size = ctx->odp_actions->size;
     odp_put_tnl_push_action(ctx->odp_actions, &tnl_push_data);
     push_action_size = ctx->odp_actions->size;
 
@@ -3783,9 +3787,17 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
         xlate_cache_steal_entries(backup_xcache, ctx->xin->xcache);
 
         if (ctx->odp_actions->size > push_action_size) {
-            nl_msg_end_non_empty_nested(ctx->odp_actions, clone_ofs);
+            if (!is_last_action) {
+                nl_msg_end_non_empty_nested(ctx->odp_actions, clone_ofs);
+            }
         } else {
-            nl_msg_cancel_nested(ctx->odp_actions, clone_ofs);
+            if (is_last_action) {
+                /* Reset size since no actions added in patch port output */
+                nl_msg_reset_size(ctx->odp_actions, pre_patch_port_outp_size);
+            } else {
+                /* Cancel nested clone action */
+                nl_msg_cancel_nested(ctx->odp_actions, clone_ofs);
+            }
         }
 
         /* Restore context status. */
@@ -3797,7 +3809,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
         ctx->wc = backup_wc;
     } else {
         /* In order to maintain accurate stats, use recirc for
-         * natvie tunneling.  */
+         * native tunneling.  */
         nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_RECIRC, 0);
         nl_msg_end_nested(ctx->odp_actions, clone_ofs);
     }
@@ -5879,7 +5891,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
             finish_freezing(ctx);
         }
         if (nl_msg_end_non_empty_nested(ctx->odp_actions, ac_offset)) {
-            nl_msg_cancel_nested(ctx->odp_actions, offset);
+            nl_msg_reset_size(ctx->odp_actions, offset);
         } else {
             nl_msg_put_u32(ctx->odp_actions, OVS_SAMPLE_ATTR_PROBABILITY,
                            UINT32_MAX); /* 100% probability. */
