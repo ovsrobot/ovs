@@ -579,6 +579,39 @@ icmp,vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,nw_src=10
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([PMD - Enable cross numa polling])
+OVS_VSWITCHD_START(
+  [add-port br0 p1 -- set Interface p1 type=dummy-pmd ofport_request=1 options:n_rxq=4 -- \
+   set Open_vSwitch . other_config:pmd-cpu-mask=3
+], [], [], [--dummy-numa 0,1])
+
+AT_CHECK([ovs-ofctl add-flow br0 action=controller])
+
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-rxq-assign=group])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 3 -d ' ' | sort |      uniq], [0], [dnl
+0
+])
+
+dnl Enable cross numa polling and check numa ids
+AT_CHECK([ovs-vsctl set Interface p1 other_config:cross-numa-polling=true])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 3 -d ' ' | sort |      uniq], [0], [dnl
+0
+1
+])
+
+dnl Disable cross numa polling and check numa ids
+AT_CHECK([ovs-vsctl set Interface p1 other_config:cross-numa-polling=false])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | parse_pmd_rxq_show | cut -f 3 -d ' ' | sort |      uniq], [0], [dnl
+0
+])
+
+OVS_VSWITCHD_STOP(["/|WARN|/d"])
+AT_CLEANUP
+
+
 AT_SETUP([PMD - change numa node])
 OVS_VSWITCHD_START(
   [add-port br0 p1 -- set Interface p1 type=dummy-pmd ofport_request=1 options:n_rxq=2 -- \
