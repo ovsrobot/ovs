@@ -6682,7 +6682,7 @@ netdev_linux_prepend_vnet_hdr(struct dp_packet *p, int mtu)
 {
     struct virtio_net_hdr *vnet = dp_packet_push_zeros(p, sizeof *vnet);
 
-    if (dp_packet_ol_is_tso(p)) {
+    if (dp_packet_ol_tcp_seg(p)) {
         uint16_t hdr_len = ((char *) dp_packet_l4(p)
                             - (char *) dp_packet_eth(p)) + TCP_HEADER_LEN;
 
