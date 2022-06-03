@@ -3286,6 +3286,26 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="other_config" key="cross-numa-polling"
+                                  type='{"type": "boolean"}'>
+        <p>
+          Specifies if the RX queues of the port can be automatically assigned
+          to PMD threads on any NUMA node or only on the local NUMA node of
+          the port.
+        </p>
+        <p>
+          Polling of physical ports from a non-local PMD thread incurs some
+          performance penalty due to the access to packet data across the NUMA
+          barrier. This option can still increase the overall performance if
+          it allows better utilization of those non-local PMDs threads.
+          It is most useful together with the auto load-balancing of RX queues
+          (see other_config:auto_lb in table Open_vSwitch).
+        </p>
+        <p>
+          Defaults to false.
+        </p>
+      </column>
+
       <column name="options" key="xdp-mode"
               type='{"type": "string",
                      "enum": ["set", ["best-effort", "native-with-zerocopy",

@@ -99,6 +99,25 @@ core cycles for each Rx queue::
 
     $ ovs-appctl dpif-netdev/pmd-rxq-show
 
+Normally, Rx queues are assigned to PMD threads automatically.  By default
+OVS only assigns Rx queues to PMD threads executing on the same NUMA
+node in order to avoid unnecessary latency for accessing packet buffers
+across the NUMA boundary.  Typically this overhead is higher for vhostuser
+ports than for physical ports due to the packet copy that is done for all
+rx packets.
+
+On NUMA servers with physical ports only on one NUMA node, the NUMA-local
+polling policy can lead to an under-utilization of the PMD threads on the
+remote NUMA node.  For the overall OVS performance it may in such cases be
+beneficial to utilize the spare capacity and allow polling of a physical
+port's rxqs across NUMA nodes despite the overhead involved.
+The policy can be set per port with the following configuration option::
+
+    $ ovs-vsctl set Interface <iface> \
+        other_config:cross-numa-polling=true|false
+
+The default value is false.
+
 .. note::
 
    A history of one minute is recorded and shown for each Rx queue to allow for
@@ -114,6 +133,10 @@ core cycles for each Rx queue::
 
    A ``overhead`` statistics is shown per PMD: it represents the number of
    cycles inherently consumed by the OVS PMD processing loop.
+
+.. versionchanged:: 2.18.0
+
+   Added the interface parameter ``other_config:cross-numa-polling``
 
 Rx queue to PMD assignment takes place whenever there are configuration changes
 or can be triggered by using::
