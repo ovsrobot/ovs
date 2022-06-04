@@ -8305,7 +8305,22 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
          * to be locking revalidators out of making flow modifications. */
         ovs_mutex_lock(&pmd->flow_mutex);
         netdev_flow = dp_netdev_pmd_lookup_flow(pmd, key, NULL);
-        if (OVS_LIKELY(!netdev_flow)) {
+        if (OVS_UNLIKELY(netdev_flow)) {
+            struct dp_netdev_actions *old_act =
+                dp_netdev_flow_get_actions(netdev_flow);
+
+            if ((add_actions->size != old_act->size) ||
+                    memcmp(old_act->actions, add_actions->data,
+                                             add_actions->size)) {
+
+               struct dp_netdev_actions *new_act =
+                   dp_netdev_actions_create(add_actions->data,
+                                            add_actions->size);
+
+               ovsrcu_set(&netdev_flow->actions, new_act);
+               ovsrcu_postpone(dp_netdev_actions_free, old_act);
+            }
+        } else {
             netdev_flow = dp_netdev_flow_add(pmd, &match, &ufid,
                                              add_actions->data,
                                              add_actions->size, orig_in_port);
