@@ -2411,7 +2411,9 @@ push_dp_ops(struct udpif *udpif, struct ukey_op *ops, size_t n_ops)
         if (op->dop.error) {
             if (op->ukey) {
                 ovs_mutex_lock(&op->ukey->mutex);
-                transition_ukey(op->ukey, UKEY_EVICTED);
+                if (op->ukey->state < UKEY_EVICTED) {
+                    transition_ukey(op->ukey, UKEY_EVICTED);
+                }
                 ovs_mutex_unlock(&op->ukey->mutex);
             }
             /* if it's a flow_del error, 'stats' is unusable, it's ok
@@ -2432,7 +2434,9 @@ push_dp_ops(struct udpif *udpif, struct ukey_op *ops, size_t n_ops)
 
         if (op->ukey) {
             ovs_mutex_lock(&op->ukey->mutex);
-            transition_ukey(op->ukey, UKEY_EVICTED);
+            if (op->ukey->state < UKEY_EVICTED) {
+                transition_ukey(op->ukey, UKEY_EVICTED);
+            }
             push->used = MAX(stats->used, op->ukey->stats.used);
             push->tcp_flags = stats->tcp_flags | op->ukey->stats.tcp_flags;
             push->n_packets = stats->n_packets - op->ukey->stats.n_packets;
