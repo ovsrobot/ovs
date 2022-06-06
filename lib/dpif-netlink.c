@@ -804,11 +804,11 @@ dpif_netlink_set_handler_pids(struct dpif *dpif_, const uint32_t *upcall_pids,
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     struct dpif_netlink_dp request, reply;
     struct ofpbuf *bufp;
-    int error;
-    int n_cores;
 
-    n_cores = count_cpu_cores();
-    ovs_assert(n_cores == n_upcall_pids);
+    uint32_t *corrected;
+    int error, i, n_cores;
+
+    n_cores = count_total_cores();
     VLOG_DBG("Dispatch mode(per-cpu): Number of CPUs is %d", n_cores);
 
     dpif_netlink_dp_init(&request);
@@ -818,7 +818,12 @@ dpif_netlink_set_handler_pids(struct dpif *dpif_, const uint32_t *upcall_pids,
     request.user_features = dpif->user_features |
                             OVS_DP_F_DISPATCH_UPCALL_PER_CPU;
 
-    request.upcall_pids = upcall_pids;
+    corrected = xcalloc(n_cores, sizeof(uint32_t));
+
+    for (i = 0; i < n_cores; i++) {
+        corrected[i] = upcall_pids[i % n_upcall_pids];
+    }
+    request.upcall_pids = corrected;
     request.n_upcall_pids = n_cores;
 
     error = dpif_netlink_dp_transact(&request, &reply, &bufp);
@@ -826,9 +831,10 @@ dpif_netlink_set_handler_pids(struct dpif *dpif_, const uint32_t *upcall_pids,
         dpif->user_features = reply.user_features;
         ofpbuf_delete(bufp);
         if (!dpif_netlink_upcall_per_cpu(dpif)) {
-            return -EOPNOTSUPP;
+            error = -EOPNOTSUPP;
         }
     }
+    free(corrected);
     return error;
 }
 
