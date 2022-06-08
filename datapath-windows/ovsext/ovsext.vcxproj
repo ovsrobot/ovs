@@ -395,6 +395,7 @@
     <ClCompile Include="Conntrack-nat.c" />
     <ClCompile Include="Conntrack-related.c" />
     <ClCompile Include="Conntrack-ftp.c" />
+    <ClCompile Include="Conntrack-tftp.c" />
     <ClCompile Include="Conntrack-icmp.c" />
     <ClCompile Include="Conntrack-other.c" />
     <ClCompile Include="Conntrack-tcp.c" />
