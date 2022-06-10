@@ -162,6 +162,9 @@ This package provides IPsec tunneling support for OVS tunnels.
 %setup -q
 
 %build
+# Append release to version
+sed -i -e "s/^AC_INIT(openvswitch,.*,/AC_INIT(openvswitch, %{version}-%{release},/" configure.ac
+
 %configure \
 %if %{with libcapng}
         --enable-libcapng \
