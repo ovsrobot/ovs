@@ -17,6 +17,7 @@
 
 #include <config.h>
 #include "odp-execute.h"
+#include "odp-execute-private.h"
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -833,6 +834,23 @@ requires_datapath_assistance(const struct nlattr *a)
     return false;
 }
 
+/* The active function pointers on the datapath. ISA optimized implementations
+ * are enabled by plugging them into this static arary, which is consulted when
+ * applying actions on the datapath.
+ */
+static struct odp_execute_action_impl actions_active_impl;
+
+void
+odp_execute_init(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    if (ovsthread_once_start(&once)) {
+        odp_execute_action_init();
+        ovsthread_once_done(&once);
+    }
+}
+
+
 /* Executes all of the 'actions_len' bytes of datapath actions in 'actions' on
  * the packets in 'batch'.  If 'steal' is true, possibly modifies and
  * definitely free the packets in 'batch', otherwise leaves 'batch' unchanged.
@@ -857,14 +875,12 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
 
     NL_ATTR_FOR_EACH_UNSAFE (a, left, actions, actions_len) {
         int type = nl_attr_type(a);
+        enum ovs_action_attr attr_type = (enum ovs_action_attr) type;
         bool last_action = (left <= NLA_ALIGN(a->nla_len));
+        bool should_steal = steal && last_action;
 
         if (requires_datapath_assistance(a)) {
             if (dp_execute_action) {
-                /* Allow 'dp_execute_action' to steal the packet data if we do
-                 * not need it any more. */
-                bool should_steal = steal && last_action;
-
                 dp_execute_action(dp, batch, a, should_steal);
 
                 if (last_action || dp_packet_batch_is_empty(batch)) {
@@ -879,8 +895,20 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             continue;
         }
 
-        switch ((enum ovs_action_attr) type) {
+        /* If type is set in the active actions implementation, call the
+         * function-pointer and continue to the next action.
+         */
+        if (actions_active_impl.funcs[attr_type] &&
+            attr_type <= OVS_ACTION_ATTR_MAX) {
+            actions_active_impl.funcs[attr_type](batch, a);
+            continue;
+        }
 
+        /* If the action was not handled by the active function pointers above,
+         * process them by switching on the type below.
+         */
+
+        switch (attr_type) {
         case OVS_ACTION_ATTR_HASH: {
             const struct ovs_action_hash *hash_act = nl_attr_get(a);
 
@@ -1094,6 +1122,9 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case __OVS_ACTION_ATTR_MAX:
             OVS_NOT_REACHED();
         }
+
+        /* Do not add any generic processing here, as it won't be executed when
+         * an ISA-specific action implementation exists. */
     }
 
     dp_packet_delete_batch(batch, steal);
