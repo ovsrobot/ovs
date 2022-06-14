@@ -206,7 +206,7 @@ struct netdev_dpdk_sw_stats {
     /* Packet drops in ingress policer processing. */
     uint64_t rx_qos_drops;
     /* Packet drops in HWOL processing. */
-    uint64_t tx_invalid_hwol_drops;
+    uint64_t tx_invalid_ol_drops;
 };
 
 enum dpdk_dev_type {
@@ -2141,7 +2141,7 @@ netdev_dpdk_rxq_dealloc(struct netdev_rxq *rxq)
 /* Prepare the packet for HWOL.
  * Return True if the packet is OK to continue. */
 static bool
-netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
+netdev_dpdk_prep_ol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
 {
     struct dp_packet *pkt = CONTAINER_OF(mbuf, struct dp_packet, mbuf);
 
@@ -2175,7 +2175,7 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
 /* Prepare a batch for HWOL.
  * Return the number of good packets in the batch. */
 static int
-netdev_dpdk_prep_hwol_batch(struct netdev_dpdk *dev, struct rte_mbuf **pkts,
+netdev_dpdk_prep_ol_batch(struct netdev_dpdk *dev, struct rte_mbuf **pkts,
                             int pkt_cnt)
 {
     int i = 0;
@@ -2185,7 +2185,7 @@ netdev_dpdk_prep_hwol_batch(struct netdev_dpdk *dev, struct rte_mbuf **pkts,
     /* Prepare and filter bad HWOL packets. */
     for (i = 0; i < pkt_cnt; i++) {
         pkt = pkts[i];
-        if (!netdev_dpdk_prep_hwol_packet(dev, pkt)) {
+        if (!netdev_dpdk_prep_ol_packet(dev, pkt)) {
             rte_pktmbuf_free(pkt);
             continue;
         }
@@ -2539,7 +2539,7 @@ netdev_dpdk_vhost_update_tx_counters(struct netdev_dpdk *dev,
     int dropped = sw_stats_add->tx_mtu_exceeded_drops +
                   sw_stats_add->tx_qos_drops +
                   sw_stats_add->tx_failure_drops +
-                  sw_stats_add->tx_invalid_hwol_drops;
+                  sw_stats_add->tx_invalid_ol_drops;
     struct netdev_stats *stats = &dev->stats;
     int sent = attempted - dropped;
     int i;
@@ -2558,7 +2558,7 @@ netdev_dpdk_vhost_update_tx_counters(struct netdev_dpdk *dev,
         sw_stats->tx_failure_drops      += sw_stats_add->tx_failure_drops;
         sw_stats->tx_mtu_exceeded_drops += sw_stats_add->tx_mtu_exceeded_drops;
         sw_stats->tx_qos_drops          += sw_stats_add->tx_qos_drops;
-        sw_stats->tx_invalid_hwol_drops += sw_stats_add->tx_invalid_hwol_drops;
+        sw_stats->tx_invalid_ol_drops += sw_stats_add->tx_invalid_ol_drops;
     }
 }
 
@@ -2719,8 +2719,8 @@ netdev_dpdk_common_send(struct netdev *netdev, struct dp_packet_batch *batch,
 
     /* Prepare each mbuf for hardware offloading. */
     if (userspace_tso_enabled()) {
-        cnt = netdev_dpdk_prep_hwol_batch(dev, pkts, pkt_cnt);
-        stats->tx_invalid_hwol_drops += pkt_cnt - cnt;
+        cnt = netdev_dpdk_prep_ol_batch(dev, pkts, pkt_cnt);
+        stats->tx_invalid_ol_drops += pkt_cnt - cnt;
         pkt_cnt = cnt;
     }
 
@@ -2842,7 +2842,7 @@ netdev_dpdk_eth_send(struct netdev *netdev, int qid,
         sw_stats->tx_failure_drops += stats.tx_failure_drops;
         sw_stats->tx_mtu_exceeded_drops += stats.tx_mtu_exceeded_drops;
         sw_stats->tx_qos_drops += stats.tx_qos_drops;
-        sw_stats->tx_invalid_hwol_drops += stats.tx_invalid_hwol_drops;
+        sw_stats->tx_invalid_ol_drops += stats.tx_invalid_ol_drops;
         rte_spinlock_unlock(&dev->stats_lock);
     }
 
@@ -3173,7 +3173,7 @@ netdev_dpdk_get_sw_custom_stats(const struct netdev *netdev,
     SW_CSTAT(tx_mtu_exceeded_drops)  \
     SW_CSTAT(tx_qos_drops)           \
     SW_CSTAT(rx_qos_drops)           \
-    SW_CSTAT(tx_invalid_hwol_drops)
+    SW_CSTAT(tx_invalid_ol_drops)
 
 #define SW_CSTAT(NAME) + 1
     custom_stats->size = SW_CSTATS;
