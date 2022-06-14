@@ -192,28 +192,28 @@ eth_addr_from_string(const char *s, struct eth_addr *ea)
     }
 }
 
-/* Fills 'b' with a Reverse ARP packet with Ethernet source address 'eth_src'.
+/* Fills 'p' with a Reverse ARP packet with Ethernet source address 'eth_src'.
  * This function is used by Open vSwitch to compose packets in cases where
  * context is important but content doesn't (or shouldn't) matter.
  *
  * The returned packet has enough headroom to insert an 802.1Q VLAN header if
  * desired. */
 void
-compose_rarp(struct dp_packet *b, const struct eth_addr eth_src)
+compose_rarp(struct dp_packet *p, const struct eth_addr eth_src)
 {
     struct eth_header *eth;
     struct arp_eth_header *arp;
 
-    dp_packet_clear(b);
-    dp_packet_prealloc_tailroom(b, 2 + ETH_HEADER_LEN + VLAN_HEADER_LEN
+    dp_packet_clear(p);
+    dp_packet_prealloc_tailroom(p, 2 + ETH_HEADER_LEN + VLAN_HEADER_LEN
                              + ARP_ETH_HEADER_LEN);
-    dp_packet_reserve(b, 2 + VLAN_HEADER_LEN);
-    eth = dp_packet_put_uninit(b, sizeof *eth);
+    dp_packet_reserve(p, 2 + VLAN_HEADER_LEN);
+    eth = dp_packet_put_uninit(p, sizeof *eth);
     eth->eth_dst = eth_addr_broadcast;
     eth->eth_src = eth_src;
     eth->eth_type = htons(ETH_TYPE_RARP);
 
-    arp = dp_packet_put_uninit(b, sizeof *arp);
+    arp = dp_packet_put_uninit(p, sizeof *arp);
     arp->ar_hrd = htons(ARP_HRD_ETHERNET);
     arp->ar_pro = htons(ARP_PRO_IP);
     arp->ar_hln = sizeof arp->ar_sha;
@@ -224,9 +224,9 @@ compose_rarp(struct dp_packet *b, const struct eth_addr eth_src)
     arp->ar_tha = eth_src;
     put_16aligned_be32(&arp->ar_tpa, htonl(0));
 
-    dp_packet_reset_offsets(b);
-    dp_packet_set_l3(b, arp);
-    b->packet_type = htonl(PT_ETH);
+    dp_packet_reset_offsets(p);
+    dp_packet_set_l3(p, arp);
+    p->packet_type = htonl(PT_ETH);
 }
 
 /* Insert VLAN header according to given TCI. Packet passed must be Ethernet
@@ -1082,17 +1082,17 @@ ipv6_is_cidr(const struct in6_addr *netmask)
     return true;
 }
 
-/* Populates 'b' with an Ethernet II packet headed with the given 'eth_dst',
+/* Populates 'p' with an Ethernet II packet headed with the given 'eth_dst',
  * 'eth_src' and 'eth_type' parameters.  A payload of 'size' bytes is allocated
- * in 'b' and returned.  This payload may be populated with appropriate
- * information by the caller.  Sets 'b''s 'frame' pointer and 'l3' offset to
+ * in 'p' and returned.  This payload may be populated with appropriate
+ * information by the caller.  Sets 'p''s 'frame' pointer and 'l3' offset to
  * the Ethernet header and payload respectively.  Aligns b->l3 on a 32-bit
  * boundary.
  *
  * The returned packet has enough headroom to insert an 802.1Q VLAN header if
  * desired. */
 void *
-eth_compose(struct dp_packet *b, const struct eth_addr eth_dst,
+eth_compose(struct dp_packet *p, const struct eth_addr eth_dst,
             const struct eth_addr eth_src, uint16_t eth_type,
             size_t size)
 {
@@ -1100,22 +1100,22 @@ eth_compose(struct dp_packet *b, const struct eth_addr eth_dst,
     struct eth_header *eth;
 
 
-    dp_packet_clear(b);
+    dp_packet_clear(p);
 
     /* The magic 2 here ensures that the L3 header (when it is added later)
      * will be 32-bit aligned. */
-    dp_packet_prealloc_tailroom(b, 2 + ETH_HEADER_LEN + VLAN_HEADER_LEN + size);
-    dp_packet_reserve(b, 2 + VLAN_HEADER_LEN);
-    eth = dp_packet_put_uninit(b, ETH_HEADER_LEN);
-    data = dp_packet_put_zeros(b, size);
+    dp_packet_prealloc_tailroom(p, 2 + ETH_HEADER_LEN + VLAN_HEADER_LEN + size);
+    dp_packet_reserve(p, 2 + VLAN_HEADER_LEN);
+    eth = dp_packet_put_uninit(p, ETH_HEADER_LEN);
+    data = dp_packet_put_zeros(p, size);
 
     eth->eth_dst = eth_dst;
     eth->eth_src = eth_src;
     eth->eth_type = htons(eth_type);
 
-    b->packet_type = htonl(PT_ETH);
-    dp_packet_reset_offsets(b);
-    dp_packet_set_l3(b, data);
+    p->packet_type = htonl(PT_ETH);
+    dp_packet_reset_offsets(p);
+    dp_packet_set_l3(p, data);
 
     return data;
 }
@@ -1648,23 +1648,23 @@ packet_format_tcp_flags(struct ds *s, uint16_t tcp_flags)
 #define ARP_PACKET_SIZE  (2 + ETH_HEADER_LEN + VLAN_HEADER_LEN + \
                           ARP_ETH_HEADER_LEN)
 
-/* Clears 'b' and replaces its contents by an ARP frame with the specified
+/* Clears 'p' and replaces its contents by an ARP frame with the specified
  * 'arp_op', 'arp_sha', 'arp_tha', 'arp_spa', and 'arp_tpa'.  The outer
  * Ethernet frame is initialized with Ethernet source 'arp_sha' and destination
  * 'arp_tha', except that destination ff:ff:ff:ff:ff:ff is used instead if
  * 'broadcast' is true.  Points the L3 header to the ARP header. */
 void
-compose_arp(struct dp_packet *b, uint16_t arp_op,
+compose_arp(struct dp_packet *p, uint16_t arp_op,
             const struct eth_addr arp_sha, const struct eth_addr arp_tha,
             bool broadcast, ovs_be32 arp_spa, ovs_be32 arp_tpa)
 {
-    compose_arp__(b);
+    compose_arp__(p);
 
-    struct eth_header *eth = dp_packet_eth(b);
+    struct eth_header *eth = dp_packet_eth(p);
     eth->eth_dst = broadcast ? eth_addr_broadcast : arp_tha;
     eth->eth_src = arp_sha;
 
-    struct arp_eth_header *arp = dp_packet_l3(b);
+    struct arp_eth_header *arp = dp_packet_l3(p);
     arp->ar_op = htons(arp_op);
     arp->ar_sha = arp_sha;
     arp->ar_tha = arp_tha;
@@ -1672,30 +1672,30 @@ compose_arp(struct dp_packet *b, uint16_t arp_op,
     put_16aligned_be32(&arp->ar_tpa, arp_tpa);
 }
 
-/* Clears 'b' and replaces its contents by an ARP frame.  Sets the fields in
+/* Clears 'p' and replaces its contents by an ARP frame.  Sets the fields in
  * the Ethernet and ARP headers that are fixed for ARP frames to those fixed
  * values, and zeroes the other fields.  Points the L3 header to the ARP
  * header. */
 void
-compose_arp__(struct dp_packet *b)
+compose_arp__(struct dp_packet *p)
 {
-    dp_packet_clear(b);
-    dp_packet_prealloc_tailroom(b, ARP_PACKET_SIZE);
-    dp_packet_reserve(b, 2 + VLAN_HEADER_LEN);
+    dp_packet_clear(p);
+    dp_packet_prealloc_tailroom(p, ARP_PACKET_SIZE);
+    dp_packet_reserve(p, 2 + VLAN_HEADER_LEN);
 
-    struct eth_header *eth = dp_packet_put_zeros(b, sizeof *eth);
+    struct eth_header *eth = dp_packet_put_zeros(p, sizeof *eth);
     eth->eth_type = htons(ETH_TYPE_ARP);
 
-    struct arp_eth_header *arp = dp_packet_put_zeros(b, sizeof *arp);
+    struct arp_eth_header *arp = dp_packet_put_zeros(p, sizeof *arp);
     arp->ar_hrd = htons(ARP_HRD_ETHERNET);
     arp->ar_pro = htons(ARP_PRO_IP);
     arp->ar_hln = sizeof arp->ar_sha;
     arp->ar_pln = sizeof arp->ar_spa;
 
-    dp_packet_reset_offsets(b);
-    dp_packet_set_l3(b, arp);
+    dp_packet_reset_offsets(p);
+    dp_packet_set_l3(p, arp);
 
-    b->packet_type = htonl(PT_ETH);
+    p->packet_type = htonl(PT_ETH);
 }
 
 /* This function expects packet with ethernet header with correct
@@ -1720,7 +1720,7 @@ compose_ipv6(struct dp_packet *packet, uint8_t proto,
 
 /* Compose an IPv6 Neighbor Discovery Neighbor Solicitation message. */
 void
-compose_nd_ns(struct dp_packet *b, const struct eth_addr eth_src,
+compose_nd_ns(struct dp_packet *p, const struct eth_addr eth_src,
               const struct in6_addr *ipv6_src, const struct in6_addr *ipv6_dst)
 {
     struct in6_addr sn_addr;
@@ -1732,8 +1732,8 @@ compose_nd_ns(struct dp_packet *b, const struct eth_addr eth_src,
     in6_addr_solicited_node(&sn_addr, ipv6_dst);
     ipv6_multicast_to_ethernet(&eth_dst, &sn_addr);
 
-    eth_compose(b, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
-    ns = compose_ipv6(b, IPPROTO_ICMPV6, ipv6_src, &sn_addr,
+    eth_compose(p, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
+    ns = compose_ipv6(p, IPPROTO_ICMPV6, ipv6_src, &sn_addr,
                       0, 0, 255, ND_MSG_LEN + ND_LLA_OPT_LEN);
 
     ns->icmph.icmp6_type = ND_NEIGHBOR_SOLICIT;
@@ -1744,17 +1744,17 @@ compose_nd_ns(struct dp_packet *b, const struct eth_addr eth_src,
     lla_opt->type = ND_OPT_SOURCE_LINKADDR;
     lla_opt->len = 1;
 
-    packet_set_nd(b, ipv6_dst, eth_src, eth_addr_zero);
+    packet_set_nd(p, ipv6_dst, eth_src, eth_addr_zero);
 
     ns->icmph.icmp6_cksum = 0;
-    icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
+    icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(p));
     ns->icmph.icmp6_cksum = csum_finish(
         csum_continue(icmp_csum, ns, ND_MSG_LEN + ND_LLA_OPT_LEN));
 }
 
 /* Compose an IPv6 Neighbor Discovery Neighbor Advertisement message. */
 void
-compose_nd_na(struct dp_packet *b,
+compose_nd_na(struct dp_packet *p,
               const struct eth_addr eth_src, const struct eth_addr eth_dst,
               const struct in6_addr *ipv6_src, const struct in6_addr *ipv6_dst,
               ovs_be32 rso_flags)
@@ -1763,8 +1763,8 @@ compose_nd_na(struct dp_packet *b,
     struct ovs_nd_lla_opt *lla_opt;
     uint32_t icmp_csum;
 
-    eth_compose(b, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
-    na = compose_ipv6(b, IPPROTO_ICMPV6, ipv6_src, ipv6_dst,
+    eth_compose(p, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
+    na = compose_ipv6(p, IPPROTO_ICMPV6, ipv6_src, ipv6_dst,
                       0, 0, 255, ND_MSG_LEN + ND_LLA_OPT_LEN);
 
     na->icmph.icmp6_type = ND_NEIGHBOR_ADVERT;
@@ -1775,10 +1775,10 @@ compose_nd_na(struct dp_packet *b,
     lla_opt->type = ND_OPT_TARGET_LINKADDR;
     lla_opt->len = 1;
 
-    packet_set_nd(b, ipv6_src, eth_addr_zero, eth_src);
+    packet_set_nd(p, ipv6_src, eth_addr_zero, eth_src);
 
     na->icmph.icmp6_cksum = 0;
-    icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
+    icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(p));
     na->icmph.icmp6_cksum = csum_finish(csum_continue(
         icmp_csum, na, ND_MSG_LEN + ND_LLA_OPT_LEN));
 }
@@ -1786,9 +1786,9 @@ compose_nd_na(struct dp_packet *b,
 /* Compose an IPv6 Neighbor Discovery Router Advertisement message with
  * Source Link-layer Address Option and MTU Option.
  * Caller can call packet_put_ra_prefix_opt to append Prefix Information
- * Options to composed messags in 'b'. */
+ * Options to composed messags in 'p'. */
 void
-compose_nd_ra(struct dp_packet *b,
+compose_nd_ra(struct dp_packet *p,
               const struct eth_addr eth_src, const struct eth_addr eth_dst,
               const struct in6_addr *ipv6_src, const struct in6_addr *ipv6_dst,
               uint8_t cur_hop_limit, uint8_t mo_flags,
@@ -1800,10 +1800,10 @@ compose_nd_ra(struct dp_packet *b,
     bool with_mtu = mtu != 0;
     size_t mtu_opt_len = with_mtu ? ND_MTU_OPT_LEN : 0;
 
-    eth_compose(b, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
+    eth_compose(p, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
 
     struct ovs_ra_msg *ra = compose_ipv6(
-        b, IPPROTO_ICMPV6, ipv6_src, ipv6_dst, 0, 0, 255,
+        p, IPPROTO_ICMPV6, ipv6_src, ipv6_dst, 0, 0, 255,
         RA_MSG_LEN + ND_LLA_OPT_LEN + mtu_opt_len);
     ra->icmph.icmp6_type = ND_ROUTER_ADVERT;
     ra->icmph.icmp6_code = 0;
@@ -1829,7 +1829,7 @@ compose_nd_ra(struct dp_packet *b,
     }
 
     ra->icmph.icmp6_cksum = 0;
-    uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
+    uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(p));
     ra->icmph.icmp6_cksum = csum_finish(csum_continue(
         icmp_csum, ra, RA_MSG_LEN + ND_LLA_OPT_LEN + mtu_opt_len));
 }
@@ -1837,17 +1837,17 @@ compose_nd_ra(struct dp_packet *b,
 /* Append an IPv6 Neighbor Discovery Prefix Information option to a
  * Router Advertisement message. */
 void
-packet_put_ra_prefix_opt(struct dp_packet *b,
+packet_put_ra_prefix_opt(struct dp_packet *p,
                          uint8_t plen, uint8_t la_flags,
                          ovs_be32 valid_lifetime, ovs_be32 preferred_lifetime,
                          const ovs_be128 prefix)
 {
-    size_t prev_l4_size = dp_packet_l4_size(b);
-    struct ip6_hdr *nh = dp_packet_l3(b);
+    size_t prev_l4_size = dp_packet_l4_size(p);
+    struct ip6_hdr *nh = dp_packet_l3(p);
     nh->ip6_plen = htons(prev_l4_size + ND_PREFIX_OPT_LEN);
 
     struct ovs_nd_prefix_opt *prefix_opt =
-        dp_packet_put_uninit(b, sizeof *prefix_opt);
+        dp_packet_put_uninit(p, sizeof *prefix_opt);
     prefix_opt->type = ND_OPT_PREFIX_INFORMATION;
     prefix_opt->len = 4;
     prefix_opt->prefix_len = plen;
@@ -1857,9 +1857,9 @@ packet_put_ra_prefix_opt(struct dp_packet *b,
     put_16aligned_be32(&prefix_opt->reserved, 0);
     memcpy(prefix_opt->prefix.be32, prefix.be32, sizeof(ovs_be32[4]));
 
-    struct ovs_ra_msg *ra = dp_packet_l4(b);
+    struct ovs_ra_msg *ra = dp_packet_l4(p);
     ra->icmph.icmp6_cksum = 0;
-    uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
+    uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(p));
     ra->icmph.icmp6_cksum = csum_finish(csum_continue(
         icmp_csum, ra, prev_l4_size + ND_PREFIX_OPT_LEN));
 }

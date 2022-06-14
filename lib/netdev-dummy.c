@@ -224,14 +224,14 @@ static void
 dummy_packet_stream_send(struct dummy_packet_stream *s, const void *buffer, size_t size)
 {
     if (ovs_list_size(&s->txq) < NETDEV_DUMMY_MAX_QUEUE) {
-        struct dp_packet *b;
+        struct dp_packet *p;
         struct pkt_list_node *node;
 
-        b = dp_packet_clone_data_with_headroom(buffer, size, 2);
-        put_unaligned_be16(dp_packet_push_uninit(b, 2), htons(size));
+        p = dp_packet_clone_data_with_headroom(buffer, size, 2);
+        put_unaligned_be16(dp_packet_push_uninit(p, 2), htons(size));
 
         node = xmalloc(sizeof *node);
-        node->pkt = b;
+        node->pkt = p;
         ovs_list_push_back(&s->txq, &node->list_node);
     }
 }
