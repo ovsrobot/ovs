@@ -62,14 +62,14 @@ enum dp_packet_offload_mask {
     /* Is the 'flow_mark' valid? */
     DEF_OL_FLAG(DP_PACKET_OL_FLOW_MARK, RTE_MBUF_F_RX_FDIR_ID, 0x2),
     /* Bad L4 checksum in the packet. */
-    DEF_OL_FLAG(DP_PACKET_OL_RX_L4_CKSUM_BAD, RTE_MBUF_F_RX_L4_CKSUM_BAD, 0x4),
+    DEF_OL_FLAG(DP_PACKET_OL_RX_L4_CSUM_BAD, RTE_MBUF_F_RX_L4_CKSUM_BAD, 0x4),
     /* Bad IP checksum in the packet. */
-    DEF_OL_FLAG(DP_PACKET_OL_RX_IP_CKSUM_BAD, RTE_MBUF_F_RX_IP_CKSUM_BAD, 0x8),
+    DEF_OL_FLAG(DP_PACKET_OL_RX_IP_CSUM_BAD, RTE_MBUF_F_RX_IP_CKSUM_BAD, 0x8),
     /* Valid L4 checksum in the packet. */
-    DEF_OL_FLAG(DP_PACKET_OL_RX_L4_CKSUM_GOOD, RTE_MBUF_F_RX_L4_CKSUM_GOOD,
+    DEF_OL_FLAG(DP_PACKET_OL_RX_L4_CSUM_GOOD, RTE_MBUF_F_RX_L4_CKSUM_GOOD,
                 0x10),
     /* Valid IP checksum in the packet. */
-    DEF_OL_FLAG(DP_PACKET_OL_RX_IP_CKSUM_GOOD, RTE_MBUF_F_RX_IP_CKSUM_GOOD,
+    DEF_OL_FLAG(DP_PACKET_OL_RX_IP_CSUM_GOOD, RTE_MBUF_F_RX_IP_CKSUM_GOOD,
                 0x20),
     /* TCP Segmentation Offload. */
     DEF_OL_FLAG(DP_PACKET_OL_TX_TCP_SEG, RTE_MBUF_F_TX_TCP_SEG, 0x40),
@@ -78,34 +78,34 @@ enum dp_packet_offload_mask {
     /* Offloaded packet is IPv6. */
     DEF_OL_FLAG(DP_PACKET_OL_TX_IPV6, RTE_MBUF_F_TX_IPV6, 0x100),
     /* Offload TCP checksum. */
-    DEF_OL_FLAG(DP_PACKET_OL_TX_TCP_CKSUM, RTE_MBUF_F_TX_TCP_CKSUM, 0x200),
+    DEF_OL_FLAG(DP_PACKET_OL_TX_TCP_CSUM, RTE_MBUF_F_TX_TCP_CKSUM, 0x200),
     /* Offload UDP checksum. */
-    DEF_OL_FLAG(DP_PACKET_OL_TX_UDP_CKSUM, RTE_MBUF_F_TX_UDP_CKSUM, 0x400),
+    DEF_OL_FLAG(DP_PACKET_OL_TX_UDP_CSUM, RTE_MBUF_F_TX_UDP_CKSUM, 0x400),
     /* Offload SCTP checksum. */
-    DEF_OL_FLAG(DP_PACKET_OL_TX_SCTP_CKSUM, RTE_MBUF_F_TX_SCTP_CKSUM, 0x800),
+    DEF_OL_FLAG(DP_PACKET_OL_TX_SCTP_CSUM, RTE_MBUF_F_TX_SCTP_CKSUM, 0x800),
     /* Adding new field requires adding to DP_PACKET_OL_SUPPORTED_MASK. */
 };
 
 #define DP_PACKET_OL_SUPPORTED_MASK (DP_PACKET_OL_RSS_HASH         | \
                                      DP_PACKET_OL_FLOW_MARK        | \
-                                     DP_PACKET_OL_RX_L4_CKSUM_BAD  | \
-                                     DP_PACKET_OL_RX_IP_CKSUM_BAD  | \
-                                     DP_PACKET_OL_RX_L4_CKSUM_GOOD | \
-                                     DP_PACKET_OL_RX_IP_CKSUM_GOOD | \
+                                     DP_PACKET_OL_RX_L4_CSUM_BAD  | \
+                                     DP_PACKET_OL_RX_IP_CSUM_BAD  | \
+                                     DP_PACKET_OL_RX_L4_CSUM_GOOD | \
+                                     DP_PACKET_OL_RX_IP_CSUM_GOOD | \
                                      DP_PACKET_OL_TX_TCP_SEG       | \
                                      DP_PACKET_OL_TX_IPV4          | \
                                      DP_PACKET_OL_TX_IPV6          | \
-                                     DP_PACKET_OL_TX_TCP_CKSUM     | \
-                                     DP_PACKET_OL_TX_UDP_CKSUM     | \
-                                     DP_PACKET_OL_TX_SCTP_CKSUM)
+                                     DP_PACKET_OL_TX_TCP_CSUM     | \
+                                     DP_PACKET_OL_TX_UDP_CSUM     | \
+                                     DP_PACKET_OL_TX_SCTP_CSUM)
 
-#define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CKSUM | \
-                                 DP_PACKET_OL_TX_UDP_CKSUM | \
-                                 DP_PACKET_OL_TX_SCTP_CKSUM)
-#define DP_PACKET_OL_RX_IP_CKSUM_MASK (DP_PACKET_OL_RX_IP_CKSUM_GOOD | \
-                                       DP_PACKET_OL_RX_IP_CKSUM_BAD)
-#define DP_PACKET_OL_RX_L4_CKSUM_MASK (DP_PACKET_OL_RX_L4_CKSUM_GOOD | \
-                                       DP_PACKET_OL_RX_L4_CKSUM_BAD)
+#define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CSUM | \
+                                 DP_PACKET_OL_TX_UDP_CSUM | \
+                                 DP_PACKET_OL_TX_SCTP_CSUM)
+#define DP_PACKET_OL_RX_IP_CSUM_MASK (DP_PACKET_OL_RX_IP_CSUM_GOOD | \
+                                       DP_PACKET_OL_RX_IP_CSUM_BAD)
+#define DP_PACKET_OL_RX_L4_CSUM_MASK (DP_PACKET_OL_RX_L4_CSUM_GOOD | \
+                                       DP_PACKET_OL_RX_L4_CSUM_BAD)
 
 /* Buffer for holding packet data.  A dp_packet is automatically reallocated
  * as necessary if it grows too large for the available memory.
@@ -991,7 +991,7 @@ static inline bool
 dp_packet_hwol_l4_is_tcp(const struct dp_packet *b)
 {
     return (*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_L4_MASK) ==
-            DP_PACKET_OL_TX_TCP_CKSUM;
+            DP_PACKET_OL_TX_TCP_CSUM;
 }
 
 /* Returns 'true' if packet 'b' is marked for UDP checksum offloading. */
@@ -999,7 +999,7 @@ static inline bool
 dp_packet_hwol_l4_is_udp(struct dp_packet *b)
 {
     return (*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_L4_MASK) ==
-            DP_PACKET_OL_TX_UDP_CKSUM;
+            DP_PACKET_OL_TX_UDP_CSUM;
 }
 
 /* Returns 'true' if packet 'b' is marked for SCTP checksum offloading. */
@@ -1007,7 +1007,7 @@ static inline bool
 dp_packet_hwol_l4_is_sctp(struct dp_packet *b)
 {
     return (*dp_packet_ol_flags_ptr(b) & DP_PACKET_OL_TX_L4_MASK) ==
-            DP_PACKET_OL_TX_SCTP_CKSUM;
+            DP_PACKET_OL_TX_SCTP_CSUM;
 }
 
 /* Mark packet 'b' for IPv4 checksum offloading. */
@@ -1029,7 +1029,7 @@ dp_packet_hwol_set_tx_ipv6(struct dp_packet *b)
 static inline void
 dp_packet_hwol_set_csum_tcp(struct dp_packet *b)
 {
-    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TCP_CKSUM;
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TCP_CSUM;
 }
 
 /* Mark packet 'b' for UDP checksum offloading.  It implies that either
@@ -1037,7 +1037,7 @@ dp_packet_hwol_set_csum_tcp(struct dp_packet *b)
 static inline void
 dp_packet_hwol_set_csum_udp(struct dp_packet *b)
 {
-    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_UDP_CKSUM;
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_UDP_CSUM;
 }
 
 /* Mark packet 'b' for SCTP checksum offloading.  It implies that either
@@ -1045,7 +1045,7 @@ dp_packet_hwol_set_csum_udp(struct dp_packet *b)
 static inline void
 dp_packet_hwol_set_csum_sctp(struct dp_packet *b)
 {
-    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_SCTP_CKSUM;
+    *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_SCTP_CSUM;
 }
 
 /* Mark packet 'b' for TCP segmentation offloading.  It implies that
@@ -1060,29 +1060,29 @@ dp_packet_hwol_set_tcp_seg(struct dp_packet *b)
 static inline bool
 dp_packet_ip_checksum_valid(const struct dp_packet *p)
 {
-    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_IP_CKSUM_MASK) ==
-            DP_PACKET_OL_RX_IP_CKSUM_GOOD;
+    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_IP_CSUM_MASK) ==
+            DP_PACKET_OL_RX_IP_CSUM_GOOD;
 }
 
 static inline bool
 dp_packet_ip_checksum_bad(const struct dp_packet *p)
 {
-    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_IP_CKSUM_MASK) ==
-            DP_PACKET_OL_RX_IP_CKSUM_BAD;
+    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_IP_CSUM_MASK) ==
+            DP_PACKET_OL_RX_IP_CSUM_BAD;
 }
 
 static inline bool
 dp_packet_l4_checksum_valid(const struct dp_packet *p)
 {
-    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_L4_CKSUM_MASK) ==
-            DP_PACKET_OL_RX_L4_CKSUM_GOOD;
+    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_L4_CSUM_MASK) ==
+            DP_PACKET_OL_RX_L4_CSUM_GOOD;
 }
 
 static inline bool
 dp_packet_l4_checksum_bad(const struct dp_packet *p)
 {
-    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_L4_CKSUM_MASK) ==
-            DP_PACKET_OL_RX_L4_CKSUM_BAD;
+    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_L4_CSUM_MASK) ==
+            DP_PACKET_OL_RX_L4_CSUM_BAD;
 }
 
 static inline void ALWAYS_INLINE
