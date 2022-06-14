@@ -109,6 +109,41 @@ action_avx512_pop_vlan(struct dp_packet_batch *batch,
     }
 }
 
+/* This function will load the entire eth_header into a 128-bit wide register.
+ * Then use an 8-byte shuffle to shift the data left to make room for
+ * the vlan header. Insert the new vlan header and then store back to the
+ * original packet. */
+static void
+action_avx512_push_vlan(struct dp_packet_batch *batch, const struct nlattr *a)
+{
+    struct dp_packet *packet;
+    const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
+    ovs_be16 tpid, tci;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        tpid = vlan->vlan_tpid;
+        tci = vlan->vlan_tci;
+
+        avx512_dp_packet_resize_l2(packet, VLAN_HEADER_LEN);
+
+        /* Build up the VLAN TCI/TPID, and merge with the moving of Ether. */
+        char *pkt_data = (char *) dp_packet_data(packet);
+        const uint16_t tci_proc = tci & htons(~VLAN_CFI);
+        const uint32_t tpid_tci = (tci_proc << 16) | tpid;
+
+        static const uint8_t vlan_push_shuffle_mask[16] = {
+            4, 5, 6, 7, 8, 9, 10, 11,
+            12, 13, 14, 15, 0xFF, 0xFF, 0xFF, 0xFF
+        };
+
+        __m128i v_ether = _mm_loadu_si128((void *) pkt_data);
+        __m128i v_index = _mm_loadu_si128((void *) vlan_push_shuffle_mask);
+        __m128i v_shift = _mm_shuffle_epi8(v_ether, v_index);
+        __m128i v_vlan_hdr = _mm_insert_epi32(v_shift, tpid_tci, 3);
+        _mm_storeu_si128((void *) pkt_data, v_vlan_hdr);
+    }
+}
+
 /* Probe functions to check ISA requirements. */
 static bool
 avx512_isa_probe(void)
@@ -140,6 +175,8 @@ action_avx512_init(struct odp_execute_action_impl *self)
     /* Set function pointers for actions that can be applied directly, these
      * are identified by OVS_ACTION_ATTR_*. */
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_avx512_pop_vlan;
+    self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_avx512_push_vlan;
+
     return 0;
 }
 

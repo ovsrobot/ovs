@@ -845,6 +845,17 @@ action_pop_vlan(struct dp_packet_batch *batch,
     }
 }
 
+static void
+action_push_vlan(struct dp_packet_batch *batch, const struct nlattr *a)
+{
+    struct dp_packet *packet;
+    const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        eth_push_vlan(packet, vlan->vlan_tpid, vlan->vlan_tci);
+    }
+}
+
 /* Implementation of the scalar actions impl init function. Build up the
  * array of func ptrs here.
  */
@@ -854,6 +865,7 @@ odp_action_scalar_init(struct odp_execute_action_impl *self)
     /* Set function pointers for actions that can be applied directly, these
      * are identified by OVS_ACTION_ATTR_*. */
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_pop_vlan;
+    self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_push_vlan;
 
     return 0;
 }
@@ -991,15 +1003,6 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             default:
                 /* Assert on unknown hash algorithm.  */
                 OVS_NOT_REACHED();
-            }
-            break;
-        }
-
-        case OVS_ACTION_ATTR_PUSH_VLAN: {
-            const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
-
-            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
-                eth_push_vlan(packet, vlan->vlan_tpid, vlan->vlan_tci);
             }
             break;
         }
@@ -1156,6 +1159,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case __OVS_ACTION_ATTR_MAX:
         /* The following actions are handled by the scalar implementation. */
         case OVS_ACTION_ATTR_POP_VLAN:
+        case OVS_ACTION_ATTR_PUSH_VLAN:
             OVS_NOT_REACHED();
         }
 

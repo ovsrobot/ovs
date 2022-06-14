@@ -209,6 +209,7 @@ action_autoval_init(struct odp_execute_action_impl *self)
     /* Set function pointers for actions that can be applied directly, these
      * are identified by OVS_ACTION_ATTR_*. */
     self->funcs[OVS_ACTION_ATTR_POP_VLAN] = action_autoval_generic;
+    self->funcs[OVS_ACTION_ATTR_PUSH_VLAN] = action_autoval_generic;
 
     return 0;
 }
