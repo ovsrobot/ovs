@@ -42,6 +42,14 @@ static struct odp_execute_action_impl action_impls[] = {
         .name = "scalar",
         .init_func = odp_action_scalar_init,
     },
+
+    #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
+    [ACTION_IMPL_AVX512] = {
+        .available = false,
+        .name = "avx512",
+        .init_func = action_avx512_init,
+    },
+    #endif
 };
 
 static void

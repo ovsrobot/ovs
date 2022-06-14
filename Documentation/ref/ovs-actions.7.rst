@@ -2354,3 +2354,29 @@ never leads to recursion.  The ``resubmit`` extension action is more flexible.
 **Conformance**
   OpenFlow 1.1 introduced ``goto_table``.  Open vSwitch 2.1 added support for
   ``goto_table``.
+
+Actions Implementations
+-----------------------
+
+Actions are used in OpenFlow flows to describe what to do when the flow
+matches a packet. Just like with the datapath interface, SIMD instructions
+with the userspace datapath can be applied to the action implementation to
+improve performance.
+
+OVS provides multiple implementations of the actions.
+Available implementations can be listed with the following command::
+
+    $ ovs-appctl dpif-netdev/action-impl-show
+        Available Actions implementations:
+            scalar (available: Yes, active: Yes)
+            autovalidator (available: Yes, active: No)
+            avx512 (available: Yes, active: No)
+
+By default, ``scalar`` is used.  Implementations can be selected by
+name::
+
+    $ ovs-appctl dpif-netdev/action-impl-set avx512
+    Action implementation set to avx512.
+
+    $ ovs-appctl dpif-netdev/action-impl-set scalar
+    Action implementation set to scalar.

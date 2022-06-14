@@ -59,6 +59,9 @@ enum odp_execute_action_impl_idx {
      * Do not change the autovalidator position in this list without updating
      * the define below.
      */
+    #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
+    ACTION_IMPL_AVX512,
+    #endif
 
     ACTION_IMPL_MAX,
 };
@@ -82,10 +85,11 @@ int odp_action_scalar_init(struct odp_execute_action_impl *self);
 
 int action_autoval_init(struct odp_execute_action_impl *self);
 
+int action_avx512_init(struct odp_execute_action_impl *self);
+
 int odp_execute_action_set(const char *name,
                                struct odp_execute_action_impl *active);
 
 void odp_execute_action_get_info(struct ds *name);
-
 
 #endif /* ODP_EXTRACT_PRIVATE */
