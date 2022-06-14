@@ -2688,7 +2688,7 @@ netdev_offload_dpdk_hw_miss_packet_recover(struct netdev *netdev,
      * processing in SW.
      */
     md->in_port.odp_port = vport_odp;
-    dp_packet_reset_offload(packet);
+    dp_packet_ol_reset(packet);
 
 close_vport_netdev:
     netdev_close(vport_netdev);
