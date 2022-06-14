@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include "openvswitch/types.h"
 
+struct ds;
 struct nlattr;
 struct dp_packet;
 struct pkt_metadata;
@@ -36,6 +37,7 @@ typedef void (*odp_execute_action_cb)(struct dp_packet_batch *batch,
                                       const struct nlattr *action);
 
 int odp_actions_impl_set(const char *name);
+int odp_actions_impl_get(struct ds *name);
 
 typedef void (*odp_execute_cb)(void *dp, struct dp_packet_batch *batch,
                                const struct nlattr *action, bool should_steal);

@@ -63,6 +63,7 @@
 #include "netdev-vport.h"
 #include "netlink.h"
 #include "odp-execute.h"
+#include "odp-execute-private.h"
 #include "odp-util.h"
 #include "openvswitch/dynamic-string.h"
 #include "openvswitch/list.h"
@@ -1388,6 +1389,37 @@ error:
 }
 
 static void
+action_impl_set(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    struct ds reply = DS_EMPTY_INITIALIZER;
+
+    int err = odp_actions_impl_set(argv[1]);
+    if (err) {
+        ds_put_format(&reply,
+                      "Error: unknown action implementation, %s, specified!\n",
+                      argv[1]);
+        unixctl_command_reply_error(conn, ds_cstr(&reply));
+    } else {
+        ds_put_format(&reply, "Action implementation set to %s.\n", argv[1]);
+        unixctl_command_reply(conn, ds_cstr(&reply));
+    }
+
+    ds_destroy(&reply);
+}
+
+static void
+action_impl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    struct ds reply = DS_EMPTY_INITIALIZER;
+
+    odp_execute_action_get_info(&reply);
+    unixctl_command_reply(conn, ds_cstr(&reply));
+    ds_destroy(&reply);
+}
+
+static void
 dpif_netdev_pmd_rebalance(struct unixctl_conn *conn, int argc,
                           const char *argv[], void *aux OVS_UNUSED)
 {
@@ -1623,6 +1655,12 @@ dpif_netdev_init(void)
                              NULL);
     unixctl_command_register("dpif-netdev/miniflow-parser-get", "",
                              0, 0, dpif_miniflow_extract_impl_get,
+                             NULL);
+    unixctl_command_register("dpif-netdev/action-impl-set", "name",
+                             1, 1, action_impl_set,
+                             NULL);
+    unixctl_command_register("dpif-netdev/action-impl-show", "",
+                             0, 0, action_impl_show,
                              NULL);
     return 0;
 }

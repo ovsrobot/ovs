@@ -35,6 +35,9 @@ Post-v2.17.0
    - Userspace datapath:
      * Add actions auto-validator function to compare different actions
        implementations against default implementation.
+     * Add command line option to switch between different actions
+       implementations available at run time.
+
 
 
 v2.17.0 - 17 Feb 2022
