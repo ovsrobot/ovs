@@ -71,4 +71,12 @@ BUILD_ASSERT_DECL(ACTION_IMPL_SCALAR == 0);
  */
 void odp_execute_action_init(void);
 
+/* Init functions for the action implementations. Initializes the function
+ * pointers for optimized action types.
+ */
+int odp_action_scalar_init(struct odp_execute_action_impl *self);
+
+int odp_execute_action_set(const char *name,
+                               struct odp_execute_action_impl *active);
+
 #endif /* ODP_EXTRACT_PRIVATE */

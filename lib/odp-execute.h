@@ -35,6 +35,8 @@ void odp_execute_init(void);
 typedef void (*odp_execute_action_cb)(struct dp_packet_batch *batch,
                                       const struct nlattr *action);
 
+int odp_actions_impl_set(const char *name);
+
 typedef void (*odp_execute_cb)(void *dp, struct dp_packet_batch *batch,
                                const struct nlattr *action, bool should_steal);
 

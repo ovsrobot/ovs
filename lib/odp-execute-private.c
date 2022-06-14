@@ -27,12 +27,13 @@
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(odp_execute_impl);
+static int active_action_impl_index;
 
 static struct odp_execute_action_impl action_impls[] = {
     [ACTION_IMPL_SCALAR] = {
         .available = false,
         .name = "scalar",
-        .init_func = NULL,
+        .init_func = odp_action_scalar_init,
     },
 };
 
@@ -43,6 +44,21 @@ action_impl_copy_funcs(struct odp_execute_action_impl *src,
     for (int i = 0; i < __OVS_ACTION_ATTR_MAX; i++) {
         atomic_store_relaxed(&src->funcs[i], dst->funcs[i]);
     }
+}
+
+int
+odp_execute_action_set(const char *name,
+                       struct odp_execute_action_impl *active)
+{
+    for (int i = 0; i < ACTION_IMPL_MAX; i++) {
+        /* String compare, and set ptrs atomically. */
+        if (!strcmp(action_impls[i].name, name)) {
+            action_impl_copy_funcs(active, &action_impls[i]);;
+            active_action_impl_index = i;
+            return 0;
+        }
+    }
+    return -EINVAL;
 }
 
 void
