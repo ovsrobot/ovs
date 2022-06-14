@@ -50,4 +50,7 @@ void odp_execute_actions(void *dp, struct dp_packet_batch *batch,
                          bool steal,
                          const struct nlattr *actions, size_t actions_len,
                          odp_execute_cb dp_execute_action);
+
+#define get_mask(a, type) ((const type *)(const void *)(a + 1) + 1)
+
 #endif

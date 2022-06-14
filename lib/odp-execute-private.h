@@ -49,6 +49,10 @@ struct odp_execute_action_impl {
 
     /* An array of callback functions, one for each action. */
     ATOMIC(odp_execute_action_cb) funcs[__OVS_ACTION_ATTR_MAX];
+
+    /* An array of callback functions, one for each action type. */
+    ATOMIC(odp_execute_action_cb) set_masked_funcs[__OVS_KEY_ATTR_MAX];
+
 };
 
 /* Order of Actions implementations. */
