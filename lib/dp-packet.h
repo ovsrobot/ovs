@@ -974,7 +974,7 @@ dp_packet_ol_tx_l4_checksum(const struct dp_packet *a)
 
 /* Returns 'true' if packet 'a' is marked for TCP segmentation offloading. */
 static inline bool
-dp_packet_ol_is_tso(const struct dp_packet *a)
+dp_packet_ol_tcp_seg(const struct dp_packet *a)
 {
     return !!(*dp_packet_ol_flags_ptr(a) & DP_PACKET_OL_TX_TCP_SEG);
 }
