@@ -585,11 +585,6 @@ odp_execute_masked_set_action(struct dp_packet *packet,
         break;
     }
 
-    case OVS_KEY_ATTR_IPV4:
-        odp_set_ipv4(packet, nl_attr_get(a),
-                     get_mask(a, struct ovs_key_ipv4));
-        break;
-
     case OVS_KEY_ATTR_IPV6:
         odp_set_ipv6(packet, nl_attr_get(a),
                      get_mask(a, struct ovs_key_ipv6));
@@ -664,6 +659,7 @@ odp_execute_masked_set_action(struct dp_packet *packet,
     case __OVS_KEY_ATTR_MAX:
     /* The following action types are handled by the scalar implementation. */
     case OVS_KEY_ATTR_ETHERNET:
+    case OVS_KEY_ATTR_IPV4:
     default:
         OVS_NOT_REACHED();
     }
@@ -887,6 +883,18 @@ action_mod_eth(struct dp_packet_batch *batch, const struct nlattr *a)
     }
 }
 
+static void
+action_mod_ipv4(struct dp_packet_batch *batch, const struct nlattr *a)
+{
+    a = nl_attr_get(a);
+    struct dp_packet *packet;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        odp_set_ipv4(packet, nl_attr_get(a),
+                     get_mask(a, struct ovs_key_ipv4));
+    }
+}
+
 /* Implementation of the scalar actions impl init function. Build up the
  * array of func ptrs here.
  */
@@ -903,6 +911,7 @@ odp_action_scalar_init(struct odp_execute_action_impl *self)
      * requires further processing for action type. Note that 2nd level items
      * are identified by OVS_KEY_ATTR_*. */
     self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] = action_mod_eth;
+    self->set_masked_funcs[OVS_KEY_ATTR_IPV4] = action_mod_ipv4;
     actions_active_impl = *self;
 
     return 0;

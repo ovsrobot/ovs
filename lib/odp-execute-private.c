@@ -259,6 +259,7 @@ action_autoval_init(struct odp_execute_action_impl *self)
      * requires further processing for action type. Note that 2nd level items
      * are identified by OVS_KEY_ATTR_*. */
     self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] = action_autoval_generic;
+    self->set_masked_funcs[OVS_KEY_ATTR_IPV4] = action_autoval_generic;
     autoval_impl = *self;
 
     return 0;

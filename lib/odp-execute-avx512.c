@@ -22,6 +22,7 @@
 #include <config.h>
 #include <errno.h>
 
+#include "csum.h"
 #include "cpu.h"
 #include "dp-packet.h"
 #include "immintrin.h"
@@ -193,6 +194,213 @@ action_avx512_eth_set_addrs(struct dp_packet_batch *batch,
     }
 }
 
+/* Calculate delta checksum by summing only ip_src and ip_dst fields of
+ * ip_header. Resulting checksum will be used for updating L4 checksum */
+static inline uint16_t ALWAYS_INLINE
+avx512_l4_update_csum(struct ip_header *old_header, __m256i res)
+{
+    uint16_t tmp_checksum;
+    __m256i v_zeros = _mm256_setzero_si256();
+
+    /* Each field needs to be shuffle into 16- bit granularity and across
+     * lanes. */
+    __m256i v_swap16a = _mm256_setr_epi16(0x0100, 0xffff, 0x0302, 0xffff,
+                                          0x0504, 0xffff, 0x0706, 0xffff,
+                                          0x0100, 0xffff, 0x0302, 0xffff,
+                                          0xffff, 0xffff, 0xffff, 0xffff);
+    __m256i v_swap16b = _mm256_setr_epi16(0x0908, 0xffff, 0xffff, 0xffff,
+                                          0x0d0c, 0xffff, 0x0f0e, 0xffff,
+                                          0xffff, 0xffff, 0xffff, 0xffff,
+                                          0xffff, 0xffff, 0xffff, 0xffff);
+    __m256i v_swap32a = _mm256_setr_epi32(0x0, 0x4, 0xF, 0xF,
+                                          0xF, 0xF, 0xF, 0xF);
+
+    __m256i oh = _mm256_loadu_si256((void *) old_header);
+    oh = _mm256_mask_blend_epi16(0x3C0, oh, res);
+    __m256i v_shuf1 = _mm256_shuffle_epi8(oh, v_swap16a);
+    __m256i v_shuf2 = _mm256_shuffle_epi8(oh, v_swap16b);
+
+    /* Add field values. */
+    __m256i v_sum = _mm256_add_epi32(v_shuf1, v_shuf2);
+
+    /* Perform horizontal add to go from 8x32-bits to 2x32-bits. */
+    v_sum = _mm256_hadd_epi32(v_sum, v_zeros);
+    v_sum = _mm256_hadd_epi32(v_sum, v_zeros);
+
+    /* Shuffle 32-bit value from 3rd lane into first lane for final hadd. */
+    v_sum = _mm256_permutexvar_epi32(v_swap32a, v_sum);
+    v_sum = _mm256_hadd_epi32(v_sum, v_zeros);
+    v_sum = _mm256_hadd_epi16(v_sum, v_zeros);
+
+    /* Extract checksum value. */
+    tmp_checksum = _mm256_extract_epi16(v_sum, 0);
+
+    return ~tmp_checksum;
+}
+
+/* Calculate checksum by summing entire contents of ip_header leaving out
+ * current checksum field. */
+static inline uint16_t ALWAYS_INLINE
+avx512_ipv4_recalc_csum(__m256i res)
+{
+    uint32_t new_checksum;
+    __m256i v_zeros = _mm256_setzero_si256();
+
+    /* Each field needs to be shuffle into 16-bit granularity and across
+     * lanes. */
+    __m256i v_swap16a = _mm256_setr_epi16(0x0100, 0xffff, 0x0302, 0xffff,
+                                          0x0504, 0xffff, 0x0706, 0xffff,
+                                          0x0100, 0xffff, 0x0302, 0xffff,
+                                          0xffff, 0xffff, 0xffff, 0xffff);
+
+    __m256i v_swap16b = _mm256_setr_epi16(0x0908, 0xffff, 0xffff, 0xffff,
+                                          0x0d0c, 0xffff, 0x0f0e, 0xffff,
+                                          0xffff, 0xffff, 0xffff, 0xffff,
+                                          0xffff, 0xffff, 0xffff, 0xffff);
+
+    __m256i v_swap32a = _mm256_setr_epi32(0x0, 0x4, 0xF, 0xF,
+                                          0xF, 0xF, 0xF, 0xF);
+
+    __m256i v_shuf1 = _mm256_shuffle_epi8(res, v_swap16a);
+    __m256i v_shuf2 = _mm256_shuffle_epi8(res, v_swap16b);
+
+    /* Add field values. */
+    __m256i v_sum = _mm256_add_epi32(v_shuf1, v_shuf2);
+
+    /* Perform horizontal add to go from 8x32-bits to 2x32-bits. */
+    v_sum = _mm256_hadd_epi32(v_sum, v_zeros);
+    v_sum = _mm256_hadd_epi32(v_sum, v_zeros);
+
+    /* Shuffle 32-bit value from 3rd lane into first lane for final hadd. */
+    v_sum = _mm256_permutexvar_epi32(v_swap32a, v_sum);
+    v_sum = _mm256_hadd_epi32(v_sum, v_zeros);
+    v_sum = _mm256_hadd_epi16(v_sum, v_zeros);
+
+    /* Extract new checksum value. */
+    new_checksum = _mm256_extract_epi16(v_sum, 0);
+
+    return ~new_checksum;
+}
+
+/* The shuffles used in action_avx512_ipv4_set_addrs() require the ovs_key_ipv4
+ * struct to be in this layout. If struct changes, shuffle mask also needs to
+ * be updated. */
+BUILD_ASSERT_DECL(offsetof(struct ovs_key_ipv4, ipv4_src) +
+                  MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_src) ==
+                  offsetof(struct ovs_key_ipv4, ipv4_dst));
+
+BUILD_ASSERT_DECL(offsetof(struct ovs_key_ipv4, ipv4_dst) +
+                  MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_dst) ==
+                  offsetof(struct ovs_key_ipv4, ipv4_proto));
+
+BUILD_ASSERT_DECL(offsetof(struct ovs_key_ipv4, ipv4_proto) +
+                  MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_proto) ==
+                  offsetof(struct ovs_key_ipv4, ipv4_tos));
+
+BUILD_ASSERT_DECL(offsetof(struct ovs_key_ipv4, ipv4_tos) +
+                  MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_tos) ==
+                  offsetof(struct ovs_key_ipv4, ipv4_ttl));
+
+static void
+action_avx512_ipv4_set_addrs(struct dp_packet_batch *batch,
+                             const struct nlattr *a)
+{
+    a = nl_attr_get(a);
+    const struct ovs_key_ipv4 *key = nl_attr_get(a);
+    const struct ovs_key_ipv4 *mask = get_mask(a, struct ovs_key_ipv4);
+    struct dp_packet *packet;
+    ovs_be16 old_csum;
+
+    __m256i v_key = _mm256_loadu_si256((void *) key);
+    __m256i v_mask = _mm256_loadu_si256((void *) mask);
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        struct ip_header *nh = dp_packet_l3(packet);
+        old_csum = nh->ip_csum;
+
+        __m256i v_packet = _mm256_loadu_si256((void *) nh);
+
+        /* Shuffle key and mask to match ip_header struct layout. */
+        static const uint8_t ip_shuffle_mask[32] = {
+            0xFF, 5, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            6, 0xFF, 0xFF, 0xFF, 0, 1, 2, 3,
+            0, 1, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+        __m256i v_shuf32 = _mm256_setr_epi32(0x0, 0x2, 0xF, 0xF,
+                                             0x1, 0xF, 0xF, 0xF);
+
+        __m256i v_shuffle = _mm256_loadu_si256((void *) ip_shuffle_mask);
+
+        /* Two shuffles are required for key and mask to match the layout of
+         * the ip_header struct. The _shuffle_epi8 only works within 128-bit
+         * lanes, so a permute is required to move src and dst into the correct
+         * lanes. And then a shuffle is used to move the fields into the right
+         * order.
+         */
+        __m256i v_key_shuf = _mm256_permutexvar_epi32(v_shuf32, v_key);
+        v_key_shuf = _mm256_shuffle_epi8(v_key_shuf, v_shuffle);
+
+        __m256i v_mask_shuf = _mm256_permutexvar_epi32(v_shuf32, v_mask);
+        v_mask_shuf = _mm256_shuffle_epi8(v_mask_shuf, v_shuffle);
+
+        __m256i v_pkt_masked = _mm256_andnot_si256(v_mask_shuf, v_packet);
+        __m256i v_res = _mm256_or_si256(v_key_shuf, v_pkt_masked);
+
+        /* Recalculate the ip_csum based on updated values. */
+        uint16_t checksum = avx512_ipv4_recalc_csum(v_res);
+
+        /* Insert new checksum. */
+        v_res = _mm256_insert_epi16(v_res, checksum, 5);
+
+       /* If ip_src or ip_dst has been modified, L4 checksum needs to
+        * be updated too. */
+        int update_mask = _mm256_movemask_epi8(v_mask);
+        if (update_mask & 0xFF) {
+
+            uint16_t tmp_checksum = avx512_l4_update_csum(nh, v_res);
+            tmp_checksum = ~tmp_checksum;
+            uint16_t csum;
+
+            if (nh->ip_proto == IPPROTO_UDP) {
+                /* New UDP checksum. */
+                struct udp_header *uh = dp_packet_l4(packet);
+                if (!uh->udp_csum) {
+                    uh->udp_csum = htons(0xffff);
+                } else {
+                    uint16_t old_udp_checksum = ~uh->udp_csum;
+
+                    uint32_t udp_checksum = old_csum + tmp_checksum;
+                    udp_checksum = csum_finish(udp_checksum);
+                    uint16_t udp_csum = ~udp_checksum;
+
+                    uint32_t nw_udp_checksum = udp_csum + old_udp_checksum;
+
+                    csum =  csum_finish(nw_udp_checksum);
+
+                    /* Insert new udp checksum. */
+                    v_res = _mm256_insert_epi16(v_res, csum, 13);
+                }
+            } else if (nh->ip_proto == IPPROTO_TCP) {
+                /* New TCP checksum. */
+                struct tcp_header *th = dp_packet_l4(packet);
+                uint16_t old_tcp_checksum = ~th->tcp_csum;
+
+                uint32_t tcp_checksum = old_csum + tmp_checksum;
+                tcp_checksum = csum_finish(tcp_checksum);
+                uint16_t tcp_csum = ~tcp_checksum;
+
+                uint32_t nw_tcp_checksum = tcp_csum + old_tcp_checksum;
+
+                csum =  csum_finish(nw_tcp_checksum);
+
+                th->tcp_csum = csum;
+            }
+        }
+        /* Store new IP header. */
+        _mm256_storeu_si256((void *) nh, v_res);
+    }
+}
+
 static void
 action_avx512_set_masked(struct dp_packet_batch *batch OVS_UNUSED,
                          const struct nlattr *a)
@@ -244,6 +452,8 @@ action_avx512_init(struct odp_execute_action_impl *self)
      * are identified by OVS_KEY_ATTR_*. */
     self->set_masked_funcs[OVS_KEY_ATTR_ETHERNET] =
                             action_avx512_eth_set_addrs;
+    self->set_masked_funcs[OVS_KEY_ATTR_IPV4] =
+                            action_avx512_ipv4_set_addrs;
     avx512_impl = *self;
 
     return 0;
