@@ -1,7 +1,7 @@
 import pytest
 
-from ovs.flows.list import ListParser, ListDecoders
-from ovs.flows.kv import KeyValue
+from ovs.flow.list import ListParser, ListDecoders
+from ovs.flow.kv import KeyValue
 
 
 @pytest.mark.parametrize(
