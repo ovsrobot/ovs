@@ -87,7 +87,7 @@ setup_args = dict(
     ext_modules=[setuptools.Extension("ovs._json", sources=["ovs/_json.c"],
                                       libraries=['openvswitch'])],
     cmdclass={'build_ext': try_build_ext},
-    install_requires=['sortedcontainers', 'netaddr'],
+    install_requires=['sortedcontainers', 'netaddr', 'pyparsing'],
     extras_require={':sys_platform == "win32"': ['pywin32 >= 1.0']},
 )
 
