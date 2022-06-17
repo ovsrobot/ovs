@@ -19,16 +19,7 @@ case $0 in
 esac
 . "$dir0/ovs-lib" || exit 1
 
-for dir in "$sbindir" "$bindir" /sbin /bin /usr/sbin /usr/bin; do
-    case :$PATH: in
-        *:$dir:*) ;;
-        *)
-        case $dir in
-            $sbindir | $bindir) PATH=$dir:$PATH ;;
-            *) PATH=$PATH:$dir ;;
-        esac
-    esac
-done
+PATH=$OVS_SBIN_PATH
 
 ## ----- ##
 ## start ##

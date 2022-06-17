@@ -39,6 +39,27 @@ else
     dbdir='@DBDIR@'
 fi
 
+OVS_SBIN_PATH=$PATH
+OVS_BIN_PATH=$PATH
+for dir in "$sbindir" "$bindir" /sbin /bin /usr/sbin /usr/bin; do
+    case :$PATH: in
+        *:$dir:*) ;;
+        *)
+        case $dir in
+            $bindir)
+                OVS_BIN_PATH=$dir:$OVS_BIN_PATH
+                OVS_SBIN_PATH=$dir:$OVS_SBIN_PATH
+                ;;
+            $sbindir)
+                OVS_SBIN_PATH=$dir:$OVS_SBIN_PATH
+                ;;
+            *)
+                OVS_BIN_PATH=$OVS_BIN_PATH:$dir
+                OVS_SBIN_PATH=$OVS_SBIN_PATH:$dir
+        esac
+    esac
+done
+
 ovs_ctl_log () {
     echo "$@" >> "${logdir}/ovs-ctl.log"
 }

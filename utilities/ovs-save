@@ -20,6 +20,8 @@ case $0 in
 esac
 . "$dir0/ovs-lib" || exit 1
 
+PATH=$OVS_BIN_PATH
+
 usage() {
     UTIL=$(basename $0)
     cat <<EOF

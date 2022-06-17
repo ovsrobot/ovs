@@ -20,12 +20,7 @@ case $0 in
 esac
 . "$dir0/ovs-lib" || exit 1
 
-for dir in "$sbindir" "$bindir" /sbin /bin /usr/sbin /usr/bin; do
-    case :$PATH: in
-        *:$dir:*) ;;
-        *) PATH=$PATH:$dir ;;
-    esac
-done
+PATH=$OVS_SBIN_PATH
 
 insert_mods () {
     # Try loading openvswitch kernel module.
