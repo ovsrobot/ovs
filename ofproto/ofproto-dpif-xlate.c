@@ -4138,6 +4138,11 @@ xport_has_ip(const struct xport *xport)
     return n_in6 ? true : false;
 }
 
+#define IS_VALID_NEIGHBOR_REPLY(flow, ctx) \
+((flow->dl_type == htons(ETH_TYPE_ARP) || \
+  flow->nw_proto == IPPROTO_ICMPV6) && \
+ is_neighbor_reply_correct(ctx, flow))
+
 static bool
 terminate_native_tunnel(struct xlate_ctx *ctx, const struct xport *xport,
                         struct flow *flow, struct flow_wildcards *wc,
@@ -4158,9 +4163,8 @@ terminate_native_tunnel(struct xlate_ctx *ctx, const struct xport *xport,
         /* If no tunnel port was found and it's about an ARP or ICMPv6 packet,
          * do tunnel neighbor snooping. */
         if (*tnl_port == ODPP_NONE &&
-            (flow->dl_type == htons(ETH_TYPE_ARP) ||
-             flow->nw_proto == IPPROTO_ICMPV6) &&
-             is_neighbor_reply_correct(ctx, flow)) {
+            (IS_VALID_NEIGHBOR_REPLY(flow, ctx) ||
+             is_garp(flow, wc))) {
             tnl_neigh_snoop(flow, wc, ctx->xbridge->name,
                             ctx->xin->allow_side_effects);
         } else if (*tnl_port != ODPP_NONE &&
