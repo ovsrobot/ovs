@@ -367,12 +367,12 @@ lacp_process_packet(struct lacp *lacp, const void *member_,
             break;
         case SUBTYPE_MARKER:
             member->count_rx_pdus_marker++;
-            VLOG_DBG("%s: received a LACP marker PDU.", lacp->name);
+            VLOG_DBG("lacp %s: received a LACP marker PDU", lacp->name);
             goto out;
         case SUBTYPE_UNUSED:
         default:
             member->count_rx_pdus_bad++;
-            VLOG_WARN_RL(&rl, "%s: received an unparsable LACP PDU.",
+            VLOG_WARN_RL(&rl, "lacp %s: received an unparsable LACP PDU",
                          lacp->name);
             goto out;
     }
@@ -381,10 +381,15 @@ lacp_process_packet(struct lacp *lacp, const void *member_,
      * received while carrier (L1) state is still down, drop the LACP PDU and
      * trigger re-checking of L1 state. */
     if (!member->carrier_up) {
-        VLOG_INFO_RL(&rl, "%s: carrier state is DOWN,"
-                     " dropping received LACP PDU.", member->name);
+        VLOG_INFO_RL(&rl, "lacp %s: carrier state is DOWN,"
+                     " dropping received LACP PDU", member->name);
         seq_change(connectivity_seq_get());
         goto out;
+    }
+
+    if (member->status == LACP_DEFAULTED) {
+        VLOG_INFO("lacp %s: defaulted member %s reestablished connection with"
+                  " LACP partner", lacp->name, member->name);
     }
 
     member->status = LACP_CURRENT;
@@ -465,9 +470,16 @@ lacp_member_register(struct lacp *lacp, void *member_,
         if (!lacp->key_member) {
             lacp->key_member = member;
         }
+
+        VLOG_DBG("lacp %s: member %s added", lacp->name, s->name);
     }
 
     if (!member->name || strcmp(s->name, member->name)) {
+        if (member->name) {
+            VLOG_DBG("lacp %s: member %s renamed from %s", lacp->name,
+                     s->name, member->name);
+        }
+
         free(member->name);
         member->name = xstrdup(s->name);
     }
@@ -530,6 +542,9 @@ lacp_member_carrier_changed(const struct lacp *lacp, const void *member_,
         member->carrier_up = carrier_up;
         member->count_carrier_changed++;
     }
+
+    VLOG_DBG("lacp %s: member %s changed state to %s", lacp->name,
+             member->name, carrier_up ? "up" : "down");
 
 out:
     lacp_unlock();
@@ -710,8 +725,9 @@ lacp_update_attached(struct lacp *lacp) OVS_REQUIRES(mutex)
         /* XXX: In the future allow users to configure the expected system ID.
          * For now just special case loopback. */
         if (eth_addr_equals(member->partner.sys_id, member->lacp->sys_id)) {
-            VLOG_WARN_RL(&rl, "member %s: Loopback detected. Interface is "
-                         "connected to its own bond", member->name);
+            VLOG_WARN_RL(&rl, "lacp %s: member %s: Loopback detected. "
+                         "Interface is connected to its own bond",
+                         lacp->name, member->name);
             continue;
         }
 
