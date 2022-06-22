@@ -386,7 +386,8 @@ update_recirc_rules__(struct bond *bond)
                 char *err_s = match_to_string(&pr_op->match, NULL,
                                               RECIRC_RULE_PRIORITY);
 
-                VLOG_ERR("failed to add post recirculation flow %s", err_s);
+                VLOG_ERR("%s: failed to add post recirculation flow %s",
+                         bond->name, err_s);
                 free(err_s);
             }
             break;
@@ -399,7 +400,8 @@ update_recirc_rules__(struct bond *bond)
                 char *err_s = match_to_string(&pr_op->match, NULL,
                                               RECIRC_RULE_PRIORITY);
 
-                VLOG_ERR("failed to remove post recirculation flow %s", err_s);
+                VLOG_ERR("%s: failed to remove post recirculation flow "
+                         "%s", bond->name, err_s);
                 free(err_s);
             }
 
@@ -496,7 +498,7 @@ bond_reconfigure(struct bond *bond, const struct bond_settings *s)
         if (s->use_lb_output_action &&
             !ovs_lb_output_action_supported(bond->ofproto)) {
             VLOG_WARN("%s: Datapath does not support 'lb_output' action, "
-                      "disabled.", bond->name);
+                      "disabled", bond->name);
         } else {
             bond->use_lb_output_action = s->use_lb_output_action;
             if (!bond->use_lb_output_action) {
@@ -855,6 +857,8 @@ bond_check_admissibility(struct bond *bond, const void *member_,
     ovs_rwlock_rdlock(&rwlock);
     member = bond_member_lookup(bond, member_);
     if (!member) {
+        VLOG_DBG_RL(&rl, "%s: lookup for member on bond failed",
+                    bond->name);
         goto out;
     }
 
@@ -874,7 +878,7 @@ bond_check_admissibility(struct bond *bond, const void *member_,
          * main thread to run LACP state machine and enable the member. */
         verdict = (member->enabled || member->may_enable) ? BV_ACCEPT : BV_DROP;
         if (!member->enabled && member->may_enable) {
-            VLOG_DBG_RL(&rl, "bond %s: member %s: "
+            VLOG_DBG_RL(&rl, "%s: member %s: "
                         "main thread has not yet enabled member",
                         bond->name, bond->active_member->name);
         }
@@ -913,7 +917,7 @@ bond_check_admissibility(struct bond *bond, const void *member_,
         /* Drop all packets which arrive on backup members.  This is similar to
          * how Linux bonding handles active-backup bonds. */
         if (bond->active_member != member) {
-            VLOG_DBG_RL(&rl, "bond %s: member %s: active-backup bond received "
+            VLOG_DBG_RL(&rl, "%s: member %s: active-backup bond received "
                         "packet on backup member destined for " ETH_ADDR_FMT,
                         bond->name, member->name, ETH_ADDR_ARGS(eth_dst));
             goto out;
@@ -935,7 +939,7 @@ bond_check_admissibility(struct bond *bond, const void *member_,
     OVS_NOT_REACHED();
 out:
     if (member && (verdict != BV_ACCEPT)) {
-        VLOG_DBG_RL(&rl, "bond %s: member %s: "
+        VLOG_DBG_RL(&rl, "%s: member %s: "
                     "admissibility verdict is to drop pkt%s, "
                     "active member: %s, may_enable: %s, enabled: %s, "
                     "LACP status: %s",
@@ -1127,8 +1131,13 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
             if (ds.length) {
                 ds_put_char(&ds, ',');
             }
-            ds_put_format(&ds, " %s %"PRIu64"kB",
-                          member->name, member->tx_bytes / 1024);
+            if (member->tx_bytes > 1024) {
+                ds_put_format(&ds, " %s %"PRIu64" kB",
+                              member->name, member->tx_bytes / 1024);
+            } else {
+                ds_put_format(&ds, " %s %"PRIu64" B",
+                              member->name, member->tx_bytes);
+            }
 
             if (!member->enabled) {
                 ds_put_cstr(&ds, " (disabled)");
@@ -1141,13 +1150,20 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
                     if (&e->list_node != ovs_list_front(&member->entries)) {
                         ds_put_cstr(&ds, " + ");
                     }
-                    ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64"kB",
-                                  e - bond->hash, e->tx_bytes / 1024);
+                    if (e->tx_bytes > 1024) {
+                        ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64" kB",
+                                      e - bond->hash, e->tx_bytes / 1024);
+                    } else {
+                        ds_put_format(&ds, "h%"PRIdPTR": %"PRIu64" B",
+                                      e - bond->hash, e->tx_bytes);
+                    }
                 }
                 ds_put_cstr(&ds, ")");
             }
         }
-        VLOG_DBG("bond %s:%s", bond->name, ds_cstr(&ds));
+        if (ds.length) {
+            VLOG_DBG("%s: %s", bond->name, ds_cstr(&ds));
+        }
         ds_destroy(&ds);
     }
 }
@@ -1160,14 +1176,6 @@ bond_shift_load(struct bond_entry *hash, struct bond_member *to)
     struct bond_member *from = hash->member;
     struct bond *bond = from->bond;
     uint64_t delta = hash->tx_bytes;
-
-    VLOG_INFO("bond %s: shift %"PRIu64"kB of load (with hash %"PRIdPTR") "
-              "from %s to %s (now carrying %"PRIu64"kB and "
-              "%"PRIu64"kB load, respectively)",
-              bond->name, delta / 1024, hash - bond->hash,
-              from->name, to->name,
-              (from->tx_bytes - delta) / 1024,
-              (to->tx_bytes + delta) / 1024);
 
     /* Shift load away from 'from' to 'to'. */
     from->tx_bytes -= delta;
@@ -1345,6 +1353,7 @@ bond_rebalance(struct bond *bond)
             insert_bal(&bals, member);
         }
     }
+
     log_bals(bond, &bals);
 
     /* Shift load from the most-loaded members to the least-loaded members. */
@@ -1356,6 +1365,7 @@ bond_rebalance(struct bond *bond)
         uint64_t overload;
 
         overload = from->tx_bytes - to->tx_bytes;
+
         if (overload < to->tx_bytes >> 5 || overload < 100000) {
             /* The extra load on 'from' (and all less-loaded members), compared
              * to that of 'to' (the least-loaded member), is less than ~3%, or
@@ -1388,6 +1398,12 @@ bond_rebalance(struct bond *bond)
             reinsert_bal(&bals, from);
             reinsert_bal(&bals, to);
         }
+        VLOG_INFO("%s: shifted %"PRIuSIZE" hashes totaling %"PRIu64
+                  " kB from %s (%"PRIu64" kB) to %s (%"PRIu64" kB)",
+                  bond->name, cnt,
+                  (overload + to->tx_bytes - from->tx_bytes) >> 1,
+                  from->name, from->tx_bytes, to->name, to->tx_bytes);
+
         rebalanced = true;
     }
 
@@ -1565,6 +1581,9 @@ bond_print_details(struct ds *ds, const struct bond *bond)
             if (be_tx_k) {
                 ds_put_format(ds, "  hash %d: %"PRIu64" kB load\n",
                           hash, be_tx_k);
+            } else if (be->tx_bytes) {
+                ds_put_format(ds, "  hash %d: %"PRIu64" B load\n",
+                          hash, be->tx_bytes);
             }
 
             /* XXX How can we list the MACs assigned to hashes of SLB bonds? */
@@ -1691,7 +1710,7 @@ bond_unixctl_set_active_member(struct unixctl_conn *conn,
     if (bond->active_member != member) {
         bond->bond_revalidate = true;
         bond->active_member = member;
-        VLOG_INFO("bond %s: active member is now %s",
+        VLOG_INFO("%s: active member is now %s",
                   bond->name, member->name);
         bond->send_learning_packets = true;
         unixctl_command_reply(conn, "done");
@@ -1869,7 +1888,7 @@ bond_enable_member(struct bond_member *member, bool enable)
         }
         ovs_mutex_unlock(&member->bond->mutex);
 
-        VLOG_INFO("member %s: %s", member->name,
+        VLOG_INFO("%s: member %s %s", bond->name, member->name,
                   member->enabled ? "enabled" : "disabled");
     }
 }
@@ -1879,23 +1898,31 @@ bond_link_status_update(struct bond_member *member)
 {
     struct bond *bond = member->bond;
     bool up;
+    bool carrier = netdev_get_carrier(member->netdev);
 
-    up = netdev_get_carrier(member->netdev) && member->may_enable;
+    up = carrier && member->may_enable;
     if ((up == member->enabled) != (member->delay_expires == LLONG_MAX)) {
+        char * msg;
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
-        VLOG_INFO_RL(&rl, "member %s: link state %s",
-                     member->name, up ? "up" : "down");
+        if (!carrier) {
+            msg = "carrier state";
+        } else {
+            msg = "link state";
+        }
+        VLOG_INFO_RL(&rl, "%s: member %s %s %s", bond->name,
+                     member->name, msg, up ? "up" : "down");
         if (up == member->enabled) {
             member->delay_expires = LLONG_MAX;
-            VLOG_INFO_RL(&rl, "member %s: will not be %s",
-                         member->name, up ? "disabled" : "enabled");
+            VLOG_INFO_RL(&rl, "%s: member %s will not be %s",
+                         bond->name, member->name,
+                         up ? "disabled" : "enabled");
         } else {
             int delay = up ? bond->updelay : bond->downdelay;
             member->delay_expires = time_msec() + delay;
             if (delay) {
-                VLOG_INFO_RL(&rl, "member %s: will be %s if it stays %s "
-                             "for %d ms",
-                             member->name,
+                VLOG_INFO_RL(&rl, "%s: member %s will be %s"
+                             " if it stays %s for %d ms",
+                             bond->name, member->name,
                              up ? "enabled" : "disabled",
                              up ? "up" : "down",
                              delay);
@@ -1952,14 +1979,15 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
 {
     struct bond_entry *e;
     int balance;
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
 
     balance = bond->balance;
     if (bond->lacp_status == LACP_CONFIGURED) {
         /* LACP has been configured on this bond but negotiations were
-         * unsuccussful. If lacp_fallback_ab is enabled use active-
+         * unsuccessful. If lacp_fallback_ab is enabled use active-
          * backup mode else drop all traffic. */
         if (!bond->lacp_fallback_ab) {
-            return NULL;
+            goto error;
         }
         balance = BM_AB;
     }
@@ -1971,7 +1999,7 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
     case BM_TCP:
         if (bond->lacp_status != LACP_NEGOTIATED) {
             /* Must have LACP negotiations for TCP balanced bonds. */
-            return NULL;
+            goto error;
         }
         if (wc) {
             flow_mask_hash_fields(flow, wc, NX_HASH_FIELDS_SYMMETRIC_L3L4_UDP);
@@ -1990,6 +2018,18 @@ choose_output_member(const struct bond *bond, const struct flow *flow,
     default:
         OVS_NOT_REACHED();
     }
+error:
+    if (VLOG_IS_DBG_ENABLED()) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        flow_format(&ds, flow, NULL);
+        VLOG_DBG_RL(&rl, "%s: cannot choose output member "
+                    "for flow %s with LACP status %s",
+                    bond->name,
+                    ds_cstr(&ds),
+                    lacp_status_description(bond->lacp_status));
+        ds_destroy(&ds);
+    }
+    return NULL;
 }
 
 static struct bond_member *
@@ -2039,10 +2079,10 @@ bond_choose_active_member(struct bond *bond)
     bond->active_member = bond_choose_member(bond);
     if (bond->active_member) {
         if (bond->active_member->enabled) {
-            VLOG_INFO_RL(&rl, "bond %s: active member is now %s",
+            VLOG_INFO_RL(&rl, "%s: active member is now %s",
                          bond->name, bond->active_member->name);
         } else {
-            VLOG_INFO_RL(&rl, "bond %s: active member is now %s, skipping "
+            VLOG_INFO_RL(&rl, "%s: active member is now %s, skipping "
                          "remaining %lld ms updelay (since no member was "
                          "enabled)", bond->name, bond->active_member->name,
                          bond->active_member->delay_expires - time_msec());
@@ -2056,7 +2096,7 @@ bond_choose_active_member(struct bond *bond)
         }
     } else if (old_active_member) {
         bond_active_member_changed(bond);
-        VLOG_INFO_RL(&rl, "bond %s: all members disabled", bond->name);
+        VLOG_INFO_RL(&rl, "%s: all members disabled", bond->name);
     }
 }
 
