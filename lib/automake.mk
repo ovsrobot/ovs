@@ -36,8 +36,6 @@ lib_libopenvswitchavx512_la_CFLAGS = \
 	-fPIC \
 	$(AM_CFLAGS)
 lib_libopenvswitchavx512_la_SOURCES = \
-	lib/cpu.c \
-	lib/cpu.h \
 	lib/dpif-netdev-avx512.c
 if HAVE_AVX512BW
 lib_libopenvswitchavx512_la_CFLAGS += \
@@ -98,6 +96,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/csum.h \
 	lib/ct-dpif.c \
 	lib/ct-dpif.h \
+	lib/cpu.c \
+	lib/cpu.h \
 	lib/daemon.c \
 	lib/daemon.h \
 	lib/daemon-private.h \
