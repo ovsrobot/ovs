@@ -136,16 +136,30 @@ ovsdb/_server.ovsschema.stamp: ovsdb/_server.ovsschema
 	$(srcdir)/build-aux/cksum-schema-check $? $@
 CLEANFILES += ovsdb/_server.ovsschema.stamp
 
-# _Server schema documentation
+# _Server and Local_Config schema documentation
 EXTRA_DIST += ovsdb/_server.xml
+EXTRA_DIST += ovsdb/local_config.xml
 CLEANFILES += ovsdb/ovsdb-server.5
 man_MANS += ovsdb/ovsdb-server.5
 ovsdb/ovsdb-server.5: \
-	ovsdb/ovsdb-doc ovsdb/_server.xml ovsdb/_server.ovsschema
+	ovsdb/ovsdb-doc ovsdb/_server.xml ovsdb/_server.ovsschema \
+	ovsdb/local_config.ovsschema
 	$(AM_V_GEN)$(OVSDB_DOC) \
 		--version=$(VERSION) \
 		$(srcdir)/ovsdb/_server.ovsschema \
 		$(srcdir)/ovsdb/_server.xml > $@.tmp && \
+	$(AM_V_GEN)$(OVSDB_DOC) \
+		--version=$(VERSION) \
+		$(srcdir)/ovsdb/local_config.ovsschema \
+		$(srcdir)/ovsdb/local_config.xml >> $@.tmp && \
 	mv $@.tmp $@
+
+EXTRA_DIST += ovsdb/local_config.ovsschema
+
+# Version checking for local_config.ovsschema.
+ALL_LOCAL += ovsdb/local_config.ovsschema.stamp
+ovsdb/local_config.ovsschema.stamp: ovsdb/local_config.ovsschema
+	$(srcdir)/build-aux/cksum-schema-check $? $@
+CLEANFILES += ovsdb/local_config.ovsschema.stamp
 
 EXTRA_DIST += ovsdb/TODO.rst
