@@ -464,6 +464,10 @@ ofpbuf_put_hex(struct ofpbuf *b, const char *s, size_t *n)
 void
 ofpbuf_reserve(struct ofpbuf *b, size_t size)
 {
+    if (!size) {
+        return;
+    }
+
     ovs_assert(!b->size);
     ofpbuf_prealloc_tailroom(b, size);
     b->data = (char*)b->data + size;
