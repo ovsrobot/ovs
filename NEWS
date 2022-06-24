@@ -32,6 +32,9 @@ Post-v2.17.0
    - DPDK:
      * OVS validated with DPDK 21.11.1.  It is recommended to use this version
        until further releases.
+     * New configuration knob 'other_config:shared-mempool-config' to set MTU
+       that shared mempool mbuf size is based on. This allows interfaces with
+       different MTU sizes to share mempools.
 
 
 v2.17.0 - 17 Feb 2022
