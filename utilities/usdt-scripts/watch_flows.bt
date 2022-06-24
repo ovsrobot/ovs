@@ -1,0 +1,125 @@
+#!/usr/bin/env bpftrace
+/*
+* usage: sudo bpftrace -p $(pidof $(which ovs-vswitchd)) ./test.bt
+*
+* "OVS_KEY_ATTR_UNSPEC",                     0
+* "OVS_KEY_ATTR_ENCAP",                      1
+* "OVS_KEY_ATTR_PRIORITY",                   2
+* "OVS_KEY_ATTR_IN_PORT",                    3
+* "OVS_KEY_ATTR_ETHERNET",                   4
+* "OVS_KEY_ATTR_VLAN",                       5
+* "OVS_KEY_ATTR_ETHERTYPE",                  6
+* "OVS_KEY_ATTR_IPV4",                       7
+* "OVS_KEY_ATTR_IPV6",                       8
+* "OVS_KEY_ATTR_TCP",                        9
+* "OVS_KEY_ATTR_UDP",                       10
+* "OVS_KEY_ATTR_ICMP",                      11
+* "OVS_KEY_ATTR_ICMPV6",                    12
+* "OVS_KEY_ATTR_ARP",                       13
+* "OVS_KEY_ATTR_ND",                        14
+* "OVS_KEY_ATTR_SKB_MARK",                  15
+* "OVS_KEY_ATTR_TUNNEL",                    16
+* "OVS_KEY_ATTR_SCTP",                      17
+* "OVS_KEY_ATTR_TCP_FLAGS",                 18
+* "OVS_KEY_ATTR_DP_HASH",                   19
+* "OVS_KEY_ATTR_RECIRC_ID",                 20
+* "OVS_KEY_ATTR_MPLS",                      21
+* "OVS_KEY_ATTR_CT_STATE",                  22
+* "OVS_KEY_ATTR_CT_ZONE",                   23
+* "OVS_KEY_ATTR_CT_MARK",                   24
+* "OVS_KEY_ATTR_CT_LABELS",                 25
+* "OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4",        26
+* "OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6",        27
+* "OVS_KEY_ATTR_NSH"                        28
+*/
+
+#include <linux/sched.h>
+
+#define MAX_ATTRS       32
+#define MAX_KEY         2048
+// currently set to watch for ARP. Could take it as command line arg
+#define TRAIT_TO_WATCH  13
+struct flowput {
+    u32 flags;
+    u64 key_ptr;
+    u64 key_len;
+    u64 mask_ptr;
+    u64 mask_len;
+    u64 action_ptr;
+    u64 action_len;
+    u64 ufid_loc;
+}
+union ufid {
+    u32 ufid32[4];
+    u64 ufid64[2];
+}
+struct attr {
+    u16 len;
+    u16 type;
+}
+
+BEGIN
+{
+    printf("--------------------------------------------------------------\n");
+    printf("|                   Tracking flow lifecycles                 |\n");
+    printf("--------------------------------------------------------------\n");
+}
+
+usdt::dpif_netlink_operate__:op_flow_put
+{
+    $ptr = (struct flowput *) arg1;
+    $st = *$ptr;
+    $pArr = (union ufid *) $ptr->ufid_loc;
+    $num_attrs = (uint64) 0;
+    $key_posn = (uint64) 0;
+    while($num_attrs < MAX_ATTRS && $key_posn < MAX_KEY) {
+        if((uint64) $key_posn >=  $ptr->key_len) {
+            break;
+        }
+        $pAttr = (struct attr *) ((uint8*) $ptr->key_ptr + $key_posn);
+        if($pAttr->type == TRAIT_TO_WATCH) {
+            printf("Target traffic was spotted.\n");
+            printf("ufid:%08x-%04x-%04x-%04x-%04x%08x\n",$pArr->ufid32[0],
+                   $pArr->ufid32[1] >> 16, $pArr->ufid32[1] & 0xffff,
+                   $pArr->ufid32[2] >> 16, $pArr->ufid32[2] & 0xffff,
+                   $pArr->ufid32[3]);
+                @watchlist[$pArr->ufid64[0],$pArr->ufid64[1]]++;
+        }
+        $num_attrs++;
+        $key_posn = ($key_posn + $pAttr->len + 3) & (0xffffff ^ 3);
+    }
+}
+
+usdt::ofproto_dpif_upcall_revalidate:flow_delete
+{
+    $ptr = (union ufid *) arg1;
+    if(!@watchlist[$ptr->ufid64[0],$ptr->ufid64[1]]) {
+        return;
+    }
+    printf("ufid:%08x-%04x-%04x-%04x-%04x%08x was invalidated because ",
+           $ptr->ufid32[0], $ptr->ufid32[1] >> 16, $ptr->ufid32[1] & 0xffff,
+           $ptr->ufid32[2] >> 16, $ptr->ufid32[2] & 0xffff, $ptr->ufid32[3]);
+    if (arg0 == 1)  {
+        printf("it timed out.\n");
+    } else if (arg0 == 2) {
+        printf("it was too expensive to revalidate.\n");
+    } else if (arg0 == 3) {
+        printf("there was a change in the openflow wildcards.\n");
+    } else if (arg0 == 4) {
+        printf("the odp fit was bad.\n");
+    } else if (arg0 == 5) {
+        printf("associated ofproto.\n");
+    } else if (arg0 == 6) {
+        printf("there was an error translating the openflow rule to ovs.\n");
+    } else if (arg0 == 7) {
+        printf("avoiding caching.\n");
+    } else {
+        printf("The value of arg0 is %d\n",arg0);
+    }
+}
+
+END
+{
+    clear(@watchlist);
+    printf("\n");
+}
