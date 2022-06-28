@@ -5,3 +5,4 @@ debian/tmp/usr/share/man/man8/ovs-appctl.8
 utilities/ovs-ofctl.8
 debian/tmp/usr/share/man/man8/ovs-parse-backtrace.8
 debian/tmp/usr/share/man/man8/ovs-pki.8
+ovsdb/ovsdb.local-config.5

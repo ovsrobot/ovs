@@ -32,6 +32,11 @@ Post-v2.17.0
    - DPDK:
      * OVS validated with DPDK 21.11.1.  It is recommended to use this version
        until further releases.
+   - Local_Config schema added:
+     * Clustered ovsdb-servers listening on unique addresses can pass a second
+       DB created with the new Local_Config schema in order to configure their
+       Connections independent from each other. See the ovsdb.local-config.5
+       manpage for schema details.
 
 
 v2.17.0 - 17 Feb 2022
