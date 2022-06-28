@@ -545,8 +545,6 @@ static void dp_netdev_execute_actions(struct dp_netdev_pmd_thread *pmd,
                                       const struct flow *flow,
                                       const struct nlattr *actions,
                                       size_t actions_len);
-static void dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
-                                  struct dp_packet_batch *);
 
 static void dp_netdev_disable_upcall(struct dp_netdev *);
 static void dp_netdev_pmd_reload_done(struct dp_netdev_pmd_thread *pmd);
@@ -8493,11 +8491,12 @@ dp_netdev_input(struct dp_netdev_pmd_thread *pmd,
     return 0;
 }
 
-static void
+int32_t
 dp_netdev_recirculate(struct dp_netdev_pmd_thread *pmd,
                       struct dp_packet_batch *packets)
 {
     dp_netdev_input__(pmd, packets, true, 0);
+    return 0;
 }
 
 struct dp_netdev_execute_aux {
