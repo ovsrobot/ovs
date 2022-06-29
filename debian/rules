@@ -95,16 +95,26 @@ override_dh_install:
 	mv $(CURDIR)/debian/openvswitch-switch/usr/sbin/ovs-vswitchd \
 		$(CURDIR)/debian/openvswitch-switch/usr/lib/openvswitch-switch/ovs-vswitchd
 	set -e && for pyvers in $(PYTHONS); do \
-		cd python && python$$pyvers setup.py install --install-layout=deb \
-			--root $(CURDIR)/debian/python-openvswitch; cd ..; \
+		cd python && \
+		enable_shared=no \
+		CFLAGS=-I$(CURDIR)/debian/tmp/usr/include \
+		LDFLAGS=$(CURDIR)/debian/tmp/usr/lib/libopenvswitch.a \
+		python$$pyvers setup.py install --install-layout=deb \
+			--root $(CURDIR)/debian/python-openvswitch; \
+		cd ..; \
 	done
 	set -e && for pyvers in $(PYTHON3S); do \
-        cd python && python$$pyvers setup.py install --install-layout=deb \
-            --root $(CURDIR)/debian/python3-openvswitch; cd ..; \
-        mkdir -p $(CURDIR)/debian/openvswitch-test/usr/lib/python$$pyvers/dist-packages/ovstest; \
-        install -v -D python/ovstest/*.py \
-            $(CURDIR)/debian/openvswitch-test/usr/lib/python$$pyvers/dist-packages/ovstest; \
-    done
+		cd python && \
+		enable_shared=no \
+		CFLAGS=-I$(CURDIR)/debian/tmp/usr/include \
+		LDFLAGS=$(CURDIR)/debian/tmp/usr/lib/libopenvswitch.a \
+		python$$pyvers setup.py install --install-layout=deb \
+			--root $(CURDIR)/debian/python3-openvswitch; \
+		cd ..; \
+		mkdir -p $(CURDIR)/debian/openvswitch-test/usr/lib/python$$pyvers/dist-packages/ovstest; \
+		install -v -D python/ovstest/*.py \
+			$(CURDIR)/debian/openvswitch-test/usr/lib/python$$pyvers/dist-packages/ovstest; \
+		done
 ifneq (,$(filter i386 amd64 ppc64el arm64, $(DEB_HOST_ARCH)))
 	install -v -D _dpdk/vswitchd/ovs-vswitchd \
         $(CURDIR)/debian/openvswitch-switch-dpdk/usr/lib/openvswitch-switch-dpdk/ovs-vswitchd-dpdk
