@@ -639,11 +639,6 @@ static void dp_netdev_simple_match_remove(struct dp_netdev_pmd_thread *pmd,
     OVS_REQUIRES(pmd->flow_mutex);
 
 static bool dp_netdev_flow_is_simple_match(const struct match *);
-static bool dp_netdev_simple_match_enabled(const struct dp_netdev_pmd_thread *,
-                                           odp_port_t in_port);
-static struct dp_netdev_flow *dp_netdev_simple_match_lookup(
-    const struct dp_netdev_pmd_thread *,
-    odp_port_t in_port, ovs_be16 dp_type, uint8_t nw_frag, ovs_be16 vlan_tci);
 
 /* Updates the time in PMD threads context and should be called in three cases:
  *
@@ -3871,75 +3866,6 @@ dp_netdev_get_mega_ufid(const struct match *match, ovs_u128 *mega_ufid)
                                        ((uint8_t *)&match->wc)[i];
     }
     odp_flow_key_hash(&masked_flow, sizeof masked_flow, mega_ufid);
-}
-
-static uint64_t
-dp_netdev_simple_match_mark(odp_port_t in_port, ovs_be16 dl_type,
-                            uint8_t nw_frag, ovs_be16 vlan_tci)
-{
-    /* Simple Match Mark:
-     *
-     * BE:
-     * +-----------------+-------------++---------+---+-----------+
-     * |     in_port     |   dl_type   || nw_frag |CFI|  VID(12)  |
-     * +-----------------+-------------++---------+---+-----------+
-     * 0                 32          47 49         51  52     63
-     *
-     * LE:
-     * +-----------------+-------------+------++-------+---+------+
-     * |     in_port     |   dl_type   |VID(8)||nw_frag|CFI|VID(4)|
-     * +-----------------+-------------+------++-------+---+------+
-     * 0                 32          47 48  55  57   59 60  61   63
-     *
-     *         Big Endian              Little Endian
-     * in_port : 32 bits [ 0..31]  in_port : 32 bits [ 0..31]
-     * dl_type : 16 bits [32..47]  dl_type : 16 bits [32..47]
-     * <empty> :  1 bit  [48..48]  vlan VID:  8 bits [48..55]
-     * nw_frag :  2 bits [49..50]  <empty> :  1 bit  [56..56]
-     * vlan CFI:  1 bit  [51..51]  nw_frag :  2 bits [57..59]
-     * vlan VID: 12 bits [52..63]  vlan CFI:  1 bit  [60..60]
-     *                             vlan VID:  4 bits [61..63]
-     *
-     * Layout is different for LE and BE in order to save a couple of
-     * network to host translations.
-     * */
-    return ((uint64_t) odp_to_u32(in_port) << 32)
-           | ((OVS_FORCE uint32_t) dl_type << 16)
-#if WORDS_BIGENDIAN
-           | (((uint16_t) nw_frag & FLOW_NW_FRAG_MASK) << VLAN_PCP_SHIFT)
-#else
-           | ((nw_frag & FLOW_NW_FRAG_MASK) << (VLAN_PCP_SHIFT - 8))
-#endif
-           | (OVS_FORCE uint16_t) (vlan_tci & htons(VLAN_VID_MASK | VLAN_CFI));
-}
-
-static struct dp_netdev_flow *
-dp_netdev_simple_match_lookup(const struct dp_netdev_pmd_thread *pmd,
-                              odp_port_t in_port, ovs_be16 dl_type,
-                              uint8_t nw_frag, ovs_be16 vlan_tci)
-{
-    uint64_t mark = dp_netdev_simple_match_mark(in_port, dl_type,
-                                                nw_frag, vlan_tci);
-    uint32_t hash = hash_uint64(mark);
-    struct dp_netdev_flow *flow;
-    bool found = false;
-
-    CMAP_FOR_EACH_WITH_HASH (flow, simple_match_node,
-                             hash, &pmd->simple_match_table) {
-        if (flow->simple_match_mark == mark) {
-            found = true;
-            break;
-        }
-    }
-    return found ? flow : NULL;
-}
-
-static bool
-dp_netdev_simple_match_enabled(const struct dp_netdev_pmd_thread *pmd,
-                               odp_port_t in_port)
-{
-    return ccmap_find(&pmd->n_flows, odp_to_u32(in_port))
-           == ccmap_find(&pmd->n_simple_flows, odp_to_u32(in_port));
 }
 
 static void
