@@ -1568,6 +1568,61 @@ dpif_netdev_bond_show(struct unixctl_conn *conn, int argc,
     ds_destroy(&reply);
 }
 
+static void
+dpif_netdev_offload_show(struct unixctl_conn *conn, int argc,
+                         const char *argv[], void *aux OVS_UNUSED)
+{
+    struct ds reply = DS_EMPTY_INITIALIZER;
+    const char *netdev_name = NULL;
+    struct dp_netdev *dp = NULL;
+    struct dp_netdev_port *port;
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+    if (argc == 3) {
+        dp = shash_find_data(&dp_netdevs, argv[1]);
+        netdev_name = argv[2];
+    } else if (argc == 2) {
+        dp = shash_find_data(&dp_netdevs, argv[1]);
+        if (!dp && shash_count(&dp_netdevs) == 1) {
+            /* There's only one datapath. */
+            dp = shash_first(&dp_netdevs)->data;
+            netdev_name = argv[1];
+        }
+    } else if (shash_count(&dp_netdevs) == 1) {
+        /* There's only one datapath. */
+        dp = shash_first(&dp_netdevs)->data;
+    }
+
+    if (!dp) {
+        ovs_mutex_unlock(&dp_netdev_mutex);
+        unixctl_command_reply_error(conn,
+                                    "please specify an existing datapath");
+        return;
+    }
+
+    ovs_rwlock_rdlock(&dp->port_rwlock);
+    HMAP_FOR_EACH (port, node, &dp->ports) {
+        if (netdev_name) {
+            /* find the port and dump the info */
+            if (!strcmp(netdev_get_name(port->netdev), netdev_name)) {
+                ds_put_format(&reply, "%s: ", netdev_get_name(port->netdev));
+                netdev_ol_flags_to_string(&reply, port->netdev);
+                ds_put_format(&reply, "\n");
+                break;
+            }
+        } else {
+            ds_put_format(&reply, "%s: ", netdev_get_name(port->netdev));
+            netdev_ol_flags_to_string(&reply, port->netdev);
+            ds_put_format(&reply, "\n");
+        }
+    }
+
+    ovs_rwlock_unlock(&dp->port_rwlock);
+    ovs_mutex_unlock(&dp_netdev_mutex);
+    unixctl_command_reply(conn, ds_cstr(&reply));
+    ds_destroy(&reply);
+}
+
 
 static int
 dpif_netdev_init(void)
@@ -1626,6 +1681,9 @@ dpif_netdev_init(void)
                              NULL);
     unixctl_command_register("dpif-netdev/miniflow-parser-get", "",
                              0, 0, dpif_miniflow_extract_impl_get,
+                             NULL);
+    unixctl_command_register("dpif-netdev/offload-show", "[dp] [netdev]",
+                             0, 2, dpif_netdev_offload_show,
                              NULL);
     return 0;
 }
