@@ -2694,7 +2694,7 @@ tuple_to_conn_key(const struct ct_dpif_tuple *tuple, uint16_t zone,
 
 static void
 conn_to_ct_dpif_entry(const struct conn *conn, struct ct_dpif_entry *entry,
-                      long long now)
+                      long long now, unsigned int bkt)
 {
     const struct conn_key *key = &conn->key_node[CT_DIR_FWD].key,
         *rev_key = &conn->key_node[CT_DIR_REV].key;
@@ -2718,6 +2718,7 @@ conn_to_ct_dpif_entry(const struct conn *conn, struct ct_dpif_entry *entry,
     ovs_mutex_unlock(&conn->lock);
 
     entry->timeout = (expiration > 0) ? expiration / 1000 : 0;
+    entry->bkt = bkt;
 
     if (conn->alg) {
         /* Caller is responsible for freeing. */
@@ -2743,7 +2744,7 @@ conntrack_dump_start(struct conntrack *ct, struct conntrack_dump *dump,
     }
 
     dump->ct = ct;
-    *ptot_bkts = 1; /* Need to clean up the callers. */
+    *ptot_bkts = CONNTRACK_BUCKETS;
     return 0;
 }
 
@@ -2775,7 +2776,7 @@ conntrack_dump_next(struct conntrack_dump *dump, struct ct_dpif_entry *entry)
 
             if ((!dump->filter_zone || keyn->key.zone == dump->zone) &&
                 (keyn->dir == CT_DIR_FWD)) {
-                conn_to_ct_dpif_entry(conn, entry, now);
+                conn_to_ct_dpif_entry(conn, entry, now, dump->bucket);
                 break;
             }
         }
