@@ -44,6 +44,7 @@ OVS
    openflow
    bonding
    networking-namespaces
+   nic-offloads
    ovsdb-relay
    ovsdb-replication
    dpdk/index
