@@ -43,6 +43,10 @@ Post-v2.17.0
      * 'dpif-netdev/subtable-lookup-prio-get' appctl command renamed to
        'dpif-netdev/subtable-lookup-info-get' to better reflect its purpose.
        The old variant is kept for backward compatibility.
+     * Userspace TSO is now enabled by default, but can still be disabled by
+       setting other_config:userspace-tso-enable=false.
+       See Documentation/topics/userspace-tso.rst for more information.
+
 
 
 v2.17.0 - 17 Feb 2022

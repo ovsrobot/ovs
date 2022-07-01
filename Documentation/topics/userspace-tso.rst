@@ -27,8 +27,6 @@
 Userspace Datapath - TSO
 ========================
 
-**Note:** This feature is considered experimental.
-
 TCP Segmentation Offload (TSO) enables a network stack to delegate segmentation
 of an oversized TCP segment to the underlying physical NIC. Offload of frame
 segmentation achieves computational savings in the core, freeing up CPU cycles
@@ -48,16 +46,16 @@ refer to the `DPDK documentation`__.
 
 __ https://doc.dpdk.org/guides-21.11/nics/overview.html
 
-Enabling TSO
-~~~~~~~~~~~~
+Disabling TSO
+~~~~~~~~~~~~~
 
-The TSO support may be enabled via a global config value
-``userspace-tso-enable``.  Setting this to ``true`` enables TSO support for
-all ports.::
+The TSO support is enabled by default it may be disabled via a global config
+value ``userspace-tso-enable``.  Setting this to ``false`` disabled TSO support
+for all ports.::
 
-    $ ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=true
+    $ ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=false
 
-The default value is ``false``.
+The default value is ``true``.
 
 Changing ``userspace-tso-enable`` requires restarting the daemon.
 
@@ -108,7 +106,10 @@ All kernel devices that use the raw socket interface (veth, for example)
 require the kernel commit 9d2f67e43b73 ("net/packet: fix packet drop as of
 virtio gso") in order to work properly. This commit was merged in upstream
 kernel 4.19-rc7, so make sure your kernel is either newer or contains the
-backport.
+backport. Network topologies that include both TSO and Linux VLAN ports
+requires the kernel commit dfed913e8b55 ("net/af_packet: add VLAN support
+for AF_PACKET SOCK_RAW GSO") in order to work properly. This commit was
+merged in upstream kernel 5.19-rc1.
 
 ~~~~~~~~~~~~~~~~~~
 Performance Tuning
