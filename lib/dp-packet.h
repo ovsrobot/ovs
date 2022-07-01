@@ -89,23 +89,24 @@ enum dp_packet_offload_mask {
     /* Adding new field requires adding to DP_PACKET_OL_SUPPORTED_MASK. */
 };
 
-#define DP_PACKET_OL_SUPPORTED_MASK (DP_PACKET_OL_RSS_HASH        | \
-                                     DP_PACKET_OL_FLOW_MARK       | \
-                                     DP_PACKET_OL_RX_L4_CSUM_BAD  | \
-                                     DP_PACKET_OL_RX_IP_CSUM_BAD  | \
-                                     DP_PACKET_OL_RX_L4_CSUM_GOOD | \
-                                     DP_PACKET_OL_RX_IP_CSUM_GOOD | \
-                                     DP_PACKET_OL_TX_TCP_SEG      | \
-                                     DP_PACKET_OL_TX_IPV4         | \
-                                     DP_PACKET_OL_TX_IPV6         | \
-                                     DP_PACKET_OL_TX_IP_CSUM      | \
-                                     DP_PACKET_OL_TX_TCP_CSUM     | \
-                                     DP_PACKET_OL_TX_UDP_CSUM     | \
+#define DP_PACKET_OL_SUPPORTED_MASK (DP_PACKET_OL_RSS_HASH         | \
+                                     DP_PACKET_OL_FLOW_MARK        | \
+                                     DP_PACKET_OL_RX_L4_CSUM_BAD   | \
+                                     DP_PACKET_OL_RX_IP_CSUM_BAD   | \
+                                     DP_PACKET_OL_RX_L4_CSUM_GOOD  | \
+                                     DP_PACKET_OL_RX_IP_CSUM_GOOD  | \
+                                     DP_PACKET_OL_TX_TCP_SEG       | \
+                                     DP_PACKET_OL_TX_IPV4          | \
+                                     DP_PACKET_OL_TX_IPV6          | \
+                                     DP_PACKET_OL_TX_IP_CSUM       | \
+                                     DP_PACKET_OL_TX_TCP_CSUM      | \
+                                     DP_PACKET_OL_TX_UDP_CSUM      | \
                                      DP_PACKET_OL_TX_SCTP_CSUM)
 
 #define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CSUM | \
                                  DP_PACKET_OL_TX_UDP_CSUM | \
                                  DP_PACKET_OL_TX_SCTP_CSUM)
+
 #define DP_PACKET_OL_RX_IP_CSUM_MASK (DP_PACKET_OL_RX_IP_CSUM_GOOD | \
                                        DP_PACKET_OL_RX_IP_CSUM_BAD)
 #define DP_PACKET_OL_RX_L4_CSUM_MASK (DP_PACKET_OL_RX_L4_CSUM_GOOD | \
@@ -140,6 +141,8 @@ struct dp_packet {
                                       or UINT16_MAX. */
     uint32_t cutlen;               /* length in bytes to cut from the end. */
     ovs_be32 packet_type;          /* Packet type as defined in OpenFlow */
+    uint16_t csum_start;           /* Position to start checksumming from. */
+    uint16_t csum_offset;          /* Offset to place checksum. */
     union {
         struct pkt_metadata md;
         uint64_t data[DP_PACKET_CONTEXT_SIZE / 8];
@@ -991,6 +994,13 @@ dp_packet_ol_tx_ipv4(const struct dp_packet *a)
     return !!(*dp_packet_ol_flags_ptr(a) & DP_PACKET_OL_TX_IPV4);
 }
 
+/* Returns 'true' if packet 'p' is marked as IPv6. */
+static inline bool
+dp_packet_ol_tx_ipv6(const struct dp_packet *p)
+{
+    return !!(*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_TX_IPV6);
+}
+
 /* Returns 'true' if packet 'a' is marked for TCP checksum offloading. */
 static inline bool
 dp_packet_ol_tx_tcp_csum(const struct dp_packet *a)
@@ -1015,18 +1025,20 @@ dp_packet_ol_tx_sctp_csum(struct dp_packet *a)
             DP_PACKET_OL_TX_SCTP_CSUM;
 }
 
-/* Mark packet 'a' as IPv4. */
+/* Mark packet 'p' as IPv4. */
 static inline void
-dp_packet_ol_set_tx_ipv4(struct dp_packet *a)
+dp_packet_ol_set_tx_ipv4(struct dp_packet *p)
 {
-    *dp_packet_ol_flags_ptr(a) |= DP_PACKET_OL_TX_IPV4;
+    *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_TX_IPV6;
+    *dp_packet_ol_flags_ptr(p) |= DP_PACKET_OL_TX_IPV4;
 }
 
-/* Mark packet 'a' as IPv6. */
+/* Mark packet 'p' as IPv6. */
 static inline void
-dp_packet_ol_set_tx_ipv6(struct dp_packet *a)
+dp_packet_ol_set_tx_ipv6(struct dp_packet *p)
 {
-    *dp_packet_ol_flags_ptr(a) |= DP_PACKET_OL_TX_IPV6;
+    *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_TX_IPV4;
+    *dp_packet_ol_flags_ptr(p) |= DP_PACKET_OL_TX_IPV6;
 }
 
 /* Returns 'true' if packet 'p' is marked for IPv4 checksum offloading. */
@@ -1119,6 +1131,8 @@ dp_packet_ip_set_header_csum(struct dp_packet *p)
     ip->ip_csum = csum(ip, sizeof *ip);
 }
 
+/* Returns 'true' if the packet 'p' has good integrity and the
+ * checksum in it is correct. */
 static inline bool
 dp_packet_ol_l4_checksum_good(const struct dp_packet *p)
 {
@@ -1131,6 +1145,53 @@ dp_packet_ol_l4_checksum_bad(const struct dp_packet *p)
 {
     return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_L4_CSUM_MASK) ==
             DP_PACKET_OL_RX_L4_CSUM_BAD;
+}
+
+/* Returns 'true' if the packet has good integrity though the
+ * checksum in the packet 'p' is not complete. */
+static inline bool
+dp_packet_ol_l4_csum_partial(const struct dp_packet *p)
+{
+    return (*dp_packet_ol_flags_ptr(p) & DP_PACKET_OL_RX_L4_CSUM_MASK) ==
+            DP_PACKET_OL_RX_L4_CSUM_MASK;
+}
+
+/* Marks packet 'p' with good integrity though the checksum in the
+ * packet is not complete. */
+static inline void
+dp_packet_ol_set_l4_csum_partial(const struct dp_packet *p)
+{
+    *dp_packet_ol_flags_ptr(p) |= DP_PACKET_OL_RX_L4_CSUM_MASK;
+}
+
+/* Marks packet 'p' with good L4 checksum. */
+static inline void
+dp_packet_ol_set_l4_csum_good(const struct dp_packet *p)
+{
+    *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_RX_L4_CSUM_BAD;
+    *dp_packet_ol_flags_ptr(p) |= DP_PACKET_OL_RX_L4_CSUM_GOOD;
+}
+
+/* Marks packet 'p' with good L4 checksum as modified. */
+static inline void
+dp_packet_ol_reset_l4_csum_good(const struct dp_packet *p)
+{
+    if (!dp_packet_ol_l4_csum_partial(p)) {
+        *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_RX_L4_CSUM_GOOD;
+    }
+}
+
+/* Marks packet 'p' with good integrity if the 'start' and 'offset'
+ * matches with the 'csum_start' and 'csum_offset' in packet 'p'.
+ * The 'start' is the offset from the begin of the packet headers.
+ * The 'offset' is the offset from start to place the checksum. */
+static inline void
+dp_packet_ol_vnet_csum_check(const struct dp_packet *p, uint16_t start,
+                             uint16_t offset)
+{
+    if (p->csum_start == start && p->csum_offset == offset) {
+        dp_packet_ol_set_l4_csum_partial(p);
+    }
 }
 
 static inline void ALWAYS_INLINE
