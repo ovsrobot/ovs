@@ -981,14 +981,14 @@ dp_packet_ol_tcp_seg(const struct dp_packet *a)
 
 /* Returns 'true' if packet 'a' is marked for IPv4 checksum offloading. */
 static inline bool
-dp_packet_ol_is_ipv4(const struct dp_packet *a)
+dp_packet_ol_tx_ipv4(const struct dp_packet *a)
 {
     return !!(*dp_packet_ol_flags_ptr(a) & DP_PACKET_OL_TX_IPV4);
 }
 
 /* Returns 'true' if packet 'a' is marked for TCP checksum offloading. */
 static inline bool
-dp_packet_ol_l4_is_tcp(const struct dp_packet *a)
+dp_packet_ol_tx_tcp_csum(const struct dp_packet *a)
 {
     return (*dp_packet_ol_flags_ptr(a) & DP_PACKET_OL_TX_L4_MASK) ==
             DP_PACKET_OL_TX_TCP_CSUM;
@@ -996,7 +996,7 @@ dp_packet_ol_l4_is_tcp(const struct dp_packet *a)
 
 /* Returns 'true' if packet 'a' is marked for UDP checksum offloading. */
 static inline bool
-dp_packet_ol_l4_is_udp(struct dp_packet *a)
+dp_packet_ol_tx_udp_csum(struct dp_packet *a)
 {
     return (*dp_packet_ol_flags_ptr(a) & DP_PACKET_OL_TX_L4_MASK) ==
             DP_PACKET_OL_TX_UDP_CSUM;
@@ -1004,7 +1004,7 @@ dp_packet_ol_l4_is_udp(struct dp_packet *a)
 
 /* Returns 'true' if packet 'a' is marked for SCTP checksum offloading. */
 static inline bool
-dp_packet_ol_l4_is_sctp(struct dp_packet *a)
+dp_packet_ol_tx_sctp_csum(struct dp_packet *a)
 {
     return (*dp_packet_ol_flags_ptr(a) & DP_PACKET_OL_TX_L4_MASK) ==
             DP_PACKET_OL_TX_SCTP_CSUM;
@@ -1027,7 +1027,7 @@ dp_packet_ol_set_tx_ipv6(struct dp_packet *a)
 /* Mark packet 'a' for TCP checksum offloading.  It implies that either
  * the packet 'a' is marked for IPv4 or IPv6 checksum offloading. */
 static inline void
-dp_packet_ol_set_csum_tcp(struct dp_packet *a)
+dp_packet_ol_set_tx_tcp_csum(struct dp_packet *a)
 {
     *dp_packet_ol_flags_ptr(a) |= DP_PACKET_OL_TX_TCP_CSUM;
 }
@@ -1035,7 +1035,7 @@ dp_packet_ol_set_csum_tcp(struct dp_packet *a)
 /* Mark packet 'a' for UDP checksum offloading.  It implies that either
  * the packet 'a' is marked for IPv4 or IPv6 checksum offloading. */
 static inline void
-dp_packet_ol_set_csum_udp(struct dp_packet *a)
+dp_packet_ol_set_tx_udp_csum(struct dp_packet *a)
 {
     *dp_packet_ol_flags_ptr(a) |= DP_PACKET_OL_TX_UDP_CSUM;
 }
@@ -1043,7 +1043,7 @@ dp_packet_ol_set_csum_udp(struct dp_packet *a)
 /* Mark packet 'a' for SCTP checksum offloading.  It implies that either
  * the packet 'a' is marked for IPv4 or IPv6 checksum offloading. */
 static inline void
-dp_packet_ol_set_csum_sctp(struct dp_packet *a)
+dp_packet_ol_set_tx_sctp_csum(struct dp_packet *a)
 {
     *dp_packet_ol_flags_ptr(a) |= DP_PACKET_OL_TX_SCTP_CSUM;
 }
