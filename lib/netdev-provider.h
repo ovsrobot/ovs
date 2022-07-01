@@ -37,6 +37,7 @@ extern "C" {
 struct netdev_tnl_build_header_params;
 #define NETDEV_NUMA_UNSPEC OVS_NUMA_UNSPEC
 
+/* Keep this enum updated with translation to string below. */
 enum netdev_ol_flags {
     NETDEV_OFFLOAD_TX_IPV4_CSUM = 1 << 0,
     NETDEV_OFFLOAD_TX_TCP_CSUM = 1 << 1,
@@ -44,6 +45,8 @@ enum netdev_ol_flags {
     NETDEV_OFFLOAD_TX_SCTP_CSUM = 1 << 3,
     NETDEV_OFFLOAD_TX_TCP_TSO = 1 << 4,
 };
+
+void netdev_ol_flags_to_string(struct ds *, const struct netdev *);
 
 /* A network device (e.g. an Ethernet device).
  *
