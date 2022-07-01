@@ -201,6 +201,8 @@ dp_packet_clone_with_headroom(const struct dp_packet *p, size_t headroom)
     *dp_packet_ol_flags_ptr(new_buffer) = *dp_packet_ol_flags_ptr(p);
     *dp_packet_ol_flags_ptr(new_buffer) &= DP_PACKET_OL_SUPPORTED_MASK;
 
+    dp_packet_set_tso_segsz(new_buffer, dp_packet_get_tso_segsz(p));
+
     if (dp_packet_rss_valid(p)) {
         dp_packet_set_rss_hash(new_buffer, dp_packet_get_rss_hash(p));
     }
