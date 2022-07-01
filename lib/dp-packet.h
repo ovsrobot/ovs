@@ -127,6 +127,7 @@ struct dp_packet {
     uint32_t ol_flags;          /* Offloading flags. */
     uint32_t rss_hash;          /* Packet hash. */
     uint32_t flow_mark;         /* Packet flow mark. */
+    uint16_t tso_segsz;         /* TCP TSO segment size. */
 #endif
     enum dp_packet_source source;  /* Source of memory allocated as 'base'. */
 
@@ -166,6 +167,9 @@ static inline void dp_packet_set_size(struct dp_packet *, uint32_t);
 
 static inline uint16_t dp_packet_get_allocated(const struct dp_packet *);
 static inline void dp_packet_set_allocated(struct dp_packet *, uint16_t);
+
+static inline uint16_t dp_packet_get_tso_segsz(const struct dp_packet *);
+static inline void dp_packet_set_tso_segsz(struct dp_packet *, uint16_t);
 
 void *dp_packet_resize_l2(struct dp_packet *, int increment);
 void *dp_packet_resize_l2_5(struct dp_packet *, int increment);
@@ -639,6 +643,17 @@ dp_packet_set_allocated(struct dp_packet *p, uint16_t s)
     p->mbuf.buf_len = s;
 }
 
+static inline uint16_t
+dp_packet_get_tso_segsz(const struct dp_packet *p)
+{
+    return p->mbuf.tso_segsz;
+}
+
+static inline void
+dp_packet_set_tso_segsz(struct dp_packet *p, uint16_t s)
+{
+    p->mbuf.tso_segsz = s;
+}
 #else /* DPDK_NETDEV */
 
 static inline void
@@ -695,6 +710,17 @@ dp_packet_set_allocated(struct dp_packet *p, uint16_t s)
     p->allocated_ = s;
 }
 
+static inline uint16_t
+dp_packet_get_tso_segsz(const struct dp_packet *p)
+{
+    return p->tso_segsz;
+}
+
+static inline void
+dp_packet_set_tso_segsz(struct dp_packet *p, uint16_t s)
+{
+    p->tso_segsz = s;
+}
 #endif /* DPDK_NETDEV */
 
 static inline void
