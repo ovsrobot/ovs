@@ -1651,6 +1651,8 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         flower.mask.tunnel.ipv6.ipv6_dst = tnl_mask->ipv6_dst;
         flower.mask.tunnel.tos = tnl_mask->ip_tos;
         flower.mask.tunnel.ttl = tnl_mask->ip_ttl;
+        flower.mask.tunnel.tp_src = tnl_mask->tp_src;
+        flower.mask.tunnel.tp_dst = tnl_mask->tp_dst;
         flower.mask.tunnel.id = (tnl->flags & FLOW_TNL_F_KEY) ? tnl_mask->tun_id : 0;
         memset(&tnl_mask->tun_id, 0, sizeof tnl_mask->tun_id);
         memset(&tnl_mask->ip_src, 0, sizeof tnl_mask->ip_src);
@@ -1659,6 +1661,8 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         memset(&tnl_mask->ipv6_dst, 0, sizeof tnl_mask->ipv6_dst);
         memset(&tnl_mask->ip_tos, 0, sizeof tnl_mask->ip_tos);
         memset(&tnl_mask->ip_ttl, 0, sizeof tnl_mask->ip_ttl);
+        memset(&tnl_mask->tp_src, 0, sizeof tnl_mask->tp_src);
+        memset(&tnl_mask->tp_dst, 0, sizeof tnl_mask->tp_dst);
         tnl_mask->flags &= ~FLOW_TNL_F_KEY;
 
         /* XXX: This is wrong!  We're ignoring DF and CSUM flags configuration
