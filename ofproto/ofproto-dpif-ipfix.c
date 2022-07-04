@@ -88,6 +88,7 @@ enum dpif_ipfix_tunnel_type {
     DPIF_IPFIX_TUNNEL_LISP = 0x03,
     DPIF_IPFIX_TUNNEL_STT = 0x04,
     DPIF_IPFIX_TUNNEL_GENEVE = 0x07,
+    DPIF_IPFIX_TUNNEL_SRV6 = 0x08,
     NUM_DPIF_IPFIX_TUNNEL
 };
 
@@ -389,6 +390,7 @@ static uint8_t tunnel_protocol[NUM_DPIF_IPFIX_TUNNEL] = {
     IPPROTO_TCP,    /* DPIF_IPFIX_TUNNEL_STT*/
     0          ,    /* reserved */
     IPPROTO_UDP,    /* DPIF_IPFIX_TUNNEL_GENEVE*/
+    IPPROTO_IPIP,   /* DPIF_IPFIX_TUNNEL_SRV6 */
 };
 
 OVS_PACKED(
@@ -811,6 +813,8 @@ dpif_ipfix_tunnel_type(const struct ofport *ofport)
         return DPIF_IPFIX_TUNNEL_GENEVE;
     } else if (strcmp(type, "stt") == 0) {
         return DPIF_IPFIX_TUNNEL_STT;
+    } else if (strcmp(type, "srv6") == 0) {
+        return DPIF_IPFIX_TUNNEL_SRV6;
     }
 
     return DPIF_IPFIX_TUNNEL_UNKNOWN;
@@ -830,6 +834,7 @@ dpif_ipfix_tunnel_key_length(enum dpif_ipfix_tunnel_type tunnel_type)
             return 3;
         case DPIF_IPFIX_TUNNEL_STT:
             return 8;
+        case DPIF_IPFIX_TUNNEL_SRV6:
         case DPIF_IPFIX_TUNNEL_UNKNOWN:
         case NUM_DPIF_IPFIX_TUNNEL:
         default:

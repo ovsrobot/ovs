@@ -1514,6 +1514,18 @@ BUILD_ASSERT_DECL(sizeof(struct vxlanhdr) == 8);
 #define VXLAN_F_GPE  0x4000
 #define VXLAN_HF_GPE 0x04000000
 
+/* SRv6 protocol header */
+#define IPV6_SRCRT_TYPE_4 4
+struct srv6_base_hdr {
+    uint8_t nexthdr;
+    uint8_t hdrlen;
+    uint8_t type;
+    uint8_t segments_left;
+    uint8_t last_entry;
+    uint8_t flags;
+    ovs_be16 tag;
+};
+
 /* Input values for PACKET_TYPE macros have to be in host byte order.
  * The _BE postfix indicates result is in network byte order. Otherwise result
  * is in host byte order. */
