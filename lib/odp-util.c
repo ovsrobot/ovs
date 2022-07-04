@@ -715,6 +715,25 @@ format_odp_tnl_push_header(struct ds *ds, struct ovs_action_push_tnl *data)
         }
 
         ds_put_char(ds, ')');
+    } else if (data->tnl_type == OVS_VPORT_TYPE_SRV6) {
+        const struct srv6_base_hdr *srh;
+        struct in6_addr *segs;
+        int i;
+        int nr_segs;
+
+        srh = (struct srv6_base_hdr *) ((char *) l3 + IPV6_HEADER_LEN);
+        segs = (struct in6_addr *) ((char *) srh +
+                                    sizeof(struct srv6_base_hdr));
+        nr_segs = srh->last_entry + 1;
+
+        ds_put_format(ds, "srv6(");
+        ds_put_format(ds, "segments_left=%d", srh->segments_left);
+        ds_put_format(ds, ",segs=");
+        for (i = 0; i < nr_segs; i++) {
+            ds_put_format(ds, i > 0 ? "," : "");
+            ipv6_format_addr(&segs[nr_segs - i - 1], ds);
+        }
+        ds_put_char(ds, ')');
     } else if (data->tnl_type == OVS_VPORT_TYPE_GRE ||
                data->tnl_type == OVS_VPORT_TYPE_IP6GRE) {
         const struct gre_base_hdr *greh;
