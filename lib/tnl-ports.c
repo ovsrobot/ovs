@@ -126,7 +126,7 @@ map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
          /* XXX: No fragments support. */
         match.wc.masks.nw_frag = FLOW_NW_FRAG_MASK;
 
-        /* 'tp_port' is zero for GRE tunnels. In this case it
+        /* 'tp_port' is zero for GRE and SRv6 tunnels. In this case it
          * doesn't make sense to match on UDP port numbers. */
         if (tp_port) {
             match.wc.masks.tp_dst = OVS_BE16_MAX;
@@ -179,6 +179,9 @@ tnl_type_to_nw_proto(const char type[])
     }
     if (!strcmp(type, "gtpu")) {
         return IPPROTO_UDP;
+    }
+    if (!strcmp(type, "srv6")) {
+        return IPPROTO_IPIP;
     }
     return 0;
 }

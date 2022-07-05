@@ -357,6 +357,19 @@ gre_header_len(ovs_be16 flags)
 }
 
 static int
+parse_srv6_header(struct dp_packet *packet,
+                 struct flow_tnl *tnl)
+{
+    unsigned int ulen;
+
+    netdev_tnl_ip_extract_tnl_md(packet, tnl, &ulen);
+
+    packet->packet_type = htonl(PT_IPV4);
+
+    return ulen;
+}
+
+static int
 parse_gre_header(struct dp_packet *packet,
                  struct flow_tnl *tnl)
 {
@@ -843,6 +856,121 @@ netdev_gtpu_build_header(const struct netdev *netdev,
     data->tnl_type = OVS_VPORT_TYPE_GTPU;
 
     return 0;
+}
+
+static void
+srv6_build_header(struct ovs_action_push_tnl *data,
+                  const struct netdev_tnl_build_header_params *params,
+                  int nr_segs, const struct in6_addr *segs)
+{
+    struct ovs_16aligned_ip6_hdr *nh6;
+    struct srv6_base_hdr *srh;
+    struct in6_addr *s;
+    unsigned int hlen;
+    int i;
+
+    ovs_assert(nr_segs > 0);
+
+    nh6 = (struct ovs_16aligned_ip6_hdr *) eth_build_header(data, params);
+    put_16aligned_be32(&nh6->ip6_flow, htonl(6 << 28) |
+                       htonl(params->flow->tunnel.ip_tos << 20));
+    nh6->ip6_hlim = params->flow->tunnel.ip_ttl;
+    nh6->ip6_nxt = IPPROTO_ROUTING;
+    memcpy(&nh6->ip6_src, params->s_ip, sizeof(ovs_be32[4]));
+    memcpy(&nh6->ip6_dst, &segs[0], sizeof(ovs_be32[4]));
+
+    srh = (struct srv6_base_hdr *) (nh6 + 1);
+    srh->nexthdr = IPPROTO_IPIP;
+    srh->type = IPV6_SRCRT_TYPE_4;
+    srh->hdrlen = 2 * nr_segs;
+    srh->segments_left = nr_segs - 1;
+    srh->last_entry = nr_segs - 1;
+    srh->flags = 0;
+    srh->tag = 0;
+
+    s = ALIGNED_CAST(struct in6_addr *,
+                     (char *) srh + sizeof(struct srv6_base_hdr));
+    for (i = 0; i < nr_segs; i++) {
+        /* Segment list is written to the header in reverse order. */
+        memcpy(s, &segs[nr_segs - i - 1], sizeof(ovs_be32[4]));
+        s++;
+    }
+
+    hlen = IPV6_HEADER_LEN + sizeof(struct srv6_base_hdr) + 8 * srh->hdrlen;
+
+    data->header_len += hlen;
+    data->tnl_type = OVS_VPORT_TYPE_SRV6;
+}
+
+int
+netdev_srv6_build_header(const struct netdev *netdev,
+                         struct ovs_action_push_tnl *data,
+                         const struct netdev_tnl_build_header_params *params)
+{
+    struct netdev_vport *dev = netdev_vport_cast(netdev);
+    struct netdev_tunnel_config *tnl_cfg;
+
+    ovs_mutex_lock(&dev->mutex);
+    tnl_cfg = &dev->tnl_cfg;
+
+    if (tnl_cfg->srv6_num_segs) {
+        srv6_build_header(data, params,
+                          tnl_cfg->srv6_num_segs, tnl_cfg->srv6_segs);
+    } else {
+        /*
+         * If explicit segment list setting is omitted, tunnel destination
+         * is considered to be the first segment list.
+         */
+        srv6_build_header(data, params,
+                          1, &params->flow->tunnel.ipv6_dst);
+    }
+
+    ovs_mutex_unlock(&dev->mutex);
+
+    return 0;
+}
+
+void
+netdev_srv6_push_header(const struct netdev *netdev OVS_UNUSED,
+                        struct dp_packet *packet OVS_UNUSED,
+                        const struct ovs_action_push_tnl *data OVS_UNUSED)
+{
+    int ip_tot_size;
+
+    netdev_tnl_push_ip_header(packet, data->header,
+                              data->header_len, &ip_tot_size);
+}
+
+struct dp_packet *
+netdev_srv6_pop_header(struct dp_packet *packet)
+{
+    struct pkt_metadata *md = &packet->md;
+    struct flow_tnl *tnl = &md->tunnel;
+    struct srv6_base_hdr *srh;
+    int hlen = ETH_HEADER_LEN + IPV6_HEADER_LEN;
+
+    srh = ALIGNED_CAST(struct srv6_base_hdr *,
+                       (char *) dp_packet_data(packet) + hlen);
+    if (srh->segments_left > 0) {
+        VLOG_WARN_RL(&err_rl, "invalid srv6 segments_left=%d\n",
+                     srh->segments_left);
+        goto err;
+    }
+
+    hlen += sizeof(struct srv6_base_hdr) + 8 * srh->hdrlen;
+
+    pkt_metadata_init_tnl(md);
+
+    hlen = parse_srv6_header(packet, tnl);
+
+    dp_packet_reset_packet(packet, hlen);
+
+    return packet;
+
+err:
+    dp_packet_delete(packet);
+
+    return NULL;
 }
 
 struct dp_packet *
