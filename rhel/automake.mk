@@ -15,8 +15,6 @@ EXTRA_DIST += \
 	rhel/etc_sysconfig_network-scripts_ifup-ovs \
 	rhel/openvswitch-dkms.spec \
 	rhel/openvswitch-dkms.spec.in \
-	rhel/kmod-openvswitch-rhel6.spec \
-	rhel/kmod-openvswitch-rhel6.spec.in \
 	rhel/openvswitch.spec \
 	rhel/openvswitch.spec.in \
 	rhel/openvswitch-fedora.spec \
@@ -40,9 +38,6 @@ update_rhel_spec = \
   if cmp -s $(@F).tmp $@; then touch $@; rm $(@F).tmp; else mv $(@F).tmp $@; fi
 
 $(srcdir)/rhel/openvswitch-dkms.spec: rhel/openvswitch-dkms.spec.in $(top_builddir)/config.status
-	$(update_rhel_spec)
-
-$(srcdir)/rhel/kmod-openvswitch-rhel6.spec: rhel/kmod-openvswitch-rhel6.spec.in $(top_builddir)/config.status
 	$(update_rhel_spec)
 
 $(srcdir)/rhel/openvswitch.spec: rhel/openvswitch.spec.in $(top_builddir)/config.status
