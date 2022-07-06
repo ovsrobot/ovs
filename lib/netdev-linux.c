@@ -2621,9 +2621,9 @@ nl_msg_act_police_start_nest(struct ofpbuf *request, uint32_t prio,
 
 static void
 nl_msg_act_police_end_nest(struct ofpbuf *request, size_t offset,
-                           size_t act_offset)
+                           size_t act_offset, uint32_t notexceed_act)
 {
-    nl_msg_put_u32(request, TCA_POLICE_RESULT, TC_ACT_PIPE);
+    nl_msg_put_u32(request, TCA_POLICE_RESULT, notexceed_act);
     nl_msg_end_nested(request, offset);
     nl_msg_end_nested(request, act_offset);
 }
@@ -2643,7 +2643,7 @@ nl_msg_put_act_police(struct ofpbuf *request, struct tc_police police,
         nl_msg_act_police_start_nest(request, ++prio, &offset, &act_offset);
         tc_put_rtab(request, TCA_POLICE_RATE, &police.rate);
         nl_msg_put_unspec(request, TCA_POLICE_TBF, &police, sizeof police);
-        nl_msg_act_police_end_nest(request, offset, act_offset);
+        nl_msg_act_police_end_nest(request, offset, act_offset, TC_ACT_UNSPEC);
     }
     if (kpkts_rate) {
         unsigned int pkt_burst_ticks, pps_rate, size;
@@ -2658,7 +2658,7 @@ nl_msg_put_act_police(struct ofpbuf *request, struct tc_police police,
                        (uint64_t) pkt_burst_ticks);
         nl_msg_put_unspec(request, TCA_POLICE_TBF, &null_police,
                           sizeof null_police);
-        nl_msg_act_police_end_nest(request, offset, act_offset);
+        nl_msg_act_police_end_nest(request, offset, act_offset, TC_ACT_PIPE);
     }
 }
 
