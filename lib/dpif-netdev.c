@@ -63,6 +63,7 @@
 #include "netdev-vport.h"
 #include "netlink.h"
 #include "odp-execute.h"
+#include "odp-execute-private.h"
 #include "odp-util.h"
 #include "openvswitch/dynamic-string.h"
 #include "openvswitch/list.h"
