@@ -43,6 +43,8 @@ Post-v2.17.0
      * 'dpif-netdev/subtable-lookup-prio-get' appctl command renamed to
        'dpif-netdev/subtable-lookup-info-get' to better reflect its purpose.
        The old variant is kept for backward compatibility.
+   - bond:
+     * Added new configuration knob 'all_members_active' for non lacp bonds.
 
 
 v2.17.0 - 17 Feb 2022
