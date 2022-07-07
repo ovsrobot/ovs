@@ -125,6 +125,32 @@ the one added to the set later replaces the earlier action:
 
 An action set may only contain the actions listed above.
 
+Actions Implementations (Experimental)
+--------------------------------------
+
+Actions are used in OpenFlow flows to describe what to do when the flow
+matches a packet. Just like with the datapath interface, SIMD instructions
+with the userspace datapath can be applied to the action implementation to
+improve performance.
+
+OVS provides multiple implementations of the actions.
+Available implementations can be listed with the following command::
+
+    $ ovs-appctl odp-execute/action-impl-show
+        Available Actions implementations:
+            scalar (available: Yes, active: Yes)
+            autovalidator (available: Yes, active: No)
+            avx512 (available: Yes, active: No)
+
+By default, ``scalar`` is used.  Implementations can be selected by
+name::
+
+    $ ovs-appctl odp-execute/action-impl-set avx512
+    Action implementation set to avx512.
+
+    $ ovs-appctl odp-execute/action-impl-set scalar
+    Action implementation set to scalar.
+
 Error Handling
 --------------
 

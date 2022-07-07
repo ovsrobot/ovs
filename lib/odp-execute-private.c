@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cpu.h"
 #include "dpdk.h"
 #include "dp-packet.h"
 #include "odp-execute-private.h"
@@ -28,6 +29,40 @@
 
 VLOG_DEFINE_THIS_MODULE(odp_execute_impl);
 static int active_action_impl_index;
+
+#ifdef ACTION_IMPL_AVX512_CHECK
+/* Probe functions to check ISA requirements. */
+static bool
+action_avx512_isa_probe(void)
+{
+    static enum ovs_cpu_isa isa_required[] = {
+        OVS_CPU_ISA_X86_AVX512F,
+        OVS_CPU_ISA_X86_AVX512BW,
+        OVS_CPU_ISA_X86_BMI2,
+        OVS_CPU_ISA_X86_AVX512VL,
+    };
+
+    for (int i = 0; i < ARRAY_SIZE(isa_required); i++) {
+        if (!cpu_has_isa(isa_required[i])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static int
+action_avx512_probe(struct odp_execute_action_impl *self)
+{
+    if (!action_avx512_isa_probe()) {
+        return -ENOTSUP;
+    } else {
+        action_avx512_init(self);
+    }
+
+    return 0;
+}
+#endif
 
 static struct odp_execute_action_impl action_impls[] = {
     [ACTION_IMPL_AUTOVALIDATOR] = {
@@ -41,6 +76,14 @@ static struct odp_execute_action_impl action_impls[] = {
         .name = "scalar",
         .init_func = odp_action_scalar_init,
     },
+
+#ifdef ACTION_IMPL_AVX512_CHECK
+    [ACTION_IMPL_AVX512] = {
+        .available = false,
+        .name = "avx512",
+        .init_func = action_avx512_probe,
+    },
+#endif
 };
 
 static void
