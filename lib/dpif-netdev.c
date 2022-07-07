@@ -1678,6 +1678,10 @@ create_dpif_netdev(struct dp_netdev *dp)
     dpif->dp = dp;
     dpif->last_port_seq = seq_read(dp->port_seq);
 
+    /* Called once at initialization time. This handles setting up the state
+     * of the actions functions at init time. */
+    odp_execute_init();
+
     return &dpif->dpif;
 }
 
