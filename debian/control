@@ -279,7 +279,7 @@ Description: Open vSwitch VTEP utilities
  VTEP-configured database and a VTEP emulator.
 
 Package: python3-openvswitch
-Architecture: all
+Architecture: linux-any
 Section: python
 Depends:
  python3-six,
