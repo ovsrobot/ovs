@@ -20,6 +20,7 @@ EXTRA_DIST += \
 	tests/atlocal.in \
 	$(srcdir)/package.m4 \
 	$(srcdir)/tests/test-ofparse.py \
+	$(srcdir)/tests/test-dpparse.py \
 	$(srcdir)/tests/testsuite \
 	$(srcdir)/tests/testsuite.patch
 
@@ -526,6 +527,7 @@ CHECK_PYFILES = \
 	tests/mfex_fuzzy.py \
 	tests/ovsdb-monitor-sort.py \
 	tests/test-ofparse.py \
+	tests/test-dpparse.py \
 	tests/test-daemon.py \
 	tests/test-json.py \
 	tests/test-jsonrpc.py \
