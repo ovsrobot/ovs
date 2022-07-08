@@ -30,7 +30,7 @@ pip3 install --disable-pip-version-check --user \
 pip3 install --user  'meson==0.49.2'
 
 # Install python dependencies.
-pip3 install --user netaddr
+pip3 install --user netaddr pyparsing
 
 if [ "$M32" ]; then
     # Installing 32-bit libraries.
