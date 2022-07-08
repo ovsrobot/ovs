@@ -174,6 +174,7 @@ Package: python3-openvswitch
 Architecture: all
 Section: python
 Depends: ${misc:Depends}, ${python3:Depends}
+Suggests: python3-netaddr
 Description: Python bindings for Open vSwitch
  Open vSwitch is a production quality, multilayer, software-based,
  Ethernet virtual switch. It is designed to enable massive network

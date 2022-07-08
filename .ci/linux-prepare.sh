@@ -29,6 +29,9 @@ pip3 install --disable-pip-version-check --user \
     flake8 'hacking>=3.0' sphinx setuptools pyelftools
 pip3 install --user  'meson==0.49.2'
 
+# Install python dependencies.
+pip3 install --user netaddr
+
 if [ "$M32" ]; then
     # Installing 32-bit libraries.
     pkgs="gcc-multilib"

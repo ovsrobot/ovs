@@ -88,7 +88,8 @@ setup_args = dict(
                                       libraries=['openvswitch'])],
     cmdclass={'build_ext': try_build_ext},
     install_requires=['sortedcontainers'],
-    extras_require={':sys_platform == "win32"': ['pywin32 >= 1.0']},
+    extras_require={':sys_platform == "win32"': ['pywin32 >= 1.0'],
+                    'flow': ['netaddr']},
 )
 
 try:
