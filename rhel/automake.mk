@@ -17,8 +17,6 @@ EXTRA_DIST += \
 	rhel/openvswitch-dkms.spec.in \
 	rhel/kmod-openvswitch-rhel6.spec \
 	rhel/kmod-openvswitch-rhel6.spec.in \
-	rhel/openvswitch-kmod-fedora.spec \
-	rhel/openvswitch-kmod-fedora.spec.in \
 	rhel/openvswitch.spec \
 	rhel/openvswitch.spec.in \
 	rhel/openvswitch-fedora.spec \
@@ -47,9 +45,6 @@ $(srcdir)/rhel/openvswitch-dkms.spec: rhel/openvswitch-dkms.spec.in $(top_buildd
 $(srcdir)/rhel/kmod-openvswitch-rhel6.spec: rhel/kmod-openvswitch-rhel6.spec.in $(top_builddir)/config.status
 	$(update_rhel_spec)
 
-$(srcdir)/rhel/openvswitch-kmod-fedora.spec: rhel/openvswitch-kmod-fedora.spec.in $(top_builddir)/config.status
-	$(update_rhel_spec)
-
 $(srcdir)/rhel/openvswitch.spec: rhel/openvswitch.spec.in $(top_builddir)/config.status
 	$(update_rhel_spec)
 
@@ -67,10 +62,3 @@ rpm-fedora: dist $(srcdir)/rhel/openvswitch-fedora.spec
                  -D "_topdir ${RPMBUILD_TOP}" \
                  -ba $(srcdir)/rhel/openvswitch-fedora.spec
 
-# Build kernel datapath RPM
-rpm-fedora-kmod: dist $(srcdir)/rhel/openvswitch-kmod-fedora.spec
-	${MKDIR_P} ${RPMBUILD_TOP}/SOURCES
-	cp ${DIST_ARCHIVES} ${RPMBUILD_TOP}/SOURCES
-	rpmbuild -D "kversion $(shell uname -r)" ${RPMBUILD_OPT} \
-                 -D "_topdir ${RPMBUILD_TOP}" \
-                 -ba $(srcdir)/rhel/openvswitch-kmod-fedora.spec
