@@ -1,0 +1,156 @@
+#!/usr/bin/env bpftrace
+/*
+* usage: sudo bpftrace -p $(pidof ovs-vswitchd) ./watch_flows.bt
+* The following traits can be watched for with the following arguments:
+* "OVS_KEY_ATTR_UNSPEC",                     0
+* "OVS_KEY_ATTR_ENCAP",                      1
+* "OVS_KEY_ATTR_PRIORITY",                   2
+* "OVS_KEY_ATTR_IN_PORT",                    3
+* "OVS_KEY_ATTR_ETHERNET",                   4
+* "OVS_KEY_ATTR_VLAN",                       5
+* "OVS_KEY_ATTR_ETHERTYPE",                  6
+* "OVS_KEY_ATTR_IPV4",                       7
+* "OVS_KEY_ATTR_IPV6",                       8
+* "OVS_KEY_ATTR_TCP",                        9
+* "OVS_KEY_ATTR_UDP",                       10
+* "OVS_KEY_ATTR_ICMP",                      11
+* "OVS_KEY_ATTR_ICMPV6",                    12
+* "OVS_KEY_ATTR_ARP",                       13
+* "OVS_KEY_ATTR_ND",                        14
+* "OVS_KEY_ATTR_SKB_MARK",                  15
+* "OVS_KEY_ATTR_TUNNEL",                    16
+* "OVS_KEY_ATTR_SCTP",                      17
+* "OVS_KEY_ATTR_TCP_FLAGS",                 18
+* "OVS_KEY_ATTR_DP_HASH",                   19
+* "OVS_KEY_ATTR_RECIRC_ID",                 20
+* "OVS_KEY_ATTR_MPLS",                      21
+* "OVS_KEY_ATTR_CT_STATE",                  22
+* "OVS_KEY_ATTR_CT_ZONE",                   23
+* "OVS_KEY_ATTR_CT_MARK",                   24
+* "OVS_KEY_ATTR_CT_LABELS",                 25
+* "OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4",        26
+* "OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6",        27
+* "OVS_KEY_ATTR_NSH"                        28
+* for example: sudo bpftrace -p $(pidof ovs-vswitchd) ./watch_flows.bt 9 will
+* track all flows that have OVS_KEY_ATTR_TCP.
+* In order to track all flows, do not give an argument after ./watch_flows.bt
+*/
+
+#include <linux/sched.h>
+
+#define MAX_ATTRS       32
+#define MAX_KEY         2048
+
+union ufid {
+    u32 ufid32[4];
+    u64 ufid64[2];
+}
+
+struct flowput {
+    u32 flags;
+    u64 key_ptr;
+    u64 key_len;
+    u64 mask_ptr;
+    u64 mask_len;
+    u64 action_ptr;
+    u64 action_len;
+    u64 ufid_loc;
+}
+
+struct ukey {
+    u64 cmap_node;
+    u64 key_ptr;
+    u64 key_len;
+    u64 mask_ptr;
+    u64 mask_len;
+    union ufid ufid;
+}
+
+struct attr {
+    u16 len;
+    u16 type;
+}
+
+BEGIN
+{
+    printf("--------------------------------------------------------------\n");
+    printf("|                   Tracking flow lifecycles                 |\n");
+    printf("--------------------------------------------------------------\n");
+}
+
+usdt::dpif_netlink_operate__:op_flow_put
+{
+    /* 
+     * read the flow_put operation and get the ufid from it. 
+     * If the trait that we're watching is in the flow key, then
+     * increment the watchlist entry with a key equal to the ufid.
+     */
+    $ptr = (struct flowput *) arg1;
+    $pArr = (union ufid *) $ptr->ufid_loc;
+    $num_attrs = (uint64) 0;
+    $key_posn = (uint64) 0;
+    while($num_attrs < MAX_ATTRS && $key_posn < MAX_KEY) {
+        if((uint64) $key_posn >=  $ptr->key_len) {
+            break;
+        }
+        $pAttr = (struct attr *) ((uint8*) $ptr->key_ptr + $key_posn);
+        if ($# == 0) {
+            printf("Now watching flow:\t");
+            printf("ufid:%08x-%04x-%04x-%04x-%04x%08x\n",$pArr->ufid32[0],
+                   $pArr->ufid32[1] >> 16, $pArr->ufid32[1] & 0xffff,
+                   $pArr->ufid32[2] >> 16, $pArr->ufid32[2] & 0xffff,
+                   $pArr->ufid32[3]);
+            @watchlist[$pArr->ufid64[0],$pArr->ufid64[1]]++;
+            break;
+        } else if ($# > 0 && $pAttr->type == $1) {
+            printf("Target traffic was spotted.\t");
+            printf("ufid:%08x-%04x-%04x-%04x-%04x%08x\n",$pArr->ufid32[0],
+                   $pArr->ufid32[1] >> 16, $pArr->ufid32[1] & 0xffff,
+                   $pArr->ufid32[2] >> 16, $pArr->ufid32[2] & 0xffff,
+                   $pArr->ufid32[3]);
+                @watchlist[$pArr->ufid64[0],$pArr->ufid64[1]]++;
+                break;
+        }
+        $num_attrs++;
+        $key_posn = ($key_posn + $pAttr->len + 3) & (0xffffff ^ 3);
+    }
+}
+
+usdt::revalidate:flow_results
+{
+    if (arg0 == 0) {
+        return;
+    }
+    $ukey = (struct ukey *) arg2;
+    if(!@watchlist[$ukey->ufid.ufid64[0],$ukey->ufid.ufid64[1]]) {
+        return;
+    }
+    printf("ufid:%08x-%04x-%04x-%04x-%04x%08x was invalidated because ",
+           $ukey->ufid.ufid32[0], 
+           $ukey->ufid.ufid32[1] >> 16, $ukey->ufid.ufid32[1] & 0xffff,
+           $ukey->ufid.ufid32[2] >> 16, $ukey->ufid.ufid32[2] & 0xffff,
+           $ukey->ufid.ufid32[3]);
+    if (arg0 == 1)  {
+        printf("it timed out.\n");
+    } else if (arg0 == 2) {
+        printf("it was too expensive to revalidate.\n");
+    } else if (arg0 == 3) {
+        printf("there was a change in the openflow wildcards.\n");
+    } else if (arg0 == 4) {
+        printf("the odp fit was bad.\n");
+    } else if (arg0 == 5) {
+        printf("associated ofproto.\n");
+    } else if (arg0 == 6) {
+        printf("there was an error translating the openflow rule to ovs.\n");
+    } else if (arg0 == 7) {
+        printf("avoiding caching.\n");
+    } else {
+        printf("The value of arg0 is %d\n",arg0);
+    }
+}
+
+END
+{
+    clear(@watchlist);
+    printf("\n");
+}

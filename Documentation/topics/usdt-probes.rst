@@ -212,6 +212,7 @@ Available probes in ``ovs_vswitchd``:
 - dpif_netlink_operate\_\_:op_flow_get
 - dpif_netlink_operate\_\_:op_flow_put
 - dpif_recv:recv_upcall
+- revalidate:flow_results
 - main:poll_block
 - main:run_start
 
@@ -322,6 +323,25 @@ sent to ``ovs-vswitchd``.
 - ``utilities/usdt-scripts/upcall_cost.py``
 - ``utilities/usdt-scripts/upcall_monitor.py``
 
+probe revalidate:flow_results
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Description**:
+This probe is triggered when the revalidator decides whether or not to
+revalidate a flow. ``reason`` is an enum that denotes that either the flow
+is being kept, or the reason why the flow is being deleted. The
+``filter_probe.py`` and ``watch_flows.bt`` scripts use this probe to notify
+users when flows matching user-provided criteria (to implement) are deleted.
+**Arguments**:
+
+- *arg0*: ``(enum) reason``
+- *arg1*: ``(struct udpif *) udpif``
+- *arg2*: ``(struct udpif_key *) ukey``
+
+**Script references**:
+
+- ``utilities/usdt-scripts/filter_probe.py``
+- ``utilities/usdt-scripts/watch_flow.bt``
 
 probe main:run_start
 ~~~~~~~~~~~~~~~~~~~~
