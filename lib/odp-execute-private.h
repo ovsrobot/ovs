@@ -54,6 +54,7 @@ struct odp_execute_action_impl {
 /* Order of Actions implementations. */
 enum odp_execute_action_impl_idx {
     ACTION_IMPL_SCALAR,
+    ACTION_IMPL_AUTOVALIDATOR,
     /* See ACTION_IMPL_BEGIN below, for "first to-be-validated" impl.
      * Do not change the autovalidator position in this list without updating
      * the define below.
@@ -64,6 +65,9 @@ enum odp_execute_action_impl_idx {
 
 /* Index to start verifying implementations from. */
 BUILD_ASSERT_DECL(ACTION_IMPL_SCALAR == 0);
+BUILD_ASSERT_DECL(ACTION_IMPL_AUTOVALIDATOR == 1);
+
+#define ACTION_IMPL_BEGIN (ACTION_IMPL_AUTOVALIDATOR + 1)
 
 /* Odp execute init handles setting up the state of the actions functions at
  * initialization time. It cannot return errors, as it must always succeed in
@@ -77,5 +81,7 @@ void odp_execute_action_init(void);
 int odp_action_scalar_init(struct odp_execute_action_impl *self);
 
 struct odp_execute_action_impl * odp_execute_action_set(const char *name);
+
+int action_autoval_init(struct odp_execute_action_impl *self);
 
 #endif /* ODP_EXTRACT_PRIVATE */
