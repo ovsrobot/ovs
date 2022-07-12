@@ -22,6 +22,9 @@
 #include "odp-netlink.h"
 #include "ovs-atomic.h"
 
+#define ACTION_IMPL_AVX512_CHECK (__x86_64__ && HAVE_AVX512F \
+    && HAVE_LD_AVX512_GOOD && __SSE4_2__)
+
 /* Forward declaration for typedef. */
 struct odp_execute_action_impl;
 
@@ -59,6 +62,9 @@ enum odp_execute_action_impl_idx {
      * Do not change the autovalidator position in this list without updating
      * the define below.
      */
+#ifdef ACTION_IMPL_AVX512_CHECK
+    ACTION_IMPL_AVX512,
+#endif
 
     ACTION_IMPL_MAX,
 };
