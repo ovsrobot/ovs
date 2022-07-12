@@ -8,6 +8,9 @@
 /ofp-actions.inc2
 /ofp-errors.inc
 /ofp-msgs.inc
+/ovsconf-idl.c
+/ovsconf-idl.h
+/ovsconf-idl.ovsidl
 /ovsdb-server-idl.c
 /ovsdb-server-idl.h
 /ovsdb-server-idl.ovsidl

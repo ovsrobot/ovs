@@ -1,0 +1,58 @@
+dnl OVSDB_INIT_LOCAL([$1])
+dnl
+dnl Creates an empty Local_Config database named $1
+m4_define([OVSDB_INIT_LOCAL],
+  [AT_CHECK(
+    [ovsdb-tool create $1 $abs_top_srcdir/ovsdb/local-config.ovsschema],
+    [0], [stdout], [ignore])])
+
+dnl OVS_CONFCTL_SETUP
+dnl
+dnl Creates an empty database in the current directory and then starts
+dnl an ovsdb-server on it for ovs-vsctl to connect to.
+m4_define([OVS_CONFCTL_SETUP],
+  [OVSDB_INIT_LOCAL([db])
+   AT_CHECK([ovsdb-server --detach --no-chdir --pidfile --remote=punix:db.sock\
+             --remote=db:Local_Config,Config,connections db >/dev/null 2>&1],
+            [0], [ignore], [ignore])
+   on_exit 'kill `cat ovsdb-server.pid`'])
+
+dnl OVS_CONFCTL_CLEANUP
+dnl
+dnl Kills off the database server.
+m4_define([OVS_CONFCTL_CLEANUP],
+          [OVS_APP_EXIT_AND_WAIT_BY_TARGET([ovsdb-server],
+                                           [ovsdb-server.pid])])
+
+dnl RUN_OVS_CONFCTL(COMMAND, ...)
+dnl
+dnl Executes each ovs-vsctl COMMAND.
+m4_define([RUN_OVS_CONFCTL],
+  [m4_foreach([command], [$@], [ovs-confctl -vreconnect:emer command
+])])
+
+
+m4_define([SET_CONNECTION],
+  [AT_CHECK([RUN_OVS_CONFCTL([set-connection $1])], [0], [ignore])])
+
+m4_define([GET_CONNECTION],
+  [AT_CHECK([RUN_OVS_CONFCTL([get-connection])], [0], [$1])])
+
+m4_define([DEL_CONNECTION],
+  [AT_CHECK([RUN_OVS_CONFCTL([del-connection])], [0], [ignore])])
+
+
+dnl ----------------------------------------------------------------------
+AT_BANNER([ovs-confctl unit tests])
+
+AT_SETUP([ovs-confctl connection lifecycle])
+AT_KEYWORDS([ovs-confctl])
+OVS_CONFCTL_SETUP
+SET_CONNECTION([punix:new_connection])
+AT_CHECK([test -S new_connection])
+GET_CONNECTION([punix:new_connection
+])
+DEL_CONNECTION()
+GET_CONNECTION([])
+OVS_CONFCTL_CLEANUP
+AT_CLEANUP
