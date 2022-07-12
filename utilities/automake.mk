@@ -1,6 +1,7 @@
 bin_PROGRAMS += \
 	utilities/ovs-appctl \
 	utilities/ovs-testcontroller \
+	utilities/ovs-confctl \
 	utilities/ovs-dpctl \
 	utilities/ovs-ofctl \
 	utilities/ovs-vsctl
@@ -38,6 +39,7 @@ EXTRA_DIST += \
 	utilities/gdb/ovs_gdb.py \
 	utilities/ovs-appctl-bashcomp.bash \
 	utilities/ovs-check-dead-ifs.in \
+	utilities/ovs-confctl.8.xml \
 	utilities/ovs-ctl.in \
 	utilities/ovs-dev.py \
 	utilities/ovs-docker \
@@ -67,6 +69,7 @@ EXTRA_DIST += \
 	utilities/usdt-scripts/upcall_monitor.py
 MAN_ROOTS += \
 	utilities/ovs-testcontroller.8.in \
+	utilities/ovs-confctl.8 \
 	utilities/ovs-dpctl.8.in \
 	utilities/ovs-dpctl-top.8.in \
 	utilities/ovs-kmod-ctl.8 \
@@ -74,6 +77,7 @@ MAN_ROOTS += \
 	utilities/ovs-pcap.1.in \
 	utilities/ovs-vsctl.8.in
 CLEANFILES += \
+	utilities/ovs-confctl.8 \
 	utilities/ovs-ctl \
 	utilities/ovs-check-dead-ifs \
 	utilities/ovs-testcontroller.8 \
@@ -97,6 +101,7 @@ CLEANFILES += \
 
 man_MANS += \
 	utilities/ovs-testcontroller.8 \
+	utilities/ovs-confctl.8 \
 	utilities/ovs-dpctl.8 \
 	utilities/ovs-dpctl-top.8 \
 	utilities/ovs-kmod-ctl.8 \
@@ -106,6 +111,9 @@ man_MANS += \
 
 utilities_ovs_appctl_SOURCES = utilities/ovs-appctl.c
 utilities_ovs_appctl_LDADD = lib/libopenvswitch.la
+
+utilities_ovs_confctl_SOURCES = utilities/ovs-confctl.c
+utilities_ovs_confctl_LDADD = lib/libopenvswitch.la
 
 utilities_ovs_testcontroller_SOURCES = utilities/ovs-testcontroller.c
 utilities_ovs_testcontroller_LDADD = lib/libopenvswitch.la $(SSL_LIBS)
