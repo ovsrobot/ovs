@@ -1380,7 +1380,7 @@ nl_parse_act_police(const struct nlattr *options, struct tc_flower *flower)
     const struct tc_police *police;
     struct tc_action *action;
     struct nlattr *police_tm;
-    const struct tcf_t *tm;
+    struct tcf_t tm;
 
     if (!nl_parse_nested(options, police_policy, police_attrs,
                          ARRAY_SIZE(police_policy))) {
@@ -1395,8 +1395,8 @@ nl_parse_act_police(const struct nlattr *options, struct tc_flower *flower)
 
     police_tm = police_attrs[TCA_POLICE_TM];
     if (police_tm) {
-        tm = nl_attr_get_unspec(police_tm, sizeof *tm);
-        nl_parse_tcf(tm, flower);
+        memcpy(&tm, nl_attr_get_unspec(police_tm, sizeof tm), sizeof tm);
+        nl_parse_tcf(&tm, flower);
     }
 
     return 0;
