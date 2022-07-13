@@ -1192,3 +1192,42 @@ ovs-appctl: ovs-vswitchd: server returned an error
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([PMD - ovs-actions configuration])
+OVS_VSWITCHD_START([], [], [], [--dummy-numa 0,0])
+AT_CHECK([ovs-vsctl add-port br0 p1 -- set Interface p1 type=dummy-pmd])
+
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Set the scalar first, so we always have the scalar impl as Active.
+AT_CHECK([ovs-appctl odp-execute/action-impl-set scalar], [0], [dnl
+Action implementation set to scalar.
+])
+AT_CHECK([ovs-appctl odp-execute/action-impl-show | grep "scalar"], [], [dnl
+  scalar (available: Yes, active: Yes)
+])
+
+AT_CHECK([ovs-appctl odp-execute/action-impl-show | grep "autovalidator"], [], [dnl
+  autovalidator (available: Yes, active: No)
+])
+
+dnl Set the autovalidator impl to active.
+AT_CHECK([ovs-appctl odp-execute/action-impl-set autovalidator], [0], [dnl
+Action implementation set to autovalidator.
+])
+
+AT_CHECK([ovs-appctl odp-execute/action-impl-show | grep "scalar"], [], [dnl
+  scalar (available: Yes, active: No)
+])
+
+AT_CHECK([ovs-appctl odp-execute/action-impl-show | grep "autovalidator"], [], [dnl
+  autovalidator (available: Yes, active: Yes)
+])
+
+AT_CHECK([ovs-appctl odp-execute/action-impl-set invalid_implementation], [2], [], [dnl
+Error: unknown action implementation, invalid_implementation, specified!
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+
+OVS_VSWITCHD_STOP(["/Failed setting action implementation to invalid_implementation/d"])
+AT_CLEANUP
