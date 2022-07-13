@@ -215,7 +215,7 @@ struct upcall {
     enum odp_key_fitness fitness;  /* Fitness of 'flow' relative to ODP key. */
     const ovs_u128 *ufid;          /* Unique identifier for 'flow'. */
     unsigned pmd_id;               /* Datapath poll mode driver id. */
-    const struct dp_packet *packet;   /* Packet associated with this upcall. */
+    const struct dp_packet *packet;  /* Packet associated with this upcall. */
     ofp_port_t ofp_in_port;        /* OpenFlow in port, or OFPP_NONE. */
     uint16_t mru;                  /* If !0, Maximum receive unit of
                                       fragmented IP packet */
