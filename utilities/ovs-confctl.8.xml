@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manpage program="ovs-confctl" section="8" title="ovs-confctl">
+    <h1>Name</h1>
+    <p>ovs-confctl -- OVS Local Configuration db management utility</p>
+
+    <h1>Synopsis</h1>
+    <p>
+      <code>ovs-confctl</code> [<var>options</var>] <var>command</var>
+      [<var>arg</var>...]
+    </p>
+
+    <h1>Description</h1>
+
+    <p>
+      The <code>ovs-confctl</code> program configures the
+      <code>Local_Config</code> database by providing a high-level interface
+      to its configuration database.  See <code>local-config</code>(5) for
+      comprehensive documentation of the database schema.
+    </p>
+
+    <p>
+      <code>ovs-confctl</code> connects to an <code>ovsdb-server</code> process
+      that maintains a Local_Config configuration database.  Using this
+      connection, it queries and possibly applies changes to the database,
+      depending on the supplied commands.
+    </p>
+
+    <p>
+      <code>ovs-confctl</code> can perform any number of commands in a single
+      run, implemented as a single atomic transaction against the database.
+    </p>
+
+    <p>
+      The <code>ovs-confctl</code> command line begins with global options (see
+      <code>OPTIONS</code> below for details).  The global options are followed
+      by one or more commands.  Each command should begin with <code>--</code>
+      by itself as a command-line argument, to separate it from the following
+      commands.  (The <code>--</code> before the first command is optional.)
+      The command itself starts with command-specific options, if any, followed
+      by the command name and any arguments.
+    </p>
+
+    <h1>Options</h1>
+
+    <p>
+      The options listed below affect the behavior of <code>ovs-confctl</code>
+      as a whole.  Some individual commands also accept their own options,
+      which are given just before the command name.  If the first command on
+      the command line has options, then those options must be separated from
+      the global options by <code>--</code>.
+    </p>
+
+    <dl>
+      <dt><code>--db</code> <var>database</var></dt>
+      <dd>
+          The OVSDB database remote to contact. Tthe default is
+          <code>unix:@RUNDIR@/db.sock</code>, but will likely need to be
+          passed to point to the specific DB you wish to connect to.
+      </dd>
+
+      <dt><code>--no-syslog</code></dt>
+      <dd>
+        <p>
+          By default, <code>ovs-confctl</code> logs its arguments and the
+          details of any changes that it makes to the system log.  This option
+          disables this logging.
+        </p>
+
+        <p>
+          This option is equivalent to
+          <code>--verbose=confctl:syslog:warn</code>.
+        </p>
+      </dd>
+
+      <dt><code>--oneline</code></dt>
+      <dd>
+        Modifies the output format so that the output for each command is
+        printed on a single line.  New-line characters that would otherwise
+        separate lines are printed as \fB\\n\fR, and any instances of \fB\\\fR
+        that would otherwise appear in the output are doubled.  Prints a blank
+        line for each command that has no output.  This option does not affect
+        the formatting of output from the <code>list</code> or
+        <code>find</code> commands; see <code>Table Formatting Options</code>
+        below.
+      </dd>
+
+      <dt><code>--dry-run</code></dt>
+      <dd>
+        Prevents <code>ovs-confctl</code> from actually modifying the database.
+      </dd>
+
+      <dt><code>-t <var>secs</var></code></dt>
+      <dt><code>--timeout=<var>secs</var></code></dt>
+      <dd>
+        By default, or with a <var>secs</var> of <code>0</code>,
+        <code>ovs-confctl</code> waits forever for the database's response.
+        This option limits runtime to approximately <var>secs</var> seconds.
+        If the timeout expires, <code>ovs-confctl</code> will exit with a
+        <code>SIGALRM</code> signal.  (A timeout would normally happen only if
+        the database cannot be contacted, or if the system is overloaded.)
+      </dd>
+    </dl>
+
+    <h2>Logging options</h2>
+    <xi:include href="lib/vlog.xml"
+                xmlns:xi="http://www.w3.org/2003/XInclude"/>
+
+    <h2>Table Formatting Options</h2>
+    These options control the format of output from the <code>list</code> and
+    <code>find</code> commands.
+    <xi:include href="lib/table.xml"
+                xmlns:xi="http://www.w3.org/2003/XInclude"/>
+
+    <h2>PKI Options</h2>
+    <p>
+      PKI configuration is required to use SSL for the connection to the
+      database.
+    </p>
+    <xi:include href="lib/ssl.xml" xmlns:xi="http://www.w3.org/2003/XInclude"/>
+    <xi:include href="lib/ssl-bootstrap.xml"
+                xmlns:xi="http://www.w3.org/2003/XInclude"/>
+
+    <h2>Other Options</h2>
+
+    <xi:include href="lib/common.xml"
+                xmlns:xi="http://www.w3.org/2003/XInclude"/>
+
+    <h1>Commands</h1>
+
+    <p>
+        The following sections describe the commands that
+        <code>ovs-confctl</code> supports.
+    </p>
+
+    <h2>Remote Connectivity Commands</h2>
+    <p>
+      These commands manipulate the <code>connections</code> column in the
+      <code>Config</code> table and rows in the <code>Connection</code>
+      table.  When <code>ovsdb-server</code> is configured to use the
+      <code>connections</code> column for OVSDB connections, this allows the
+      administrator to use <code>ovs-confctl</code> to configure database
+      connections.
+    </p>
+    <dl>
+      <dt><code>get-connection</code></dt>
+      <dd>
+      Prints the configured connection(s).
+      </dd>
+
+      <dt><code>del-connection</code></dt>
+      <dd>
+      Deletes the configured connection(s).
+      </dd>
+
+      <dt>[<code>--inactivity-probe=</code><var>msecs</var>]
+          <code>set-connection</code> <var>target</var>...
+      </dt>
+      <dd>
+        Sets the configured manager target or targets.  Use
+        <code>--inactivity-probe=</code><var>msecs</var> to override the
+        default idle connection inactivity probe time.  Use 0 to disable
+        inactivity probes.
+      </dd>
+    </dl>
+
+    <h2>Database Commands</h2>
+    <p>
+      These commands query and modify the contents of <code>ovsdb</code>
+      tables.  They are a slight abstraction of the <code>ovsdb</code>
+      interface and as such they operate at a lower level than other
+      <code>ovs-confctl</code> commands.
+    </p>
+
+    <p><var>Identifying Tables, Records, and Columns</var></p>
+
+    <p>
+      Each of these commands has a <var>table</var> parameter to identify a
+      table within the database.  Many of them also take a <var>record</var>
+      parameter that identifies a particular record within a table.  The
+      <var>record</var> parameter may be the UUID for a record, which may be
+      abbreviated to its first 4 (or more) hex digits, as long as that is
+      unique.  Many tables offer additional ways to identify records.  Some
+      commands also take <var>column</var> parameters that identify a
+      particular field within the records in a table.
+    </p>
+
+    <p>
+      For a list of tables and their columns, see <code>local-config</code>(5)
+      or see the table listing from the <code>--help</code> option.
+    </p>
+
+    <p>
+      Record names must be specified in full and with correct capitalization,
+      except that UUIDs may be abbreviated to their first 4 (or more) hex
+      digits, as long as that is unique within the table.  Names of tables and
+      columns are not case-sensitive, and <code>-</code> and <code>_</code> are
+      treated interchangeably.  Unique abbreviations of table and column names
+      are acceptable, e.g. <code>d</code> or <code>dhcp</code> is sufficient
+      to identify the <code>DHCP_Options</code> table.
+    </p>
+
+    <xi:include href="lib/db-ctl-base.xml"
+                xmlns:xi="http://www.w3.org/2003/XInclude"/>
+
+    <h1>Exit Status</h1>
+    <dl>
+      <dt>0</dt>
+      <dd>Successful program execution.</dd>
+
+      <dt>1</dt>
+      <dd>Usage, syntax, or network error.</dd>
+    </dl>
+</manpage>
