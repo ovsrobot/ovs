@@ -22,6 +22,7 @@
 #include "cpu.h"
 #include "dpdk.h"
 #include "dp-packet.h"
+#include "odp-execute.h"
 #include "odp-execute-private.h"
 #include "odp-netlink.h"
 #include "odp-util.h"
@@ -240,6 +241,19 @@ action_autoval_generic(struct dp_packet_batch *batch, const struct nlattr *a)
         dp_packet_delete_batch(&test_batch, true);
     }
     dp_packet_delete_batch(&original_batch, true);
+}
+
+void
+odp_execute_scalar_action(struct dp_packet_batch *batch,
+                          const struct nlattr *action)
+{
+    enum ovs_action_attr type = nl_attr_type(action);
+
+    if (action_impls[ACTION_IMPL_SCALAR].funcs[type] &&
+        type <= OVS_ACTION_ATTR_MAX) {
+
+        action_impls[ACTION_IMPL_SCALAR].funcs[type](batch, action);
+    }
 }
 
 int
