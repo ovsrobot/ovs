@@ -96,6 +96,8 @@ struct odp_execute_action_impl * odp_execute_action_set(const char *name);
 
 int action_autoval_init(struct odp_execute_action_impl *self);
 
+int action_avx512_init(struct odp_execute_action_impl *self);
+
 void odp_execute_action_get_info(struct ds *name);
 
 #endif /* ODP_EXTRACT_PRIVATE */
