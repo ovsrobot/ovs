@@ -58,27 +58,28 @@ You do not need to be the superuser to build the Debian packages.
    top level directory.
 
 3. Install the build dependencies listed under "Build-Depends:" near the top of
-   ``debian/control``. You can install these any way you like, e.g.  with
+   ``debian/control.in``. You can install these any way you like, e.g.  with
    ``apt-get install``.
+
+4. Prepare the package source.
+
+   If you want to build the package with DPDK support execute the following
+   command::
+
+       $ ./boot.sh && ./configure --with-dpdk=shared && make debian
+
+   If not::
+
+       $ ./boot.sh && ./configure && make debian
 
 Check your work by running ``dpkg-checkbuilddeps`` in the top level of your OVS
 directory. If you've installed all the dependencies properly,
 ``dpkg-checkbuilddeps`` will exit without printing anything. If you forgot to
 install some dependencies, it will tell you which ones.
 
-4. Build the package::
+5. Build the package::
 
-       $ fakeroot debian/rules binary
-
-   This will do a serial build that runs the unit tests. This will take
-   approximately 8 to 10 minutes. If you prefer, you can run a faster parallel
-   build::
-
-       $ DEB_BUILD_OPTIONS='parallel=8' fakeroot debian/rules binary
-
-   If you are in a big hurry, you can even skip the unit tests::
-
-       $ DEB_BUILD_OPTIONS='parallel=8 nocheck' fakeroot debian/rules binary
+       $ make debian-deb
 
 .. note::
 

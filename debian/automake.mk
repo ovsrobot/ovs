@@ -3,6 +3,7 @@ EXTRA_DIST += \
 	debian/changelog \
 	debian/clean \
 	debian/control \
+	debian/control.in \
 	debian/copyright \
 	debian/copyright.in \
 	debian/dirs \
@@ -88,4 +89,23 @@ $(srcdir)/debian/copyright: AUTHORS.rst debian/copyright.in
 	  sed -e '1,/%AUTHORS%/d' $(srcdir)/debian/copyright.in;	   \
 	} > $@
 
-DISTCLEANFILES += debian/copyright
+$(srcdir)/debian/control: debian/control.in config.h
+if DPDK_NETDEV
+	sed -e 's/^# DPDK_NETDEV //' \
+		< $(srcdir)/debian/control.in > $(srcdir)/debian/control
+else
+	grep -v "^# DPDK_NETDEV" \
+		< $(srcdir)/debian/control.in > $(srcdir)/debian/control
+endif
+
+debian: $(srcdir)/debian/copyright $(srcdir)/debian/control
+.PHONY: debian
+
+
+debian-deb: debian
+	make distclean
+if DPDK_NETDEV
+	DEB_BUILD_OPTIONS="nocheck parallel=`nproc`" fakeroot debian/rules binary
+else
+	DEB_BUILD_OPTIONS="nocheck parallel=`nproc` nodpdk" fakeroot debian/rules binary
+endif
