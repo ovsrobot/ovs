@@ -1002,6 +1002,46 @@ add_manager_options(struct shash *remotes, const struct ovsdb_row *row)
 }
 
 static void
+add_cli_remote(struct shash *remotes, const char *target_str)
+{
+    struct ovsdb_jsonrpc_options *options;
+    char *save_ptr = NULL;
+    char *target;
+    char *opt;
+
+    target = xstrdup(target_str);
+    strtok_r(target, ";", &save_ptr);
+    options = add_remote(remotes, target);
+    for (opt = strtok_r(NULL, ",", &save_ptr); opt != NULL;
+         opt = strtok_r(NULL, ",", &save_ptr)) {
+        char *save_ptr2 = NULL;
+        char *key, *value;
+
+        key = strtok_r(opt, "=", &save_ptr2);
+        value = strtok_r(NULL, ",", &save_ptr2);
+        if (value == NULL) {
+            continue;
+        }
+        if (!strcmp(key, "max_backoff")) {
+            options->max_backoff = atoi(value);
+        } else if (!strcmp(key, "inactivity_probe")) {
+            options->probe_interval = atoi(value);
+        } else if (!strcmp(key, "read_only")) {
+            options->read_only = !strcmp(value, "true");
+        } else if (!strcmp(key, "role")) {
+            free(options->role);
+            options->role = xstrdup(value);
+        } else if (!strcmp(key, "dscp")) {
+            int dscp = atoi(value);
+            if (dscp >= 0 && dscp <= 63) {
+                options->dscp = dscp;
+            }
+        }
+    }
+    free(target);
+}
+
+static void
 query_db_remotes(const char *name, const struct shash *all_dbs,
                  struct shash *remotes, struct ds *errors)
 {
@@ -1311,7 +1351,7 @@ reconfigure_remotes(struct ovsdb_jsonrpc_server *jsonrpc,
         if (!strncmp(name, "db:", 3)) {
             query_db_remotes(name, all_dbs, &resolved_remotes, &errors);
         } else {
-            add_remote(&resolved_remotes, name);
+            add_cli_remote(&resolved_remotes, name);
         }
     }
     ovsdb_jsonrpc_server_set_remotes(jsonrpc, &resolved_remotes);

@@ -103,6 +103,10 @@ It is an error for \fIcolumn\fR to have another type.
 .RE
 .
 .IP
+When specifying a remote via the CLI, the options configurable via the
+above columns may be added as a comma-separated list following a
+semi-colon, e.g. \fB"pssl:6640;inactivity_probe=10000,max_backoff=4000"\fR.
+
 To connect or listen on multiple connection methods, use multiple
 \fB\-\-remote\fR options.
 .
