@@ -79,7 +79,9 @@ v2.17.0 - 17 Feb 2022
    - Ingress policing on Linux now uses 'matchall' classifier instead of
      'basic', if available.
    - Add User Statically-Defined Tracing (USDT) probe framework support.
-
+   - IPsec:
+     * Added support for custom per-tunnel options via 'options:ipsec_*' knobs.
+       See Documentation/tutorials/ipsec.rst for details.
 
 v2.16.0 - 16 Aug 2021
 ---------------------
