@@ -8923,6 +8923,40 @@ AT_CHECK([tail -1 stdout], [0],
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ofproto-dpif - patch ports - no additional clone])
+OVS_VSWITCHD_START(
+  [add-port br0 p0 -- set Interface p0 type=dummy ofport_request=1 -- \
+   add-port br0 p1 -- set Interface p1 type=patch \
+                                       options:peer=p2 ofport_request=2 -- \
+   add-br br1 -- \
+   set bridge br1 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   set bridge br1 datapath-type=dummy other-config:datapath-id=1234 \
+                  fail-mode=secure -- \
+   add-port br1 p2 -- set Interface p2 type=patch \
+                                       options:peer=p1 -- \
+   add-port br1 p3 -- set Interface p3 type=dummy ofport_request=3])
+
+AT_DATA([flows-br0.txt], [dnl
+priority=10,tcp,action=push:NXM_OF_IN_PORT[],resubmit(,65),pop:NXM_OF_IN_PORT[]
+table=65,priority=10,ip,in_port=p0,action=p1
+])
+
+AT_DATA([flows-br1.txt], [dnl
+priority=100,in_port=p2,tcp,ct_state=-trk,action=ct(table=0,zone=1)
+priority=100,in_port=p2,tcp,ct_state=+trk+est,ct_zone=1,action=p3
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows-br0.txt])
+AT_CHECK([ovs-ofctl --bundle add-flows br1 flows-br1.txt])
+
+AT_CHECK([ovs-appctl ofproto/trace br0 in_port=p0,tcp --ct-next 'trk,est' | \
+          grep  "Datapath actions:" | grep -q clone],
+         [1], [], [],
+         [ovs-appctl ofproto/trace br0 in_port=p0,tcp --ct-next 'trk,est'])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 dnl ----------------------------------------------------------------------
 AT_BANNER([ofproto-dpif -- megaflows])
 
