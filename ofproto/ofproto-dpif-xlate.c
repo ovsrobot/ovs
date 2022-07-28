@@ -191,6 +191,22 @@ struct xport {
     struct lldp *lldp;               /* LLDP handle or null. */
 };
 
+struct patch_port_ctx {
+    /* The array of actions after crossing patch port boundary. */
+    struct patch_port_actions **patch_port_actions;
+    size_t n_alloc;
+    size_t n_size;
+    uint16_t depth;
+};
+
+struct patch_port_actions {
+    /* ofpbuf odp_actions offset from start. */
+    uint32_t offset;
+    /* len of the nla section in ofpbuf's odp_actions. */
+    uint32_t size;
+    bool is_reversible;
+};
+
 struct xlate_ctx {
     struct xlate_in *xin;
     struct xlate_out *xout;
@@ -409,6 +425,8 @@ struct xlate_ctx {
     struct ofpbuf action_set;   /* Action set. */
 
     enum xlate_error error;     /* Translation failed. */
+
+    struct patch_port_ctx patch_port_ctx;
 };
 
 /* Structure to track VLAN manipulation */
@@ -457,6 +475,99 @@ const char *xlate_strerror(enum xlate_error error)
 
 static void xlate_action_set(struct xlate_ctx *ctx);
 static void xlate_commit_actions(struct xlate_ctx *ctx);
+
+static struct patch_port_actions *
+patch_port_ctx_current_actions(struct patch_port_ctx *ctx)
+{
+    if (!ctx->depth) {
+        return NULL;
+    }
+
+    return ctx->patch_port_actions[ctx->n_size - ctx->depth];
+}
+
+static void
+patch_port_ctx_start(struct patch_port_ctx *ctx, uint32_t offset)
+{
+    if (ctx->n_size == ctx->n_alloc) {
+        ctx->patch_port_actions =
+            x2nrealloc(ctx->patch_port_actions, &ctx->n_alloc,
+                       sizeof *ctx->patch_port_actions);
+    }
+
+    struct patch_port_actions *actions =
+        xmalloc(sizeof (struct patch_port_actions));
+    actions->offset = offset;
+    actions->size = 0;
+    actions->is_reversible = true;
+
+    ctx->patch_port_actions[ctx->n_size++] = actions;
+    ctx->depth++;
+}
+
+static void
+patch_port_ctx_end(struct patch_port_ctx *ctx, uint32_t end_offset)
+{
+    struct patch_port_actions *actions = patch_port_ctx_current_actions(ctx);
+
+    if (!actions) {
+        return;
+    }
+
+    actions->size = end_offset - actions->offset;
+    ctx->depth--;
+}
+
+static void
+patch_port_ctx_destroy(struct patch_port_ctx *ctx)
+{
+    for (size_t i = 0; i < ctx->n_size; i++) {
+        free(ctx->patch_port_actions[i]);
+    }
+    free(ctx->patch_port_actions);
+}
+
+static void
+patch_port_ctx_check_reversible(struct patch_port_ctx *ctx,
+                                const struct ofpact *a)
+{
+    struct patch_port_actions *actions = patch_port_ctx_current_actions(ctx);
+
+    if (!actions) {
+        return;
+    }
+    actions->is_reversible = actions->is_reversible ? ofpact_is_reversible(a)
+                                                    : false;
+
+}
+
+static void
+ctx_patch_port_context_wrap_clone(struct xlate_ctx *xlate_ctx)
+{
+    struct patch_port_ctx ctx = xlate_ctx->patch_port_ctx;
+
+    for (size_t i = 0; i < ctx.n_size; i++) {
+        struct patch_port_actions *actions = ctx.patch_port_actions[i];
+        uint32_t offset = actions->offset;
+        uint32_t size = actions->size;
+
+        /* We don't have to clone if it would be the last action, or we don't
+         * have any data to wrap, or the actions are reversible. */
+        if (xlate_ctx->odp_actions->size == offset + size || !size
+            || actions->is_reversible) {
+            continue;
+        }
+
+        if (xlate_ctx->xbridge->support.clone) {        /* Use clone action */
+            nl_msg_wrap_unspec(xlate_ctx->odp_actions, OVS_ACTION_ATTR_CLONE,
+                               offset, size);
+        } else if (xlate_ctx->xbridge->support.sample_nesting > 3) {
+            /* Use sample action as datapath clone. */
+            nl_msg_wrap_unspec(xlate_ctx->odp_actions, OVS_SAMPLE_ATTR_ACTIONS,
+                               offset, size);
+        }
+    }
+}
 
 static void
 patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
@@ -3920,7 +4031,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
             xport_rstp_forward_state(out_dev)) {
 
             xlate_table_action(ctx, flow->in_port.ofp_port, 0, true, true,
-                               false, is_last_action, clone_xlate_actions);
+                               false, is_last_action, do_xlate_actions);
             if (!ctx->freezing) {
                 xlate_action_set(ctx);
             }
@@ -3935,7 +4046,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
             mirror_mask_t old_mirrors2 = ctx->mirrors;
 
             xlate_table_action(ctx, flow->in_port.ofp_port, 0, true, true,
-                               false, is_last_action, clone_xlate_actions);
+                               false, is_last_action, do_xlate_actions);
             ctx->mirrors = old_mirrors2;
             ctx->base_flow = old_base_flow;
             ctx->odp_actions->size = old_size;
@@ -5338,7 +5449,19 @@ xlate_output_action(struct xlate_ctx *ctx, ofp_port_t port,
     case OFPP_LOCAL:
     default:
         if (port != ctx->xin->flow.in_port.ofp_port) {
+            struct xport *xport = get_ofp_port(ctx->xbridge, port);
+
+            if (xport && xport->peer) {
+                patch_port_ctx_start(&ctx->patch_port_ctx,
+                                     ctx->odp_actions->size);
+            }
+
             compose_output_action(ctx, port, NULL, is_last_action, truncate);
+
+            if (xport && xport->peer) {
+                patch_port_ctx_end(&ctx->patch_port_ctx,
+                                   ctx->odp_actions->size);
+            }
         } else {
             xlate_report_info(ctx, "skipping output to input port");
         }
@@ -5755,68 +5878,7 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
     const struct ofpact *a;
 
     OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
-        switch (a->type) {
-        case OFPACT_BUNDLE:
-        case OFPACT_CLEAR_ACTIONS:
-        case OFPACT_CLONE:
-        case OFPACT_CONJUNCTION:
-        case OFPACT_CONTROLLER:
-        case OFPACT_CT_CLEAR:
-        case OFPACT_DEBUG_RECIRC:
-        case OFPACT_DEBUG_SLOW:
-        case OFPACT_DEC_MPLS_TTL:
-        case OFPACT_DEC_TTL:
-        case OFPACT_ENQUEUE:
-        case OFPACT_EXIT:
-        case OFPACT_FIN_TIMEOUT:
-        case OFPACT_GOTO_TABLE:
-        case OFPACT_GROUP:
-        case OFPACT_LEARN:
-        case OFPACT_MULTIPATH:
-        case OFPACT_NOTE:
-        case OFPACT_OUTPUT:
-        case OFPACT_OUTPUT_REG:
-        case OFPACT_POP_MPLS:
-        case OFPACT_POP_QUEUE:
-        case OFPACT_PUSH_MPLS:
-        case OFPACT_PUSH_VLAN:
-        case OFPACT_REG_MOVE:
-        case OFPACT_RESUBMIT:
-        case OFPACT_SAMPLE:
-        case OFPACT_SET_ETH_DST:
-        case OFPACT_SET_ETH_SRC:
-        case OFPACT_SET_FIELD:
-        case OFPACT_SET_IP_DSCP:
-        case OFPACT_SET_IP_ECN:
-        case OFPACT_SET_IP_TTL:
-        case OFPACT_SET_IPV4_DST:
-        case OFPACT_SET_IPV4_SRC:
-        case OFPACT_SET_L4_DST_PORT:
-        case OFPACT_SET_L4_SRC_PORT:
-        case OFPACT_SET_MPLS_LABEL:
-        case OFPACT_SET_MPLS_TC:
-        case OFPACT_SET_MPLS_TTL:
-        case OFPACT_SET_QUEUE:
-        case OFPACT_SET_TUNNEL:
-        case OFPACT_SET_VLAN_PCP:
-        case OFPACT_SET_VLAN_VID:
-        case OFPACT_STACK_POP:
-        case OFPACT_STACK_PUSH:
-        case OFPACT_STRIP_VLAN:
-        case OFPACT_UNROLL_XLATE:
-        case OFPACT_WRITE_ACTIONS:
-        case OFPACT_WRITE_METADATA:
-        case OFPACT_CHECK_PKT_LARGER:
-        case OFPACT_DELETE_FIELD:
-            break;
-
-        case OFPACT_CT:
-        case OFPACT_METER:
-        case OFPACT_NAT:
-        case OFPACT_OUTPUT_TRUNC:
-        case OFPACT_ENCAP:
-        case OFPACT_DECAP:
-        case OFPACT_DEC_NSH_TTL:
+        if (!ofpact_is_reversible(a)) {
             return false;
         }
     }
@@ -6992,6 +7054,8 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             ds_destroy(&s);
         }
 
+        patch_port_ctx_check_reversible(&ctx->patch_port_ctx, a);
+
         switch (a->type) {
         case OFPACT_OUTPUT:
             xlate_output_action(ctx, ofpact_get_OUTPUT(a)->port,
@@ -7696,6 +7760,11 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     uint64_t frozen_actions_stub[1024 / 8];
     uint64_t actions_stub[256 / 8];
     struct ofpbuf scratch_actions = OFPBUF_STUB_INITIALIZER(actions_stub);
+    struct patch_port_ctx patch_port_ctx = {
+        .n_size = 0,
+        .n_alloc = 0,
+        .depth = 0,
+    };
     struct xlate_ctx ctx = {
         .xin = xin,
         .xout = xout,
@@ -7740,6 +7809,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
 
         .action_set_has_group = false,
         .action_set = OFPBUF_STUB_INITIALIZER(action_set_stub),
+        .patch_port_ctx = patch_port_ctx
     };
 
     /* 'base_flow' reflects the packet as it came in, but we need it to reflect
@@ -8074,6 +8144,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     }
 
     xlate_wc_finish(&ctx);
+    ctx_patch_port_context_wrap_clone(&ctx);
 
 exit:
     /* Reset the table to what it was when we came in. If we only fetched
@@ -8085,6 +8156,7 @@ exit:
     ofpbuf_uninit(&ctx.frozen_actions);
     ofpbuf_uninit(&scratch_actions);
     ofpbuf_delete(ctx.encap_data);
+    patch_port_ctx_destroy(&ctx.patch_port_ctx);
 
     /* Make sure we return a "drop flow" in case of an error. */
     if (ctx.error) {

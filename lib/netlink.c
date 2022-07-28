@@ -981,3 +981,31 @@ nl_attr_find_nested(const struct nlattr *nla, uint16_t type)
 {
     return nl_attr_find__(nl_attr_get(nla), nl_attr_get_size(nla), type);
 }
+
+/* Wraps existing Netlink attributes with their data into Netlink attribute
+ * making them nested. The offset species where the Netlink attributes start
+ * within the buffer. The tailing data are moved further to make space for the
+ * nested header. */
+void
+nl_msg_wrap_unspec(struct ofpbuf *buf, uint16_t type, uint32_t offset,
+                   size_t size)
+{
+    nl_msg_reserve(buf, NLA_HDRLEN);
+
+    uint8_t *src = (uint8_t *) buf->data + offset;
+    uint8_t *dst = src + NLA_HDRLEN;
+    uint32_t tail_data_len = buf->size - offset;
+
+    memmove(dst, src, tail_data_len);
+
+    /* Reset size so we can add header. */
+    nl_msg_reset_size(buf, offset);
+    uint32_t nested_offset = nl_msg_start_nested(buf, type);
+
+    /* Move past the size of nested data and end the nested header. */
+    nl_msg_reset_size(buf, buf->size + size);
+    nl_msg_end_non_empty_nested(buf, nested_offset);
+
+    /* Move the buffer back to the end after all data. */
+    nl_msg_reset_size(buf, buf->size + (tail_data_len - size));
+}
