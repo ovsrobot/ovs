@@ -606,8 +606,9 @@ flower_tun_opt_to_match(struct match *match, struct tc_flower *flower)
         len -= sizeof(struct geneve_opt) + opt->length * 4;
     }
 
-    match->wc.masks.tunnel.metadata.present.len =
-           flower->mask.tunnel.metadata.present.len;
+    /* In the 'flower' mask len is an actual length, not the mask.
+     * But in 'match' it is an actual mask and should be an exact match. */
+    match->wc.masks.tunnel.metadata.present.len = 0xff;
     match->wc.masks.tunnel.flags |= FLOW_TNL_F_UDPIF;
 }
 
@@ -1574,6 +1575,8 @@ flower_match_to_tun_opt(struct tc_flower *flower, const struct flow_tnl *tnl,
         len -= sizeof(struct geneve_opt) + opt->length * 4;
     }
 
+    /* Copying from the key and not from the mask, since in the 'flower'
+     * the length for a mask is not a mask, but the actual length. */
     flower->mask.tunnel.metadata.present.len = tnl->metadata.present.len;
 }
 
