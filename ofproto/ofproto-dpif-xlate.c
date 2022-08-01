@@ -3861,6 +3861,34 @@ xlate_flow_is_protected(const struct xlate_ctx *ctx, const struct flow *flow, co
             xport_in->xbundle->protected && xport_out->xbundle->protected);
 }
 
+/* Wraps the patch port odp_actions ofpbuf in clone. */
+static void
+patch_port_add_clone(struct xlate_ctx *ctx, struct ofpbuf *patch_port_actions) {
+    size_t offset, ac_offset;
+
+    if (ctx->xbridge->support.clone) { /* Use clone action */
+        /* Use clone action as datapath clone. */
+        offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_CLONE);
+        nl_msg_put(ctx->odp_actions, patch_port_actions->data,
+                   patch_port_actions->size);
+        nl_msg_end_non_empty_nested(ctx->odp_actions, offset);
+    } else if (ctx->xbridge->support.sample_nesting > 3) {
+        /* Use sample action as datapath clone. */
+        offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_SAMPLE);
+        ac_offset = nl_msg_start_nested(ctx->odp_actions,
+                                        OVS_SAMPLE_ATTR_ACTIONS);
+        nl_msg_put(ctx->odp_actions, patch_port_actions->data,
+                   patch_port_actions->size);
+        if (nl_msg_end_non_empty_nested(ctx->odp_actions, ac_offset)) {
+            nl_msg_cancel_nested(ctx->odp_actions, offset);
+        } else {
+            nl_msg_put_u32(ctx->odp_actions, OVS_SAMPLE_ATTR_PROBABILITY,
+                           UINT32_MAX); /* 100% probability. */
+            nl_msg_end_nested(ctx->odp_actions, offset);
+        }
+    }
+}
+
 /* Function handles when a packet is sent from one bridge to another bridge.
  *
  * The bridges are internally connected, either with patch ports or with
@@ -3889,7 +3917,12 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
     struct ofpbuf old_action_set = ctx->action_set;
     struct ovs_list *old_trace = ctx->xin->trace;
     uint64_t actset_stub[1024 / 8];
+    struct ofpbuf *old_odp_actions = ctx->odp_actions;
+    uint64_t patch_port_actions_stub[1024 / 8];
+    struct ofpbuf patch_port_actions =
+        OFPBUF_STUB_INITIALIZER(patch_port_actions_stub);
 
+    ctx->odp_actions = &patch_port_actions;
     ofpbuf_use_stub(&ctx->stack, new_stack, sizeof new_stack);
     ofpbuf_use_stub(&ctx->action_set, actset_stub, sizeof actset_stub);
     flow->in_port.ofp_port = out_dev->ofp_port;
@@ -3920,7 +3953,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
             xport_rstp_forward_state(out_dev)) {
 
             xlate_table_action(ctx, flow->in_port.ofp_port, 0, true, true,
-                               false, is_last_action, clone_xlate_actions);
+                               false, is_last_action, do_xlate_actions);
             if (!ctx->freezing) {
                 xlate_action_set(ctx);
             }
@@ -3935,7 +3968,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
             mirror_mask_t old_mirrors2 = ctx->mirrors;
 
             xlate_table_action(ctx, flow->in_port.ofp_port, 0, true, true,
-                               false, is_last_action, clone_xlate_actions);
+                               false, is_last_action, do_xlate_actions);
             ctx->mirrors = old_mirrors2;
             ctx->base_flow = old_base_flow;
             ctx->odp_actions->size = old_size;
@@ -3944,6 +3977,17 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
             ctx_cancel_freeze(ctx);
         }
     }
+
+    ctx->odp_actions = old_odp_actions;
+    if (!is_last_action &&
+        odp_contains_irreversible_action(patch_port_actions.data,
+                                         patch_port_actions.size)) {
+        patch_port_add_clone(ctx, &patch_port_actions);
+    } else {
+        nl_msg_put(ctx->odp_actions, patch_port_actions.data,
+                   patch_port_actions.size);
+    }
+    ofpbuf_uninit(&patch_port_actions);
 
     ctx->xin->trace = old_trace;
     if (independent_mirrors) {
