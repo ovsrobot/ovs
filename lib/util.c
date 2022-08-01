@@ -41,6 +41,9 @@
 #ifdef _WIN32
 #include <shlwapi.h>
 #endif
+#ifndef DISPLAY_VERSION
+#define DISPLAY_VERSION VERSION
+#endif
 
 VLOG_DEFINE_THIS_MODULE(util);
 
@@ -615,7 +618,7 @@ ovs_set_program_name(const char *argv0, const char *version)
 
     free(program_version);
     if (!strcmp(version, VERSION)) {
-        program_version = xasprintf("%s (Open vSwitch) "VERSION"\n",
+        program_version = xasprintf("%s (Open vSwitch) "DISPLAY_VERSION"\n",
                                     program_name);
     } else {
         program_version = xasprintf("%s %s\n"

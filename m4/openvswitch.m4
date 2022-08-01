@@ -720,3 +720,11 @@ AC_DEFUN([OVS_CHECK_UNWIND],
    fi
    AM_CONDITIONAL([HAVE_UNWIND], [test "$HAVE_UNWIND" = yes])
    AC_SUBST([HAVE_UNWIND])])
+
+dnl Set a specific OVS version.
+AC_DEFUN([OVS_DISPLAY_VERSION],
+  [AC_ARG_VAR(DISPLAY_VERSION, [Set a specific OVS version])
+   if test "$DISPLAY_VERSION"; then
+     AC_DEFINE_UNQUOTED([DISPLAY_VERSION], ["$DISPLAY_VERSION"],
+                        [Set a specific OVS version])
+   fi])
