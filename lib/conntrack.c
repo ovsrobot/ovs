@@ -48,6 +48,7 @@ COVERAGE_DEFINE(conntrack_full);
 COVERAGE_DEFINE(conntrack_l3csum_err);
 COVERAGE_DEFINE(conntrack_l4csum_err);
 COVERAGE_DEFINE(conntrack_lookup_natted_miss);
+COVERAGE_DEFINE(conntrack_duplicate);
 
 struct conn_lookup_ctx {
     struct conn_key key;
@@ -1010,10 +1011,10 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
                const struct nat_action_info_t *nat_action_info,
                const char *helper, const struct alg_exp_node *alg_exp,
                enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
-    OVS_REQUIRES(ct->ct_lock)
 {
     struct conn *nc = NULL;
     struct conn *nat_conn = NULL;
+    uint32_t nat_hash;
 
     if (!valid_new(pkt, &ctx->key)) {
         pkt->md.ct_state = CS_INVALID;
@@ -1089,16 +1090,26 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
             nat_conn->nat_action = 0;
             nat_conn->alg = NULL;
             nat_conn->nat_conn = NULL;
-            uint32_t nat_hash = conn_key_hash(&nat_conn->key, ct->hash_basis);
-            cmap_insert(&ct->conns, &nat_conn->cm_node, nat_hash);
+            nat_hash = conn_key_hash(&nat_conn->key, ct->hash_basis);
         }
 
         nc->nat_conn = nat_conn;
         ovs_mutex_init_adaptive(&nc->lock);
         nc->conn_type = CT_CONN_TYPE_DEFAULT;
         atomic_flag_clear(&nc->reclaimed);
+        ovs_mutex_lock(&ct->ct_lock);
+        if (conn_key_lookup(ct, &ctx->key, ctx->hash, now, NULL, NULL)) {
+            ovs_mutex_unlock(&ct->ct_lock);
+            COVERAGE_INC(conntrack_duplicate);
+            ovs_mutex_destroy(&nc->lock);
+            goto out;
+        }
+        if (nat_conn) {
+            cmap_insert(&ct->conns, &nat_conn->cm_node, nat_hash);
+        }
         cmap_insert(&ct->conns, &nc->cm_node, ctx->hash);
         conn_expire_push_front(ct, nc);
+        ovs_mutex_unlock(&ct->ct_lock);
         atomic_count_inc(&ct->n_conn);
         ctx->conn = nc; /* For completeness. */
         if (zl) {
@@ -1117,12 +1128,13 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
      * ephemeral ports.  A DOS attack should be protected against with
      * firewall rules or a separate firewall.  Also using zone partitioning
      * can limit DoS impact. */
-nat_res_exhaustion:
-    free(nat_conn);
-    delete_conn__(nc);
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
+nat_res_exhaustion:
     VLOG_WARN_RL(&rl, "Unable to NAT due to tuple space exhaustion - "
                  "if DoS attack, use firewalling and/or zone partitioning.");
+out:
+    free(nat_conn);
+    delete_conn__(nc);
     return NULL;
 }
 
@@ -1437,12 +1449,8 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
         }
         ovs_rwlock_unlock(&ct->resources_lock);
 
-        ovs_mutex_lock(&ct->ct_lock);
-        if (!conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
-            conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
-                                  helper, alg_exp, ct_alg_ctl, tp_id);
-        }
-        ovs_mutex_unlock(&ct->ct_lock);
+        conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
+                              helper, alg_exp, ct_alg_ctl, tp_id);
     }
 
     write_ct_md(pkt, zone, conn, &ctx->key, alg_exp);
