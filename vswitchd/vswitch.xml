@@ -4015,6 +4015,16 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
           for transmitted BFD packets.  The default is <code>169.254.1.0</code>.
         </column>
 
+        <column name="bfd" key="bfd_src_ip">
+          Set to an IPv6 address to set the IP address used as source for
+          transmitted BFD packets.
+        </column>
+
+        <column name="bfd" key="bfd_dst_ip">
+          Set to an IPv6 address to set the IP address used as destination
+          for transmitted BFD packets.
+        </column>
+
         <column name="bfd" key="oam">
           Some tunnel protocols (such as Geneve) include a bit in the header
           to indicate that the encapsulated packet is an OAM frame. By setting

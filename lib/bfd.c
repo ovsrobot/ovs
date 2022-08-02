@@ -187,6 +187,9 @@ struct bfd {
     ovs_be32 ip_src;              /* IPv4 source address. */
     ovs_be32 ip_dst;              /* IPv4 destination address. */
 
+    struct in6_addr ipv6_src;              /* IPv6 source address. */
+    struct in6_addr ipv6_dst;              /* IPv6 destination address. */
+
     uint16_t udp_src;             /* UDP source port. */
 
     /* All timers in milliseconds. */
@@ -244,10 +247,14 @@ static struct hmap *const all_bfds OVS_GUARDED_BY(mutex) = &all_bfds__;
 
 static void bfd_lookup_ip(const char *host_name, ovs_be32 def, ovs_be32 *ip)
     OVS_REQUIRES(mutex);
+static void bfd_lookup_ipv6(const char *host_name, struct in6_addr *ipv6)
+    OVS_REQUIRES(mutex);
 static bool bfd_forwarding__(struct bfd *) OVS_REQUIRES(mutex);
 static bool bfd_in_poll(const struct bfd *) OVS_REQUIRES(mutex);
 static void bfd_poll(struct bfd *bfd) OVS_REQUIRES(mutex);
 static const char *bfd_diag_str(enum diag) OVS_REQUIRES(mutex);
+static const char *bfd_ip_str(ovs_be32 ip) OVS_REQUIRES(mutex);
+static const char *bfd_ipv6_str(struct in6_addr ipv6) OVS_REQUIRES(mutex);
 static const char *bfd_state_str(enum state) OVS_REQUIRES(mutex);
 static long long int bfd_min_tx(const struct bfd *) OVS_REQUIRES(mutex);
 static long long int bfd_tx_interval(const struct bfd *)
@@ -332,6 +339,18 @@ bfd_get_status(const struct bfd *bfd, struct smap *smap)
     smap_add_format(smap, "flap_count", "%"PRIu64, bfd->flap_count);
     smap_add(smap, "remote_state", bfd_state_str(bfd->rmt_state));
     smap_add(smap, "remote_diagnostic", bfd_diag_str(bfd->rmt_diag));
+    if (bfd->ip_src) {
+        smap_add(smap, "bfd_src_ip", bfd_ip_str(bfd->ip_src));
+    }
+    if (bfd->ip_dst) {
+        smap_add(smap, "bfd_dst_ip", bfd_ip_str(bfd->ip_dst));
+    }
+    if (ipv6_addr_is_set(&bfd->ipv6_src)) {
+       smap_add(smap, "bfd_src_ipv6", bfd_ipv6_str(bfd->ipv6_src));
+    }
+    if (ipv6_addr_is_set(&bfd->ipv6_dst)) {
+        smap_add(smap, "bfd_dst_ipv6", bfd_ipv6_str(bfd->ipv6_dst));
+    }
     ovs_mutex_unlock(&mutex);
 }
 
@@ -465,6 +484,10 @@ bfd_configure(struct bfd *bfd, const char *name, const struct smap *cfg,
     bfd_lookup_ip(smap_get_def(cfg, "bfd_dst_ip", ""),
                   htonl(BFD_DEFAULT_DST_IP), &bfd->ip_dst);
 
+    bfd_lookup_ipv6(smap_get_def(cfg, "bfd_src_ipv6", ""), &bfd->ipv6_src);
+    bfd_lookup_ipv6(smap_get_def(cfg, "bfd_dst_ipv6", ""), &bfd->ipv6_dst);
+
+
     forwarding_if_rx = smap_get_bool(cfg, "forwarding_if_rx", false);
     if (bfd->forwarding_if_rx != forwarding_if_rx) {
         bfd->forwarding_if_rx = forwarding_if_rx;
@@ -588,6 +611,7 @@ bfd_put_packet(struct bfd *bfd, struct dp_packet *p,
     struct udp_header *udp;
     struct eth_header *eth;
     struct ip_header *ip;
+    struct ovs_16aligned_ip6_hdr *ip6;
     struct msg *msg;
 
     ovs_mutex_lock(&mutex);
@@ -611,23 +635,40 @@ bfd_put_packet(struct bfd *bfd, struct dp_packet *p,
         ? eth_src : bfd->local_eth_src;
     eth->eth_dst = eth_addr_is_zero(bfd->local_eth_dst)
         ? eth_addr_bfd : bfd->local_eth_dst;
-    eth->eth_type = htons(ETH_TYPE_IP);
 
-    ip = dp_packet_put_zeros(p, sizeof *ip);
-    ip->ip_ihl_ver = IP_IHL_VER(5, 4);
-    ip->ip_tot_len = htons(sizeof *ip + sizeof *udp + sizeof *msg);
-    ip->ip_ttl = MAXTTL;
-    ip->ip_tos = IPTOS_PREC_INTERNETCONTROL;
-    ip->ip_proto = IPPROTO_UDP;
-    put_16aligned_be32(&ip->ip_src, bfd->ip_src);
-    put_16aligned_be32(&ip->ip_dst, bfd->ip_dst);
-    /* Checksum has already been zeroed by put_zeros call. */
-    ip->ip_csum = csum(ip, sizeof *ip);
+    if (ipv6_addr_is_set(&bfd->ipv6_src)) {
+        eth->eth_type = htons(ETH_TYPE_IPV6);
+
+        ip6 = dp_packet_put_zeros(p, sizeof *ip6);
+
+        ip6->ip6_vfc = 0x60;
+        ip6->ip6_hlim = MAXTTL;
+        ip6->ip6_nxt = IPPROTO_UDP;
+        ip6->ip6_plen = htons(sizeof *udp + sizeof *msg);
+
+        memcpy(&ip6->ip6_src, &bfd->ipv6_src, sizeof(bfd->ipv6_src));
+        memcpy(&ip6->ip6_dst, &bfd->ipv6_dst, sizeof(bfd->ipv6_dst));
+
+    } else {
+        eth->eth_type = htons(ETH_TYPE_IP);
+
+        ip = dp_packet_put_zeros(p, sizeof *ip);
+        ip->ip_ihl_ver = IP_IHL_VER(5, 4);
+        ip->ip_tot_len = htons(sizeof *ip + sizeof *udp + sizeof *msg);
+        ip->ip_ttl = MAXTTL;
+        ip->ip_tos = IPTOS_PREC_INTERNETCONTROL;
+        ip->ip_proto = IPPROTO_UDP;
+        put_16aligned_be32(&ip->ip_src, bfd->ip_src);
+        put_16aligned_be32(&ip->ip_dst, bfd->ip_dst);
+        /* Checksum has already been zeroed by put_zeros call. */
+        ip->ip_csum = csum(ip, sizeof *ip);
+    }
 
     udp = dp_packet_put_zeros(p, sizeof *udp);
     udp->udp_src = htons(bfd->udp_src);
     udp->udp_dst = htons(BFD_DEST_PORT);
     udp->udp_len = htons(sizeof *udp + sizeof *msg);
+    udp->udp_csum = htons(0xffff);
 
     msg = dp_packet_put_uninit(p, sizeof *msg);
     msg->vers_diag = (BFD_VERSION << 5) | bfd->diag;
@@ -671,6 +712,27 @@ bfd_should_process_flow(const struct bfd *bfd_, const struct flow *flow,
 
         if (!eth_addr_equals(bfd->rmt_eth_dst, flow->dl_dst)) {
             return false;
+        }
+    }
+
+    if (flow->dl_type == htons(ETH_TYPE_IPV6)) {
+        memset(&wc->masks.nw_proto, 0xff, sizeof wc->masks.nw_proto);
+        if (flow->nw_proto == IPPROTO_UDP
+            && !(flow->nw_frag & FLOW_NW_FRAG_LATER)
+            && tp_dst_equals(flow, BFD_DEST_PORT, wc)
+            && ipv6_addr_equals(&bfd->ipv6_src, &flow->ipv6_dst)) {
+
+            memset(&wc->masks.ipv6_dst, 0xff, sizeof wc->masks.ipv6_dst);
+
+            bool check_tnl_key;
+
+            atomic_read_relaxed(&bfd->check_tnl_key, &check_tnl_key);
+            if (check_tnl_key) {
+                memset(&wc->masks.tunnel.tun_id, 0xff,
+                       sizeof wc->masks.tunnel.tun_id);
+                return flow->tunnel.tun_id == htonll(0);
+            }
+            return true;
         }
     }
 
@@ -958,6 +1020,17 @@ bfd_lookup_ip(const char *host_name, ovs_be32 def, ovs_be32 *addr)
     *addr = def;
 }
 
+static void
+bfd_lookup_ipv6(const char *host_name, struct in6_addr *addr)
+{
+    if (host_name[0]) {
+        if (ipv6_parse(host_name, addr)) {
+            return;
+        }
+        VLOG_ERR_RL(&rl, "\"%s\" is not a valid IPv6 address", host_name);
+    }
+}
+
 static bool
 bfd_in_poll(const struct bfd *bfd) OVS_REQUIRES(mutex)
 {
@@ -1082,6 +1155,28 @@ bfd_diag_str(enum diag diag) {
     default: return "Invalid Diagnostic";
     }
 };
+
+static const char *bfd_ip_str(ovs_be32 ip) {
+    static char buf[INET_ADDRSTRLEN];
+    struct ds ds = DS_EMPTY_INITIALIZER;
+
+    ds_put_format(&ds, IP_FMT, IP_ARGS(ip));
+
+    ovs_strlcpy(buf, ds_cstr(&ds), sizeof buf);
+    ds_destroy(&ds);
+    return buf;
+}
+
+static const char *bfd_ipv6_str(struct in6_addr ipv6) {
+    static char buf[INET6_ADDRSTRLEN];
+    struct ds ds = DS_EMPTY_INITIALIZER;
+
+    ipv6_format_addr(&ipv6, &ds);
+
+    ovs_strlcpy(buf, ds_cstr(&ds), sizeof buf);
+    ds_destroy(&ds);
+    return buf;
+}
 
 static void
 log_msg(enum vlog_level level, const struct msg *p, const char *message,
