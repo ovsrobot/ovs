@@ -2883,8 +2883,12 @@ netdev_dpdk_eth_send(struct netdev *netdev, int qid,
     cnt = netdev_dpdk_common_send(netdev, batch, &stats);
 
     dropped = batch_cnt - cnt;
-
     dropped += netdev_dpdk_eth_tx_burst(dev, qid, pkts, cnt);
+    stats.tx_failure_drops += dropped;
+    dropped = sw_stats_add->tx_mtu_exceeded_drops +
+              sw_stats_add->tx_qos_drops +
+              sw_stats_add->tx_failure_drops +
+              sw_stats_add->tx_invalid_hwol_drops;
     if (OVS_UNLIKELY(dropped)) {
         struct netdev_dpdk_sw_stats *sw_stats = dev->sw_stats;
 
