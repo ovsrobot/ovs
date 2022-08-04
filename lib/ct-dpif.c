@@ -512,10 +512,16 @@ ct_dpif_format_protoinfo_tcp_verbose(struct ds *ds,
                       protoinfo->tcp.wscale_orig,
                       protoinfo->tcp.wscale_reply);
     }
-    ct_dpif_format_flags(ds, ",flags_orig=", protoinfo->tcp.flags_orig,
-                         tcp_flags);
-    ct_dpif_format_flags(ds, ",flags_reply=", protoinfo->tcp.flags_reply,
-                         tcp_flags);
+
+    if (protoinfo->tcp.flags_orig) {
+        ct_dpif_format_flags(ds, ",flags_orig=", protoinfo->tcp.flags_orig,
+                             tcp_flags);
+    }
+
+    if (protoinfo->tcp.flags_reply) {
+        ct_dpif_format_flags(ds, ",flags_reply=", protoinfo->tcp.flags_reply,
+                             tcp_flags);
+    }
 }
 
 static void
