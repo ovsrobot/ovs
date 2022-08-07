@@ -61,7 +61,7 @@ struct dpif_userdata {
 static inline int32_t ALWAYS_INLINE
 dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
                          struct dp_packet_batch *packets,
-                         bool md_is_valid OVS_UNUSED, odp_port_t in_port)
+                         bool md_is_valid, odp_port_t in_port)
 {
     /* Allocate DPIF userdata. */
     if (OVS_UNLIKELY(!pmd->netdev_input_func_userdata)) {
@@ -73,6 +73,7 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
     struct netdev_flow_key *keys = ud->keys;
     struct netdev_flow_key **key_ptrs = ud->key_ptrs;
     struct pkt_flow_meta *pkt_meta = ud->pkt_meta;
+    const uint32_t recirc_depth = *recirc_depth_get();
 
     /* The AVX512 DPIF implementation handles rules in a way that is optimized
      * for reducing data-movement between HWOL/EMC/SMC and DPCLS. This is
@@ -106,7 +107,8 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         pkt_metadata_prefetch_init(&packet->md);
     }
 
-    const bool simple_match_enabled = dp_netdev_simple_match_enabled(pmd,
+    const bool simple_match_enabled = !md_is_valid &&
+                                      dp_netdev_simple_match_enabled(pmd,
                                                                      in_port);
     /* Check if EMC or SMC are enabled. */
     struct dfc_cache *cache = &pmd->flow_cache;
@@ -183,11 +185,14 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
     }
 
     /* Do a batch minfilow extract into keys. */
+     /* Do a batch minfilow extract into keys, but only for outer packets. */
     uint32_t mf_mask = 0;
-    miniflow_extract_func mfex_func;
-    atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
-    if (mfex_func) {
-        mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd);
+    if (recirc_depth == 0) {
+        miniflow_extract_func mfex_func;
+        atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
+        if (mfex_func) {
+            mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd);
+        }
     }
 
     uint32_t iter = lookup_pkts_bitmask;
@@ -204,7 +209,9 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
 
         /* Get packet pointer from bitmask and packet md. */
         struct dp_packet *packet = packets->packets[i];
-        pkt_metadata_init(&packet->md, in_port);
+        if (!md_is_valid) {
+            pkt_metadata_init(&packet->md, in_port);
+        }
 
         struct dp_netdev_flow *f = NULL;
         struct netdev_flow_key *key = &keys[i];
@@ -216,7 +223,7 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         bool mfex_hit = !!(mf_mask & (UINT32_C(1) << i));
 
         /* Check for a partial hardware offload match. */
-        if (hwol_enabled) {
+        if (hwol_enabled && recirc_depth == 0) {
             if (OVS_UNLIKELY(dp_netdev_hw_flow(pmd, packet, &f))) {
                 /* Packet restoration failed and it was dropped, do not
                  * continue processing. */
@@ -249,7 +256,9 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         pkt_meta[i].tcp_flags = miniflow_get_tcp_flags(&key->mf);
 
         key->len = netdev_flow_key_size(miniflow_n_values(&key->mf));
-        key->hash = dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf);
+        key->hash = (md_is_valid == false)
+                ? dpif_netdev_packet_get_rss_hash_orig_pkt(packet, &key->mf)
+                : dpif_netdev_packet_get_rss_hash(packet, &key->mf);
 
         if (emc_enabled) {
             f = emc_lookup(&cache->emc_cache, key);
@@ -287,7 +296,13 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
      * dpcls_rules[] array.
      */
     if (dpcls_key_idx > 0) {
-        struct dpcls *cls = dp_netdev_pmd_lookup_dpcls(pmd, in_port);
+        odp_port_t port_no;
+        if (!md_is_valid) {
+            port_no = in_port;
+        } else {
+            port_no = packets->packets[0]->md.in_port.odp_port;
+        }
+        struct dpcls *cls = dp_netdev_pmd_lookup_dpcls(pmd, port_no);
         if (OVS_UNLIKELY(!cls)) {
             return -1;
         }
@@ -353,7 +368,9 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MASKED_LOOKUP,
                             dpcls_key_idx);
 action_stage:
-    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_RECV, batch_size);
+    pmd_perf_update_counter(&pmd->perf_stats,
+                            md_is_valid ? PMD_STAT_RECIRC : PMD_STAT_RECV,
+                            batch_size);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SIMPLE_HIT,
                             n_simple_hit);
 
