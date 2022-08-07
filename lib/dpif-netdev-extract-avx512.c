@@ -744,7 +744,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     uint32_t keys_size OVS_UNUSED,
                     odp_port_t in_port,
                     void *pmd_handle OVS_UNUSED,
-                    bool md_is_valid OVS_UNUSED,
+                    bool md_is_valid,
                     const enum MFEX_PROFILES profile_id,
                     const uint32_t use_vbmi OVS_UNUSED)
 {
@@ -770,6 +770,11 @@ mfex_avx512_process(struct dp_packet_batch *packets,
     __m128i v_blocks01 = _mm_insert_epi32(v_zeros, odp_to_u32(in_port), 1);
 
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
+        /* Handle meta-data init in the loop. */
+        if (!md_is_valid) {
+            pkt_metadata_init(&packet->md, in_port);
+        }
+        const struct pkt_metadata *md = &packet->md;
         /* If the packet is smaller than the probe size, skip it. */
         const uint32_t size = dp_packet_size(packet);
         if (size < dp_pkt_min_size) {
@@ -808,7 +813,16 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                                                                 use_vbmi);
 
         __m512i v_blk0_strip = _mm512_and_si512(v_blk0, v_strp);
-        _mm512_storeu_si512(&blocks[2], v_blk0_strip);
+        /* Handle inner meta-data if valid. */
+        if (!md_is_valid) {
+            _mm512_storeu_si512(&blocks[2], v_blk0_strip);
+        } else {
+            __m512i v_tun = _mm512_loadu_si512(&md->tunnel);
+            _mm512_storeu_si512(&blocks[0], v_tun);
+            _mm512_storeu_si512(&blocks[11], v_blk0_strip);
+            blocks[9] = md->dp_hash |
+                        ((uint64_t) odp_to_u32(md->in_port.odp_port) << 32);
+        }
 
         /* Perform "post-processing" per profile, handling details not easily
          * handled in the above generic AVX512 code. Examples include TCP flag
@@ -820,38 +834,44 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             break;
 
         case PROFILE_ETH_VLAN_IPV4_TCP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
                 struct ip_header *nh = (void *)&pkt[VLAN_ETH_HEADER_LEN];
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               TCP_HEADER_LEN)) {
                     continue;
                 }
-
                 /* Process TCP flags, and store to blocks. */
                 const struct tcp_header *tcp = (void *)&pkt[38];
-                mfex_handle_tcp_flags(tcp, &blocks[7]);
+                if (!md_is_valid) {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
+                    mfex_handle_tcp_flags(tcp, &blocks[7]);
+                } else {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[13]);
+                    mfex_handle_tcp_flags(tcp, &blocks[16]);
+                    mf->map.bits[0] = 0x38a00000000001ff;
+                }
+
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_VLAN_IPV4_UDP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
                 struct ip_header *nh = (void *)&pkt[VLAN_ETH_HEADER_LEN];
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               UDP_HEADER_LEN)) {
                     continue;
                 }
+                if (!md_is_valid) {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
+                } else {
+                    mf->map.bits[0] = 0x38a00000000001ff;
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[13]);
+                }
+
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_IPV4_TCP: {
-                /* Process TCP flags, and store to blocks. */
-                const struct tcp_header *tcp = (void *)&pkt[34];
-                mfex_handle_tcp_flags(tcp, &blocks[6]);
-
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv4 = size - sizeof(struct eth_header);
                 struct ip_header *nh = (void *)&pkt[sizeof(struct eth_header)];
@@ -859,6 +879,15 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                                               TCP_HEADER_LEN)) {
                     continue;
                 }
+                /* Process TCP flags, and store to blocks. */
+                const struct tcp_header *tcp = (void *)&pkt[34];
+                if (!md_is_valid) {
+                    mfex_handle_tcp_flags(tcp, &blocks[6]);
+                } else {
+                    mfex_handle_tcp_flags(tcp, &blocks[15]);
+                    mf->map.bits[0] = 0x18a00000000001ff;
+                }
+
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
 
@@ -869,6 +898,9 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               UDP_HEADER_LEN)) {
                     continue;
+                }
+                if (md_is_valid) {
+                    mf->map.bits[0] = 0x18a00000000001ff;
                 }
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
@@ -882,12 +914,19 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                                               UDP_HEADER_LEN)) {
                     continue;
                 }
-
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN], &blocks[8]);
-
-                /* Process UDP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[9]);
+                if (!md_is_valid) {
+                    /* Process IPv6 header for TC, flow Label and next
+                     * header. */
+                    mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN],
+                                               &blocks[8]);
+                    /* Process UDP header. */
+                    mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[9]);
+                } else {
+                    mf->map.bits[0] = 0x18a00000000001ff;
+                    mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN],
+                                               &blocks[17]);
+                    mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[18]);
+                }
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
 
@@ -901,22 +940,29 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN], &blocks[8]);
-
-                /* Process TCP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[10]);
                 const struct tcp_header *tcp = (void *)&pkt[54];
                 if (!mfex_check_tcp_data_offset(tcp)) {
                     continue;
                 }
-                mfex_handle_tcp_flags(tcp, &blocks[9]);
+                if (!md_is_valid) {
+                    /* Process IPv6 header for TC, flow Label and next
+                     * header. */
+                    mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN],
+                                               &blocks[8]);
+                    /* Process TCP header. */
+                    mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[10]);
+                    mfex_handle_tcp_flags(tcp, &blocks[9]);
+                } else {
+                    mf->map.bits[0] = 0x18a00000000001ff;
+                    mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN],
+                                               &blocks[17]);
+                    mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[19]);
+                    mfex_handle_tcp_flags(tcp, &blocks[18]);
+                }
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_VLAN_IPV6_TCP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv6 = size - VLAN_ETH_HEADER_LEN;
                 struct ovs_16aligned_ip6_hdr *nh = (void *)&pkt
@@ -926,23 +972,32 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
-                                           &blocks[9]);
-
-                /* Process TCP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[11]);
                 const struct tcp_header *tcp = (void *)&pkt[58];
                 if (!mfex_check_tcp_data_offset(tcp)) {
                     continue;
                 }
-                mfex_handle_tcp_flags(tcp, &blocks[10]);
+
+                if (!md_is_valid) {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
+                    mfex_handle_tcp_flags(tcp, &blocks[10]);
+                    /* Process IPv6 header for TC, flow Label and next
+                     * header. */
+                    mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
+                                           &blocks[9]);
+                    /* Process TCP header. */
+                    mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[11]);
+                } else {
+                    mf->map.bits[0] = 0x38a00000000001ff;
+                    mfex_handle_tcp_flags(tcp, &blocks[19]);
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[13]);
+                    mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
+                                           &blocks[18]);
+                    mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[20]);
+                }
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_VLAN_IPV6_UDP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv6 = size - VLAN_ETH_HEADER_LEN;
                 struct ovs_16aligned_ip6_hdr *nh = (void *)&pkt
@@ -952,12 +1007,21 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
-                                           &blocks[9]);
-
-                /* Process UDP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[10]);
+                if (!md_is_valid) {
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
+                    /* Process IPv6 header for TC, flow Label and next
+                     * header. */
+                    mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
+                                               &blocks[9]);
+                    /* Process UDP header. */
+                    mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[10]);
+                } else {
+                    mf->map.bits[0] = 0x38a00000000001ff;
+                    mfex_vlan_pcp(pkt[14], &keys[i].buf[13]);
+                    mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
+                                               &blocks[18]);
+                    mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[19]);
+                }
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
         default:

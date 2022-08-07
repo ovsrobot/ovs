@@ -185,15 +185,17 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
     }
 
     /* Do a batch minfilow extract into keys. */
-     /* Do a batch minfilow extract into keys, but only for outer packets. */
     uint32_t mf_mask = 0;
-    if (recirc_depth == 0) {
-        miniflow_extract_func mfex_func;
-        atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
-        if (mfex_func) {
-            mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd,
+    miniflow_extract_func mfex_func;
+    atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
+    miniflow_extract_func mfex_inner_func;
+    atomic_read_relaxed(&pmd->miniflow_extract_inner_opt, &mfex_inner_func);
+    if (md_is_valid && mfex_inner_func) {
+        mf_mask = mfex_inner_func(packets, keys, batch_size, in_port, pmd,
+                                  md_is_valid);
+    } else if (!md_is_valid && mfex_func) {
+        mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd,
                                 md_is_valid);
-        }
     }
 
     uint32_t iter = lookup_pkts_bitmask;
