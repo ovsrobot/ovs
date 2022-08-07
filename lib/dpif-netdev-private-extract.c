@@ -342,7 +342,8 @@ uint32_t
 dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
                                     struct netdev_flow_key *keys,
                                     uint32_t keys_size, odp_port_t in_port,
-                                    struct dp_netdev_pmd_thread *pmd_handle)
+                                    struct dp_netdev_pmd_thread *pmd_handle,
+                                    bool md_is_valid)
 {
     const size_t cnt = dp_packet_batch_size(packets);
     uint16_t good_l2_5_ofs[NETDEV_MAX_BURST];
@@ -387,7 +388,8 @@ dpif_miniflow_extract_autovalidator(struct dp_packet_batch *packets,
         /* Call optimized miniflow for each batch of packet. */
         uint32_t hit_mask = mfex_impls[j].extract_func(packets, test_keys,
                                                        keys_size, in_port,
-                                                       pmd_handle);
+                                                       pmd_handle,
+                                                       md_is_valid);
 
         /* Do a miniflow compare for bits, blocks and offsets for all the
          * classified packets in the hitmask marked by set bits. */
