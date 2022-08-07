@@ -1205,6 +1205,7 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
     struct ds reply = DS_EMPTY_INITIALIZER;
     bool pmd_thread_update_done = false;
     bool mfex_name_is_study = false;
+    bool mfex_inner_is_set = false;
     const char *mfex_name = NULL;
     const char *reply_str = NULL;
     struct shash_node *node;
@@ -1243,6 +1244,10 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
             argc -= 1;
             argv += 1;
 
+        } else if (strcmp("-recirc", argv[1]) == 0) {
+            mfex_inner_is_set = true;
+            argc -= 1;
+            argv += 1;
         /* If name is study and more args exist, parse study_count value. */
         } else if (mfex_name && mfex_name_is_study) {
             if (!str_to_uint(argv[1], 10, &study_count) ||
@@ -1284,7 +1289,7 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
      * threads. If a PMD thread was selected, do NOT update the default.
      */
     if (pmd_thread_to_change == NON_PMD_CORE_ID) {
-        err = dp_mfex_impl_set_default_by_name(mfex_name);
+        err = dp_mfex_impl_set_default_by_name(mfex_name, mfex_inner_is_set);
         if (err == -ENODEV) {
             ds_put_format(&reply,
                           "Error: miniflow extract not available due to CPU"
@@ -1301,6 +1306,7 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
 
     /* Get the desired MFEX function pointer and error check its usage. */
     miniflow_extract_func mfex_func = NULL;
+    miniflow_extract_func mfex_inner_func = NULL;
     err = dp_mfex_impl_get_by_name(mfex_name, &mfex_func);
     if (err) {
         if (err == -ENODEV) {
@@ -1315,6 +1321,7 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
         goto error;
     }
 
+    mfex_inner_func = mfex_func;
     /* Apply the MFEX pointer to each pmd thread in each netdev, filtering
      * by the users "-pmd" argument if required.
      */
@@ -1341,6 +1348,8 @@ dpif_miniflow_extract_impl_set(struct unixctl_conn *conn, int argc,
 
             pmd_thread_update_done = true;
             atomic_store_relaxed(&pmd->miniflow_extract_opt, mfex_func);
+            atomic_store_relaxed(&pmd->miniflow_extract_inner_opt,
+                                 mfex_inner_func);
         };
 
         free(pmd_list);
@@ -1615,8 +1624,8 @@ dpif_netdev_init(void)
                              NULL);
     unixctl_command_register("dpif-netdev/miniflow-parser-set",
                              "[-pmd core] miniflow_implementation_name"
-                             " [study_pkt_cnt]",
-                             1, 5, dpif_miniflow_extract_impl_set,
+                             " [study_pkt_cnt] [-recirc]",
+                             1, 6, dpif_miniflow_extract_impl_set,
                              NULL);
     unixctl_command_register("dpif-netdev/miniflow-parser-get", "",
                              0, 0, dpif_miniflow_extract_impl_get,
@@ -7484,6 +7493,12 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
 
     /* Init default miniflow_extract function */
     atomic_init(&pmd->miniflow_extract_opt, dp_mfex_impl_get_default());
+
+    /* Init default miniflow_extract function */
+    miniflow_extract_func mfex_inner_func = dp_mfex_impl_get_default();
+    atomic_uintptr_t *pmd_func_mfex_inner =
+                                (void *)&pmd->miniflow_extract_inner_opt;
+    atomic_store_relaxed(pmd_func_mfex_inner, (uintptr_t) mfex_inner_func);
 
     /* init the 'flow_cache' since there is no
      * actual thread created for NON_PMD_CORE_ID. */

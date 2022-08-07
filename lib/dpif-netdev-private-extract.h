@@ -159,8 +159,12 @@ dp_mfex_impl_get_by_name(const char *name, miniflow_extract_func *out_func);
  * overridden at runtime. */
 miniflow_extract_func dp_mfex_impl_get_default(void);
 
+/* Returns the default MFEX which is first ./configure selected, but can be
+ * overridden at runtime. */
+miniflow_extract_func dp_mfex_inner_impl_get_default(void);
+
 /* Overrides the default MFEX with the user set MFEX. */
-int dp_mfex_impl_set_default_by_name(const char *name);
+int dp_mfex_impl_set_default_by_name(const char *name, bool mfex_inner);
 
 /* Retrieve the array of miniflow implementations for iteration. */
 struct dpif_miniflow_extract_impl *
