@@ -38,7 +38,7 @@ enum dpif_netdev_impl_info_idx {
 
 #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
 static int32_t
-dp_netdev_input_outer_avx512_probe(void)
+dp_netdev_input_avx512_probe(void)
 {
     if (!cpu_has_isa(OVS_CPU_ISA_X86_AVX512F)
         || !cpu_has_isa(OVS_CPU_ISA_X86_BMI2)) {
@@ -58,8 +58,8 @@ static struct dpif_netdev_impl_info_t dpif_impls[] = {
 
 #if (__x86_64__ && HAVE_AVX512F && HAVE_LD_AVX512_GOOD && __SSE4_2__)
     /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
-    [DPIF_NETDEV_IMPL_AVX512] = { .input_func = dp_netdev_input_outer_avx512,
-      .probe = dp_netdev_input_outer_avx512_probe,
+    [DPIF_NETDEV_IMPL_AVX512] = { .input_func = dp_netdev_input_avx512,
+      .probe = dp_netdev_input_avx512_probe,
       .name = "dpif_avx512", },
 #endif
 };
