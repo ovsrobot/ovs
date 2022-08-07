@@ -29,6 +29,8 @@
 
 VLOG_DEFINE_THIS_MODULE(dpif_netdev_impl);
 
+DEFINE_EXTERN_PER_THREAD_DATA(recirc_depth, 0);
+
 enum dpif_netdev_impl_info_idx {
     DPIF_NETDEV_IMPL_SCALAR,
     DPIF_NETDEV_IMPL_AVX512
