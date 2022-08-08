@@ -249,6 +249,11 @@ static long long int stats_timer = LLONG_MIN;
 #define AA_REFRESH_INTERVAL (1000) /* In milliseconds. */
 static long long int aa_refresh_timer = LLONG_MIN;
 
+/* Whenever there is an transient error (such as EBUSY) returned by
+ * iface_create, this timer is started to give a chance to retry. */
+#define IFACE_CREATE_FAIL_RETRY 1000
+static bool need_iface_create_retry = false;
+
 /* Whenever system interfaces are added, removed or change state, the bridge
  * will be reconfigured.
  */
@@ -2110,6 +2115,10 @@ iface_create(struct bridge *br, const struct ovsrec_interface *iface_cfg,
     if (error) {
         iface_clear_db_record(iface_cfg, errp);
         free(errp);
+        if (error == EBUSY) {
+            poll_timer_wait_until(time_msec() + IFACE_CREATE_FAIL_RETRY);
+            need_iface_create_retry = true;
+        }
         return false;
     }
 
@@ -3326,11 +3335,13 @@ bridge_run(void)
     }
 
     if (ovsdb_idl_get_seqno(idl) != idl_seqno ||
-        if_notifier_changed(ifnotifier)) {
+        if_notifier_changed(ifnotifier) ||
+        need_iface_create_retry) {
         struct ovsdb_idl_txn *txn;
 
         idl_seqno = ovsdb_idl_get_seqno(idl);
         txn = ovsdb_idl_txn_create(idl);
+        need_iface_create_retry = false;
         bridge_reconfigure(cfg ? cfg : &null_cfg);
 
         if (cfg) {
