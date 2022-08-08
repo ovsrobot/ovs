@@ -179,21 +179,29 @@ static int
 netdev_assign_flow_api(struct netdev *netdev)
 {
     struct netdev_registered_flow_api *rfa;
-
+    int ret = -1;
     CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
-        if (!rfa->flow_api->init_flow_api(netdev)) {
+        int error = rfa->flow_api->init_flow_api(netdev);
+        if (!error) {
             ovs_refcount_ref(&rfa->refcnt);
             ovsrcu_set(&netdev->flow_api, rfa->flow_api);
             VLOG_INFO("%s: Assigned flow API '%s'.",
                       netdev_get_name(netdev), rfa->flow_api->type);
             return 0;
+        } else {
+            VLOG_DBG("%s: flow API '%s' is not suitable.",
+                     netdev_get_name(netdev), rfa->flow_api->type);
+            if (ret == EBUSY) {
+                /* If all API fail and at least one of the error is EBUSY, we
+                 * will return this error code EBUSY so that the upper layer
+                 * can decide to retry later. */
+                ret = error;
+            }
         }
-        VLOG_DBG("%s: flow API '%s' is not suitable.",
-                 netdev_get_name(netdev), rfa->flow_api->type);
     }
     VLOG_INFO("%s: No suitable flow API found.", netdev_get_name(netdev));
 
-    return -1;
+    return ret;
 }
 
 void
@@ -368,7 +376,7 @@ netdev_flow_get_n_flows(struct netdev *netdev, uint64_t *n_flows)
            : EOPNOTSUPP;
 }
 
-int
+static int
 netdev_init_flow_api(struct netdev *netdev)
 {
     if (!netdev_is_flow_api_enabled()) {
@@ -379,7 +387,10 @@ netdev_init_flow_api(struct netdev *netdev)
         return 0;
     }
 
-    if (netdev_assign_flow_api(netdev)) {
+    int error = netdev_assign_flow_api(netdev);
+    if (error == EBUSY) {
+        return error;
+    } else if (error) {
         return EOPNOTSUPP;
     }
 
@@ -729,8 +740,11 @@ netdev_ports_insert(struct netdev *netdev, struct dpif_port *dpif_port)
                 netdev_ports_hash(dpif_port->port_no, dpif_type));
     ovs_rwlock_unlock(&netdev_hmap_rwlock);
 
-    netdev_init_flow_api(netdev);
-
+    int error = netdev_init_flow_api(netdev);
+    if (error && error != EOPNOTSUPP) {
+        netdev_ports_remove(dpif_port->port_no, dpif_type);
+        return error;
+    }
     return 0;
 }
 
