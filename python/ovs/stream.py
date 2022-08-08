@@ -15,16 +15,13 @@
 import errno
 import os
 import socket
+import ssl
 import sys
 
 import ovs.poller
 import ovs.socket_util
 import ovs.vlog
 
-try:
-    import ssl
-except ImportError:
-    ssl = None
 
 if sys.platform == 'win32':
     import ovs.winutils as winutils
@@ -860,6 +857,4 @@ class SSLStream(Stream):
         return super(SSLStream, self).close()
 
 
-if ssl:
-    # Register SSL only if the OpenSSL module is available
-    Stream.register_method("ssl", SSLStream)
+Stream.register_method("ssl", SSLStream)

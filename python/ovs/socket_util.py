@@ -17,6 +17,7 @@ import os
 import os.path
 import random
 import socket
+import ssl
 import sys
 
 import ovs.fatal_signal
@@ -178,7 +179,11 @@ def check_connection_completion(sock):
         if revents & ovs.poller.POLLERR or revents & ovs.poller.POLLHUP:
             try:
                 # The following should raise an exception.
-                sock.send("\0".encode(), socket.MSG_DONTWAIT)
+                if isinstance(sock, ssl.SSLSocket):
+                    # a SSL wrapped socket does not allow non-zero optional flag
+                    sock.send("\0".encode())
+                else:
+                    sock.send("\0".encode(), socket.MSG_DONTWAIT)
 
                 # (Here's where we end up if it didn't.)
                 # XXX rate-limit

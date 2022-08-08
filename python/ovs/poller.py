@@ -17,6 +17,7 @@ import os
 
 import select
 import socket
+import ssl
 import sys
 
 import ovs.timeval
@@ -25,10 +26,6 @@ import ovs.vlog
 if sys.platform == "win32":
     import ovs.winutils as winutils
 
-try:
-    import ssl
-except ImportError:
-    ssl = None
 
 try:
     from eventlet import patcher as eventlet_patcher
