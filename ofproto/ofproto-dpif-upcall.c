@@ -58,6 +58,10 @@ COVERAGE_DEFINE(upcall_ukey_replace);
 COVERAGE_DEFINE(revalidate_missed_dp_flow);
 COVERAGE_DEFINE(upcall_flow_limit_hit);
 COVERAGE_DEFINE(upcall_flow_limit_kill);
+COVERAGE_DEFINE(upcall_flow_del_rev);
+COVERAGE_DEFINE(upcall_flow_del_no_rev);
+COVERAGE_DEFINE(upcall_flow_del_idle_or_limit);
+COVERAGE_DEFINE(upcall_flow_del_purge);
 
 /* A thread that reads upcalls from dpif, forwards each upcall's packet,
  * and possibly sets up a kernel flow as a cache. */
@@ -2334,7 +2338,12 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
             }
             result = revalidate_ukey__(udpif, ukey, push.tcp_flags,
                                        odp_actions, recircs, ukey->xcache);
-        } /* else delete; too expensive to revalidate */
+            if (result == UKEY_DELETE) {
+                COVERAGE_INC(upcall_flow_del_rev);
+            }
+        } else { /* else delete; too expensive to revalidate */
+            COVERAGE_INC(upcall_flow_del_no_rev);
+        }
     } else if (!push.n_packets || ukey->xcache
                || !populate_xcache(udpif, ukey, push.tcp_flags)) {
         result = UKEY_KEEP;
@@ -2771,6 +2780,7 @@ revalidate(struct revalidator *revalidator)
             }
             if (kill_them_all || (used && used < now - max_idle)) {
                 result = UKEY_DELETE;
+                COVERAGE_INC(upcall_flow_del_idle_or_limit);
             } else {
                 result = revalidate_ukey(udpif, ukey, &stats, &odp_actions,
                                          reval_seq, &recircs,
@@ -2852,6 +2862,7 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
 
                 if (purge) {
                     result = UKEY_DELETE;
+                    COVERAGE_INC(upcall_flow_del_purge);
                 } else if (!seq_mismatch) {
                     result = UKEY_KEEP;
                 } else {
