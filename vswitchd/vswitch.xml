@@ -212,7 +212,7 @@
       </column>
 
       <column name="other_config" key="min-revalidate-pps"
-              type='{"type": "integer", "minInteger": 1}'>
+              type='{"type": "integer", "minInteger": 0}'>
         <p>
           Set minimum pps that flow must have in order to be revalidated when
           revalidation duration exceeds half of max-revalidator config variable.
