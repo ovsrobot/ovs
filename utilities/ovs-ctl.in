@@ -226,9 +226,18 @@ do_start_forwarding () {
     fi
 }
 
+run_post_start_scripts () {
+    mkdir -p $POST_SCRIPTS_DIR_VSWITCHD
+    for f in `ls $POST_SCRIPTS_DIR_VSWITCHD/*.sh 2>/dev/null|| true`
+    do
+        action "Running post script $f" bash $f
+    done
+}
+
 start_forwarding () {
     if test X"$OVS_VSWITCHD" = Xyes; then
         do_start_forwarding || return 1
+        run_post_start_scripts || return 1
     fi
     if test X"$RECORD_HOSTNAME" = Xyes; then
         set_hostname &
@@ -347,6 +356,8 @@ set_defaults () {
     DB_SOCK=$rundir/db.sock
     DB_SCHEMA=$datadir/vswitch.ovsschema
     EXTRA_DBS=
+
+    POST_SCRIPTS_DIR_VSWITCHD=$etcdir/post_scripts_vswitchd
 
     PROTOCOL=gre
     DPORT=

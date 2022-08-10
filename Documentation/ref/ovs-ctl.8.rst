@@ -37,6 +37,15 @@ system administrators but to be called internally by system startup
 scripts.
 
 
+Ovs has a lot of runtime configurations which can't survive from
+service restart. For example, the vlog level config, dpctl/set
+config and flows. To persistent runtime configurations, we now
+support running a list of scripts after vswitchd process. Just
+put your scripts under ``etcdir/post_scripts_vswitchd/`` and with
+``.sh`` suffix, ovs-ctl start/restart will auto execute your
+scripts one by one.
+
+
 Each ``ovs-ctl`` command is described separately below.
 
 The ``start`` command

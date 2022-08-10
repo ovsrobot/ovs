@@ -81,6 +81,8 @@ v3.0.0 - xx xxx xxxx
    - Linux TC offload:
      * Add support for offloading meters via tc police.
      * Add support for offloading the check_pkt_len action.
+   - ovs-ctl:
+     * Support ovs post start scripts
    - New configuration knob 'other_config:all-members-active' for
      balance-slb bonds.
    - Previously deprecated Linux kernel module is now fully removed from
