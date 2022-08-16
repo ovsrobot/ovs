@@ -48,6 +48,7 @@ v3.0.0 - 15 Aug 2022
    - Windows:
      * Conntrack support for TCPv6, UDPv6, ICMPv6, FTPv6.
      * IPv6 Geneve tunnel support.
+     * Conntrack ipv6 support fragment.
    - DPDK:
      * OVS validated with DPDK 21.11.1.  It is recommended to use this version
        until further releases.
