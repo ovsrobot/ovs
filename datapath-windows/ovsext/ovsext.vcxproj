@@ -164,6 +164,7 @@
     <ClInclude Include="IpFragment.h" />
     <ClInclude Include="IpHelper.h" />
     <ClInclude Include="Jhash.h" />
+    <ClInclude Include="Meter.h" />
     <ClInclude Include="Mpls.h" />
     <ClInclude Include="Netlink/Netlink.h" />
     <ClInclude Include="Netlink/NetlinkBuf.h" />
@@ -408,6 +409,7 @@
     <ClCompile Include="IpFragment.c" />
     <ClCompile Include="IpHelper.c" />
     <ClCompile Include="Jhash.c" />
+    <ClCompile Include="Meter.c" />
     <ClCompile Include="Netlink/Netlink.c" />
     <ClCompile Include="Netlink/NetlinkBuf.c" />
     <ClCompile Include="Datapath.c" />
