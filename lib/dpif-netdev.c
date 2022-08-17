@@ -5335,8 +5335,8 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
 
         dp_netdev_pmd_flush_output_packets(pmd, false);
     } else {
-        /* Discard cycles. */
-        cycle_timer_stop(&pmd->perf_stats, &timer);
+        cycles = cycle_timer_stop(&pmd->perf_stats, &timer);
+        dp_netdev_rxq_add_cycles(rxq, RXQ_CYCLES_PROC_CURR, cycles);
         if (error != EAGAIN && error != EOPNOTSUPP) {
             static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
