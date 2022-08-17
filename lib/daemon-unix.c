@@ -412,6 +412,7 @@ monitor_daemon(pid_t daemon_pid)
                 }
                 last_restart = time(NULL);
 
+                close(daemonize_fd);
                 VLOG_ERR("%s, restarting", status_msg);
                 child_ready = !fork_and_wait_for_startup(&daemonize_fd,
                                                          &daemon_pid);
