@@ -1893,8 +1893,14 @@ bond_link_status_update(struct bond_member *member)
     up = netdev_get_carrier(member->netdev) && member->may_enable;
     if ((up == member->enabled) != (member->delay_expires == LLONG_MAX)) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
-        VLOG_INFO_RL(&rl, "member %s: link state %s",
-                     member->name, up ? "up" : "down");
+        if (up == netdev_get_carrier(member>netdev)) {
+            VLOG_INFO_RL(&rl, "member %s: link state %s",
+                         member->name, up ? "up" : "down");
+        } else {
+            VLOG_INFO_RL(&rl, "member %s: LACP may_enable %s",
+                         member->name, up ? "true" : "false");
+        }
+
         if (up == member->enabled) {
             member->delay_expires = LLONG_MAX;
             VLOG_INFO_RL(&rl, "member %s: will not be %s",
