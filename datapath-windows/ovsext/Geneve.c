@@ -16,6 +16,7 @@
 
 #include "precomp.h"
 
+#include "Actions.h"
 #include "Atomic.h"
 #include "Debug.h"
 #include "Flow.h"
@@ -92,6 +93,7 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
     UINT32 packetLength;
     ULONG mss = 0;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO csumInfo;
+    BOOLEAN firstPkt = FALSE;
 
     if (tunKey->dst.si_family == AF_INET) {
         headRoom = OvsGetGeneveTunHdrMinSize() + tunKey->tunOptLen;
@@ -101,19 +103,18 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
     }
 
     status = OvsLookupIPhFwdInfo(tunKey->src, tunKey->dst, &fwdInfo);
-    if (status != STATUS_SUCCESS) {
-        OvsFwdIPHelperRequest(NULL, 0, tunKey, NULL, NULL, NULL);
-        // return NDIS_STATUS_PENDING;
-        /*
-         * XXX: Don't know if the completionList will make any sense when
-         * accessed in the callback. Make sure the caveats are known.
-         *
-         * XXX: This code will work once we are able to grab locks in the
-         * callback.
-         */
-        return NDIS_STATUS_FAILURE;
+    /*
+     * Only support the first packet, if more packets are comming before
+     * FwdInfo is learned, drop them.
+     */
+    if (status == STATUS_NOT_FOUND) {
+        firstPkt = TRUE;
+    } else if (fwdInfo.vport == NULL) {
+        return NDIS_STATUS_PENDING;
+    } else {
+        RtlCopyMemory(switchFwdInfo->value, fwdInfo.value,
+                      sizeof fwdInfo.value);
     }
-    RtlCopyMemory(switchFwdInfo->value, fwdInfo.value, sizeof fwdInfo.value);
 
     curNb = NET_BUFFER_LIST_FIRST_NB(curNbl);
     packetLength = NET_BUFFER_DATA_LENGTH(curNb);
@@ -141,8 +142,13 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
 
     /* If we didn't split the packet above, make a copy now */
     if (*newNbl == NULL) {
-        *newNbl = OvsPartialCopyNBL(switchContext, curNbl, 0, headRoom,
-                                    FALSE /*NBL info*/);
+        if (firstPkt == TRUE) {
+            *newNbl = OvsFullCopyNBL(switchContext, curNbl, headRoom,
+                                     FALSE /*NBL info*/);
+        } else {
+            *newNbl = OvsPartialCopyNBL(switchContext, curNbl, 0, headRoom,
+                                        FALSE /*NBL info*/);
+        }
         if (*newNbl == NULL) {
             OVS_LOG_ERROR("Unable to copy NBL");
             return NDIS_STATUS_FAILURE;
@@ -180,11 +186,12 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
 
         /* L2 header */
         ethHdr = (EthHdr *)bufferStart;
-        NdisMoveMemory(ethHdr->Destination, fwdInfo.dstMacAddr,
-                       sizeof ethHdr->Destination);
-        NdisMoveMemory(ethHdr->Source, fwdInfo.srcMacAddr,
-                       sizeof ethHdr->Source);
-
+        if (firstPkt == FALSE) {
+            NdisMoveMemory(ethHdr->Destination, fwdInfo.dstMacAddr,
+                           sizeof ethHdr->Destination);
+            NdisMoveMemory(ethHdr->Source, fwdInfo.srcMacAddr,
+                           sizeof ethHdr->Source);
+        }
         if (tunKey->dst.si_family == AF_INET) {
             ethHdr->Type = htons(ETH_TYPE_IPV4);
         } else if (tunKey->dst.si_family == AF_INET6) {
@@ -205,10 +212,8 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
                           IP_DF_NBO : 0;
             ipHdr->ttl = tunKey->ttl ? tunKey->ttl : GENEVE_DEFAULT_TTL;
             ipHdr->protocol = IPPROTO_UDP;
-            ASSERT(OvsIphAddrEquals(&tunKey->dst, &fwdInfo.dstIphAddr));
-            ASSERT(OvsIphAddrEquals(&tunKey->src, &fwdInfo.srcIphAddr) || OvsIphIsZero(&tunKey->src));
-            ipHdr->saddr = fwdInfo.srcIphAddr.Ipv4.sin_addr.s_addr;
-            ipHdr->daddr = fwdInfo.dstIphAddr.Ipv4.sin_addr.s_addr;
+            ipHdr->saddr = tunKey->src.Ipv4.sin_addr.s_addr;
+            ipHdr->daddr = tunKey->dst.Ipv4.sin_addr.s_addr;
             ipHdr->check = 0;
         } else if (tunKey->dst.si_family == AF_INET6) {
              /* IPv6 header */
@@ -222,11 +227,9 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
             ipv6Hdr->payload_len = htons(NET_BUFFER_DATA_LENGTH(curNb) - sizeof *ethHdr - sizeof *ipv6Hdr);
             ipv6Hdr->hop_limit = tunKey->ttl ? tunKey->ttl : GENEVE_DEFAULT_TTL;
             ipv6Hdr->nexthdr = IPPROTO_UDP;
-            ASSERT(OvsIphAddrEquals(&(tunKey->dst), &(fwdInfo.dstIphAddr)));
-            ASSERT(OvsIphAddrEquals(&(tunKey->src), &(fwdInfo.srcIphAddr))  || OvsIphIsZero(&(tunKey->src)));
-            RtlCopyMemory(&ipv6Hdr->saddr, &fwdInfo.srcIphAddr.Ipv6.sin6_addr,
+            RtlCopyMemory(&ipv6Hdr->saddr, &tunKey->src.Ipv6.sin6_addr,
                           sizeof(ipv6Hdr->saddr));
-            RtlCopyMemory(&ipv6Hdr->daddr, &fwdInfo.dstIphAddr.Ipv6.sin6_addr,
+            RtlCopyMemory(&ipv6Hdr->daddr, &tunKey->dst.Ipv6.sin6_addr,
                           sizeof(ipv6Hdr->daddr));
         }
 
@@ -294,7 +297,12 @@ NDIS_STATUS OvsEncapGeneve(POVS_VPORT_ENTRY vport,
         NET_BUFFER_LIST_INFO(curNbl,
                              TcpIpChecksumNetBufferListInfo) = csumInfo.Value;
     }
-
+    if (firstPkt == TRUE) {
+        OvsFwdIPHelperRequest(*newNbl, 0, tunKey, OvsEncapPktCB,
+                              switchContext, NULL);
+        *newNbl = NULL;
+        return NDIS_STATUS_PENDING;
+    }
     return STATUS_SUCCESS;
 
 ret_error:

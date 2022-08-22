@@ -620,6 +620,154 @@ OvsDoFlowLookupOutput(OvsForwardingContext* ovsFwdCtx)
     return status;
 }
 
+VOID
+OvsEncapPktCB(PNET_BUFFER_LIST nbl,
+              UINT32 inPort,
+              PVOID tunnelKey,
+              PVOID cbData1,
+              PVOID cbData2,
+              NTSTATUS status,
+              POVS_FWD_INFO fwdInfo)
+{
+    POVS_SWITCH_CONTEXT switchContext = (POVS_SWITCH_CONTEXT)cbData1;
+    OvsIPTunnelKey *tunKey = (OvsIPTunnelKey *)tunnelKey;
+    OvsForwardingContext ovsFwdCtx = { 0 };
+    BOOLEAN isDispatchLevel = KeGetCurrentIrql() == DISPATCH_LEVEL;
+    LOCK_STATE_EX lockState, dpLockState;
+    PNET_BUFFER curNb;
+    char ipAddrStr[64] = { 0 };
+
+    UNREFERENCED_PARAMETER(inPort);
+    UNREFERENCED_PARAMETER(cbData2);
+
+    if (fwdInfo->dstIphAddr.si_family == AF_INET) {
+        RtlIpv4AddressToStringA(&fwdInfo->dstIphAddr.Ipv4.sin_addr,
+                                ipAddrStr);
+    } else if (fwdInfo->dstIphAddr.si_family == AF_INET6) {
+        RtlIpv6AddressToStringA(&fwdInfo->dstIphAddr.Ipv6.sin6_addr,
+                                ipAddrStr);
+    }
+    OVS_LOG_INFO("Resolve IP %s MAC %02x:%02x:%02x:%02x:%02x:%02x "
+                 "status %x, nbl %p, vport %p", ipAddrStr,
+                 fwdInfo->dstMacAddr[0], fwdInfo->dstMacAddr[1],
+                 fwdInfo->dstMacAddr[2], fwdInfo->dstMacAddr[3],
+                 fwdInfo->dstMacAddr[4], fwdInfo->dstMacAddr[5],
+                 status, nbl, fwdInfo->vport);
+
+    if (!nbl) {
+        return;
+    }
+
+    /* XXX - switchContext should not be released */
+    if (isDispatchLevel) {
+        NdisAcquireRWLockRead(switchContext->dispatchLock, &lockState,
+                              NDIS_RWL_AT_DISPATCH_LEVEL);
+    } else {
+        NdisAcquireRWLockRead(switchContext->dispatchLock, &lockState, 0);
+    }
+    if (fwdInfo->vport == NULL || status != STATUS_SUCCESS) {
+       goto unlock_free_out;
+    }
+    ASSERT(OvsIphAddrEquals(&tunKey->dst, &fwdInfo->dstIphAddr));
+    ASSERT(OvsIphAddrEquals(&tunKey->src, &fwdInfo->srcIphAddr) ||
+           OvsIphIsZero(&tunKey->src));
+
+    /* Update each header of NB */
+    for (curNb = NET_BUFFER_LIST_FIRST_NB(nbl); curNb != NULL;
+         curNb = curNb->Next) {
+        EthHdr *ethHdr;
+        PMDL curMdl = NET_BUFFER_CURRENT_MDL(curNb);
+        PUINT8 bufferStart = (PUINT8)OvsGetMdlWithLowPriority(curMdl);
+        if (!bufferStart) {
+            status = NDIS_STATUS_RESOURCES;
+            OVS_LOG_ERROR("nbl %p nb %p buffer error", nbl, curNb);
+            goto unlock_free_out;
+        }
+
+        bufferStart += NET_BUFFER_CURRENT_MDL_OFFSET(curNb);
+        if (NET_BUFFER_NEXT_NB(curNb)) {
+            OVS_LOG_TRACE("nbl %p nb %p length %u next %u", nbl, curNb,
+                          NET_BUFFER_DATA_LENGTH(curNb),
+                          NET_BUFFER_DATA_LENGTH(curNb->Next));
+        }
+
+        /* L2 header */
+        ethHdr = (EthHdr *)bufferStart;
+        NdisMoveMemory(ethHdr->Destination, fwdInfo->dstMacAddr,
+                       sizeof ethHdr->Destination);
+        NdisMoveMemory(ethHdr->Source, fwdInfo->srcMacAddr,
+                       sizeof ethHdr->Source);
+        OVS_LOG_INFO("nbl %p nb %p flags %x", nbl, curNb, tunKey->flags);
+        if (tunKey->flags & OVS_TNL_F_CSUM) {
+            if (ethHdr->Type == htons(ETH_TYPE_IPV4)) {
+                IPHdr *ipHdr;
+                /* IP header */
+                ipHdr = (IPHdr *)((PCHAR)ethHdr + sizeof *ethHdr);
+                if (ipHdr->saddr == 0) {
+                    UDPHdr *udpHdr;
+
+                    ipHdr->saddr = fwdInfo->srcIphAddr.Ipv4.sin_addr.s_addr;
+                    /* UDP header */
+                    udpHdr = (UDPHdr *)((PCHAR)ipHdr + sizeof *ipHdr);
+                    OVS_LOG_INFO("nbl %p nb %p len %u src %d.%d.%d.%d, csum %u",
+                                 nbl, curNb, NET_BUFFER_DATA_LENGTH(curNb),
+                                 ipHdr->saddr & 0xff, (ipHdr->saddr >> 8) & 0xff,
+                                 (ipHdr->saddr >> 16) & 0xff,
+                                 (ipHdr->saddr >> 24) & 0xff, udpHdr->check);
+
+                    /* Update checksum */
+                    ASSERT(udpHdr->check);
+                    udpHdr->check = ChecksumUpdate32(udpHdr->check, 0, ipHdr->saddr);
+                }
+            } else if (ethHdr->Type == htons(ETH_TYPE_IPV6)) {
+                 IPv6Hdr *ipv6Hdr;
+                 UINT32 *srcIpv6Addr;
+                 /* IP header */
+                 ipv6Hdr = (IPv6Hdr *)((PCHAR)ethHdr + sizeof *ethHdr);
+                 srcIpv6Addr = (UINT32 *)&ipv6Hdr->saddr;
+                 if (srcIpv6Addr[0] == 0 && srcIpv6Addr[1] == 0 &&
+                     srcIpv6Addr[2] == 0 && srcIpv6Addr[3] == 0) {
+                     UDPHdr *udpHdr;
+                     UINT16 udpChksumLen = 0;
+
+                     RtlCopyMemory(&ipv6Hdr->saddr,
+                                   &fwdInfo->srcIphAddr.Ipv6.sin6_addr,
+                                   sizeof(ipv6Hdr->saddr));
+                     /* UDP header */
+                     udpHdr = (UDPHdr *)((PCHAR)ipv6Hdr + sizeof *ipv6Hdr);
+                     RtlIpv6AddressToStringA(&fwdInfo->srcIphAddr.Ipv6.sin6_addr,
+                                             ipAddrStr);
+                     OVS_LOG_INFO("nbl %p nb %p len %u src %s, csum %u",
+                                  nbl, curNb, NET_BUFFER_DATA_LENGTH(curNb),
+                                  ipAddrStr, udpHdr->check);
+
+                     udpChksumLen = (UINT16) NET_BUFFER_DATA_LENGTH(curNb) -
+                                    sizeof *ipv6Hdr - sizeof *ethHdr;
+                     udpHdr->check = IPv6PseudoChecksum((UINT32*)&ipv6Hdr->saddr,
+                                                        (UINT32*)&ipv6Hdr->daddr,
+                                                        IPPROTO_UDP, udpChksumLen);
+                 }
+            }
+        }
+    }
+
+    OvsAcquireDatapathRead(&switchContext->datapath, &dpLockState,
+                           isDispatchLevel);
+    OvsInitForwardingCtx(&ovsFwdCtx, switchContext, nbl,
+                         fwdInfo->vport->portNo, 0,
+                         NET_BUFFER_LIST_SWITCH_FORWARDING_DETAIL(nbl),
+                         NULL, &ovsFwdCtx.layers, TRUE);
+    OvsDoFlowLookupOutput(&ovsFwdCtx);
+    OvsReleaseDatapath(&switchContext->datapath, &dpLockState);
+    NdisReleaseRWLock(switchContext->dispatchLock, &lockState);
+
+    return;
+
+unlock_free_out:
+    OvsCompleteNBL(switchContext, nbl, TRUE);
+    NdisReleaseRWLock(switchContext->dispatchLock, &lockState);
+}
+
 /*
  * --------------------------------------------------------------------------
  * OvsTunnelPortTx --

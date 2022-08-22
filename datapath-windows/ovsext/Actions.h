@@ -20,6 +20,7 @@
 #include "Switch.h"
 #include "PacketIO.h"
 
+typedef union _OVS_FWD_INFO *POVS_FWD_INFO;
 
 /*
  * There a lot of data that needs to be maintained while executing the pipeline
@@ -138,4 +139,12 @@ OvsUpdateAddressAndPortForIpv6(OvsForwardingContext *ovsFwdCtx,
                                struct in6_addr newAddr, UINT16 newPort,
                                BOOLEAN isSource, BOOLEAN isTx);
 
+VOID
+OvsEncapPktCB(PNET_BUFFER_LIST nbl,
+              UINT32 inPort,
+              PVOID tunnelKey,
+              PVOID cbData1,
+              PVOID cbData2,
+              NTSTATUS status,
+              POVS_FWD_INFO fwdInfo);
 #endif /* __ACTIONS_H_ */

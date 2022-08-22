@@ -16,6 +16,7 @@
 
 #include "precomp.h"
 
+#include "Actions.h"
 #include "Atomic.h"
 #include "Debug.h"
 #include "Flow.h"
@@ -177,7 +178,8 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
                 POVS_FWD_INFO fwdInfo,
                 POVS_PACKET_HDR_INFO layers,
                 POVS_SWITCH_CONTEXT switchContext,
-                PNET_BUFFER_LIST *newNbl)
+                PNET_BUFFER_LIST *newNbl,
+                BOOLEAN firstPkt)
 {
     NDIS_STATUS status;
     PNET_BUFFER curNb;
@@ -194,9 +196,6 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
     UINT32 headRoom =
         OvsGetVxlanTunHdrSize(fwdInfo->dstIphAddr.si_family == AF_INET ?
                               TRUE : FALSE);
-    ASSERT(OvsIphAddrEquals(&tunKey->dst, &fwdInfo->dstIphAddr));
-    ASSERT(OvsIphAddrEquals(&tunKey->src, &fwdInfo->srcIphAddr) ||
-           OvsIphIsZero(&tunKey->src));
 
     curNb = NET_BUFFER_LIST_FIRST_NB(curNbl);
     packetLength = NET_BUFFER_DATA_LENGTH(curNb);
@@ -224,8 +223,13 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
 
     /* If we didn't split the packet above, make a copy now */
     if (*newNbl == NULL) {
-        *newNbl = OvsPartialCopyNBL(switchContext, curNbl, 0, headRoom,
-                                    FALSE /*NBL info*/);
+        if (firstPkt == TRUE) {
+            *newNbl = OvsFullCopyNBL(switchContext, curNbl, headRoom,
+                                     FALSE /*NBL info*/);
+        } else {
+            *newNbl = OvsPartialCopyNBL(switchContext, curNbl, 0, headRoom,
+                                        FALSE /*NBL info*/);
+        }
         if (*newNbl == NULL) {
             OVS_LOG_ERROR("Unable to copy NBL");
             return NDIS_STATUS_FAILURE;
@@ -263,14 +267,16 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
 
         /* L2 header */
         ethHdr = (EthHdr *)bufferStart;
-        NdisMoveMemory(ethHdr->Destination, fwdInfo->dstMacAddr,
-                       sizeof ethHdr->Destination);
-        NdisMoveMemory(ethHdr->Source, fwdInfo->srcMacAddr,
-                       sizeof ethHdr->Source);
+        if (firstPkt == FALSE) {
+            NdisMoveMemory(ethHdr->Destination, fwdInfo->dstMacAddr,
+                           sizeof ethHdr->Destination);
+            NdisMoveMemory(ethHdr->Source, fwdInfo->srcMacAddr,
+                           sizeof ethHdr->Source);
+        }
         ethHdr->Type = htons(ETH_TYPE_IPV4);
 
         /* IP header */
-        if (fwdInfo->dstIphAddr.si_family == AF_INET) {
+        if (tunKey->dst.si_family == AF_INET) {
            ipHdr = (IPHdr *)((PCHAR)ethHdr + sizeof *ethHdr);
 
            ipHdr->ihl = sizeof *ipHdr / 4;
@@ -283,12 +289,9 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
                              IP_DF_NBO : 0;
            ipHdr->ttl = tunKey->ttl ? tunKey->ttl : VXLAN_DEFAULT_TTL;
            ipHdr->protocol = IPPROTO_UDP;
-           ASSERT(OvsIphAddrEquals(&tunKey->dst, &fwdInfo->dstIphAddr));
-           ASSERT(OvsIphAddrEquals(&tunKey->src, &fwdInfo->srcIphAddr) ||
-                  OvsIphIsZero(&tunKey->src));
 
-           ipHdr->saddr = fwdInfo->srcIphAddr.Ipv4.sin_addr.s_addr;
-           ipHdr->daddr = fwdInfo->dstIphAddr.Ipv4.sin_addr.s_addr;
+           ipHdr->saddr = tunKey->src.Ipv4.sin_addr.s_addr;
+           ipHdr->daddr = tunKey->dst.Ipv4.sin_addr.s_addr;
 
            ipHdr->check = 0;
 
@@ -323,7 +326,7 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
     }
 
     csumInfo.Value = 0;
-    if (fwdInfo->dstIphAddr.si_family == AF_INET) {
+    if (tunKey->dst.si_family == AF_INET) {
         csumInfo.Transmit.IpHeaderChecksum = 1;
         csumInfo.Transmit.IsIPv4 = 1;
     } else {
@@ -334,7 +337,12 @@ OvsDoEncapVxlan(POVS_VPORT_ENTRY vport,
     }
     NET_BUFFER_LIST_INFO(curNbl,
                          TcpIpChecksumNetBufferListInfo) = csumInfo.Value;
-
+    if (firstPkt == TRUE) {
+        OvsFwdIPHelperRequest(*newNbl, 0, tunKey, OvsEncapPktCB,
+                              switchContext, NULL);
+        *newNbl = NULL;
+        return NDIS_STATUS_PENDING;
+    }
 
     return STATUS_SUCCESS;
 
@@ -363,6 +371,7 @@ OvsEncapVxlan(POVS_VPORT_ENTRY vport,
 {
     NTSTATUS status;
     OVS_FWD_INFO fwdInfo;
+    BOOLEAN firstPkt = FALSE;
 
     if (tunKey->dst.si_family != AF_INET) {
         /*V6 tunnel support will be supported later*/
@@ -370,22 +379,21 @@ OvsEncapVxlan(POVS_VPORT_ENTRY vport,
     }
 
     status = OvsLookupIPhFwdInfo(tunKey->src, tunKey->dst, &fwdInfo);
-    if (status != STATUS_SUCCESS) {
-        OvsFwdIPHelperRequest(NULL, 0, tunKey, NULL, NULL, NULL);
-        /*
-         * XXX: Don't know if the completionList will make any sense when
-         * accessed in the callback. Make sure the caveats are known.
-         *
-         * XXX: This code will work once we are able to grab locks in the
-         * callback.
-         */
-        return NDIS_STATUS_FAILURE;
+    /*
+     * Only support the first packet, if more packets are comming before
+     * FwdInfo is learned, drop them.
+     */
+    if (status == STATUS_NOT_FOUND) {
+        firstPkt = TRUE;
+    } else if (fwdInfo.vport == NULL) {
+        return NDIS_STATUS_PENDING;
+    } else {
+        RtlCopyMemory(switchFwdInfo->value, fwdInfo.value,
+                      sizeof fwdInfo.value);
     }
 
-    RtlCopyMemory(switchFwdInfo->value, fwdInfo.value, sizeof fwdInfo.value);
-
     return OvsDoEncapVxlan(vport, curNbl, tunKey, &fwdInfo, layers,
-                           switchContext, newNbl);
+                           switchContext, newNbl, firstPkt);
 }
 
 
