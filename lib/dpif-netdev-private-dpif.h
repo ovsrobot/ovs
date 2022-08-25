@@ -18,6 +18,11 @@
 #define DPIF_NETDEV_PRIVATE_DPIF_H 1
 
 #include "openvswitch/types.h"
+#include "ovs-thread.h"
+
+#define MAX_RECIRC_DEPTH 6
+/* Use per thread recirc_depth to prevent recirculation loop. */
+DECLARE_EXTERN_PER_THREAD_DATA(uint32_t, recirc_depth);
 
 /* Forward declarations to avoid including files. */
 struct dp_netdev_pmd_thread;
