@@ -58,10 +58,10 @@ struct dpif_userdata {
         struct pkt_flow_meta pkt_meta[NETDEV_MAX_BURST];
 };
 
-int32_t
-dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
-                             struct dp_packet_batch *packets,
-                             odp_port_t in_port)
+static inline int32_t ALWAYS_INLINE
+dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
+                         struct dp_packet_batch *packets,
+                         bool md_is_valid OVS_UNUSED, odp_port_t in_port)
 {
     /* Allocate DPIF userdata. */
     if (OVS_UNLIKELY(!pmd->netdev_input_func_userdata)) {
@@ -411,6 +411,23 @@ action_stage:
     }
 
     return 0;
+}
+
+int32_t
+dp_netdev_input_avx512(struct dp_netdev_pmd_thread *pmd,
+                       struct dp_packet_batch *packets,
+                       odp_port_t in_port)
+{
+    int ret = dp_netdev_input_avx512__(pmd, packets, false, in_port);
+    return ret;
+}
+
+int32_t
+dp_netdev_input_avx512_recirc(struct dp_netdev_pmd_thread *pmd,
+                              struct dp_packet_batch *packets)
+{
+    int ret = dp_netdev_input_avx512__(pmd, packets, true, 0);
+    return ret;
 }
 
 #endif
