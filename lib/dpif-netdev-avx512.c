@@ -191,7 +191,8 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         miniflow_extract_func mfex_func;
         atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
         if (mfex_func) {
-            mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd);
+            mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd,
+                                md_is_valid);
         }
     }
 
