@@ -360,6 +360,53 @@ _mm512_maskz_permutexvar_epi8_selector(__mmask64 k_shuf, __m512i v_shuf,
                        MF_WORD(ipv6_dst, 2) | MF_BIT(tp_src) | MF_BIT(tp_dst))
 #define MF_IPV6_TCP   (MF_IPV6_UDP | MF_BIT(tcp_flags) | MF_BIT(arp_tha.ea[2]))
 
+#define MF_TUNNEL     MF_WORD(tunnel, offsetof(struct flow_tnl, metadata) / 8)
+
+#define MF_ETH_TUNNEL (MF_TUNNEL | MF_ETH)
+#define MF_ETH_VLAN_TUNNEL (MF_TUNNEL | MF_ETH_VLAN)
+
+/* Block offsets represents the offsets into the blocks array of miniflow
+ * and are derived experimentally. Scalar miniflow parses the header
+ * in a fixed order and sequentially in a dynamic fashion thus incrementing
+ * pointer and copying data is enough but in AVX512 since the headers are
+ * parsed using pre-defined masks we need these magic offsets to write
+ * some of the data items at the correct loaction in the blocks array
+ * using below magic numbers.
+ */
+#define BLK_META_DATA_OFFS            9
+#define BLK_IPv4_TCP_FLAG             6
+#define BLK_VLAN_IPv4_TCP_FLAG        7
+#define BLK_VLAN_PCP                  4
+#define BLK_IPv6_HDR_OFFS             8
+#define BLK_VLAN_IPv6_HDR_OFFS        9
+#define BLK_IPv6_TCP_FLAG             9
+#define BLK_VLAN_IPv6_TCP_FLAG        10
+#define BLK_L4_UDP_OFFS               9
+#define BLK_L4_TCP_OFFS               10
+#define BLK_VLAN_L4_UDP_OFFS          10
+#define BLK_VLAN_L4_TCP_OFFS          11
+
+/* Below Offsets simply shifts the offsets by 9 blocks as
+ * in the tunneling case the first 9 blocks are reserved and
+ * written with the outer tunnel data.
+ */
+#define BLK_TUN_IPv6_HDR_OFFS         (BLK_IPv6_HDR_OFFS + BLK_META_DATA_OFFS)
+#define BLK_TUN_VLAN_IPv6_HDR_OFFS    (BLK_VLAN_IPv6_HDR_OFFS + \
+                                       BLK_META_DATA_OFFS)
+#define BLK_TUN_IPv6_TCP_FLAG         (BLK_IPv6_TCP_FLAG + BLK_META_DATA_OFFS)
+#define BLK_TUN_VLAN_IPv6_TCP_FLAG    (BLK_VLAN_IPv6_TCP_FLAG + \
+                                       BLK_META_DATA_OFFS)
+#define BLK_TUN_L4_UDP_OFFS           (BLK_L4_UDP_OFFS + BLK_META_DATA_OFFS)
+#define BLK_TUN_L4_TCP_OFFS           (BLK_L4_TCP_OFFS + BLK_META_DATA_OFFS)
+#define BLK_TUN_VLAN_L4_UDP_OFFS      (BLK_VLAN_L4_UDP_OFFS + \
+                                       BLK_META_DATA_OFFS)
+#define BLK_TUN_VLAN_L4_TCP_OFFS      (BLK_VLAN_L4_TCP_OFFS + \
+                                       BLK_META_DATA_OFFS)
+#define BLK_TUN_IPv4_TCP_FLAG         (BLK_IPv4_TCP_FLAG + BLK_META_DATA_OFFS)
+#define BLK_TUN_VLAN_PCP              (BLK_VLAN_PCP + BLK_META_DATA_OFFS)
+#define BLK_TUN_VLAN_IPv4_TCP_FLAG    (BLK_VLAN_IPv4_TCP_FLAG + \
+                                       BLK_META_DATA_OFFS)
+
 #define PATTERN_STRIP_IPV6_MASK                                         \
     NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC,     \
     NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC, NC,     \
@@ -744,7 +791,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     uint32_t keys_size OVS_UNUSED,
                     odp_port_t in_port,
                     void *pmd_handle OVS_UNUSED,
-                    bool md_is_valid OVS_UNUSED,
+                    bool md_is_valid,
                     const enum MFEX_PROFILES profile_id,
                     const uint32_t use_vbmi OVS_UNUSED)
 {
@@ -770,6 +817,15 @@ mfex_avx512_process(struct dp_packet_batch *packets,
     __m128i v_blocks01 = _mm_insert_epi32(v_zeros, odp_to_u32(in_port), 1);
 
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets) {
+        /* Handle meta-data init in the loop. */
+        if (!md_is_valid) {
+            pkt_metadata_init(&packet->md, in_port);
+        }
+        const struct pkt_metadata *md = &packet->md;
+        /* Dummy pmd dont always pass correct md_is_valid and hence
+         * need to check the tunnel data to ensure correct behaviour.
+         */
+        bool tunnel = flow_tnl_dst_is_set(&md->tunnel);
         /* If the packet is smaller than the probe size, skip it. */
         const uint32_t size = dp_packet_size(packet);
         if (size < dp_pkt_min_size) {
@@ -808,7 +864,16 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                                                                 use_vbmi);
 
         __m512i v_blk0_strip = _mm512_and_si512(v_blk0, v_strp);
-        _mm512_storeu_si512(&blocks[2], v_blk0_strip);
+        /* Handle inner meta-data if valid. */
+        if (!tunnel) {
+            _mm512_storeu_si512(&blocks[2], v_blk0_strip);
+        } else {
+            __m512i v_tun = _mm512_loadu_si512(&md->tunnel);
+            _mm512_storeu_si512(&blocks[0], v_tun);
+            _mm512_storeu_si512(&blocks[11], v_blk0_strip);
+            blocks[BLK_META_DATA_OFFS] = md->dp_hash |
+                        ((uint64_t) odp_to_u32(md->in_port.odp_port) << 32);
+        }
 
         /* Perform "post-processing" per profile, handling details not easily
          * handled in the above generic AVX512 code. Examples include TCP flag
@@ -820,38 +885,45 @@ mfex_avx512_process(struct dp_packet_batch *packets,
             break;
 
         case PROFILE_ETH_VLAN_IPV4_TCP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
                 struct ip_header *nh = (void *)&pkt[VLAN_ETH_HEADER_LEN];
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               TCP_HEADER_LEN)) {
                     continue;
                 }
-
                 /* Process TCP flags, and store to blocks. */
                 const struct tcp_header *tcp = (void *)&pkt[38];
-                mfex_handle_tcp_flags(tcp, &blocks[7]);
+                uint32_t vlan_pcp_off = BLK_VLAN_PCP;
+                uint32_t tcp_flag_off = BLK_VLAN_IPv4_TCP_FLAG;
+
+                if (tunnel) {
+                    vlan_pcp_off = BLK_TUN_VLAN_PCP;
+                    tcp_flag_off = BLK_TUN_VLAN_IPv4_TCP_FLAG;
+                    mf->map.bits[0] = MF_ETH_VLAN_TUNNEL;
+                }
+                mfex_vlan_pcp(pkt[14], &keys[i].buf[vlan_pcp_off]);
+                mfex_handle_tcp_flags(tcp, &blocks[tcp_flag_off]);
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_VLAN_IPV4_UDP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 uint32_t size_from_ipv4 = size - VLAN_ETH_HEADER_LEN;
                 struct ip_header *nh = (void *)&pkt[VLAN_ETH_HEADER_LEN];
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               UDP_HEADER_LEN)) {
                     continue;
                 }
+
+                uint32_t vlan_pcp_off = BLK_VLAN_PCP;
+                if (tunnel) {
+                    vlan_pcp_off = BLK_TUN_VLAN_PCP;
+                    mf->map.bits[0] = MF_ETH_VLAN_TUNNEL;
+                }
+                mfex_vlan_pcp(pkt[14], &keys[i].buf[vlan_pcp_off]);
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_IPV4_TCP: {
-                /* Process TCP flags, and store to blocks. */
-                const struct tcp_header *tcp = (void *)&pkt[34];
-                mfex_handle_tcp_flags(tcp, &blocks[6]);
-
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv4 = size - sizeof(struct eth_header);
                 struct ip_header *nh = (void *)&pkt[sizeof(struct eth_header)];
@@ -859,6 +931,14 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                                               TCP_HEADER_LEN)) {
                     continue;
                 }
+                /* Process TCP flags, and store to blocks. */
+                const struct tcp_header *tcp = (void *)&pkt[34];
+                uint32_t tcp_flag_off = BLK_IPv4_TCP_FLAG;
+                if (tunnel) {
+                    tcp_flag_off = BLK_TUN_IPv4_TCP_FLAG;
+                    mf->map.bits[0] = MF_ETH_TUNNEL;
+                }
+                mfex_handle_tcp_flags(tcp, &blocks[tcp_flag_off]);
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
 
@@ -869,6 +949,9 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                 if (mfex_ipv4_set_l2_pad_size(packet, nh, size_from_ipv4,
                                               UDP_HEADER_LEN)) {
                     continue;
+                }
+                if (tunnel) {
+                    mf->map.bits[0] = MF_ETH_TUNNEL;
                 }
                 dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
             } break;
@@ -883,11 +966,19 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN], &blocks[8]);
-
+                uint32_t hdr_blk_off = BLK_IPv6_HDR_OFFS;
+                uint32_t udp_offs = BLK_L4_UDP_OFFS;
+                if (tunnel) {
+                    hdr_blk_off = BLK_TUN_IPv6_HDR_OFFS;
+                    udp_offs = BLK_TUN_L4_UDP_OFFS;
+                    mf->map.bits[0] = MF_ETH_TUNNEL;
+                }
+                /* Process IPv6 header for TC, flow Label and next
+                  * header. */
+                mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN],
+                                           &blocks[hdr_blk_off]);
                 /* Process UDP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[9]);
+                mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[udp_offs]);
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
 
@@ -901,22 +992,31 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN], &blocks[8]);
-
-                /* Process TCP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[10]);
                 const struct tcp_header *tcp = (void *)&pkt[54];
                 if (!mfex_check_tcp_data_offset(tcp)) {
                     continue;
                 }
-                mfex_handle_tcp_flags(tcp, &blocks[9]);
+
+                uint32_t ipv6_hdr_off = BLK_IPv6_HDR_OFFS;
+                uint32_t tcp_offs = BLK_L4_TCP_OFFS;
+                uint32_t tcp_flag_offs = BLK_IPv6_TCP_FLAG;
+                if (tunnel) {
+                    mf->map.bits[0] = MF_ETH_TUNNEL;
+                    ipv6_hdr_off = BLK_TUN_IPv6_HDR_OFFS;
+                    tcp_offs = BLK_TUN_L4_TCP_OFFS;
+                    tcp_flag_offs = BLK_TUN_IPv6_TCP_FLAG;
+                }
+                /* Process IPv6 header for TC, flow Label and next
+                 * header. */
+                mfex_handle_ipv6_hdr_block(&pkt[ETH_HEADER_LEN],
+                                           &blocks[ipv6_hdr_off]);
+                /* Process TCP header. */
+                mfex_handle_ipv6_l4((void *)&pkt[54], &blocks[tcp_offs]);
+                mfex_handle_tcp_flags(tcp, &blocks[tcp_flag_offs]);
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_VLAN_IPV6_TCP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv6 = size - VLAN_ETH_HEADER_LEN;
                 struct ovs_16aligned_ip6_hdr *nh = (void *)&pkt
@@ -926,23 +1026,34 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
-                mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
-                                           &blocks[9]);
-
-                /* Process TCP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[11]);
                 const struct tcp_header *tcp = (void *)&pkt[58];
                 if (!mfex_check_tcp_data_offset(tcp)) {
                     continue;
                 }
-                mfex_handle_tcp_flags(tcp, &blocks[10]);
+
+                uint32_t ipv6_hdr_off = BLK_VLAN_IPv6_HDR_OFFS;
+                uint32_t tcp_offs = BLK_VLAN_L4_TCP_OFFS;
+                uint32_t tcp_flag_offs = BLK_VLAN_IPv6_TCP_FLAG;
+                uint32_t vlan_pcp_offs = BLK_VLAN_PCP;
+                if (tunnel) {
+                    mf->map.bits[0] = MF_ETH_VLAN_TUNNEL;
+                    ipv6_hdr_off = BLK_TUN_VLAN_IPv6_HDR_OFFS;
+                    tcp_offs = BLK_TUN_VLAN_L4_TCP_OFFS;
+                    tcp_flag_offs = BLK_TUN_VLAN_IPv6_TCP_FLAG;
+                    vlan_pcp_offs = BLK_TUN_VLAN_PCP;
+                }
+                mfex_vlan_pcp(pkt[14], &keys[i].buf[vlan_pcp_offs]);
+                mfex_handle_tcp_flags(tcp, &blocks[tcp_flag_offs]);
+                /* Process IPv6 header for TC, flow Label and next
+                 * header. */
+                mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
+                                           &blocks[ipv6_hdr_off]);
+                /* Process TCP header. */
+                mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[tcp_offs]);
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
 
         case PROFILE_ETH_VLAN_IPV6_UDP: {
-                mfex_vlan_pcp(pkt[14], &keys[i].buf[4]);
-
                 /* Handle dynamic l2_pad_size. */
                 uint32_t size_from_ipv6 = size - VLAN_ETH_HEADER_LEN;
                 struct ovs_16aligned_ip6_hdr *nh = (void *)&pkt
@@ -952,12 +1063,22 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     continue;
                 }
 
-                /* Process IPv6 header for TC, flow Label and next header. */
+                uint32_t ipv6_hdr_off = BLK_VLAN_IPv6_HDR_OFFS;
+                uint32_t udp_offs = BLK_VLAN_L4_UDP_OFFS;
+                uint32_t vlan_pcp_offs = BLK_VLAN_PCP;
+                if (tunnel) {
+                    mf->map.bits[0] = MF_ETH_VLAN_TUNNEL;
+                    ipv6_hdr_off = BLK_TUN_VLAN_IPv6_HDR_OFFS;
+                    udp_offs = BLK_TUN_VLAN_L4_UDP_OFFS;
+                    vlan_pcp_offs = BLK_TUN_VLAN_PCP;
+                }
+                mfex_vlan_pcp(pkt[14], &keys[i].buf[vlan_pcp_offs]);
+                /* Process IPv6 header for TC, flow Label and next
+                 * header. */
                 mfex_handle_ipv6_hdr_block(&pkt[VLAN_ETH_HEADER_LEN],
-                                           &blocks[9]);
-
+                                           &blocks[ipv6_hdr_off]);
                 /* Process UDP header. */
-                mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[10]);
+                mfex_handle_ipv6_l4((void *)&pkt[58], &blocks[udp_offs]);
                 dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
             } break;
         default:
