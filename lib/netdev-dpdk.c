@@ -1859,7 +1859,10 @@ netdev_dpdk_process_devargs(struct netdev_dpdk *dev,
                     new_port_id = DPDK_ETH_PORT_ID_INVALID;
                 }
             }
-        }
+        } else {
+           dev->attached = true;
+           VLOG_INFO("Device '%s' has been attachde to DPDK", devargs);
+       }
     }
 
     if (new_port_id == DPDK_ETH_PORT_ID_INVALID) {
