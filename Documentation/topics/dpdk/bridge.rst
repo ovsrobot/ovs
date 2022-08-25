@@ -293,13 +293,15 @@ command also shows whether the CPU supports each implementation::
 An implementation can be selected manually by the following command::
 
     $ ovs-appctl dpif-netdev/miniflow-parser-set [-pmd core_id] name \
-      [study_cnt]
+      [study_cnt] [-recirc]
 
-The above command has two optional parameters: ``study_cnt`` and ``core_id``.
-The ``core_id`` sets a particular packet parsing function to a specific
-PMD thread on the core.  The third parameter ``study_cnt``, which is specific
-to ``study`` and ignored by other implementations, means how many packets
-are needed to choose the best implementation.
+The above command has three optional parameters: ``study_cnt``, ``core_id``
+and ``-recirc``. The ``core_id`` sets a particular packet parsing function
+to a specific PMD thread on the core.  The third parameter ``study_cnt``,
+which is specific to ``study`` and ignored by other implementations, means
+how many packets are needed to choose the best implementation. The fourth
+parameter ``-recirc`` acts like flag which indicates to MFEX to use optimized
+MFEX inner for processing tunneled inner packets.
 
 Also user can select the ``study`` implementation which studies the traffic for
 a specific number of packets by applying all available implementations of
@@ -322,6 +324,10 @@ following command::
 
     $ ovs-appctl dpif-netdev/miniflow-parser-set -pmd 3 scalar
 
+``study`` can be selected with packet count and explicit PMD selection along
+with the ``recirc`` by following command::
+
+    $ ovs-appctl dpif-netdev/miniflow-parser-set -pmd 3 study 1024 -recirc
 
 Actions Implementations (Experimental)
 --------------------------------------

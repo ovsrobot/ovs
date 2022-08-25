@@ -33,6 +33,8 @@ VLOG_DEFINE_THIS_MODULE(dpif_netdev_extract);
 
 /* Variable to hold the default MFEX implementation. */
 static ATOMIC(miniflow_extract_func) default_mfex_func;
+/* Variable to hold the default MFEX inner implementation. */
+static ATOMIC(miniflow_extract_func) default_mfex_inner_func;
 
 #if MFEX_IMPL_AVX512_CHECK
 static int32_t
@@ -231,16 +233,31 @@ dp_mfex_impl_get_default(void)
     return return_func;
 }
 
+miniflow_extract_func
+dp_mfex_inner_impl_get_default(void)
+{
+    miniflow_extract_func return_func;
+    atomic_uintptr_t *mfex_func = (void *)&default_mfex_inner_func;
+
+    atomic_read_relaxed(mfex_func, (uintptr_t *) &return_func);
+
+    return return_func;
+}
+
 int
-dp_mfex_impl_set_default_by_name(const char *name)
+dp_mfex_impl_set_default_by_name(const char *name, bool mfex_inner)
 {
     miniflow_extract_func new_default;
     atomic_uintptr_t *mfex_func = (void *)&default_mfex_func;
+    atomic_uintptr_t *mfex_inner_func = (void *)&default_mfex_inner_func;
 
     int err = dp_mfex_impl_get_by_name(name, &new_default);
 
     if (!err) {
         atomic_store_relaxed(mfex_func, (uintptr_t) new_default);
+        if (mfex_inner) {
+            atomic_store_relaxed(mfex_inner_func, (uintptr_t) new_default);
+        }
     }
 
     return err;
@@ -266,6 +283,10 @@ dp_mfex_impl_get(struct ds *reply, struct dp_netdev_pmd_thread **pmd_list,
             }
 
             if (pmd->miniflow_extract_opt == mfex_impls[i].extract_func) {
+                ds_put_format(reply, "%u,", pmd->core_id);
+            }
+            if (pmd->miniflow_extract_inner_opt ==
+                                            mfex_impls[i].extract_func) {
                 ds_put_format(reply, "%u,", pmd->core_id);
             }
         }
