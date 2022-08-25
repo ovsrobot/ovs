@@ -30,7 +30,9 @@ static atomic_uint32_t mfex_study_pkts_count = MFEX_MAX_PKT_COUNT;
 /* Struct to hold miniflow study stats. */
 struct study_stats {
     uint32_t pkt_count;
+    uint32_t pkt_inner_count;
     uint32_t impl_hitcount[MFEX_IMPL_MAX];
+    uint32_t impl_inner_hitcount[MFEX_IMPL_MAX];
 };
 
 /* Define per thread data to hold the study stats. */
@@ -67,6 +69,58 @@ mfex_set_study_pkt_cnt(uint32_t pkt_cmp_count, const char *name)
     return -EINVAL;
 }
 
+
+static inline void
+mfex_reset_stats(uint32_t *impls_hitcount, uint32_t *pkt_cnt) {
+    /* Reset stats so that study function can be called again
+     * for next traffic type and optimal function ptr can be
+     * chosen.
+     */
+    memset(impls_hitcount, 0, sizeof(uint32_t) * MFEX_IMPL_MAX);
+    *pkt_cnt = 0;
+}
+
+static inline void
+mfex_study_select_best_impls(struct dpif_miniflow_extract_impl *mfex_funcs,
+                             uint32_t pkt_cnt, uint32_t *impls_arr,
+                             atomic_uintptr_t *pmd_func, char *name)
+{
+
+    uint32_t best_func_index = MFEX_IMPL_START_IDX;
+    uint32_t max_hits = 0;
+
+    for (int i = MFEX_IMPL_START_IDX; i < MFEX_IMPL_MAX; i++) {
+        if (impls_arr[i] > max_hits) {
+            max_hits = impls_arr[i];
+            best_func_index = i;
+            }
+        }
+
+    /* If 50% of the packets hit, enable the function. */
+    if (max_hits >= (mfex_study_pkts_count / 2)) {
+        atomic_store_relaxed(pmd_func,
+                    (uintptr_t) mfex_funcs[best_func_index].extract_func);
+        VLOG_INFO("MFEX %s study chose impl %s: (hits %u/%u pkts)",
+                  name, mfex_funcs[best_func_index].name, max_hits,
+                  pkt_cnt);
+    } else {
+        /* Set the implementation to null for default miniflow. */
+        atomic_store_relaxed(pmd_func,
+                    (uintptr_t) mfex_funcs[MFEX_IMPL_SCALAR].extract_func);
+        VLOG_INFO("Not enough packets matched (%u/%u), disabling"
+                  " optimized MFEX.", max_hits, pkt_cnt);
+    }
+
+    /* In debug mode show stats for all the counters. */
+    if (VLOG_IS_DBG_ENABLED()) {
+        for (int i = MFEX_IMPL_START_IDX; i < MFEX_IMPL_MAX; i++) {
+                VLOG_DBG("MFEX study results for implementation %s:"
+                         " (hits %u/%u pkts)", mfex_funcs[i].name,
+                         impls_arr[i], pkt_cnt);
+        }
+    }
+}
+
 uint32_t
 mfex_study_traffic(struct dp_packet_batch *packets,
                    struct netdev_flow_key *keys,
@@ -76,10 +130,12 @@ mfex_study_traffic(struct dp_packet_batch *packets,
 {
     uint32_t hitmask = 0;
     uint32_t mask = 0;
+    uint32_t study_cnt_pkts;
     struct dp_netdev_pmd_thread *pmd = pmd_handle;
     struct dpif_miniflow_extract_impl *miniflow_funcs;
     struct study_stats *stats = mfex_study_get_study_stats_ptr();
     miniflow_funcs = dpif_mfex_impl_info_get();
+    atomic_read_relaxed(&mfex_study_pkts_count, &study_cnt_pkts);
 
     /* Run traffic optimized miniflow_extract to collect the hitmask
      * to be compared after certain packets have been hit to choose
@@ -93,7 +149,11 @@ mfex_study_traffic(struct dp_packet_batch *packets,
         hitmask = miniflow_funcs[i].extract_func(packets, keys, keys_size,
                                                  in_port, pmd_handle,
                                                  md_is_valid);
-        stats->impl_hitcount[i] += count_1bits(hitmask);
+        if (!md_is_valid) {
+            stats->impl_hitcount[i] += count_1bits(hitmask);
+        } else {
+            stats->impl_inner_hitcount[i] += count_1bits(hitmask);
+        }
 
         /* If traffic is not classified then we dont overwrite the keys
          * array in minfiflow implementations so its safe to create a
@@ -102,54 +162,34 @@ mfex_study_traffic(struct dp_packet_batch *packets,
         mask |= hitmask;
     }
 
-    stats->pkt_count += dp_packet_batch_size(packets);
-
     /* Choose the best implementation after a minimum packets have been
      * processed.
      */
-    uint32_t study_cnt_pkts;
-    atomic_read_relaxed(&mfex_study_pkts_count, &study_cnt_pkts);
+    if (!md_is_valid) {
+        stats->pkt_count += dp_packet_batch_size(packets);
 
-    if (stats->pkt_count >= study_cnt_pkts) {
-        uint32_t best_func_index = MFEX_IMPL_START_IDX;
-        uint32_t max_hits = 0;
-        for (int i = MFEX_IMPL_START_IDX; i < MFEX_IMPL_MAX; i++) {
-            if (stats->impl_hitcount[i] > max_hits) {
-                max_hits = stats->impl_hitcount[i];
-                best_func_index = i;
-            }
+        if (stats->pkt_count >= study_cnt_pkts) {
+            char name[] = "outer";
+            mfex_study_select_best_impls(miniflow_funcs, stats->pkt_count,
+                             stats->impl_hitcount,
+                             (void *)&pmd->miniflow_extract_opt,
+                             name);
+            mfex_reset_stats(stats->impl_hitcount, &stats->pkt_count);
         }
 
-        /* If 50% of the packets hit, enable the function. */
-        if (max_hits >= (mfex_study_pkts_count / 2)) {
-            atomic_store_relaxed(&pmd->miniflow_extract_opt,
-                                 miniflow_funcs[best_func_index].extract_func);
-            VLOG_INFO("MFEX study chose impl %s: (hits %u/%u pkts)",
-                      miniflow_funcs[best_func_index].name, max_hits,
-                      stats->pkt_count);
-        } else {
-            /* Set the implementation to null for default miniflow. */
-            atomic_store_relaxed(&pmd->miniflow_extract_opt,
-                    miniflow_funcs[MFEX_IMPL_SCALAR].extract_func);
-            VLOG_INFO("Not enough packets matched (%u/%u), disabling"
-                      " optimized MFEX.", max_hits, stats->pkt_count);
+    } else {
+        stats->pkt_inner_count += dp_packet_batch_size(packets);
+
+        if (stats->pkt_inner_count >= study_cnt_pkts) {
+            char name[] = "inner";
+            mfex_study_select_best_impls(miniflow_funcs,
+                             stats->pkt_inner_count,
+                             stats->impl_inner_hitcount,
+                             (void *)&pmd->miniflow_extract_inner_opt,
+                             name);
+            mfex_reset_stats(stats->impl_inner_hitcount,
+                             &stats->pkt_inner_count);
         }
-
-        /* In debug mode show stats for all the counters. */
-        if (VLOG_IS_DBG_ENABLED()) {
-
-            for (int i = MFEX_IMPL_START_IDX; i < MFEX_IMPL_MAX; i++) {
-                VLOG_DBG("MFEX study results for implementation %s:"
-                         " (hits %u/%u pkts)", miniflow_funcs[i].name,
-                         stats->impl_hitcount[i], stats->pkt_count);
-            }
-        }
-
-        /* Reset stats so that study function can be called again
-         * for next traffic type and optimal function ptr can be
-         * chosen.
-         */
-        memset(stats, 0, sizeof(struct study_stats));
     }
     return mask;
 }
