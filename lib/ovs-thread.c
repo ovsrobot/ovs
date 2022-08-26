@@ -632,22 +632,7 @@ ovs_thread_stats_next_bucket(const struct ovsthread_stats *stats, size_t i)
 int
 count_cpu_cores(void)
 {
-    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
-    static long int n_total_cores;
-    long int n_cores;
-
-    if (ovsthread_once_start(&once)) {
-#ifndef _WIN32
-        n_total_cores = sysconf(_SC_NPROCESSORS_ONLN);
-#else
-        SYSTEM_INFO sysinfo;
-        GetSystemInfo(&sysinfo);
-        n_total_cores = sysinfo.dwNumberOfProcessors;
-#endif
-        ovsthread_once_done(&once);
-    }
-
-    n_cores = n_total_cores;
+    long int n_cores = count_total_cores();
 #ifdef __linux__
     if (n_cores > 0) {
         cpu_set_t *set = CPU_ALLOC(n_cores);
@@ -670,14 +655,19 @@ count_cpu_cores(void)
 int
 count_total_cores(void)
 {
-    long int n_cores;
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    static long int n_cores;
 
+    if (ovsthread_once_start(&once)) {
 #ifndef _WIN32
-    n_cores = sysconf(_SC_NPROCESSORS_CONF);
+        n_cores = sysconf(_SC_NPROCESSORS_ONLN);
 #else
-    n_cores = 0;
-    errno = ENOTSUP;
+        SYSTEM_INFO sysinfo;
+        GetSystemInfo(&sysinfo);
+        n_cores = sysinfo.dwNumberOfProcessors;
 #endif
+        ovsthread_once_done(&once);
+    }
 
     return n_cores > 0 ? n_cores : 0;
 }
