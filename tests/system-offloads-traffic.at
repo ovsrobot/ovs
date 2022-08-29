@@ -324,11 +324,12 @@ AT_CHECK([ovs-appctl dpctl/dump-flows type=tc,offloaded], [0], [])
 AT_CHECK([test $(ovs-appctl upcall/show | grep -c "offloaded flows") -eq 0], [0], [ignore])
 
 OVS_TRAFFIC_VSWITCHD_STOP
+kill $(pidof tcpdump)
 
-AT_CHECK([cat p3.pcap | awk '{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
+AT_CHECK([cat p3.pcap | awk 'NF{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
 10 1032
 ])
-AT_CHECK([cat p4.pcap | awk '{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
+AT_CHECK([cat p4.pcap | awk 'NF{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
 10 72
 ])
 
@@ -382,10 +383,11 @@ in_port(3),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0
 AT_CHECK([ovs-appctl upcall/show | grep -E "offloaded flows : [[1-9]]"], [0], [ignore])
 
 sleep 1
-AT_CHECK([cat p3.pcap | awk '{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
+kill $(pidof tcpdump)
+AT_CHECK([cat p3.pcap | awk 'NF{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
 10 1032
 ])
-AT_CHECK([cat p4.pcap | awk '{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
+AT_CHECK([cat p4.pcap | awk 'NF{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
 10 72
 ])
 
@@ -519,10 +521,11 @@ in_port(3),eth(),eth_type(0x0800),ipv4(frag=no), packets:20, bytes:11720, used:0
 ])
 
 sleep 1
-AT_CHECK([cat p3_2.pcap | awk '{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
+kill $(pidof tcpdump)
+AT_CHECK([cat p3_2.pcap | awk 'NF{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
 10 1032
 ])
-AT_CHECK([cat p4_2.pcap | awk '{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
+AT_CHECK([cat p4_2.pcap | awk 'NF{print $NF}' | uniq -c | awk '{$1=$1;print}'], [0], [dnl
 10 72
 ])
 
