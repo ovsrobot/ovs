@@ -1551,6 +1551,7 @@ nl_parse_act_ct(struct nlattr *options, struct tc_flower *flower)
     struct tc_action *action;
     const struct tc_ct *ct;
     uint16_t ct_action = 0;
+    struct tcf_t tm;
 
     if (!nl_parse_nested(options, ct_policy, ct_attrs,
                          ARRAY_SIZE(ct_policy))) {
@@ -1636,6 +1637,11 @@ nl_parse_act_ct(struct nlattr *options, struct tc_flower *flower)
     }
     action->type = TC_ACT_CT;
 
+    if (ct_attrs[TCA_CT_TM]) {
+        memcpy(&tm, nl_attr_get_unspec(ct_attrs[TCA_CT_TM], sizeof tm),
+               sizeof tm);
+        nl_parse_tcf(&tm, flower);
+    }
     nl_parse_action_pc(ct->action, action);
     return 0;
 }
@@ -3115,7 +3121,11 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
             uint32_t action_pc; /* Programmatic Control */
 
             if (!action->jump_action) {
-                action_pc = TC_ACT_PIPE;
+                if (i == flower->action_count - 1) {
+                    action_pc = TC_ACT_SHOT;
+                } else {
+                    action_pc = TC_ACT_PIPE;
+                }
             } else if (action->jump_action == JUMP_ACTION_STOP) {
                 action_pc = TC_ACT_STOLEN;
             } else {
