@@ -59,9 +59,12 @@ packages and must be superuser.
 Red Hat
 -------
 
-RHEL distributes ``openvswitch`` rpm package that supports kernel datapath.
+RHEL 7 distributes ``openvswitch`` rpm package that supports kernel datapath.
 DPDK accelerated Open vSwitch can be installed using ``openvswitch-dpdk``
 package.
+
+Starting with RHEL 8, Open vSwitch packages are provided only via Red Hat
+Fast Datapath repositories, e.g. ``fast-datapath-for-rhel-8-x86_64-rpms``.
 
 OpenSuSE
 --------
