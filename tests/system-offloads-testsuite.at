@@ -54,6 +54,13 @@ m4_define([OVS_REVALIDATOR_PURGE],
 m4_define([DPCTL_DUMP_CONNTRACK], [sleep 3; ovs-appctl dpctl/dump-conntrack])
 
 
+# Conntrack ALGs are not supported for tc.
+m4_define([CHECK_CONNTRACK_ALG],
+[
+     AT_SKIP_IF([:])
+])
+
+
 # The list below are tests that will not pass for a "test environment" specific
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
@@ -72,27 +79,7 @@ conntrack - IPv6 Fragmentation over vxlan
 conntrack - zone-based timeout policy
 conntrack - multiple zones, local
 conntrack - multi-stage pipeline, local
-conntrack - FTP
-conntrack - FTP over IPv6
-conntrack - IPv6 FTP Passive
-conntrack - FTP with multiple expectations
-conntrack - TFTP
 conntrack - ICMP related with NAT
-conntrack - FTP SNAT prerecirc<SPC>
-conntrack - FTP SNAT prerecirc seqadj
-conntrack - FTP SNAT postrecirc<SPC>
-conntrack - FTP SNAT postrecirc seqadj
-conntrack - FTP SNAT orig tuple<SPC>
-conntrack - FTP SNAT orig tuple seqadj
-conntrack - IPv4 FTP Passive with SNAT
-conntrack - IPv4 FTP Passive with DNAT
-conntrack - IPv4 FTP Passive with DNAT 2
-conntrack - IPv4 FTP Active with DNAT
-conntrack - IPv4 FTP Active with DNAT with reverse skew
-conntrack - IPv6 FTP with SNAT
-conntrack - IPv6 FTP Passive with SNAT
-conntrack - IPv6 FTP with SNAT - orig tuple
-conntrack - IPv4 TFTP with SNAT
 conntrack - DNAT load balancing
 conntrack - DNAT load balancing with NC
 conntrack - Multiple ICMP traverse
