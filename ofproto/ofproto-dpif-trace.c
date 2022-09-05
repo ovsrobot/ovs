@@ -108,7 +108,7 @@ oftrace_add_recirc_node(struct ovs_list *recirc_queue,
     return true;
 }
 
-static void
+void
 oftrace_recirc_node_destroy(struct oftrace_recirc_node *node)
 {
     if (node) {

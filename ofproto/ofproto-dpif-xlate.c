@@ -5824,12 +5824,11 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
 }
 
 static void
-clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
-                    struct xlate_ctx *ctx, bool is_last_action,
-                    bool group_bucket_action OVS_UNUSED)
+do_clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
+                       struct xlate_ctx *ctx)
 {
     struct ofpbuf old_stack = ctx->stack;
-    union mf_subvalue new_stack[1024 / sizeof(union mf_subvalue)];
+    union mf_subvalue new_stack[1024 / sizeof (union mf_subvalue)];
     ofpbuf_use_stub(&ctx->stack, new_stack, sizeof new_stack);
     ofpbuf_put(&ctx->stack, old_stack.data, old_stack.size);
 
@@ -5840,18 +5839,6 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
 
     size_t offset, ac_offset;
     struct flow old_flow = ctx->xin->flow;
-
-    if (reversible_actions(actions, actions_len) || is_last_action) {
-        old_flow = ctx->xin->flow;
-        do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
-        if (!ctx->freezing) {
-            xlate_action_set(ctx);
-        }
-        if (ctx->freezing) {
-            finish_freezing(ctx);
-        }
-        goto xlate_done;
-    }
 
     /* Commit datapath actions before emitting the clone action to
      * avoid emitting those actions twice. Once inside
@@ -5875,10 +5862,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
             finish_freezing(ctx);
         }
         nl_msg_end_non_empty_nested(ctx->odp_actions, offset);
-        goto dp_clone_done;
-    }
-
-    if (ctx->xbridge->support.sample_nesting > 3) {
+    } else if (ctx->xbridge->support.sample_nesting > 3) {
         /* Use sample action as datapath clone. */
         offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_SAMPLE);
         ac_offset = nl_msg_start_nested(ctx->odp_actions,
@@ -5897,14 +5881,12 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
                            UINT32_MAX); /* 100% probability. */
             nl_msg_end_nested(ctx->odp_actions, offset);
         }
-        goto dp_clone_done;
+    } else {
+        /* Datapath does not support clone, skip xlate 'oc' and
+         * report an error */
+        xlate_report_error(ctx, "Failed to compose clone action");
     }
 
-    /* Datapath does not support clone, skip xlate 'oc' and
-     * report an error */
-    xlate_report_error(ctx, "Failed to compose clone action");
-
-dp_clone_done:
     /* The clone's conntrack execution should have no effect on the original
      * packet. */
     ctx->conntracked = old_conntracked;
@@ -5916,12 +5898,91 @@ dp_clone_done:
     /* Restore the 'base_flow' for the next action.  */
     ctx->base_flow = old_base;
 
-xlate_done:
     ofpbuf_uninit(&ctx->action_set);
     ctx->action_set = old_action_set;
     ofpbuf_uninit(&ctx->stack);
     ctx->stack = old_stack;
     ctx->xin->flow = old_flow;
+}
+
+static void
+clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
+                    struct xlate_ctx *ctx, bool is_last_action,
+                    bool group_bucket_action OVS_UNUSED)
+{
+    /* We will never clone on last action, just proceed. */
+    if (is_last_action) {
+        do_xlate_actions(actions, actions_len, ctx, true, false);
+        if (!ctx->freezing) {
+            xlate_action_set(ctx);
+        }
+        if (ctx->freezing) {
+            finish_freezing(ctx);
+        }
+        return;
+    }
+
+    /* We have to clone if any of the actions is irreversible. */
+    if (!reversible_actions(actions, actions_len)) {
+        do_clone_xlate_actions(actions, actions_len, ctx);
+        return;
+    }
+
+    /* In any other case we cannot be certain if there is any irreversible
+     * action down the action stack. Let's run the actions as if they are
+     * reversible, if we find out that there was any irreversible action we
+     * can restore the xlate_ctx and run the do_clone instead. */
+    uint32_t old_stack_size = ctx->stack.size;
+    uint32_t old_action_set_size = ctx->action_set.size;
+    uint32_t old_odp_actions_size = ctx->odp_actions->size;
+
+    struct flow old_flow = ctx->xin->flow;
+    bool old_was_mpls = ctx->was_mpls;
+    bool old_conntracked = ctx->conntracked;
+    struct flow old_base = ctx->base_flow;
+    size_t old_recirc_size = ctx->xin->recirc_queue
+                             ? ovs_list_size(ctx->xin->recirc_queue)
+                             : 0;
+
+    do_xlate_actions(actions, actions_len, ctx, false, false);
+
+    /* Restore ctx parts that are common even if don't need to clone. */
+    nl_msg_reset_size(&ctx->action_set, old_action_set_size);
+    nl_msg_reset_size(&ctx->stack, old_stack_size);
+    ctx->xin->flow = old_flow;
+
+    void *added_actions =
+        ofpbuf_at_assert(ctx->odp_actions, old_odp_actions_size, 0);
+    uint32_t added_size = ctx->odp_actions->size - old_odp_actions_size;
+
+    if (!odp_contains_irreversible_action(added_actions, added_size)) {
+        if (!ctx->freezing) {
+            xlate_action_set(ctx);
+        }
+        if (ctx->freezing) {
+            finish_freezing(ctx);
+        }
+    } else {
+        nl_msg_reset_size(ctx->odp_actions, old_odp_actions_size);
+        ctx->was_mpls = old_was_mpls;
+        ctx->conntracked = old_conntracked;
+        ctx->base_flow = old_base;
+        /* Clear recirculations that were added by non-clone path so that
+         * packets are not recirculated twice. */
+        size_t recirc_size = ctx->xin->recirc_queue
+                             ? ovs_list_size(ctx->xin->recirc_queue)
+                             : 0;
+
+        for (; old_recirc_size < recirc_size; old_recirc_size++) {
+            struct oftrace_recirc_node *node =
+                CONTAINER_OF(ovs_list_pop_back(ctx->xin->recirc_queue),
+                             struct oftrace_recirc_node, node);
+
+            oftrace_recirc_node_destroy(node);
+        }
+
+        do_clone_xlate_actions(actions, actions_len, ctx);
+    }
 }
 
 static void
