@@ -88,7 +88,6 @@ conntrack - multi-stage pipeline, local
 conntrack - ICMP related with NAT
 conntrack - DNAT load balancing
 conntrack - DNAT load balancing with NC
-conntrack - can match and clear ct_state from outside OVS
 IGMP - flood under normal action"
 echo "$ovs_test_skip_list" | sed "s/<SPC>/ /g"])
 
