@@ -1352,7 +1352,13 @@ get_user_hz(void)
 static void
 nl_parse_tcf(const struct tcf_t *tm, struct tc_flower *flower)
 {
-    uint64_t lastused = time_msec() - (tm->lastuse * 1000 / get_user_hz());
+    uint64_t lastused;
+
+    if (tm->firstuse == 0) {
+        lastused = 0;
+    } else {
+        lastused = time_msec() - (tm->lastuse * 1000 / get_user_hz());
+    }
 
     if (flower->lastused < lastused) {
         flower->lastused = lastused;

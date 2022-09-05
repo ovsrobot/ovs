@@ -6966,6 +6966,8 @@ f0 00 00 01 01 01 08 00 46 c0 00 28 00 00 40 00 01 02 d3 49 45 65 eb 4a e0 dnl
 00 00 16 94 04 00 00 22 00 f9 02 00 00 00 01 04 00 00 00 e0 00 00 fb 00 00 dnl
 00 00 00 00 > /dev/null])
 
+sleep 1
+
 AT_CHECK([ovs-appctl dpctl/dump-flows --names | grep -e .*ipv4 | sort | dnl
           strip_stats | strip_used | strip_recirc | dnl
           sed 's/,packet_type(ns=[[0-9]]*,id=[[0-9]]*),/,/'],
