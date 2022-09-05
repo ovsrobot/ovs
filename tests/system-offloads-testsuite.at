@@ -97,7 +97,6 @@ conntrack - IPv6 FTP with SNAT - orig tuple
 conntrack - IPv4 TFTP with SNAT
 conntrack - DNAT load balancing
 conntrack - DNAT load balancing with NC
-conntrack - floating IP
 conntrack - Multiple ICMP traverse
 conntrack - can match and clear ct_state from outside OVS
 IGMP - flood under normal action"
