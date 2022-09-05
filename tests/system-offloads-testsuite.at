@@ -55,7 +55,6 @@ m4_define([OVS_TEST_SKIP_LIST],
     [ovs_test_skip_list="
 datapath - truncate and output to gre tunnel by simulated packets
 datapath - truncate and output to gre tunnel
-conntrack - force commit
 conntrack - preserve registers
 conntrack - zones
 conntrack - zones from field
