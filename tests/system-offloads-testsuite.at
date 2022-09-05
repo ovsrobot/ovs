@@ -61,6 +61,13 @@ m4_define([CHECK_CONNTRACK_ALG],
 ])
 
 
+# Conntrack timeout not supported for tc.
+m4_define([CHECK_CONNTRACK_TIMEOUT],
+[
+     AT_SKIP_IF([:])
+])
+
+
 # The list below are tests that will not pass for a "test environment" specific
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
@@ -76,7 +83,6 @@ conntrack - IPv4 fragmentation with fragments specified
 conntrack - IPv6 fragmentation + cvlan
 conntrack - Fragmentation over vxlan
 conntrack - IPv6 Fragmentation over vxlan
-conntrack - zone-based timeout policy
 conntrack - multiple zones, local
 conntrack - multi-stage pipeline, local
 conntrack - ICMP related with NAT
