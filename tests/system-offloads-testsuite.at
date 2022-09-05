@@ -72,8 +72,6 @@ m4_define([CHECK_CONNTRACK_TIMEOUT],
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
     [ovs_test_skip_list="
-datapath - truncate and output to gre tunnel by simulated packets
-datapath - truncate and output to gre tunnel
 conntrack - multiple namespaces, internal ports
 conntrack - ct metadata, multiple zones
 conntrack - ICMP related
