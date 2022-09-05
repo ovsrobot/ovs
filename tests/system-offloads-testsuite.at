@@ -23,3 +23,96 @@ m4_include([tests/system-common-macros.at])
 m4_include([tests/system-kmod-macros.at])
 
 m4_include([tests/system-offloads-traffic.at])
+
+# The goal is to run as many as possible of the system-traffic tests with
+# OVS tc offload enabled. We do this by overriding the
+# OVS_TRAFFIC_VSWITCHD_START() with offloading enabled.
+m4_define([OVS_TRAFFIC_VSWITCHD_START],
+  [AT_CHECK([modprobe openvswitch])
+   on_exit 'modprobe -r openvswitch'
+   m4_foreach([mod], [[vport_geneve], [vport_gre], [vport_lisp], [vport_stt], [vport_vxlan]],
+              [modprobe -q mod || echo "Module mod not loaded."
+               on_exit 'modprobe -q -r mod'
+              ])
+   on_exit 'ovs-dpctl del-dp ovs-system'
+   on_exit 'ovs-appctl dpctl/flush-conntrack'
+   _OVS_VSWITCHD_START([], [-- set Open_vSwitch . other_config:hw-offload=true
+   $3])
+   dnl Add bridges, ports, etc.
+   AT_CHECK([ovs-vsctl -- _ADD_BR([br0]) -- $1 m4_if([$2], [], [], [| uuidfilt])], [0], [$2])
+])
+
+# The list below are tests that will not pass for a "test environment" specific
+# issue.
+m4_define([OVS_TEST_SKIP_LIST],
+    [ovs_test_skip_list="
+datapath - mpls actions
+datapath - multiple mpls label pop
+datapath - basic truncate action
+datapath - truncate and output to gre tunnel by simulated packets
+datapath - truncate and output to gre tunnel
+conntrack - force commit
+conntrack - preserve registers
+conntrack - zones
+conntrack - zones from field
+conntrack - zones from other field
+conntrack - zones from other field, more tests
+conntrack - multiple zones
+conntrack - multiple namespaces, internal ports
+conntrack - ct_mark
+conntrack - ct_mark bit-fiddling
+conntrack - ct_mark from register
+conntrack - ct_label
+conntrack - ct_label bit-fiddling
+conntrack - ct metadata, multiple zones
+conntrack - ICMP related
+conntrack - ICMP related to original direction
+conntrack - IPv4 fragmentation + cvlan
+conntrack - IPv4 fragmentation with fragments specified
+conntrack - IPv6 fragmentation + cvlan
+conntrack - Fragmentation over vxlan
+conntrack - IPv6 Fragmentation over vxlan
+conntrack - zone-based timeout policy
+conntrack - IPv4 HTTP
+conntrack - IPv6 HTTP
+conntrack - multiple zones, local
+conntrack - multi-stage pipeline, local
+conntrack - FTP
+conntrack - FTP over IPv6
+conntrack - IPv6 FTP Passive
+conntrack - FTP with multiple expectations
+conntrack - TFTP
+conntrack - simple SNAT
+conntrack - SNAT with port range
+conntrack - SNAT with port range with exhaustion
+conntrack - more complex SNAT
+conntrack - all-zero IP SNAT
+conntrack - simple DNAT
+conntrack - DNAT with additional SNAT
+conntrack - more complex DNAT
+conntrack - ICMP related with NAT
+conntrack - FTP SNAT prerecirc<SPC>
+conntrack - FTP SNAT prerecirc seqadj
+conntrack - FTP SNAT postrecirc<SPC>
+conntrack - FTP SNAT postrecirc seqadj
+conntrack - FTP SNAT orig tuple<SPC>
+conntrack - FTP SNAT orig tuple seqadj
+conntrack - IPv4 FTP Passive with SNAT
+conntrack - IPv4 FTP Passive with DNAT
+conntrack - IPv4 FTP Passive with DNAT 2
+conntrack - IPv4 FTP Active with DNAT
+conntrack - IPv4 FTP Active with DNAT with reverse skew
+conntrack - IPv6 HTTP with DNAT
+conntrack - IPv6 FTP with SNAT
+conntrack - IPv6 FTP Passive with SNAT
+conntrack - IPv6 FTP with SNAT - orig tuple
+conntrack - IPv4 TFTP with SNAT
+conntrack - DNAT load balancing
+conntrack - DNAT load balancing with NC
+conntrack - floating IP
+conntrack - Multiple ICMP traverse
+conntrack - can match and clear ct_state from outside OVS
+IGMP - flood under normal action"
+echo "$ovs_test_skip_list" | sed "s/<SPC>/ /g"])
+
+m4_include([tests/system-traffic.at])
