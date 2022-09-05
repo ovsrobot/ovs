@@ -46,8 +46,6 @@ m4_define([OVS_TRAFFIC_VSWITCHD_START],
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
     [ovs_test_skip_list="
-datapath - mpls actions
-datapath - multiple mpls label pop
 datapath - basic truncate action
 datapath - truncate and output to gre tunnel by simulated packets
 datapath - truncate and output to gre tunnel
