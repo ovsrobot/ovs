@@ -42,11 +42,17 @@ m4_define([OVS_TRAFFIC_VSWITCHD_START],
    AT_CHECK([ovs-vsctl -- _ADD_BR([br0]) -- $1 m4_if([$2], [], [], [| uuidfilt])], [0], [$2])
 ])
 
+
+# We override the OVS_REVALIDATOR_PURGE macro, allowing a bit more time for the
+# tc-datapath entries to be installed.
+m4_define([OVS_REVALIDATOR_PURGE],
+    [AT_CHECK([sleep 2; ovs-appctl revalidator/purge], [0])])
+
+
 # The list below are tests that will not pass for a "test environment" specific
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
     [ovs_test_skip_list="
-datapath - basic truncate action
 datapath - truncate and output to gre tunnel by simulated packets
 datapath - truncate and output to gre tunnel
 conntrack - force commit
