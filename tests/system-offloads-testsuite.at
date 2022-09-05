@@ -72,20 +72,51 @@ m4_define([CHECK_CONNTRACK_TIMEOUT],
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
     [ovs_test_skip_list="
+# TC does not support moving ports to a different namespace than vswitchd's
+# namespace, so we need to disable this test.
 conntrack - multiple namespaces, internal ports
+
+# When moving through different zones, it can take up to ~8 seconds before
+# the conntrack state gets updated causing these tests to fail.
 conntrack - ct metadata, multiple zones
-conntrack - ICMP related
-conntrack - ICMP related to original direction
-conntrack - IPv4 fragmentation + cvlan
-conntrack - IPv4 fragmentation with fragments specified
-conntrack - IPv6 fragmentation + cvlan
-conntrack - Fragmentation over vxlan
-conntrack - IPv6 Fragmentation over vxlan
 conntrack - multiple zones, local
 conntrack - multi-stage pipeline, local
+
+# The kernel's tcf_ct_act() function does not seem to take care of any (QinQ)
+# VLAN headers causing commits to fail. However, if this is solved, we have to
+# make sure conntrack does not break the VLAN boundary, i.e., putting together
+# two packets with different CVLAN+SVLAN values.
+conntrack - IPv4 fragmentation + cvlan
+conntrack - IPv6 fragmentation + cvlan
+
+# Fragmentation handling in ct zone 9 does not seem to work correctly.
+# When moving this test over to the default zone all works fine.
+conntrack - Fragmentation over vxlan
+conntrack - IPv6 Fragmentation over vxlan
+
+# Occasionaly we fail on the 'execute ct(commit) failed (Invalid argument) on
+# packet...' log message being present
+conntrack - zones from other field
+conntrack - zones from other field, more tests
+conntrack - multiple namespaces, internal ports
+conntrack - IPv4 fragmentation with fragments specified
+
+# Occasionaly we fail on the 'failed to flow_get/flow_del (No such file or directory)
+# ufid:..' log message being present.
+datapath - multiple mpls label pop
+datapath - basic truncate action
+conntrack - ICMP related
+conntrack - ICMP related to original direction
 conntrack - ICMP related with NAT
 conntrack - DNAT load balancing
-conntrack - DNAT load balancing with NC"
+conntrack - DNAT load balancing with NC
+802.1ad - vlan_limit
+
+# Occasionalt we fail with extreme high byte counters, i.e.
+# n_bytes=18446744073705804134
+datapath - truncate and output to gre tunnel by simulated packets
+datapath - truncate and output to gre tunnel
+"
 echo "$ovs_test_skip_list" | sed "s/<SPC>/ /g"])
 
 m4_include([tests/system-traffic.at])
