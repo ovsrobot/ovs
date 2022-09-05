@@ -49,24 +49,20 @@ m4_define([OVS_REVALIDATOR_PURGE],
     [AT_CHECK([sleep 2; ovs-appctl revalidator/purge], [0])])
 
 
+# We override the DPCTL_DUMP_CONNTRACK macro, allowing a bit more time for the
+# tc-datapath conntrack entries to be installed/updated.
+m4_define([DPCTL_DUMP_CONNTRACK], [sleep 3; ovs-appctl dpctl/dump-conntrack])
+
+
 # The list below are tests that will not pass for a "test environment" specific
 # issue.
 m4_define([OVS_TEST_SKIP_LIST],
     [ovs_test_skip_list="
 datapath - truncate and output to gre tunnel by simulated packets
 datapath - truncate and output to gre tunnel
-conntrack - preserve registers
-conntrack - zones
-conntrack - zones from field
 conntrack - zones from other field
 conntrack - zones from other field, more tests
-conntrack - multiple zones
 conntrack - multiple namespaces, internal ports
-conntrack - ct_mark
-conntrack - ct_mark bit-fiddling
-conntrack - ct_mark from register
-conntrack - ct_label
-conntrack - ct_label bit-fiddling
 conntrack - ct metadata, multiple zones
 conntrack - ICMP related
 conntrack - ICMP related to original direction
@@ -76,8 +72,6 @@ conntrack - IPv6 fragmentation + cvlan
 conntrack - Fragmentation over vxlan
 conntrack - IPv6 Fragmentation over vxlan
 conntrack - zone-based timeout policy
-conntrack - IPv4 HTTP
-conntrack - IPv6 HTTP
 conntrack - multiple zones, local
 conntrack - multi-stage pipeline, local
 conntrack - FTP
@@ -85,14 +79,6 @@ conntrack - FTP over IPv6
 conntrack - IPv6 FTP Passive
 conntrack - FTP with multiple expectations
 conntrack - TFTP
-conntrack - simple SNAT
-conntrack - SNAT with port range
-conntrack - SNAT with port range with exhaustion
-conntrack - more complex SNAT
-conntrack - all-zero IP SNAT
-conntrack - simple DNAT
-conntrack - DNAT with additional SNAT
-conntrack - more complex DNAT
 conntrack - ICMP related with NAT
 conntrack - FTP SNAT prerecirc<SPC>
 conntrack - FTP SNAT prerecirc seqadj
@@ -105,7 +91,6 @@ conntrack - IPv4 FTP Passive with DNAT
 conntrack - IPv4 FTP Passive with DNAT 2
 conntrack - IPv4 FTP Active with DNAT
 conntrack - IPv4 FTP Active with DNAT with reverse skew
-conntrack - IPv6 HTTP with DNAT
 conntrack - IPv6 FTP with SNAT
 conntrack - IPv6 FTP Passive with SNAT
 conntrack - IPv6 FTP with SNAT - orig tuple
