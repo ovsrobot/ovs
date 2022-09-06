@@ -1,6 +1,7 @@
 Post-v3.0.0
 --------------------
-
+   - OVSDB-IDL:
+     * Add the support to specify the uuid for row insert.
 
 v3.0.0 - 15 Aug 2022
 --------------------

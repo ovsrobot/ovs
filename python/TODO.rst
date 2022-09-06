@@ -32,3 +32,5 @@ Python Bindings To-do List
 
   * Support write-only-changed monitor mode (equivalent of
     OVSDB_IDL_WRITE_CHANGED_ONLY).
+
+  * Support accepting the uuid for row inserts.
