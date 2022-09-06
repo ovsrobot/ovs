@@ -2127,8 +2127,10 @@ iface_create(struct bridge *br, const struct ovsrec_interface *iface_cfg,
     iface->netdev = netdev;
     iface->type = iface_get_type(iface_cfg, br->cfg);
     iface->cfg = iface_cfg;
-    hmap_insert(&br->ifaces, &iface->ofp_port_node,
-                hash_ofp_port(ofp_port));
+    if (iface->ofp_port != OFPP_NONE) {
+        hmap_insert(&br->ifaces, &iface->ofp_port_node,
+                    hash_ofp_port(ofp_port));
+    }
 
     /* Populate initial status in database. */
     iface_refresh_stats(iface);
