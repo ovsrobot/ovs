@@ -8768,3 +8768,151 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
 
     return slow1 ? slow1 : slow2;
 }
+
+static inline bool
+nlattr_action_is_reversible(const uint16_t type)
+{
+    switch ((enum ovs_action_attr) type) {
+        case OVS_ACTION_ATTR_CT:
+        case OVS_ACTION_ATTR_CT_CLEAR:
+        case OVS_ACTION_ATTR_TRUNC:
+        case OVS_ACTION_ATTR_PUSH_ETH:
+        case OVS_ACTION_ATTR_POP_ETH:
+        case OVS_ACTION_ATTR_PUSH_NSH:
+        case OVS_ACTION_ATTR_POP_NSH:
+        case OVS_ACTION_ATTR_METER:
+        case OVS_ACTION_ATTR_TUNNEL_PUSH:
+        case OVS_ACTION_ATTR_TUNNEL_POP:
+            return false;
+
+        case OVS_ACTION_ATTR_UNSPEC:
+        case OVS_ACTION_ATTR_OUTPUT:
+        case OVS_ACTION_ATTR_USERSPACE:
+        case OVS_ACTION_ATTR_SET:
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+        case OVS_ACTION_ATTR_POP_VLAN:
+        case OVS_ACTION_ATTR_SAMPLE:
+        case OVS_ACTION_ATTR_RECIRC:
+        case OVS_ACTION_ATTR_HASH:
+        case OVS_ACTION_ATTR_SET_MASKED:
+        case OVS_ACTION_ATTR_CLONE:
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+        case OVS_ACTION_ATTR_LB_OUTPUT:
+        case OVS_ACTION_ATTR_ADD_MPLS:
+        case OVS_ACTION_ATTR_PUSH_MPLS:
+        case OVS_ACTION_ATTR_POP_MPLS:
+        case OVS_ACTION_ATTR_DROP:
+        case __OVS_ACTION_ATTR_MAX:
+            return true;
+    }
+    return false;
+}
+
+static bool
+odp_cpl_contains_irreversible_actions(const struct nlattr *attr)
+{
+    static const struct nl_policy ovs_cpl_policy[] = {
+        [OVS_CHECK_PKT_LEN_ATTR_PKT_LEN] = {.type = NL_A_U16},
+        [OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER] = {.type = NL_A_NESTED},
+        [OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_LESS_EQUAL] = {.type = NL_A_NESTED},
+    };
+    struct nlattr *a[ARRAY_SIZE(ovs_cpl_policy)];
+
+    if (!nl_parse_nested(attr, ovs_cpl_policy, a, ARRAY_SIZE(a))) {
+        return false;
+    }
+
+    const struct nlattr *greater =
+        a[OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER];
+    const struct nlattr *less =
+        a[OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_LESS_EQUAL];
+    const void *greater_data = nl_attr_get(greater);
+    const void *less_data = nl_attr_get(less);
+    size_t greater_len = nl_attr_get_size(greater);
+    size_t less_len = nl_attr_get_size(less);
+
+    return odp_contains_irreversible_action(greater_data, greater_len) ||
+           odp_contains_irreversible_action(less_data, less_len);
+}
+
+static bool
+odp_sample_contains_irreversible_actions(const struct nlattr *attr)
+{
+    static const struct nl_policy ovs_sample_policy[] = {
+        [OVS_SAMPLE_ATTR_PROBABILITY] = {.type = NL_A_U32},
+        [OVS_SAMPLE_ATTR_ACTIONS] = {.type = NL_A_NESTED}
+    };
+    struct nlattr *a[ARRAY_SIZE(ovs_sample_policy)];
+
+    if (!nl_parse_nested(attr, ovs_sample_policy, a, ARRAY_SIZE(a))) {
+        return false;
+    }
+
+    const struct nlattr *actions = a[OVS_SAMPLE_ATTR_ACTIONS];
+    const void *actions_data = nl_attr_get(actions);
+    size_t actions_len = nl_attr_get_size(actions);
+
+    return odp_contains_irreversible_action(actions_data, actions_len);
+}
+
+/* Check if any of the actions in the ofpbuf is irreversible. */
+bool
+odp_contains_irreversible_action(const void *attrs, size_t attrs_len)
+{
+    const struct nlattr *attr;
+    int left;
+
+    NL_ATTR_FOR_EACH (attr, left, attrs, attrs_len) {
+        uint16_t type = attr->nla_type;
+
+        switch ((enum ovs_action_attr) type) {
+            /* Skip "clone" because it already encapsulates irreversible *
+             * actions. */
+            case OVS_ACTION_ATTR_CLONE:
+                continue;
+            /* Check nested actions of "check_packet_len". */
+            case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+                if (odp_cpl_contains_irreversible_actions(attr)) {
+                    return true;
+                }
+                break;
+            /* Check nested actions of "sample". */
+            case OVS_ACTION_ATTR_SAMPLE:
+                if (odp_sample_contains_irreversible_actions(attr)) {
+                    return true;
+                }
+                break;
+            /* Check any other action. */
+            case OVS_ACTION_ATTR_CT:
+            case OVS_ACTION_ATTR_CT_CLEAR:
+            case OVS_ACTION_ATTR_TRUNC:
+            case OVS_ACTION_ATTR_PUSH_ETH:
+            case OVS_ACTION_ATTR_POP_ETH:
+            case OVS_ACTION_ATTR_PUSH_NSH:
+            case OVS_ACTION_ATTR_POP_NSH:
+            case OVS_ACTION_ATTR_METER:
+            case OVS_ACTION_ATTR_TUNNEL_PUSH:
+            case OVS_ACTION_ATTR_TUNNEL_POP:
+            case OVS_ACTION_ATTR_UNSPEC:
+            case OVS_ACTION_ATTR_OUTPUT:
+            case OVS_ACTION_ATTR_USERSPACE:
+            case OVS_ACTION_ATTR_SET:
+            case OVS_ACTION_ATTR_PUSH_VLAN:
+            case OVS_ACTION_ATTR_POP_VLAN:
+            case OVS_ACTION_ATTR_RECIRC:
+            case OVS_ACTION_ATTR_HASH:
+            case OVS_ACTION_ATTR_SET_MASKED:
+            case OVS_ACTION_ATTR_LB_OUTPUT:
+            case OVS_ACTION_ATTR_ADD_MPLS:
+            case OVS_ACTION_ATTR_PUSH_MPLS:
+            case OVS_ACTION_ATTR_POP_MPLS:
+            case OVS_ACTION_ATTR_DROP:
+                if (!nlattr_action_is_reversible(type)) {
+                    return true;
+                }
+            case __OVS_ACTION_ATTR_MAX:
+                continue;
+        }
+    }
+    return false;
+}
