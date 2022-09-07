@@ -1635,12 +1635,11 @@ The following options are available only with ``commit``:
     Related connections inherit ``ct_mark`` from that stored with the original
     connection (i.e. the connection created by ``ct(alg=...)``.
 
-With the Linux datapath, global sysctl options affect ``ct`` behavior.  In
-particular, if ``net.netfilter.nf_conntrack_helper`` is enabled, which it is
-by default until Linux 4.7, then application layer gateway helpers may be
-executed even if *alg* is not specified.  For security reasons, the netfilter
-team recommends users disable this option.  For further details, please see
-http://www.netfilter.org/news.html#2012-04-03 .
+With the Linux datapath, global sysctl options affect ``ct`` behavior.  Prior
+to Linux kernel 6.0, the ``net.netfilter.nf_conntrack_helper`` sysctl option
+could be used to force helper assignment, even if the ``alg=`` option was not
+added to a flow.  This setting has been removed in newer versions of the
+kernel.
 
 The ``ct`` action may be used as a primitive to construct stateful firewalls by
 selectively committing some traffic, then matching ``ct_state`` to allow
