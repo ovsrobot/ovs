@@ -1,5 +1,8 @@
 Post-v3.0.0
 --------------------
+- DPDK:
+     * OVS validated with DPDK 21.11.2. It is recommended to use this version
+       until further releases.
 
 
 v3.0.0 - 15 Aug 2022
