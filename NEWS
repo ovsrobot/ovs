@@ -5,6 +5,9 @@ v2.17.3 - xx xxx xxxx
        configuration in a clustered databse independently for each server.
        E.g. for listening on unique addresses.  See the ovsdb.local-config.5
        manpage for schema details.
+   - DPDK:
+     * OVS validated with DPDK 21.11.2.  It is recommended to use this version
+       until further releases.
 
 v2.17.2 - 15 Jun 2022
 ---------------------
