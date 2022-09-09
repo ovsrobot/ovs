@@ -465,6 +465,15 @@ struct netdev_dpdk {
         /* True if vHost device is 'up' and has been reconfigured at least once */
         bool vhost_reconfigured;
 
+        /* Set on driver start (which means after a vHost connection is
+         * accepted), and cleared when the vHost device gets configured. */
+        bool vhost_initial_config;
+
+        /* Set on disconnection if an initial configuration did not finish.
+         * This triggers a workaround for Virtio features negotiation, that
+         * makes TSO unavailable. */
+        bool vhost_workaround_disable_tso;
+
         atomic_uint8_t vhost_tx_retries_max;
         /* 2 pad bytes here. */
     );
@@ -1293,6 +1302,7 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->requested_lsc_interrupt_mode = 0;
     ovsrcu_index_init(&dev->vid, -1);
     dev->vhost_reconfigured = false;
+    dev->vhost_initial_config = false;
     dev->attached = false;
     dev->started = false;
     dev->reset_needed = false;
@@ -3986,6 +3996,7 @@ new_device(int vid)
             } else {
                 /* Reconfiguration not required. */
                 dev->vhost_reconfigured = true;
+                dev->vhost_initial_config = false;
             }
 
             ovsrcu_index_set(&dev->vid, vid);
@@ -4154,6 +4165,16 @@ destroy_connection(int vid)
                 dev->requested_n_txq = qp_num;
                 netdev_request_reconfigure(&dev->up);
             }
+
+            if (dev->vhost_initial_config) {
+                VLOG_ERR("Connection on socket '%s' seems prematurately "
+                         "closed.", dev->vhost_id);
+                dev->vhost_workaround_disable_tso = true;
+                netdev_request_reconfigure(&dev->up);
+            } else {
+                dev->vhost_workaround_disable_tso = false;
+            }
+
             ovs_mutex_unlock(&dev->mutex);
             exists = true;
             break;
@@ -5058,6 +5079,7 @@ dpdk_vhost_reconfigure_helper(struct netdev_dpdk *dev)
 
         if (dev->vhost_reconfigured == false) {
             dev->vhost_reconfigured = true;
+            dev->vhost_initial_config = false;
             /* Carrier status may need updating. */
             netdev_change_seq_changed(&dev->up);
         }
@@ -5086,6 +5108,31 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
     int err;
     uint64_t vhost_flags = 0;
     uint64_t vhost_unsup_flags;
+    bool tso_enabled = userspace_tso_enabled();
+
+    if (tso_enabled) {
+        bool unregister;
+        char *vhost_id;
+
+        ovs_mutex_lock(&dev->mutex);
+        unregister = dev->vhost_id != NULL;
+        unregister &= dev->vhost_workaround_disable_tso;
+        if (unregister) {
+            /* There was an issue with a previous connection that did not
+             * finish initialising, one common reason is virtio features
+             * negotiation. Disable TSO as a workaround. */
+            tso_enabled = false;
+            dev->vhost_driver_flags &= ~RTE_VHOST_USER_CLIENT;
+            vhost_id = dev->vhost_id;
+            VLOG_WARN("Disabling TSO for %s as a workaround because of "
+                      "previous connection drop.", dev->up.name);
+        }
+        ovs_mutex_unlock(&dev->mutex);
+
+        if (unregister) {
+            dpdk_vhost_driver_unregister(dev, vhost_id);
+        }
+    }
 
     ovs_mutex_lock(&dev->mutex);
 
@@ -5112,7 +5159,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
         }
 
         /* Enable External Buffers if TCP Segmentation Offload is enabled. */
-        if (userspace_tso_enabled()) {
+        if (tso_enabled) {
             vhost_flags |= RTE_VHOST_USER_EXTBUF_SUPPORT;
         }
 
@@ -5137,7 +5184,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
             goto unlock;
         }
 
-        if (userspace_tso_enabled()) {
+        if (tso_enabled) {
             netdev->ol_flags |= NETDEV_TX_OFFLOAD_TCP_TSO;
             netdev->ol_flags |= NETDEV_TX_OFFLOAD_TCP_CKSUM;
             netdev->ol_flags |= NETDEV_TX_OFFLOAD_UDP_CKSUM;
@@ -5160,6 +5207,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
             goto unlock;
         }
 
+        dev->vhost_initial_config = true;
         err = rte_vhost_driver_start(dev->vhost_id);
         if (err) {
             VLOG_ERR("rte_vhost_driver_start failed for vhost user "
