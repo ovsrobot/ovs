@@ -68,7 +68,7 @@ as follows.
 connection is established, `TSO` is thus advertised to the guest as an
 available feature:
 
-QEMU Command Line Parameter::
+1. QEMU Command Line Parameter::
 
     $ sudo $QEMU_DIR/x86_64-softmmu/qemu-system-x86_64 \
     ...
@@ -82,6 +82,17 @@ used to enable same::
     $ ethtool -K eth0 sg on     # scatter-gather is a prerequisite for TSO
     $ ethtool -K eth0 tso on
     $ ethtool -k eth0
+
+**Note:** Enabling this feature impacts the virtio features exposed by the DPDK
+vHost User backend to a guest. If a guest was already connected to OvS before
+enabling TSO and restarting OvS, this guest ports won't have TSO available::
+
+  netdev_dpdk|WARN|Disabling TSO for vhost0.
+
+To restore TSO for this guest ports, this guest QEMU process must be stopped,
+then started again. OvS will then report::
+
+  netdev_dpdk|WARN|Re-enabling TSO for vhost0.
 
 ~~~~~~~~~~~
 Limitations
