@@ -20,10 +20,12 @@
 #include <config.h>
 #undef NDEBUG
 #include "openvswitch/list.h"
+#include "openvswitch/util.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include "ovstest.h"
+#include "util.h"
 
 /* Sample list element. */
 struct element {
@@ -106,6 +108,8 @@ test_list_construction(void)
         int values[MAX_ELEMS];
         struct ovs_list list;
 
+        memset(elements, 0, ARRAY_SIZE(elements) * sizeof elements[0]);
+        memset(values, 0, ARRAY_SIZE(values) * sizeof values[0]);
         make_list(&list, elements, values, n);
         check_list(&list, values, n);
     }
