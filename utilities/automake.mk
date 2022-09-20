@@ -63,8 +63,10 @@ EXTRA_DIST += \
 	utilities/docker/debian/Dockerfile \
 	utilities/docker/debian/build-kernel-modules.sh \
 	utilities/usdt-scripts/bridge_loop.bt \
+	utilities/usdt-scripts/ovs_structs.h \
 	utilities/usdt-scripts/upcall_cost.py \
-	utilities/usdt-scripts/upcall_monitor.py
+	utilities/usdt-scripts/upcall_monitor.py \
+	utilities/usdt-scripts/reval_monitor.py
 MAN_ROOTS += \
 	utilities/ovs-testcontroller.8.in \
 	utilities/ovs-dpctl.8.in \
