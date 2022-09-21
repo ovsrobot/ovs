@@ -45,6 +45,10 @@ enum netdev_ol_flags {
     NETDEV_TX_OFFLOAD_TCP_TSO = 1 << 4,
 };
 
+enum netdev_cp_prot_flags {
+    NETDEV_CP_PROT_LACP = 1 << 0,
+};
+
 /* A network device (e.g. an Ethernet device).
  *
  * Network device implementations may read these members but should not modify
@@ -98,6 +102,9 @@ struct netdev {
     OVSRCU_TYPE(const struct netdev_flow_api *) flow_api;
     const char *dpif_type;          /* Type of dpif this netdev belongs to. */
     struct netdev_hw_info hw_info;  /* Offload-capable netdev info. */
+    /* Control plane protection flags,
+     * from the enum set 'netdev_cp_prot_flags' */
+    uint64_t cp_prot_flags;
 };
 
 static inline void

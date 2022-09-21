@@ -1702,12 +1702,18 @@ add_flow_mark_rss_actions(struct flow_actions *actions,
         uint16_t queue[0];
     } *rss_data;
     BUILD_ASSERT_DECL(offsetof(struct action_rss_data, conf) == 0);
+    int n_rxq = netdev_n_rxq(netdev);
     int i;
 
     mark = xzalloc(sizeof *mark);
 
     mark->id = flow_mark;
     add_flow_action(actions, RTE_FLOW_ACTION_TYPE_MARK, mark);
+
+    if (netdev->cp_prot_flags) {
+        /* last rxq is reserved for control plane packets */
+        n_rxq -= 1;
+    }
 
     rss_data = xmalloc(sizeof *rss_data +
                        netdev_n_rxq(netdev) * sizeof rss_data->queue[0]);
@@ -1716,7 +1722,7 @@ add_flow_mark_rss_actions(struct flow_actions *actions,
             .func = RTE_ETH_HASH_FUNCTION_DEFAULT,
             .level = 0,
             .types = RTE_ETH_RSS_IP | RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP,
-            .queue_num = netdev_n_rxq(netdev),
+            .queue_num = n_rxq,
             .queue = rss_data->queue,
             .key_len = 0,
             .key  = NULL
@@ -1724,7 +1730,7 @@ add_flow_mark_rss_actions(struct flow_actions *actions,
     };
 
     /* Override queue array with default. */
-    for (i = 0; i < netdev_n_rxq(netdev); i++) {
+    for (i = 0; i < n_rxq; i++) {
        rss_data->queue[i] = i;
     }
 
@@ -1744,7 +1750,7 @@ netdev_offload_dpdk_mark_rss(struct flow_patterns *patterns,
     };
     const struct rte_flow_attr flow_attr = {
         .group = 0,
-        .priority = 0,
+        .priority = NETDEV_DPDK_FLOW_PRIORITY_OFFLOAD,
         .ingress = 1,
         .egress = 0
     };
@@ -2235,7 +2241,11 @@ netdev_offload_dpdk_actions(struct netdev *netdev,
                             struct nlattr *nl_actions,
                             size_t actions_len)
 {
-    const struct rte_flow_attr flow_attr = { .ingress = 1, .transfer = 1 };
+    const struct rte_flow_attr flow_attr = {
+        .priority = NETDEV_DPDK_FLOW_PRIORITY_OFFLOAD,
+        .ingress = 1,
+        .transfer = 1,
+    };
     struct flow_actions actions = {
         .actions = NULL,
         .cnt = 0,

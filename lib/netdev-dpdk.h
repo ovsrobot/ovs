@@ -17,6 +17,7 @@
 #ifndef NETDEV_DPDK_H
 #define NETDEV_DPDK_H
 
+#include <stdint.h>
 #include <config.h>
 
 #include "openvswitch/compiler.h"
@@ -31,6 +32,10 @@ struct netdev;
 
 void netdev_dpdk_register(const struct smap *);
 void free_dpdk_buf(struct dp_packet *);
+
+#define NETDEV_DPDK_FLOW_PRIORITY_MAX 0
+#define NETDEV_DPDK_FLOW_PRIORITY_OFFLOAD 10
+#define NETDEV_DPDK_FLOW_PRIORITY_FALLBACK UINT32_MAX
 
 bool netdev_dpdk_flow_api_supported(struct netdev *);
 

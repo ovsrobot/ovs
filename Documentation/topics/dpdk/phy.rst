@@ -131,6 +131,47 @@ possible with DPDK acceleration. It is possible to configure multiple Rx queues
 for ``dpdk`` ports, thus ensuring this is not a bottleneck for performance. For
 information on configuring PMD threads, refer to :doc:`pmd`.
 
+Control Plane Protection
+------------------------
+
+Some control protocols are used to maintain link status between forwarding
+engines. In SDN environments, these packets share the same physical network than
+the user data traffic.
+
+When the system is not sized properly, the PMD threads may not be able to
+process all incoming traffic from the configured Rx queues. When a signaling
+packet of such protocols is dropped, it can cause link flapping, worsening the
+situation.
+
+Some physical NICs can be programmed to put these protocols in a dedicated
+hardware Rx queue using the rte_flow__ API.
+
+__ https://doc.dpdk.org/guides/prog_guide/rte_flow.html#device-compatibility
+
+The currently supported control plane protocols are:
+
+``lacp``
+   `Link Aggregation Control Protocol`__. Ether type ``0x8809``.
+
+   __ https://www.ieee802.org/3/ad/public/mar99/seaman_1_0399.pdf
+
+.. warning::
+
+   This feature is not compatible with all NICs. Refer to vendor documentation
+   for more information.
+
+Control plane protection must be enabled on specific protocols per port. The
+``cp-protection`` option requires a coma separated list of protocol names::
+
+   $ ovs-vsctl add-port br0 dpdk-p0 -- set Interface dpdk-p0 type=dpdk \
+        options:dpdk-devargs=0000:01:00.0 options:cp-protection=lacp
+
+.. note::
+
+   If multiple Rx queues are already configured, regular RSS (Receive Side
+   Scaling) queue balancing is done on all but the extra control plane
+   protection queue.
+
 .. _dpdk-phy-flow-control:
 
 Flow Control
