@@ -500,6 +500,7 @@ struct tx_port {
     int qid;
     long long last_used;
     struct hmap_node node;
+    struct ovs_list pending_tx;     /* Only used in send_port_cache. */
     long long flush_time;
     struct dp_packet_batch output_pkts;
     struct dp_packet_batch *txq_pkts; /* Only for hash mode. */
@@ -5241,8 +5242,9 @@ dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
     atomic_read_relaxed(&pmd->dp->tx_flush_interval, &tx_flush_interval);
     p->flush_time = pmd->ctx.now + tx_flush_interval;
 
-    ovs_assert(pmd->n_output_batches > 0);
-    pmd->n_output_batches--;
+    /* Remove send port from pending port list */
+    ovs_assert(!ovs_list_is_empty(&p->pending_tx));
+    ovs_list_remove(&p->pending_tx);
 
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SENT_PKTS, output_cnt);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SENT_BATCHES, 1);
@@ -5264,16 +5266,11 @@ static int
 dp_netdev_pmd_flush_output_packets(struct dp_netdev_pmd_thread *pmd,
                                    bool force)
 {
-    struct tx_port *p;
+    struct tx_port *p, *next;
     int output_cnt = 0;
 
-    if (!pmd->n_output_batches) {
-        return 0;
-    }
-
-    HMAP_FOR_EACH (p, node, &pmd->send_port_cache) {
-        if (!dp_packet_batch_is_empty(&p->output_pkts)
-            && (force || pmd->ctx.now >= p->flush_time)) {
+    LIST_FOR_EACH_SAFE (p, next, pending_tx, &pmd->pending_tx_ports) {
+        if (force || pmd->ctx.now >= p->flush_time) {
             output_cnt += dp_netdev_pmd_flush_output_on_port(pmd, p);
         }
     }
@@ -5292,6 +5289,7 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
     int batch_cnt = 0;
     int rem_qlen = 0, *qlen_p = NULL;
     uint64_t cycles;
+    uint64_t tx_flush_interval;
 
     /* Measure duration for polling and processing rx burst. */
     cycle_timer_start(&pmd->perf_stats, &timer);
@@ -5333,7 +5331,12 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
         cycles = cycle_timer_stop(&pmd->perf_stats, &timer);
         dp_netdev_rxq_add_cycles(rxq, RXQ_CYCLES_PROC_CURR, cycles);
 
-        dp_netdev_pmd_flush_output_packets(pmd, false);
+        /* Defer flushing of tx buffers if tx packet batching is enabled. */
+        atomic_read_relaxed(&pmd->dp->tx_flush_interval, &tx_flush_interval);
+        if (tx_flush_interval == 0) {
+            dp_netdev_pmd_flush_output_packets(pmd, false);
+        }
+
     } else {
         /* Discard cycles. */
         cycle_timer_stop(&pmd->perf_stats, &timer);
@@ -6803,6 +6806,7 @@ pmd_load_cached_ports(struct dp_netdev_pmd_thread *pmd)
                                           n_txq * sizeof *tx_port->txq_pkts);
                 tx_port_cached->txq_pkts = txq_pkts_cached;
             }
+            ovs_list_init(&tx_port_cached->pending_tx);
             hmap_insert(&pmd->send_port_cache, &tx_port_cached->node,
                         hash_port_no(tx_port_cached->port->port_no));
         }
@@ -6877,6 +6881,7 @@ pmd_thread_main(void *f_)
     int poll_cnt;
     int i;
     int process_packets = 0;
+    uint32_t tx_flush_interval;
 
     poll_list = NULL;
 
@@ -6890,6 +6895,7 @@ pmd_thread_main(void *f_)
 
 reload:
     atomic_count_init(&pmd->pmd_overloaded, 0);
+    atomic_read_relaxed(&pmd->dp->tx_flush_interval, &tx_flush_interval);
 
     if (!dpdk_attached) {
         dpdk_attached = dpdk_attach_thread(pmd->core_id);
@@ -6962,7 +6968,6 @@ reload:
 
         if (!rx_packets) {
             /* We didn't receive anything in the process loop.
-             * Check if we need to send something.
              * There was no time updates on current iteration. */
             pmd_thread_ctx_time_update(pmd);
             tx_packets = dp_netdev_pmd_flush_output_packets(pmd, false);
@@ -6977,6 +6982,11 @@ reload:
                     pmd->ctx.now + PMD_RCU_QUIESCE_INTERVAL;
             }
         }
+
+        if (tx_flush_interval > 0) {
+            /* Try to flush port output buffers. */
+             tx_packets = dp_netdev_pmd_flush_output_packets(pmd, false);
+         }
 
         if (lc++ > 1024) {
             lc = 0;
@@ -7447,7 +7457,6 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     pmd->core_id = core_id;
     pmd->numa_id = numa_id;
     pmd->need_reload = false;
-    pmd->n_output_batches = 0;
 
     ovs_refcount_init(&pmd->ref_cnt);
     atomic_init(&pmd->exit, false);
@@ -7474,6 +7483,7 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     hmap_init(&pmd->tnl_port_cache);
     hmap_init(&pmd->send_port_cache);
     cmap_init(&pmd->tx_bonds);
+    ovs_list_init(&pmd->pending_tx_ports);
 
     /* Initialize DPIF function pointer to the default configured version. */
     atomic_init(&pmd->netdev_input_func, dp_netdev_impl_get_default());
@@ -7498,6 +7508,7 @@ dp_netdev_destroy_pmd(struct dp_netdev_pmd_thread *pmd)
     struct dpcls *cls;
 
     dp_netdev_pmd_flow_flush(pmd);
+    ovs_list_poison(&pmd->pending_tx_ports);
     hmap_destroy(&pmd->send_port_cache);
     hmap_destroy(&pmd->tnl_port_cache);
     hmap_destroy(&pmd->tx_ports);
@@ -8714,7 +8725,7 @@ dp_execute_output_action(struct dp_netdev_pmd_thread *pmd,
         dp_netdev_pmd_flush_output_on_port(pmd, p);
     }
     if (dp_packet_batch_is_empty(&p->output_pkts)) {
-        pmd->n_output_batches++;
+        ovs_list_push_front(&pmd->pending_tx_ports, &p->pending_tx);
     }
 
     struct dp_packet *packet;
