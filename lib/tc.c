@@ -51,9 +51,6 @@
 #define TCM_IFINDEX_MAGIC_BLOCK (0xFFFFFFFFU)
 #endif
 
-#ifndef TCA_DUMP_FLAGS_TERSE
-#define TCA_DUMP_FLAGS_TERSE (1 << 0)
-#endif
 
 #if TCA_MAX < 15
 #define TCA_CHAIN 11
@@ -1986,8 +1983,6 @@ tc_parse_action_stats(struct nlattr *action, struct ovs_flow_stats *stats_sw,
     return nl_parse_action_stats(action_attrs[TCA_ACT_STATS], stats_sw,
                                  stats_hw, stats_dropped);
 }
-
-#define TCA_ACT_MIN_PRIO 1
 
 static int
 nl_parse_flower_actions(struct nlattr **attrs, struct tc_flower *flower,

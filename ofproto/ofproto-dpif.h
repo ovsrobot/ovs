@@ -404,4 +404,6 @@ bool ofproto_dpif_ct_zone_timeout_policy_get_name(
 
 bool ovs_explicit_drop_action_supported(struct ofproto_dpif *);
 
+int dpif_meter_revalidate(struct dpif *dpif, struct dpif_backer *backer);
+
 #endif /* ofproto-dpif.h */

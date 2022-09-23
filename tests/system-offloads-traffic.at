@@ -273,6 +273,10 @@ meter:1 flow_count:1 packet_in_count:11 byte_in_count:377 duration:0.001s bands:
 0: packet_count:9 byte_count:0
 ])
 
+AT_CHECK([ovs-ofctl -O Openflow13 del-meter br0])
+sleep 10
+AT_CHECK([tc actions ls action police], [0], [])
+
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 

@@ -2953,10 +2953,19 @@ meter_tc_del_policer(ofproto_meter_id meter_id,
     if (!meter_id_lookup(meter_id.uint32, &police_index)) {
         err = tc_del_policer_action(police_index, stats);
         if (err && err != ENOENT) {
+            if (err == EPERM) {
+                /* Flow exists, it is right that meter deletion is not
+                 * permited. */
+                return err;
+            }
             VLOG_ERR_RL(&error_rl,
-                        "Failed to del police %u for meter %u: %s",
+                        "Deletion of police %u for meter %u failed: %s",
                         police_index, meter_id.uint32, ovs_strerror(err));
+            return err;
         } else {
+            VLOG_DBG("Deletion of police %u for meter %u succeeded: %s",
+                        police_index, meter_id.uint32, ovs_strerror(err));
+            err = 0;
             meter_free_police_index(police_index);
         }
         meter_id_remove(meter_id.uint32);

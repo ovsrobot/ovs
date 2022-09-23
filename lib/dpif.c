@@ -1491,12 +1491,12 @@ dpif_recv_set(struct dpif *dpif, bool enable)
  *
  * Returns 0 if successful, otherwise a positive errno value. */
 int
-dpif_handlers_set(struct dpif *dpif, uint32_t n_handlers)
+dpif_handlers_set(struct dpif *dpif, uint32_t _n_handlers)
 {
     int error = 0;
 
     if (dpif->dpif_class->handlers_set) {
-        error = dpif->dpif_class->handlers_set(dpif, n_handlers);
+        error = dpif->dpif_class->handlers_set(dpif, _n_handlers);
         log_operation(dpif, "handlers_set", error);
     }
     return error;
@@ -1510,10 +1510,10 @@ dpif_handlers_set(struct dpif *dpif, uint32_t n_handlers)
  * If not, returns 'false'
  */
 bool
-dpif_number_handlers_required(struct dpif *dpif, uint32_t *n_handlers)
+dpif_number_handlers_required(struct dpif *dpif, uint32_t *_n_handlers)
 {
     if (dpif->dpif_class->number_handlers_required) {
-        return dpif->dpif_class->number_handlers_required(dpif, n_handlers);
+        return dpif->dpif_class->number_handlers_required(dpif, _n_handlers);
     }
     return false;
 }
@@ -2026,6 +2026,13 @@ dpif_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
         }
     }
     return error;
+}
+
+int
+dpif_meter_revalidate(struct dpif *dpif, struct dpif_backer *backer){
+    return dpif->dpif_class->meter_revalidate
+           ? dpif->dpif_class->meter_revalidate(dpif, backer)
+           : EOPNOTSUPP;
 }
 
 int
