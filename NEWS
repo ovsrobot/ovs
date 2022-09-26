@@ -6,6 +6,8 @@ Post-v3.0.0
    - Windows:
      * Conntrack IPv6 fragment support.
 
+   - OVSDB-IDL:
+     * Add the support to specify the uuid for row insert.
 
 v3.0.0 - 15 Aug 2022
 --------------------
