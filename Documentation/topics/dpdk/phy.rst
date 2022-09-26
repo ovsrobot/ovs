@@ -467,3 +467,44 @@ Command to set interrupt mode for a specific interface::
 
 Command to set polling mode for a specific interface::
     $ ovs-vsctl set interface <iface_name> options:dpdk-lsc-interrupt=false
+
+RXQ-Steering
+------------
+
+Typically one RXQ is not sufficient to handle workloads from a high-speed NIC,
+which leads to multiple RXQs.With more RXQ comes the challenge of Placing the
+flows on the right queue.
+
+Though RSS can provide some relief by placing different flows at different
+Queues,It does not provide the flexibility of placing the flow on the optimal
+Queue.
+
+Placing the flow on the right queue is important based on the observations in
+the below scenarios.
+
+1.VM memory is one NUMA and flows land on a RXQ which is handled by a different
+PMD,leading to memory access over NUMA.
+2.5tuple-based RSS placing two different flows towards the Same VM on two
+different PMD threads, leading to the two PMD threads contending on the same
+virtq spin lock.
+
+To gain finer control on the placement of guest flows, RXQ steering is
+introduced to place the right flow to the most optimal RXQ using flow
+director/rte_flow API's to mitigate some of the above points mentioned.
+
+To add an RXQ steering rule, Fill in the MAC address of the VM and Queue to
+which you want to re-direct the packet.Every time the below string value
+changes,all the existing rules are flushed and new rules are inserted::
+
+    $ovs-vsctl set interface <iface_name> \
+        options:rxq-steer-params="<qno_1>|<VM_MAC_1>,<qno_2>|<VM_MAC_2>"
+
+To remove RXQ steering, set the value to be zero.All existing rules will be
+flushed::
+
+    $ovs-vsctl set interface <iface_name> \
+                options:rxq-steer-params="0"
+
+To isolate the RXQ only to the configured flows, use rxq_isolate like below::
+
+    $ovs-vsctl set interface eno1 options:rxq-isolate=true
