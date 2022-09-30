@@ -627,39 +627,34 @@ ovs_thread_stats_next_bucket(const struct ovsthread_stats *stats, size_t i)
 }
 
 
-/* Returns the total number of cores available to this process, or 0 if the
- * number cannot be determined. */
+/* Returns the current total number of cores available to this process, or 0
+ * if the number cannot be determined. */
 int
 count_cpu_cores(void)
 {
-    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
-    static long int n_cores;
+    long int n_cores;
 
-    if (ovsthread_once_start(&once)) {
 #ifndef _WIN32
-        n_cores = sysconf(_SC_NPROCESSORS_ONLN);
-#ifdef __linux__
-        if (n_cores > 0) {
-            cpu_set_t *set = CPU_ALLOC(n_cores);
-
-            if (set) {
-                size_t size = CPU_ALLOC_SIZE(n_cores);
-
-                if (!sched_getaffinity(0, size, set)) {
-                    n_cores = CPU_COUNT_S(size, set);
-                }
-                CPU_FREE(set);
-            }
-        }
-#endif
+    n_cores = sysconf(_SC_NPROCESSORS_ONLN);
 #else
-        SYSTEM_INFO sysinfo;
-        GetSystemInfo(&sysinfo);
-        n_cores = sysinfo.dwNumberOfProcessors;
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    n_cores = sysinfo.dwNumberOfProcessors;
 #endif
-        ovsthread_once_done(&once);
-    }
+#ifdef __linux__
+    if (n_cores > 0) {
+        cpu_set_t *set = CPU_ALLOC(n_cores);
 
+        if (set) {
+            size_t size = CPU_ALLOC_SIZE(n_cores);
+
+            if (!sched_getaffinity(0, size, set)) {
+                n_cores = CPU_COUNT_S(size, set);
+            }
+            CPU_FREE(set);
+        }
+    }
+#endif
     return n_cores > 0 ? n_cores : 0;
 }
 
