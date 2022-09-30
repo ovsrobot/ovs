@@ -155,3 +155,16 @@ id_pool_free_id(struct id_pool *pool, uint32_t id)
         }
     }
 }
+
+bool
+id_pool_id_exist(struct  id_pool *pool, uint32_t id)
+{
+    return !!id_pool_find(pool, id);
+}
+
+uint32_t id_pool_base(struct id_pool *pool){
+    return pool->base;
+}
+uint32_t id_pool_n(struct id_pool *pool){
+    return pool->n_ids;
+}

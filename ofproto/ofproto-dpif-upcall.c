@@ -2658,6 +2658,7 @@ revalidate(struct revalidator *revalidator)
 
     struct udpif *udpif = revalidator->udpif;
     struct dpif_flow_dump_thread *dump_thread;
+    bool flow_delete_exist = false;
     uint64_t dump_seq, reval_seq;
     bool kill_warn_print = true;
     unsigned int flow_limit;
@@ -2790,6 +2791,7 @@ revalidate(struct revalidator *revalidator)
 
             if (result != UKEY_KEEP) {
                 /* Takes ownership of 'recircs'. */
+                flow_delete_exist = true;
                 reval_op_init(&ops[n_ops++], result, udpif, ukey, &recircs,
                               &odp_actions);
             }
@@ -2803,6 +2805,9 @@ revalidate(struct revalidator *revalidator)
         ovsrcu_quiesce();
     }
     dpif_flow_dump_thread_destroy(dump_thread);
+    if (flow_delete_exist) {
+        dpif_meter_revalidate(udpif->dpif, udpif->backer->meter_ids);
+    }
     ofpbuf_uninit(&odp_actions);
 }
 

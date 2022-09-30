@@ -17,6 +17,8 @@
 #ifndef DPIF_NETLINK_H
 #define DPIF_NETLINK_H 1
 
+#include <linux/pkt_cls.h>
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

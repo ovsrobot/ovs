@@ -384,6 +384,7 @@
 #include "ovs-numa.h"
 #include "packets.h"
 #include "util.h"
+#include "id-pool.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -905,6 +906,7 @@ int dpif_meter_get(const struct dpif *, ofproto_meter_id meter_id,
                    struct ofputil_meter_stats *, uint16_t n_bands);
 int dpif_meter_del(struct dpif *, ofproto_meter_id meter_id,
                    struct ofputil_meter_stats *, uint16_t n_bands);
+int dpif_meter_revalidate(struct dpif *dpif, struct id_pool *meter_ids);
 
 /* Bonding. */
 

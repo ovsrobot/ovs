@@ -631,6 +631,10 @@ struct dpif_class {
     int (*meter_del)(struct dpif *, ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *, uint16_t n_bands);
 
+    /* Checks unneeded meters from 'dpif' and removes them. They may
+     * be caused by deleting in-use meters. */
+    int (*meter_revalidate)(struct dpif *, struct id_pool *);
+
     /* Adds a bond with 'bond_id' and the member-map to 'dpif'. */
     int (*bond_add)(struct dpif *dpif, uint32_t bond_id,
                     odp_port_t *member_map);

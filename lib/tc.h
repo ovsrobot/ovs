@@ -60,6 +60,10 @@ enum tc_qdisc_hook {
 
 #define METER_POLICE_IDS_BASE 0x10000000
 #define METER_POLICE_IDS_MAX  0x1FFFFFFF
+/* Mapping meter_id.uint32 into a 32-bit integer */
+#define METER_ID_TO_POLICY_INDEX(meter_id) (meter_id | METER_POLICE_IDS_BASE)
+/* Mapping policy_index to meter_id */
+#define POLICY_INDEX_TO_METER_ID(index) (index & ~METER_POLICE_IDS_BASE)
 
 static inline bool
 tc_is_meter_index(uint32_t index) {
@@ -301,7 +305,12 @@ enum tc_offloaded_state {
     TC_OFFLOADED_STATE_NOT_IN_HW,
 };
 
+#ifndef TCA_DUMP_FLAGS_TERSE
+#define TCA_DUMP_FLAGS_TERSE (1 << 0)
+#endif
+#define ACT_MAX_NUM 1024
 #define TCA_ACT_MAX_NUM 16
+#define TCA_ACT_MIN_PRIO 1
 
 struct tcf_id {
     enum tc_qdisc_hook hook;

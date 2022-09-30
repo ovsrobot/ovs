@@ -2029,6 +2029,13 @@ dpif_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
 }
 
 int
+dpif_meter_revalidate(struct dpif *dpif, struct id_pool *meter_ids){
+    return dpif->dpif_class->meter_revalidate
+           ? dpif->dpif_class->meter_revalidate(dpif, meter_ids)
+           : EOPNOTSUPP;
+}
+
+int
 dpif_bond_add(struct dpif *dpif, uint32_t bond_id, odp_port_t *member_map)
 {
     return dpif->dpif_class->bond_add

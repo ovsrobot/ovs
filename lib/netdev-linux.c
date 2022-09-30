@@ -5823,6 +5823,12 @@ tc_del_policer_action(uint32_t index, struct ofputil_meter_stats *stats)
 
     error = tc_transact(&request, &replyp);
     if (error) {
+        if (error == EPERM || error == ENOENT) {
+            /* EPERM means flow exists, it is right that meter deletion is
+             * not permited.
+             * ENOENT means meter has already been deleted. */
+            return error;
+        }
         VLOG_ERR_RL(&rl, "Failed to delete police action (index: %u), err=%d",
                     index, error);
         return error;
