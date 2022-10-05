@@ -480,6 +480,59 @@ pmd thread numa_id <cleared> core_id <cleared>:
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([PMD - pmd-rxq-show pmd usage time])
+OVS_VSWITCHD_START([add-port br0 p0 -- set Interface p0 type=dummy-pmd], [], [], [DUMMY_NUMA])
+
+#CHECK_CPU_DISCOVERED()
+#CHECK_PMD_THREADS_CREATED()
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show | grep Displaying], [0], [dnl
+Displaying last 60 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs -1 | grep Displaying], [0], [dnl
+Displaying last 60 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 0 | grep Displaying], [0], [dnl
+Displaying last 60 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 1 | grep Displaying], [0], [dnl
+Displaying last 5 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 5 | grep Displaying], [0], [dnl
+Displaying last 5 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 6 | grep Displaying], [0], [dnl
+Displaying last 10 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 51 | grep Displaying], [0], [dnl
+Displaying last 55 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 55 | grep Displaying], [0], [dnl
+Displaying last 55 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 56 | grep Displaying], [0], [dnl
+Displaying last 60 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 60 | grep Displaying], [0], [dnl
+Displaying last 60 seconds pmd usage %
+])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-rxq-show -secs 61 | grep Displaying], [0], [dnl
+Displaying last 60 seconds pmd usage %
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 dnl Reconfigure the number of rx queues of a port, make sure that all the
 dnl queues are polled by the datapath and try to send a couple of packets.
 AT_SETUP([PMD - reconfigure n_rxq])
