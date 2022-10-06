@@ -744,6 +744,7 @@ mfex_avx512_process(struct dp_packet_batch *packets,
                     uint32_t keys_size OVS_UNUSED,
                     odp_port_t in_port,
                     void *pmd_handle OVS_UNUSED,
+                    bool md_is_valid OVS_UNUSED,
                     const enum MFEX_PROFILES profile_id,
                     const uint32_t use_vbmi OVS_UNUSED)
 {
@@ -978,10 +979,10 @@ __attribute__((__target__("avx512vbmi")))                               \
 mfex_avx512_vbmi_##name(struct dp_packet_batch *packets,                \
                         struct netdev_flow_key *keys, uint32_t keys_size,\
                         odp_port_t in_port, struct dp_netdev_pmd_thread \
-                        *pmd_handle)                                    \
+                        *pmd_handle, bool md_is_valid)                  \
 {                                                                       \
     return mfex_avx512_process(packets, keys, keys_size, in_port,       \
-                               pmd_handle, profile, 1);                 \
+                               pmd_handle, md_is_valid, profile, 1);    \
 }
 #else
 #define VBMI_MFEX_FUNC(name, profile)
@@ -992,10 +993,10 @@ uint32_t                                                                \
 mfex_avx512_##name(struct dp_packet_batch *packets,                     \
                    struct netdev_flow_key *keys, uint32_t keys_size,    \
                    odp_port_t in_port, struct dp_netdev_pmd_thread      \
-                   *pmd_handle)                                         \
+                   *pmd_handle, bool md_is_valid)                       \
 {                                                                       \
     return mfex_avx512_process(packets, keys, keys_size, in_port,       \
-                               pmd_handle, profile, 0);                 \
+                               pmd_handle, md_is_valid, profile, 0);    \
 }
 
 #define DECLARE_MFEX_FUNC(name, profile)                                \

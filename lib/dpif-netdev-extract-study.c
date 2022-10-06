@@ -71,7 +71,8 @@ uint32_t
 mfex_study_traffic(struct dp_packet_batch *packets,
                    struct netdev_flow_key *keys,
                    uint32_t keys_size, odp_port_t in_port,
-                   struct dp_netdev_pmd_thread *pmd_handle)
+                   struct dp_netdev_pmd_thread *pmd_handle,
+                   bool md_is_valid)
 {
     uint32_t hitmask = 0;
     uint32_t mask = 0;
@@ -90,7 +91,8 @@ mfex_study_traffic(struct dp_packet_batch *packets,
         }
 
         hitmask = miniflow_funcs[i].extract_func(packets, keys, keys_size,
-                                                 in_port, pmd_handle);
+                                                 in_port, pmd_handle,
+                                                 md_is_valid);
         stats->impl_hitcount[i] += count_1bits(hitmask);
 
         /* If traffic is not classified then we dont overwrite the keys
