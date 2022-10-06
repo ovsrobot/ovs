@@ -35,6 +35,7 @@
 #include "dpif.h"
 #include "dpif-provider.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/ofp-util.h"
 #include "flow.h"
 #include "openvswitch/match.h"
 #include "netdev.h"
@@ -1737,7 +1738,7 @@ dpctl_flush_conntrack(int argc, const char *argv[],
         return error;
     }
 
-    error = ct_dpif_flush(dpif, pzone, ptuple);
+    error = ct_dpif_flush(dpif, pzone, ptuple, OFPUTIL_CT_DIRECTION_ORIG);
     if (!error) {
         dpif_close(dpif);
         return 0;

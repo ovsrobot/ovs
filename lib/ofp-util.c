@@ -237,3 +237,62 @@ ofputil_encode_barrier_request(enum ofp_version ofp_version)
 
     return ofpraw_alloc(type, ofp_version, 0);
 }
+
+struct ofpbuf *
+ofp_ct_tuple_encode(struct ofputil_ct_tuple *tuple, uint16_t zone_id,
+                    enum ofputil_ct_direction dir, enum ofp_version version)
+{
+    struct ofpbuf *msg = ofpraw_alloc(OFPRAW_NXT_CT_FLUSH, version, 0);
+    struct nx_ct_flush *nx_flush = ofpbuf_put_zeros(msg, sizeof *nx_flush);
+
+    memcpy(&nx_flush->src, &tuple->src, sizeof tuple->src);
+    memcpy(&nx_flush->dst, &tuple->dst, sizeof tuple->dst);
+    nx_flush->ip_proto = tuple->ip_proto;
+    nx_flush->direction = dir;
+    nx_flush->zone_id = htons(zone_id);
+    nx_flush->src_port = tuple->src_port;
+
+    if (tuple->ip_proto == IPPROTO_ICMP || tuple->ip_proto == IPPROTO_ICMPV6) {
+        nx_flush->dst_port = htons(tuple->icmp_type << 8 | tuple->icmp_code);
+    } else {
+        nx_flush->dst_port = tuple->dst_port;
+    }
+
+    return msg;
+}
+
+enum ofperr
+ofp_ct_tuple_decode(struct ofputil_ct_tuple *tuple, uint16_t *zone_id,
+                    const struct ofp_header *oh)
+{
+
+    const struct nx_ct_flush *nx_flush = ofpmsg_body(oh);
+
+    switch (nx_flush->direction) {
+        case OFPUTIL_CT_DIRECTION_ORIG:
+        case OFPUTIL_CT_DIRECTION_REPLY:
+            break;
+        default:
+            return EOPNOTSUPP;
+    }
+
+    *zone_id = ntohs(nx_flush->zone_id);
+
+    tuple->ip_proto = nx_flush->ip_proto;
+    tuple->direction = nx_flush->direction;
+
+    memcpy(&tuple->src, &nx_flush->src, sizeof tuple->src);
+    memcpy(&tuple->dst, &nx_flush->dst, sizeof tuple->dst);
+
+    tuple->src_port = nx_flush->src_port;
+
+    if (tuple->ip_proto == IPPROTO_ICMP || tuple->ip_proto == IPPROTO_ICMPV6) {
+        uint16_t icmp = ntohs(nx_flush->dst_port);
+        tuple->icmp_type = icmp >> 8 & 0xff;
+        tuple->icmp_code = icmp & 0xff;
+    } else {
+        tuple->dst_port = nx_flush->dst_port;
+    }
+
+    return 0;
+}

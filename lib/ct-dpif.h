@@ -17,6 +17,7 @@
 #ifndef CT_DPIF_H
 #define CT_DPIF_H
 
+#include "openvswitch/ofp-util.h"
 #include "openvswitch/types.h"
 #include "packets.h"
 
@@ -281,7 +282,8 @@ int ct_dpif_dump_start(struct dpif *, struct ct_dpif_dump_state **,
 int ct_dpif_dump_next(struct ct_dpif_dump_state *, struct ct_dpif_entry *);
 int ct_dpif_dump_done(struct ct_dpif_dump_state *);
 int ct_dpif_flush(struct dpif *, const uint16_t *zone,
-                  const struct ct_dpif_tuple *);
+                  const struct ct_dpif_tuple *,
+                  enum ofputil_ct_direction direction);
 int ct_dpif_set_maxconns(struct dpif *dpif, uint32_t maxconns);
 int ct_dpif_get_maxconns(struct dpif *dpif, uint32_t *maxconns);
 int ct_dpif_get_nconns(struct dpif *dpif, uint32_t *nconns);

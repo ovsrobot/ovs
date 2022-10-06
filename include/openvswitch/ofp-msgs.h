@@ -526,6 +526,9 @@ enum ofpraw {
 
     /* NXST 1.0+ (4): struct nx_ipfix_stats_reply[]. */
     OFPRAW_NXST_IPFIX_FLOW_REPLY,
+
+    /* NXT 1.0+ (32): struct nx_ct_flush. */
+    OFPRAW_NXT_CT_FLUSH,
 };
 
 /* Decoding messages into OFPRAW_* values. */
@@ -772,6 +775,7 @@ enum ofptype {
     OFPTYPE_IPFIX_FLOW_STATS_REQUEST, /* OFPRAW_NXST_IPFIX_FLOW_REQUEST */
     OFPTYPE_IPFIX_FLOW_STATS_REPLY,   /* OFPRAW_NXST_IPFIX_FLOW_REPLY */
     OFPTYPE_CT_FLUSH_ZONE,            /* OFPRAW_NXT_CT_FLUSH_ZONE. */
+    OFPTYPE_CT_FLUSH,           /* OFPRAW_NXT_CT_FLUSH. */
 
     /* Flow monitor extension. */
     OFPTYPE_FLOW_MONITOR_CANCEL,  /* OFPRAW_NXT_FLOW_MONITOR_CANCEL.

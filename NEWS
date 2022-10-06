@@ -25,6 +25,9 @@ Post-v3.0.0
        DPDK 21.11.2.
    - ovs-dpctl and related ovs-appctl commands:
      * "flush-conntrack" is capable of handling partial 5-tuple.
+  - OpenFlow:
+     * New OpenFlow extension NXT_CT_FLUSH to flush conntrack by full
+       or partial 5-tuple.
 
 
 v3.0.0 - 15 Aug 2022

@@ -4073,3 +4073,58 @@ AT_CHECK([ovs-ofctl ofp-print "\
 NXT_CT_FLUSH_ZONE (xid=0x3): zone_id=13
 ])
 AT_CLEANUP
+
+AT_SETUP([NXT_CT_FLUSH])
+AT_KEYWORDS([ofp-print])
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 38 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+01 \
+00 0d \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 \
+00 50 \
+1f 90 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): direction=orig,proto=6,zone_id=13,src=10.10.0.1,dst=10.10.0.2,src_port=80,dst_port=8080
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 38 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+01 \
+00 0d \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 \
+00 50 \
+1f 90 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): direction=orig,proto=6,zone_id=13,src=fd18::ffff:abcd:1,dst=fd18::ffff:abcd:2,src_port=80,dst_port=8080
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 38 00 00 00 03 00 00 23 20 00 00 00 20 \
+01 \
+01 \
+00 0d \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 \
+00 01 \
+00 0a \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): direction=orig,proto=1,zone_id=13,src=10.10.0.1,dst=10.10.0.2,id=1,type=0,code=10
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 38 00 00 00 03 00 00 23 20 00 00 00 20 \
+01 \
+01 \
+00 0d \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 \
+00 01 \
+0a 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): direction=orig,proto=1,zone_id=13,src=fd18::ffff:abcd:1,dst=fd18::ffff:abcd:2,id=1,type=10,code=0
+])
+AT_CLEANUP

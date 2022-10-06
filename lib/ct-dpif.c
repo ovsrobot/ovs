@@ -23,6 +23,7 @@
 
 #include "ct-dpif.h"
 #include "openvswitch/ofp-parse.h"
+#include "openvswitch/ofp-util.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(ct_dpif);
@@ -176,7 +177,8 @@ ct_dpif_tuple_cmp_partial(const struct ct_dpif_tuple *partial,
 
 static int
 ct_dpif_flush_tuple(struct dpif *dpif, const uint16_t *zone,
-                    const struct ct_dpif_tuple *tuple) {
+                    const struct ct_dpif_tuple *tuple,
+                    enum ofputil_ct_direction direction) {
     struct ct_dpif_dump_state *dump;
     struct ct_dpif_entry cte;
     int error;
@@ -204,7 +206,22 @@ ct_dpif_flush_tuple(struct dpif *dpif, const uint16_t *zone,
             continue;
         }
 
-        if (ct_dpif_tuple_cmp_partial(tuple, &cte.tuple_orig)) {
+        struct ct_dpif_tuple *ct_tuple;
+        switch (direction) {
+            case OFPUTIL_CT_DIRECTION_ORIG:
+                ct_tuple = &cte.tuple_orig;
+                break;
+            case OFPUTIL_CT_DIRECTION_REPLY:
+                ct_tuple = &cte.tuple_reply;
+                break;
+            default:
+                error = EOPNOTSUPP;
+        }
+        if (error) {
+            break;
+        }
+
+        if (ct_dpif_tuple_cmp_partial(tuple, ct_tuple)) {
             error = dpif->dpif_class->ct_flush(dpif, &cte.zone,
                                                &cte.tuple_orig);
             if (error) {
@@ -228,10 +245,11 @@ ct_dpif_flush_tuple(struct dpif *dpif, const uint16_t *zone,
  *     in '*zone'. If 'zone' is NULL, use the default zone (zone 0). */
 int
 ct_dpif_flush(struct dpif *dpif, const uint16_t *zone,
-              const struct ct_dpif_tuple *tuple)
+              const struct ct_dpif_tuple *tuple,
+              enum ofputil_ct_direction direction)
 {
     if (tuple) {
-        return ct_dpif_flush_tuple(dpif, zone, tuple);
+        return ct_dpif_flush_tuple(dpif, zone, tuple, direction);
     } else if (zone) {
         VLOG_DBG("%s: ct_flush: zone %"PRIu16, dpif_name(dpif), *zone);
     } else {

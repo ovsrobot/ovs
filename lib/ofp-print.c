@@ -950,6 +950,44 @@ ofp_print_nxt_ct_flush_zone(struct ds *string, const struct nx_zone_id *nzi)
 }
 
 static enum ofperr
+ofp_print_nxt_ct_flush(struct ds *string, const struct ofp_header *oh)
+{
+    struct ofputil_ct_tuple tuple;
+    uint16_t zone_id;
+    enum ofperr err = ofp_ct_tuple_decode(&tuple, &zone_id, oh);
+    if (err) {
+        return err;
+    }
+
+    switch (tuple.direction) {
+        case OFPUTIL_CT_DIRECTION_ORIG:
+            ds_put_cstr(string, " direction=orig,");
+            break;
+        case OFPUTIL_CT_DIRECTION_REPLY:
+            ds_put_cstr(string, " direction=reply,");
+            break;
+    }
+
+    ds_put_format(string, "proto=%"PRIu8",zone_id=%"PRIu16,
+                  tuple.ip_proto, zone_id);
+    ds_put_cstr(string, ",src=");
+    ipv6_format_mapped(&tuple.src, string);
+    ds_put_cstr(string, ",dst=");
+    ipv6_format_mapped(&tuple.dst, string);
+
+    if (tuple.ip_proto == IPPROTO_ICMP ||
+        tuple.ip_proto == IPPROTO_ICMPV6) {
+        ds_put_format(string, ",id=%"PRIu16",type=%"PRIu8",code=%"PRIu8,
+                      ntohs(tuple.icmp_id), tuple.icmp_type, tuple.icmp_code);
+    } else {
+        ds_put_format(string, ",src_port=%"PRIu16",dst_port=%"PRIu16,
+                      ntohs(tuple.src_port), ntohs(tuple.dst_port));
+    }
+
+    return 0;
+}
+
+static enum ofperr
 ofp_to_string__(const struct ofp_header *oh,
                 const struct ofputil_port_map *port_map,
                 const struct ofputil_table_map *table_map, enum ofpraw raw,
@@ -1184,6 +1222,9 @@ ofp_to_string__(const struct ofp_header *oh,
 
     case OFPTYPE_CT_FLUSH_ZONE:
         return ofp_print_nxt_ct_flush_zone(string, ofpmsg_body(oh));
+    case OFPTYPE_CT_FLUSH:
+        return ofp_print_nxt_ct_flush(string, oh);
+
     }
 
     return 0;

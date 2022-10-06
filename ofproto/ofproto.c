@@ -934,7 +934,28 @@ handle_nxt_ct_flush_zone(struct ofconn *ofconn, const struct ofp_header *oh)
 
     uint16_t zone = ntohs(nzi->zone_id);
     if (ofproto->ofproto_class->ct_flush) {
-        ofproto->ofproto_class->ct_flush(ofproto, &zone);
+        ofproto->ofproto_class->ct_flush(ofproto, &zone, NULL);
+    } else {
+        return EOPNOTSUPP;
+    }
+
+    return 0;
+}
+
+static enum ofperr
+handle_nxt_ct_flush(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+    struct ofproto *ofproto = ofconn_get_ofproto(ofconn);
+    struct ofputil_ct_tuple tuple;
+    uint16_t zone_id;
+
+    int err = ofp_ct_tuple_decode(&tuple, &zone_id, oh);
+    if (err) {
+        return err;
+    }
+
+    if (ofproto->ofproto_class->ct_flush) {
+        ofproto->ofproto_class->ct_flush(ofproto, &zone_id, &tuple);
     } else {
         return EOPNOTSUPP;
     }
@@ -8786,6 +8807,9 @@ handle_single_part_openflow(struct ofconn *ofconn, const struct ofp_header *oh,
 
     case OFPTYPE_CT_FLUSH_ZONE:
         return handle_nxt_ct_flush_zone(ofconn, oh);
+
+    case OFPTYPE_CT_FLUSH:
+        return handle_nxt_ct_flush(ofconn, oh);
 
     case OFPTYPE_HELLO:
     case OFPTYPE_ERROR:

@@ -5358,11 +5358,65 @@ type_set_config(const char *type, const struct smap *other_config)
 }
 
 static void
-ct_flush(const struct ofproto *ofproto_, const uint16_t *zone)
+ofp_ct_mapped_ipv6_to_ct_dpif_inet_addr(const struct in6_addr *ipv6,
+                                        union ct_dpif_inet_addr *addr)
 {
+    memset(addr, 0, sizeof *addr);
+
+    if (ipv6_is_zero(ipv6)) {
+        return;
+    }
+
+    if (IN6_IS_ADDR_V4MAPPED(ipv6)) {
+        addr->ip = in6_addr_get_mapped_ipv4(ipv6);
+    } else {
+        addr->in6 = *ipv6;
+    }
+}
+
+static int
+ofputil_ct_tuple_to_ct_dpif_tuple(const struct ofputil_ct_tuple *ofp_tuple,
+                                  struct ct_dpif_tuple *tuple)
+{
+    tuple->l3_type = AF_INET;
+    if (!ipv6_is_zero(&ofp_tuple->src) &&
+        !IN6_IS_ADDR_V4MAPPED(&ofp_tuple->src)) {
+        tuple->l3_type = AF_INET6;
+    }
+
+
+    ofp_ct_mapped_ipv6_to_ct_dpif_inet_addr(&ofp_tuple->src, &tuple->src);
+    ofp_ct_mapped_ipv6_to_ct_dpif_inet_addr(&ofp_tuple->dst, &tuple->dst);
+
+    tuple->ip_proto = ofp_tuple->ip_proto;
+    tuple->src_port = ofp_tuple->src_port;
+
+    if (tuple->ip_proto == IPPROTO_ICMP ||
+        tuple->ip_proto == IPPROTO_ICMPV6) {
+        tuple->icmp_code = ofp_tuple->icmp_code;
+        tuple->icmp_type = ofp_tuple->icmp_type;
+    } else {
+        tuple->dst_port = ofp_tuple->dst_port;
+    }
+
+    return 0;
+}
+
+static void
+ct_flush(const struct ofproto *ofproto_, const uint16_t *zone,
+         const struct ofputil_ct_tuple *ofp_tuple)
+{
+    struct ct_dpif_tuple tuple;
+    enum ofputil_ct_direction direction =
+        ofp_tuple ? ofp_tuple->direction : OFPUTIL_CT_DIRECTION_ORIG;
     struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
 
-    ct_dpif_flush(ofproto->backer->dpif, zone, NULL);
+    if (ofp_tuple) {
+        ofputil_ct_tuple_to_ct_dpif_tuple(ofp_tuple, &tuple);
+    }
+
+    ct_dpif_flush(ofproto->backer->dpif, zone, ofp_tuple ? &tuple : NULL,
+                  direction);
 }
 
 static struct ct_timeout_policy *
