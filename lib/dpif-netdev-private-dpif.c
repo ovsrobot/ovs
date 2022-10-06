@@ -55,18 +55,39 @@ dp_netdev_input_avx512_probe(void)
 static struct dpif_netdev_impl_info_t dpif_impls[] = {
     /* The default scalar C code implementation. */
     [DPIF_NETDEV_IMPL_SCALAR] = { .input_func = dp_netdev_input,
+      .recirc_func = dp_netdev_recirculate,
       .probe = NULL,
       .name = "dpif_scalar", },
 
 #if DPIF_NETDEV_IMPL_AVX512_CHECK
     /* Only available on x86_64 bit builds with SSE 4.2 used for OVS core. */
     [DPIF_NETDEV_IMPL_AVX512] = { .input_func = dp_netdev_input_avx512,
+      .recirc_func = dp_netdev_input_avx512_recirc,
       .probe = dp_netdev_input_avx512_probe,
       .name = "dpif_avx512", },
 #endif
 };
 
 static dp_netdev_input_func default_dpif_func;
+static dp_netdev_recirc_func default_dpif_recirc_func;
+
+static inline int
+dp_netdev_dpif_probe(int dpif_idx)
+{
+/* Configure-time overriding to run test suite on all implementations. */
+#if DPIF_NETDEV_IMPL_AVX512_CHECK
+#ifdef DPIF_AVX512_DEFAULT
+    dp_netdev_input_func_probe probe;
+
+    /* Check if the compiled default is compatible. */
+    probe = dpif_impls[DPIF_NETDEV_IMPL_AVX512].probe;
+    if (!probe || !probe()) {
+         dpif_idx = DPIF_NETDEV_IMPL_AVX512;
+    }
+#endif
+#endif
+    return dpif_idx;
+}
 
 dp_netdev_input_func
 dp_netdev_impl_get_default(void)
@@ -76,18 +97,7 @@ dp_netdev_impl_get_default(void)
     if (!default_dpif_func) {
         int dpif_idx = DPIF_NETDEV_IMPL_SCALAR;
 
-/* Configure-time overriding to run test suite on all implementations. */
-#if DPIF_NETDEV_IMPL_AVX512_CHECK
-#ifdef DPIF_AVX512_DEFAULT
-        dp_netdev_input_func_probe probe;
-
-        /* Check if the compiled default is compatible. */
-        probe = dpif_impls[DPIF_NETDEV_IMPL_AVX512].probe;
-        if (!probe || !probe()) {
-            dpif_idx = DPIF_NETDEV_IMPL_AVX512;
-        }
-#endif
-#endif
+        dpif_idx = dp_netdev_dpif_probe(dpif_idx);
 
         VLOG_INFO("Default DPIF implementation is %s.\n",
                   dpif_impls[dpif_idx].name);
@@ -95,6 +105,24 @@ dp_netdev_impl_get_default(void)
     }
 
     return default_dpif_func;
+}
+
+dp_netdev_recirc_func
+dp_netdev_recirc_impl_get_default(void)
+{
+    /* For the first call, this will be NULL. Compute the compile time default.
+     */
+    if (!default_dpif_recirc_func) {
+        int dpif_idx = DPIF_NETDEV_IMPL_SCALAR;
+
+        dpif_idx = dp_netdev_dpif_probe(dpif_idx);
+
+        VLOG_INFO("Default re-circulate DPIF implementation is %s.\n",
+                  dpif_impls[dpif_idx].name);
+        default_dpif_recirc_func = dpif_impls[dpif_idx].recirc_func;
+    }
+
+    return default_dpif_recirc_func;
 }
 
 void
@@ -132,10 +160,12 @@ dp_netdev_impl_get(struct ds *reply, struct dp_netdev_pmd_thread **pmd_list,
  * returns the function pointer to the one requested by "name".
  */
 static int32_t
-dp_netdev_impl_get_by_name(const char *name, dp_netdev_input_func *out_func)
+dp_netdev_impl_get_by_name(const char *name, dp_netdev_input_func *dpif_func,
+                           dp_netdev_recirc_func *dpif_recirc_func)
 {
     ovs_assert(name);
-    ovs_assert(out_func);
+    ovs_assert(dpif_func);
+    ovs_assert(dpif_recirc_func);
 
     uint32_t i;
 
@@ -145,11 +175,13 @@ dp_netdev_impl_get_by_name(const char *name, dp_netdev_input_func *out_func)
             if (dpif_impls[i].probe) {
                 int probe_err = dpif_impls[i].probe();
                 if (probe_err) {
-                    *out_func = NULL;
+                    *dpif_func = NULL;
+                    *dpif_recirc_func = NULL;
                     return probe_err;
                 }
             }
-            *out_func = dpif_impls[i].input_func;
+            *dpif_func = dpif_impls[i].input_func;
+            *dpif_recirc_func = dpif_impls[i].recirc_func;
             return 0;
         }
     }
@@ -160,12 +192,15 @@ dp_netdev_impl_get_by_name(const char *name, dp_netdev_input_func *out_func)
 int32_t
 dp_netdev_impl_set_default_by_name(const char *name)
 {
-    dp_netdev_input_func new_default;
+    dp_netdev_input_func new_dpif_default;
+    dp_netdev_recirc_func new_dpif_recirc_default;
 
-    int32_t err = dp_netdev_impl_get_by_name(name, &new_default);
+    int32_t err = dp_netdev_impl_get_by_name(name, &new_dpif_default,
+                                             &new_dpif_recirc_default);
 
     if (!err) {
-        default_dpif_func = new_default;
+        default_dpif_func = new_dpif_default;
+        default_dpif_recirc_func = new_dpif_recirc_default;
     }
 
     return err;
