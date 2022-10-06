@@ -18,6 +18,8 @@
 #include "dpif-provider.h"
 
 #include <errno.h>
+#include <sys/types.h>
+#include <netinet/in.h>
 
 #include "ct-dpif.h"
 #include "openvswitch/ofp-parse.h"
@@ -109,7 +111,113 @@ ct_dpif_dump_done(struct ct_dpif_dump_state *dump)
             ? dpif->dpif_class->ct_dump_done(dpif, dump)
             : EOPNOTSUPP);
 }
-
+
+static inline bool
+ct_dpif_inet_addr_cmp_partial(const union ct_dpif_inet_addr *partial,
+                              const union ct_dpif_inet_addr *addr)
+{
+    if (!ipv6_is_zero(&partial->in6) &&
+        !ipv6_addr_equals(&partial->in6, &addr->in6)) {
+        return false;
+    }
+    return true;
+}
+
+/* Compares the non-zero members if they match. This is usefull for clearing
+ * up all conntracks specified by a partial tuple. */
+static inline bool
+ct_dpif_tuple_cmp_partial(const struct ct_dpif_tuple *partial,
+                          const struct ct_dpif_tuple *tuple)
+{
+    /* There is no point in continuing if both do not use the same eth type. */
+    if (partial->l3_type != tuple->l3_type) {
+        return false;
+    }
+
+    if (partial->ip_proto && partial->ip_proto != tuple->ip_proto) {
+        return false;
+    }
+
+    if (!ct_dpif_inet_addr_cmp_partial(&partial->src, &tuple->src)) {
+        return false;
+    }
+
+    if (!ct_dpif_inet_addr_cmp_partial(&partial->dst, &tuple->dst)) {
+        return false;
+    }
+
+    if (partial->ip_proto == IPPROTO_TCP || partial->ip_proto == IPPROTO_UDP) {
+
+        if (partial->src_port && partial->src_port != tuple->src_port) {
+            return false;
+        }
+
+        if (partial->dst_port && partial->dst_port != tuple->dst_port) {
+            return false;
+        }
+    } else if (partial->ip_proto == IPPROTO_ICMP ||
+               partial->ip_proto == IPPROTO_ICMPV6) {
+
+        if (partial->icmp_id != tuple->icmp_id) {
+            return false;
+        }
+
+        if (partial->icmp_type != tuple->icmp_type) {
+            return false;
+        }
+
+        if (partial->icmp_code != tuple->icmp_code) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static int
+ct_dpif_flush_tuple(struct dpif *dpif, const uint16_t *zone,
+                    const struct ct_dpif_tuple *tuple) {
+    struct ct_dpif_dump_state *dump;
+    struct ct_dpif_entry cte;
+    int error;
+    int tot_bkts;
+
+    if (!dpif->dpif_class->ct_flush) {
+        return EOPNOTSUPP;
+    }
+
+    if (VLOG_IS_DBG_ENABLED()) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        ct_dpif_format_tuple(&ds, tuple);
+        VLOG_DBG("%s: ct_flush: %s in zone %d", dpif_name(dpif), ds_cstr(&ds),
+                  zone ? *zone : 0);
+        ds_destroy(&ds);
+    }
+
+    error = ct_dpif_dump_start(dpif, &dump, zone, &tot_bkts);
+    if (error) {
+        return error;
+    }
+
+    while (!(error = ct_dpif_dump_next(dump, &cte))) {
+        if (zone && *zone != cte.zone) {
+            continue;
+        }
+
+        if (ct_dpif_tuple_cmp_partial(tuple, &cte.tuple_orig)) {
+            error = dpif->dpif_class->ct_flush(dpif, &cte.zone,
+                                               &cte.tuple_orig);
+            if (error) {
+                break;
+            }
+        }
+    }
+    if (error == EOF) {
+        error = 0;
+    }
+    ct_dpif_dump_done(dump);
+    return error;
+}
 /* Flush the entries in the connection tracker used by 'dpif'.  The
  * arguments have the following behavior:
  *
@@ -123,11 +231,7 @@ ct_dpif_flush(struct dpif *dpif, const uint16_t *zone,
               const struct ct_dpif_tuple *tuple)
 {
     if (tuple) {
-        struct ds ds = DS_EMPTY_INITIALIZER;
-        ct_dpif_format_tuple(&ds, tuple);
-        VLOG_DBG("%s: ct_flush: %s in zone %d", dpif_name(dpif), ds_cstr(&ds),
-                                                zone ? *zone : 0);
-        ds_destroy(&ds);
+        return ct_dpif_flush_tuple(dpif, zone, tuple);
     } else if (zone) {
         VLOG_DBG("%s: ct_flush: zone %"PRIu16, dpif_name(dpif), *zone);
     } else {
@@ -581,6 +685,21 @@ ct_dpif_format_tcp_stat(struct ds * ds, int tcp_state, int conn_per_state)
     ds_put_format(ds, "=%u", conn_per_state);
 }
 
+static bool
+ct_dpif_parse_tuple_ip(union ct_dpif_inet_addr *addr, char *value,
+                       uint16_t l3_type)
+{
+    if (!ipv6_is_zero(&addr->in6)) {
+        return false;
+    }
+    if (l3_type == AF_INET) {
+        ip_parse(value, &addr->ip);
+    } else {
+        ipv6_parse(value, &addr->in6);
+    }
+    return true;
+}
+
 /* Parses a specification of a conntrack 5-tuple from 's' into 'tuple'.
  * Returns true on success.  Otherwise, returns false and puts the error
  * message in 'ds'. */
@@ -590,6 +709,8 @@ ct_dpif_parse_tuple(struct ct_dpif_tuple *tuple, const char *s, struct ds *ds)
     char *pos, *key, *value, *copy;
     memset(tuple, 0, sizeof *tuple);
 
+    tuple->l3_type = AF_INET;
+
     pos = copy = xstrdup(s);
     while (ofputil_parse_key_value(&pos, &key, &value)) {
         if (!*value) {
@@ -597,28 +718,17 @@ ct_dpif_parse_tuple(struct ct_dpif_tuple *tuple, const char *s, struct ds *ds)
             goto error;
         }
 
-        if (!strcmp(key, "ct_nw_src") || !strcmp(key, "ct_nw_dst")) {
-            if (tuple->l3_type && tuple->l3_type != AF_INET) {
-                ds_put_cstr(ds, "L3 type set multiple times");
+        if (!strcmp(key, "ct_nw_src") || !strcmp(key, "ct_nw_dst") ||
+            !strcmp(key, "ct_ipv6_src") || !strcmp(key, "ct_ipv6_dst")) {
+            tuple->l3_type = key[6] == '6' ? AF_INET6 : AF_INET;
+            uint8_t index = key[6] == '6' ? 8 : 6;
+            union ct_dpif_inet_addr *addr = key[index] == 's'
+                                            ? &tuple->src
+                                            : &tuple->dst;
+
+            if (!ct_dpif_parse_tuple_ip(addr, value, tuple->l3_type)) {
+                ds_put_format(ds, "%s is set multiple times", key);
                 goto error;
-            } else {
-                tuple->l3_type = AF_INET;
-            }
-            if (!ip_parse(value, key[6] == 's' ? &tuple->src.ip :
-                                                 &tuple->dst.ip)) {
-                goto error_with_msg;
-            }
-        } else if (!strcmp(key, "ct_ipv6_src") ||
-                   !strcmp(key, "ct_ipv6_dst")) {
-            if (tuple->l3_type && tuple->l3_type != AF_INET6) {
-                ds_put_cstr(ds, "L3 type set multiple times");
-                goto error;
-            } else {
-                tuple->l3_type = AF_INET6;
-            }
-            if (!ipv6_parse(value, key[8] == 's' ? &tuple->src.in6 :
-                                                   &tuple->dst.in6)) {
-                goto error_with_msg;
             }
         } else if (!strcmp(key, "ct_nw_proto")) {
             char *err = str_to_u8(value, key, &tuple->ip_proto);
@@ -665,17 +775,9 @@ ct_dpif_parse_tuple(struct ct_dpif_tuple *tuple, const char *s, struct ds *ds)
         }
     }
 
-    if (ipv6_is_zero(&tuple->src.in6) || ipv6_is_zero(&tuple->dst.in6) ||
-        !tuple->ip_proto) {
-        /* icmp_type, icmp_code, and icmp_id can be 0. */
-        if (tuple->ip_proto != IPPROTO_ICMP &&
-            tuple->ip_proto != IPPROTO_ICMPV6) {
-            if (!tuple->src_port || !tuple->dst_port) {
-                ds_put_cstr(ds, "at least one of the conntrack 5-tuple fields "
-                                "is missing.");
-                goto error;
-            }
-        }
+    if (!tuple->ip_proto && (tuple->src_port || tuple->dst_port)) {
+        ds_put_cstr(ds, "port is set without protocol");
+        goto error;
     }
 
     free(copy);
