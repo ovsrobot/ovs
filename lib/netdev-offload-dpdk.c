@@ -771,7 +771,8 @@ dump_flow_action(struct ds *s, struct ds *s_extra,
                           IP_ARGS(set_ipv4->ipv4_addr));
         }
         ds_put_cstr(s, "/ ");
-    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP) {
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP ||
+               actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV6_DSCP) {
         const struct rte_flow_action_set_dscp *set_dscp = actions->conf;
 
         ds_put_cstr(s, "set_dscp ");
@@ -1840,6 +1841,13 @@ add_set_flow_action__(struct flow_actions *actions,
                     *(uint8_t *) mask == RTE_IPV4_HDR_ECN_MASK)
                     goto out;
                 break;
+            case RTE_FLOW_ACTION_TYPE_SET_IPV6_DSCP:
+                if (*(uint8_t *) mask == RTE_IPV6_HDR_DSCP_MASK >>
+                        RTE_IPV6_HDR_TC_SHIFT ||
+                    *(uint8_t *) mask == RTE_IPV6_HDR_ECN_MASK >>
+                        RTE_IPV6_HDR_TC_SHIFT)
+                    goto out;
+                break;
             default:
                 break;
             }
@@ -1876,6 +1884,8 @@ BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ipv6) ==
                   MEMBER_SIZEOF(struct ovs_key_ipv6, ipv6_src));
 BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ipv6) ==
                   MEMBER_SIZEOF(struct ovs_key_ipv6, ipv6_dst));
+BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_dscp) ==
+                  MEMBER_SIZEOF(struct ovs_key_ipv6, ipv6_tclass));
 BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ttl) ==
                   MEMBER_SIZEOF(struct ovs_key_ipv6, ipv6_hlimit));
 BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_tp) ==
@@ -1934,6 +1944,8 @@ parse_set_actions(struct flow_actions *actions,
 
             add_set_flow_action(ipv6_src, RTE_FLOW_ACTION_TYPE_SET_IPV6_SRC);
             add_set_flow_action(ipv6_dst, RTE_FLOW_ACTION_TYPE_SET_IPV6_DST);
+            add_set_flow_action(ipv6_tclass,
+                                RTE_FLOW_ACTION_TYPE_SET_IPV6_DSCP);
             add_set_flow_action(ipv6_hlimit, RTE_FLOW_ACTION_TYPE_SET_TTL);
 
             if (mask && !is_all_zeros(mask, sizeof *mask)) {
