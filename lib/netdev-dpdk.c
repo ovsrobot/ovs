@@ -532,11 +532,20 @@ struct netdev_dpdk {
     );
 
     PADDED_MEMBERS(CACHE_LINE_SIZE,
-        /* Names of all XSTATS counters */
-        struct rte_eth_xstat_name *rte_xstats_names;
-        int rte_xstats_names_size;
-        int rte_xstats_ids_size;
-        uint64_t *rte_xstats_ids;
+        union {
+            struct {
+                /* Names of all XSTATS counters */
+                struct rte_eth_xstat_name *rte_xstats_names;
+                int rte_xstats_names_size;
+                int rte_xstats_ids_size;
+                uint64_t *rte_xstats_ids;
+            };
+            struct {
+                /* Names of all vhost stats */
+                struct rte_vhost_stat_name *vhost_stat_names;
+                int vhost_stat_size;
+            };
+        };
     );
 };
 
@@ -552,6 +561,7 @@ static int netdev_dpdk_get_sw_custom_stats(const struct netdev *,
                                            struct netdev_custom_stats *);
 static void netdev_dpdk_configure_xstats(struct netdev_dpdk *dev);
 static void netdev_dpdk_clear_xstats(struct netdev_dpdk *dev);
+static void netdev_dpdk_vhost_clear_stats(struct netdev_dpdk *dev);
 
 int netdev_dpdk_get_vid(const struct netdev_dpdk *dev);
 
@@ -1586,6 +1596,7 @@ netdev_dpdk_vhost_destruct(struct netdev *netdev)
     dev->vhost_id = NULL;
     rte_free(dev->vhost_rxq_enabled);
 
+    netdev_dpdk_vhost_clear_stats(dev);
     common_destruct(dev);
 
     ovs_mutex_unlock(&dpdk_mutex);
@@ -3035,6 +3046,80 @@ netdev_dpdk_vhost_get_stats(const struct netdev *netdev,
     rte_spinlock_unlock(&dev->stats_lock);
 
     ovs_mutex_unlock(&dev->mutex);
+
+    return 0;
+}
+
+static int
+netdev_dpdk_vhost_get_custom_stats(const struct netdev *netdev,
+                                   struct netdev_custom_stats *custom_stats)
+{
+    netdev_dpdk_get_sw_custom_stats(netdev, custom_stats);
+
+#ifdef ALLOW_EXPERIMENTAL_API
+    struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+
+    ovs_mutex_lock(&dev->mutex);
+
+    int vid = netdev_dpdk_get_vid(dev);
+
+    if (vid >= 0 && dev->vhost_stat_size > 0) {
+        struct rte_vhost_stat *vhost_stats;
+        int stat_offset;
+        int sw_stats_size;
+
+        vhost_stats = xcalloc(dev->vhost_stat_size, sizeof *vhost_stats);
+
+        stat_offset = 0;
+
+        for (int q = 0; q < dev->up.n_rxq; q++) {
+            int qid = q * VIRTIO_QNUM + VIRTIO_TXQ;
+            int err;
+
+            err = rte_vhost_vring_stats_get(vid, qid,
+                                            &vhost_stats[stat_offset],
+                                            dev->vhost_stat_size
+                                            - stat_offset);
+            if (err < 0 || stat_offset + err > dev->vhost_stat_size) {
+                goto fail;
+            }
+            stat_offset += err;
+        }
+
+        for (int q = 0; q < dev->up.n_txq; q++) {
+            int qid = q * VIRTIO_QNUM;
+            int err;
+
+            err = rte_vhost_vring_stats_get(vid, qid,
+                                            &vhost_stats[stat_offset],
+                                            dev->vhost_stat_size
+                                            - stat_offset);
+            if (err < 0 || stat_offset + err > dev->vhost_stat_size) {
+                goto fail;
+            }
+            stat_offset += err;
+        }
+
+        sw_stats_size = custom_stats->size;
+        custom_stats->size += dev->vhost_stat_size;
+        custom_stats->counters = xrealloc(custom_stats->counters,
+                                          custom_stats->size *
+                                          sizeof *custom_stats->counters);
+
+        for (int i = 0; i < stat_offset; i++) {
+            ovs_strlcpy(custom_stats->counters[sw_stats_size + i].name,
+                        dev->vhost_stat_names[i].name,
+                        NETDEV_CUSTOM_STATS_NAME_SIZE);
+            custom_stats->counters[sw_stats_size + i].value =
+                vhost_stats[i].value;
+        }
+
+fail:
+        free(vhost_stats);
+    }
+
+     ovs_mutex_unlock(&dev->mutex);
+#endif
 
     return 0;
 }
@@ -5014,12 +5099,107 @@ out:
     return err;
 }
 
+static void
+netdev_dpdk_vhost_clear_stats(struct netdev_dpdk *dev)
+    OVS_REQUIRES(dev->mutex)
+{
+    free(dev->vhost_stat_names);
+    dev->vhost_stat_names = NULL;
+    dev->vhost_stat_size = 0;
+};
+
+static void
+netdev_dpdk_vhost_configure_stats(struct netdev_dpdk *dev OVS_UNUSED)
+    OVS_REQUIRES(dev->mutex)
+{
+#ifdef ALLOW_EXPERIMENTAL_API
+    struct rte_vhost_stat_name *vhost_stat_names = NULL;
+    int vhost_stat_size;
+    int stat_offset;
+    int vid;
+
+    vid = netdev_dpdk_get_vid(dev);
+    if (vid < 0) {
+        goto fail;
+    }
+
+    vhost_stat_size = 0;
+
+    for (int q = 0; q < dev->up.n_rxq; q++) {
+        int qid = q * VIRTIO_QNUM + VIRTIO_TXQ;
+        int err;
+
+        err = rte_vhost_vring_stats_get_names(vid, qid, NULL, 0);
+        if (err < 0) {
+            goto fail;
+        }
+        vhost_stat_size += err;
+    }
+
+    for (int q = 0; q < dev->up.n_txq; q++) {
+        int qid = q * VIRTIO_QNUM;
+        int err;
+
+        err = rte_vhost_vring_stats_get_names(vid, qid, NULL, 0);
+        if (err < 0) {
+            goto fail;
+        }
+        vhost_stat_size += err;
+    }
+
+    vhost_stat_names = xcalloc(vhost_stat_size, sizeof *vhost_stat_names);
+
+    stat_offset = 0;
+
+    for (int q = 0; q < dev->up.n_rxq; q++) {
+        int qid = q * VIRTIO_QNUM + VIRTIO_TXQ;
+        int err;
+
+        err = rte_vhost_vring_stats_get_names(vid, qid,
+                                              &vhost_stat_names[stat_offset],
+                                              vhost_stat_size - stat_offset);
+        if (err < 0 || stat_offset + err > vhost_stat_size) {
+            goto fail;
+        }
+        stat_offset += err;
+    }
+
+    for (int q = 0; q < dev->up.n_txq; q++) {
+        int qid = q * VIRTIO_QNUM;
+        int err;
+
+        err = rte_vhost_vring_stats_get_names(vid, qid,
+                                              &vhost_stat_names[stat_offset],
+                                              vhost_stat_size - stat_offset);
+        if (err < 0 || stat_offset + err > vhost_stat_size) {
+            goto fail;
+        }
+        stat_offset += err;
+    }
+
+    dev->vhost_stat_names = vhost_stat_names;
+    vhost_stat_names = NULL;
+    dev->vhost_stat_size = vhost_stat_size;
+
+fail:
+    free(vhost_stat_names);
+#endif
+}
+
 static int
 dpdk_vhost_reconfigure_helper(struct netdev_dpdk *dev)
     OVS_REQUIRES(dev->mutex)
 {
-    dev->up.n_txq = dev->requested_n_txq;
-    dev->up.n_rxq = dev->requested_n_rxq;
+    if (dev->up.n_rxq != dev->requested_n_rxq
+        || dev->up.n_txq != dev->requested_n_txq
+        || dev->vhost_stat_size <= 0) {
+
+        dev->up.n_txq = dev->requested_n_txq;
+        dev->up.n_rxq = dev->requested_n_rxq;
+
+        netdev_dpdk_vhost_clear_stats(dev);
+        netdev_dpdk_vhost_configure_stats(dev);
+    }
 
     /* Always keep RX queue 0 enabled for implementations that won't
      * report vring states. */
@@ -5089,6 +5269,11 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
     if (!(dev->vhost_driver_flags & RTE_VHOST_USER_CLIENT) && dev->vhost_id) {
         /* Register client-mode device. */
         vhost_flags |= RTE_VHOST_USER_CLIENT;
+
+#ifdef ALLOW_EXPERIMENTAL_API
+        /* Extended per vq statistics. */
+        vhost_flags |= RTE_VHOST_USER_NET_STATS_ENABLE;
+#endif
 
         /* There is no support for multi-segments buffers. */
         vhost_flags |= RTE_VHOST_USER_LINEARBUF_SUPPORT;
@@ -5489,7 +5674,7 @@ static const struct netdev_class dpdk_vhost_class = {
     .send = netdev_dpdk_vhost_send,
     .get_carrier = netdev_dpdk_vhost_get_carrier,
     .get_stats = netdev_dpdk_vhost_get_stats,
-    .get_custom_stats = netdev_dpdk_get_sw_custom_stats,
+    .get_custom_stats = netdev_dpdk_vhost_get_custom_stats,
     .get_status = netdev_dpdk_vhost_user_get_status,
     .reconfigure = netdev_dpdk_vhost_reconfigure,
     .rxq_recv = netdev_dpdk_vhost_rxq_recv,
@@ -5505,7 +5690,7 @@ static const struct netdev_class dpdk_vhost_client_class = {
     .send = netdev_dpdk_vhost_send,
     .get_carrier = netdev_dpdk_vhost_get_carrier,
     .get_stats = netdev_dpdk_vhost_get_stats,
-    .get_custom_stats = netdev_dpdk_get_sw_custom_stats,
+    .get_custom_stats = netdev_dpdk_vhost_get_custom_stats,
     .get_status = netdev_dpdk_vhost_user_get_status,
     .reconfigure = netdev_dpdk_vhost_client_reconfigure,
     .rxq_recv = netdev_dpdk_vhost_rxq_recv,
