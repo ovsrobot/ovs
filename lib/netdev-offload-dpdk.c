@@ -771,6 +771,14 @@ dump_flow_action(struct ds *s, struct ds *s_extra,
                           IP_ARGS(set_ipv4->ipv4_addr));
         }
         ds_put_cstr(s, "/ ");
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP) {
+        const struct rte_flow_action_set_dscp *set_dscp = actions->conf;
+
+        ds_put_cstr(s, "set_dscp ");
+        if (set_dscp) {
+            ds_put_format(s, "dscp_value %d ", set_dscp->dscp);
+        }
+        ds_put_cstr(s, "/ ");
     } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_TTL) {
         const struct rte_flow_action_set_ttl *set_ttl = actions->conf;
 
@@ -1826,11 +1834,21 @@ add_set_flow_action__(struct flow_actions *actions,
             return 0;
         }
         if (!is_all_ones(mask, size)) {
+            switch (attr) {
+            case RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP:
+                if (*(uint8_t *) mask == RTE_IPV4_HDR_DSCP_MASK ||
+                    *(uint8_t *) mask == RTE_IPV4_HDR_ECN_MASK)
+                    goto out;
+                break;
+            default:
+                break;
+            }
             VLOG_DBG_RL(&rl, "Partial mask is not supported");
             return -1;
         }
     }
 
+out:
     spec = xzalloc(size);
     memcpy(spec, value, size);
     add_flow_action(actions, attr, spec);
@@ -1850,6 +1868,8 @@ BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ipv4) ==
                   MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_src));
 BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ipv4) ==
                   MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_dst));
+BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_dscp) ==
+                  MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_tos));
 BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ttl) ==
                   MEMBER_SIZEOF(struct ovs_key_ipv4, ipv4_ttl));
 BUILD_ASSERT_DECL(sizeof(struct rte_flow_action_set_ipv6) ==
@@ -1901,6 +1921,7 @@ parse_set_actions(struct flow_actions *actions,
 
             add_set_flow_action(ipv4_src, RTE_FLOW_ACTION_TYPE_SET_IPV4_SRC);
             add_set_flow_action(ipv4_dst, RTE_FLOW_ACTION_TYPE_SET_IPV4_DST);
+            add_set_flow_action(ipv4_tos, RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP);
             add_set_flow_action(ipv4_ttl, RTE_FLOW_ACTION_TYPE_SET_TTL);
 
             if (mask && !is_all_zeros(mask, sizeof *mask)) {
