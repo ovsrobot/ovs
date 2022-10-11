@@ -399,4 +399,7 @@ int tc_parse_action_stats(struct nlattr *action,
 int tc_dump_tc_action_start(char *name, struct nl_dump *dump);
 int parse_netlink_to_tc_policer(struct ofpbuf *reply, uint32_t police_idx[]);
 
+void
+nl_msg_put_tc_action_flag(struct ofpbuf *request);
+
 #endif /* tc.h */
