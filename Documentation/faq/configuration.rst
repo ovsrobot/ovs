@@ -238,6 +238,20 @@ Q: Does Open vSwitch support GTP-U?
                 set int gtpu0 type=gtpu options:key=<teid> \
                 options:remote_ip=172.31.1.1
 
+Q: Does Open vSwitch support SRv6?
+
+    A: Yes. Starting with version 3.1, the Open vSwitch userspace
+    datapath supports SRv6 (Segment Routing over IPv6). The following
+    example shows tunneling to fc00:300::1 via fc00:100::1 and fc00:200::1.
+
+    ::
+
+        $ ovs-vsctl add-br br0
+        $ ovs-vsctl add-port br0 srv6_0 -- \
+                set int srv6_0 type=srv6  \
+                options:remote_ip=fc00:300::1 \
+                options:srv6_segs="fc00:100::1,fc00:200::1,fc00:300::1"
+
 Q: How do I connect two bridges?
 
     A: First, why do you want to do this?  Two connected bridges are not much

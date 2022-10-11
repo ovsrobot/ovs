@@ -126,7 +126,7 @@ map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
          /* XXX: No fragments support. */
         match.wc.masks.nw_frag = FLOW_NW_FRAG_MASK;
 
-        /* 'tp_port' is zero for GRE tunnels. In this case it
+        /* 'tp_port' is zero for GRE and SRv6 tunnels. In this case it
          * doesn't make sense to match on UDP port numbers. */
         if (tp_port) {
             match.wc.masks.tp_dst = OVS_BE16_MAX;
@@ -161,26 +161,31 @@ map_insert_ipdev__(struct ip_device *ip_dev, char dev_name[],
     }
 }
 
-static uint8_t
-tnl_type_to_nw_proto(const char type[])
+static void
+tnl_type_to_nw_proto(const char type[], uint8_t nw_protos[2])
 {
+    nw_protos[1] = 0;
+
     if (!strcmp(type, "geneve")) {
-        return IPPROTO_UDP;
+        nw_protos[0] = IPPROTO_UDP;
     }
     if (!strcmp(type, "stt")) {
-        return IPPROTO_TCP;
+        nw_protos[0] = IPPROTO_TCP;
     }
     if (!strcmp(type, "gre") || !strcmp(type, "erspan") ||
         !strcmp(type, "ip6erspan") || !strcmp(type, "ip6gre")) {
-        return IPPROTO_GRE;
+        nw_protos[0] = IPPROTO_GRE;
     }
     if (!strcmp(type, "vxlan")) {
-        return IPPROTO_UDP;
+        nw_protos[0] = IPPROTO_UDP;
     }
     if (!strcmp(type, "gtpu")) {
-        return IPPROTO_UDP;
+        nw_protos[0] = IPPROTO_UDP;
     }
-    return 0;
+    if (!strcmp(type, "srv6")) {
+        nw_protos[0] = IPPROTO_IPIP;
+        nw_protos[1] = IPPROTO_IPV6;
+    }
 }
 
 void
@@ -189,34 +194,40 @@ tnl_port_map_insert(odp_port_t port, ovs_be16 tp_port,
 {
     struct tnl_port *p;
     struct ip_device *ip_dev;
-    uint8_t nw_proto;
+    uint8_t nw_protos[2];
+    int i;
 
-    nw_proto = tnl_type_to_nw_proto(type);
-    if (!nw_proto) {
-        return;
-    }
+    tnl_type_to_nw_proto(type, nw_protos);
 
     ovs_mutex_lock(&mutex);
-    LIST_FOR_EACH(p, node, &port_list) {
-        if (p->port == port && p->nw_proto == nw_proto) {
-            ovs_refcount_ref(&p->ref_cnt);
-            goto out;
+    for (i = 0; i < 2; i++) {
+        if (!nw_protos[i]) {
+            goto next;
         }
+
+        LIST_FOR_EACH (p, node, &port_list) {
+            if (p->port == port && p->nw_proto == nw_protos[i]) {
+                ovs_refcount_ref(&p->ref_cnt);
+                goto next;
+            }
+        }
+
+        p = xzalloc(sizeof *p);
+        p->port = port;
+        p->tp_port = tp_port;
+        p->nw_proto = nw_protos[i];
+        ovs_strlcpy(p->dev_name, dev_name, sizeof p->dev_name);
+        ovs_refcount_init(&p->ref_cnt);
+        ovs_list_insert(&port_list, &p->node);
+
+        LIST_FOR_EACH (ip_dev, node, &addr_list) {
+            map_insert_ipdev__(ip_dev, p->dev_name, p->port, p->nw_proto,
+                               p->tp_port);
+        }
+next:
+        ;
     }
 
-    p = xzalloc(sizeof *p);
-    p->port = port;
-    p->tp_port = tp_port;
-    p->nw_proto = nw_proto;
-    ovs_strlcpy(p->dev_name, dev_name, sizeof p->dev_name);
-    ovs_refcount_init(&p->ref_cnt);
-    ovs_list_insert(&port_list, &p->node);
-
-    LIST_FOR_EACH(ip_dev, node, &addr_list) {
-        map_insert_ipdev__(ip_dev, p->dev_name, p->port, p->nw_proto, p->tp_port);
-    }
-
-out:
     ovs_mutex_unlock(&mutex);
 }
 
@@ -261,20 +272,27 @@ tnl_port_map_delete(odp_port_t port, const char type[])
 {
     struct tnl_port *p;
     struct ip_device *ip_dev;
-    uint8_t nw_proto;
+    uint8_t nw_protos[2];
+    int i;
 
-    nw_proto = tnl_type_to_nw_proto(type);
+    tnl_type_to_nw_proto(type, nw_protos);
 
     ovs_mutex_lock(&mutex);
-    LIST_FOR_EACH_SAFE (p, node, &port_list) {
-        if (p->port == port && p->nw_proto == nw_proto &&
-                    ovs_refcount_unref_relaxed(&p->ref_cnt) == 1) {
-            ovs_list_remove(&p->node);
-            LIST_FOR_EACH(ip_dev, node, &addr_list) {
-                ipdev_map_delete(ip_dev, p->tp_port, p->nw_proto);
+    for (i = 0; i < 2; i++) {
+        if (!nw_protos[i]) {
+            continue;
+        }
+
+        LIST_FOR_EACH_SAFE (p, node, &port_list) {
+            if (p->port == port && p->nw_proto == nw_protos[i] &&
+                        ovs_refcount_unref_relaxed(&p->ref_cnt) == 1) {
+                ovs_list_remove(&p->node);
+                LIST_FOR_EACH (ip_dev, node, &addr_list) {
+                    ipdev_map_delete(ip_dev, p->tp_port, p->nw_proto);
+                }
+                free(p);
+                break;
             }
-            free(p);
-            break;
         }
     }
     ovs_mutex_unlock(&mutex);

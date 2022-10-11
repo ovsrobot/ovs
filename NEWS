@@ -23,6 +23,8 @@ Post-v3.0.0
        bug and CVE fixes addressed since its release.
        If a user wishes to benefit from these fixes it is recommended to use
        DPDK 21.11.2.
+   - SRv6 Tunnel Protocol
+     * Only support for userspace datapath.
 
 
 v3.0.0 - 15 Aug 2022
