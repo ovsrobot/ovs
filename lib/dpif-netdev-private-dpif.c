@@ -31,6 +31,8 @@ VLOG_DEFINE_THIS_MODULE(dpif_netdev_impl);
 #define DPIF_NETDEV_IMPL_AVX512_CHECK (__x86_64__ && HAVE_AVX512F \
     && HAVE_LD_AVX512_GOOD && __SSE4_2__)
 
+DEFINE_EXTERN_PER_THREAD_DATA(recirc_depth, 0);
+
 enum dpif_netdev_impl_info_idx {
     DPIF_NETDEV_IMPL_SCALAR,
     DPIF_NETDEV_IMPL_AVX512
