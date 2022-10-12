@@ -184,15 +184,18 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
         goto action_stage;
     }
 
-    /* Do a batch miniflow extract into keys, but only for outer packets. */
+    /* Do a batch miniflow extract into keys. */
     uint32_t mf_mask = 0;
-    if (recirc_depth == 0) {
-        miniflow_extract_func mfex_func;
-        atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
-        if (mfex_func) {
-            mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd,
-                                md_is_valid);
-        }
+    miniflow_extract_func mfex_func;
+    atomic_read_relaxed(&pmd->miniflow_extract_opt, &mfex_func);
+    miniflow_extract_func mfex_inner_func;
+    atomic_read_relaxed(&pmd->miniflow_extract_inner_opt, &mfex_inner_func);
+    if (md_is_valid && mfex_inner_func) {
+        mf_mask = mfex_inner_func(packets, keys, batch_size, in_port, pmd,
+                                  md_is_valid);
+    } else if (!md_is_valid && mfex_func) {
+        mf_mask = mfex_func(packets, keys, batch_size, in_port, pmd,
+                            md_is_valid);
     }
 
     uint32_t iter = lookup_pkts_bitmask;
@@ -207,20 +210,19 @@ dp_netdev_input_avx512__(struct dp_netdev_pmd_thread *pmd,
             pkt_metadata_prefetch_init(&dp_packets[i + prefetch_ahead]->md);
         }
 
-        /* Get packet pointer from bitmask and packet md. */
-        struct dp_packet *packet = packets->packets[i];
-        if (!md_is_valid) {
-            pkt_metadata_init(&packet->md, in_port);
-        }
-
-        struct dp_netdev_flow *f = NULL;
-        struct netdev_flow_key *key = &keys[i];
-
         /* Check the minfiflow mask to see if the packet was correctly
          * classifed by vector mfex else do a scalar miniflow extract
          * for that packet.
          */
         bool mfex_hit = !!(mf_mask & (UINT32_C(1) << i));
+        /* Get packet pointer from bitmask and packet md. */
+        struct dp_packet *packet = packets->packets[i];
+        if (!md_is_valid && !mfex_hit) {
+            pkt_metadata_init(&packet->md, in_port);
+        }
+
+        struct dp_netdev_flow *f = NULL;
+        struct netdev_flow_key *key = &keys[i];
 
         /* Check for a partial hardware offload match. */
         if (hwol_enabled && recirc_depth == 0) {
