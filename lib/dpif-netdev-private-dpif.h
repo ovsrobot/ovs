@@ -84,10 +84,18 @@ dp_netdev_input(struct dp_netdev_pmd_thread *pmd,
                 struct dp_packet_batch *packets,
                 odp_port_t in_port);
 
+int32_t
+dp_netdev_recirculate(struct dp_netdev_pmd_thread *,
+                      struct dp_packet_batch *);
+
 /* AVX512 enabled DPIF implementation function. */
 int32_t
-dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
-                             struct dp_packet_batch *packets,
-                             odp_port_t in_port);
+dp_netdev_input_avx512(struct dp_netdev_pmd_thread *pmd,
+                       struct dp_packet_batch *packets,
+                       odp_port_t in_port);
+
+int32_t
+dp_netdev_input_avx512_recirc(struct dp_netdev_pmd_thread *pmd,
+                              struct dp_packet_batch *packets);
 
 #endif /* netdev-private.h */
