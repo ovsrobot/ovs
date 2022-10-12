@@ -4120,7 +4120,15 @@ is_neighbor_reply_correct(const struct xlate_ctx *ctx, const struct flow *flow)
 {
     bool ret = false;
     int i;
-    struct xbridge_addr *xbridge_addr = xbridge_addr_ref(ctx->xbridge->addr);
+    struct xbridge_addr *xbridge_addr = NULL;
+
+    if (flow->dl_type != htons(ETH_TYPE_ARP) &&
+        flow->nw_proto != IPPROTO_ICMPV6)
+    {
+        return false;
+    }
+
+    xbridge_addr = xbridge_addr_ref(ctx->xbridge->addr);
 
     /* Verify if 'nw_dst' of ARP or 'ipv6_dst' of ICMPV6 is in the list. */
     for (i = 0; xbridge_addr && i < xbridge_addr->n_addr; i++) {
@@ -4192,9 +4200,8 @@ terminate_native_tunnel(struct xlate_ctx *ctx, const struct xport *xport,
         /* If no tunnel port was found and it's about an ARP or ICMPv6 packet,
          * do tunnel neighbor snooping. */
         if (*tnl_port == ODPP_NONE &&
-            (flow->dl_type == htons(ETH_TYPE_ARP) ||
-             flow->nw_proto == IPPROTO_ICMPV6) &&
-             is_neighbor_reply_correct(ctx, flow)) {
+            (is_neighbor_reply_correct(ctx, flow) ||
+             is_garp(flow, wc))) {
             tnl_neigh_snoop(flow, wc, ctx->xbridge->name,
                             ctx->xin->allow_side_effects);
         } else if (*tnl_port != ODPP_NONE &&
