@@ -156,6 +156,7 @@ netdev_windows_system_construct(struct netdev *netdev_)
     struct netdev_windows_netdev_info info;
     struct ofpbuf *buf;
     int ret;
+    const char *type = NULL;
 
     /* Query the attributes and runtime status of the netdev. */
     ret = query_netdev(netdev_get_name(&netdev->up), &info, &buf);
@@ -165,7 +166,17 @@ netdev_windows_system_construct(struct netdev *netdev_)
     if (strcmp(netdev_get_type(&netdev->up), "internal") && ret) {
         return ret;
     }
+
     ofpbuf_delete(buf);
+
+    /*if ovs-type is internal but the tyep got via netdev->up is system stop creating netdev*/
+    type = netdev_get_type(&netdev->up);
+    if (type && !strcmp(type, "system") &&
+        (info.ovs_type == OVS_VPORT_TYPE_INTERNAL)) {
+        VLOG_DBG("construct device %s, ovs_type: %u failed",
+                 netdev_get_name(&netdev->up), info.ovs_type);
+        return 1;
+    }
 
     netdev->change_seq = 1;
     netdev->dev_type = info.ovs_type;
