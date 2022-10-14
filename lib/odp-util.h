@@ -373,6 +373,7 @@ void odp_put_pop_eth_action(struct ofpbuf *odp_actions);
 void odp_put_push_eth_action(struct ofpbuf *odp_actions,
                              const struct eth_addr *eth_src,
                              const struct eth_addr *eth_dst);
+bool odp_contains_irreversible_action(const void *attrs, size_t attrs_len);
 
 struct attr_len_tbl {
     int len;

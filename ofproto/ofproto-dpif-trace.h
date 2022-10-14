@@ -96,6 +96,7 @@ bool oftrace_add_recirc_node(struct ovs_list *recirc_queue,
                              const struct ofpact_nat *,
                              const struct dp_packet *, uint32_t recirc_id,
                              const uint16_t zone);
+void oftrace_recirc_node_destroy(struct oftrace_recirc_node *node);
 
 void ofproto_append_ports_to_map(struct ofputil_port_map *, struct hmap ports);
 
