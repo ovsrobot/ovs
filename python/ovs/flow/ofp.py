@@ -31,7 +31,6 @@ from ovs.flow.ofp_act import (
     decode_dec_ttl,
     decode_chk_pkt_larger,
     decode_zone,
-    decode_exec,
     decode_learn,
 )
 
@@ -337,8 +336,7 @@ class OFPFlow(Flow):
                         "table": decode_int,
                         "nat": decode_nat,
                         "force": decode_flag,
-                        "exec": functools.partial(
-                            decode_exec,
+                        "exec": nested_kv_decoder(
                             KVDecoders(
                                 {
                                     **OFPFlow._encap_actions_decoders_args(),
@@ -346,6 +344,7 @@ class OFPFlow(Flow):
                                     **OFPFlow._meta_action_decoders_args(),
                                 }
                             ),
+                            is_list=True,
                         ),
                         "alg": decode_default,
                     }
@@ -360,6 +359,7 @@ class OFPFlow(Flow):
                     }
                 )
             ),
+            # learn moved to _clone actions.
         }
 
     @staticmethod
@@ -401,11 +401,11 @@ class OFPFlow(Flow):
         """
         return {
             "learn": decode_learn(action_decoders),
-            "clone": functools.partial(
-                decode_exec, KVDecoders(action_decoders)
+            "clone": nested_kv_decoder(
+                KVDecoders(action_decoders), is_list=True
             ),
-            "write_actions": functools.partial(
-                decode_exec, KVDecoders(action_decoders)
+            "write_actions": nested_kv_decoder(
+                KVDecoders(action_decoders), is_list=True
             ),
         }
 
