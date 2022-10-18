@@ -23,6 +23,8 @@ Post-v3.0.0
        bug and CVE fixes addressed since its release.
        If a user wishes to benefit from these fixes it is recommended to use
        DPDK 21.11.2.
+   - IPFIX template and statistics intervals can be configured through two new
+       options in the IPFIX table: 'template_interval' and 'stats_interval'.
 
 
 v3.0.0 - 15 Aug 2022
