@@ -66,6 +66,7 @@ static size_t n_hooks;
 
 static int signal_fds[2];
 static volatile sig_atomic_t stored_sig_nr = SIG_ATOMIC_MAX;
+bool fs_inited = false;
 
 #ifdef _WIN32
 static HANDLE wevent;
@@ -85,16 +86,20 @@ static BOOL WINAPI ConsoleHandlerRoutine(DWORD dwCtrlType);
 void
 fatal_signal_init(void)
 {
-    static bool inited = false;
-
-    if (!inited) {
+    if (!fs_inited) {
         size_t i;
 
         assert_single_threaded();
-        inited = true;
+        fs_inited = true;
 
         ovs_mutex_init_recursive(&mutex);
 #ifndef _WIN32
+        if (signal_fds[0]) {
+            close(signal_fds[0]);
+        }
+        if (signal_fds[1]) {
+            close(signal_fds[1]);
+        }
         xpipe_nonblocking(signal_fds);
 #else
         wevent = CreateEvent(NULL, TRUE, FALSE, NULL);

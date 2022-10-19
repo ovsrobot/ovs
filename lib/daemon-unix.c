@@ -95,6 +95,8 @@ static int lock_pidfile(FILE *, int command);
 static pid_t fork_and_clean_up(void);
 static void daemonize_post_detach(void);
 
+extern bool fs_inited;
+
 /* Returns the file name that would be used for a pidfile if 'name' were
  * provided to set_pidfile().  The caller must free the returned string. */
 char *
@@ -398,6 +400,7 @@ monitor_daemon(pid_t daemon_pid)
                 log_received_backtrace(daemonize_fd);
                 close(daemonize_fd);
                 daemonize_fd = -1;
+                fs_inited = false;
 
                 /* Throttle restarts to no more than once every 10 seconds. */
                 if (time(NULL) < last_restart + 10) {
