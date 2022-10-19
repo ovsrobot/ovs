@@ -478,10 +478,21 @@ ovs_thread_create(const char *name, void *(*start)(void *), void *arg)
      * requires approximately 384 kB according to the following analysis:
      * https://mail.openvswitch.org/pipermail/ovs-dev/2016-January/308592.html
      *
-     * We use 512 kB to give us some margin of error. */
+     * We use at least 512 kB to give us some margin of error.
+     *
+     * However, this can cause issues on larger systems with complex
+     * OpenFlow tables. A default stack size of 2MB can result in segfaults
+     * if a lot of clones and resubmits are used. So if the system memory
+     * exceeds some limit then use a 4 MB stack.
+     * */
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    set_min_stack_size(&attr, 512 * 1024);
+
+    if (system_memory() >> 30 > 4) {
+        set_min_stack_size(&attr, 4096 * 1024);
+    } else {
+        set_min_stack_size(&attr, 512 * 1024);
+    }
 
     error = pthread_create(&thread, &attr, ovsthread_wrapper, aux);
     if (error) {
@@ -678,6 +689,37 @@ count_total_cores(void)
 #endif
 
     return n_cores > 0 ? n_cores : 0;
+}
+
+/* Returns the total system memory in bytes, or 0 if the
+ * number cannot be determined. */
+uint64_t
+system_memory(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    static uint64_t memory;
+
+    if (ovsthread_once_start(&once)) {
+#if defined(_WIN32)
+        MEMORYSTATUSEX statex;
+
+        statex.dwLength = sizeof statex;
+        GlobalMemoryStatusEx(&statex);
+        memory = statex.ullTotalPhys;
+#elif defined(__linux__)
+        long int page_count = sysconf(_SC_PHYS_PAGES);
+        long int page_size = sysconf(_SC_PAGESIZE);
+
+        if (page_count > 0 && page_size > 0) {
+            memory = page_count * page_size;
+        } else {
+            memory = 0;
+        }
+#endif
+        ovsthread_once_done(&once);
+    }
+
+    return memory;
 }
 
 /* Returns 'true' if current thread is PMD thread. */

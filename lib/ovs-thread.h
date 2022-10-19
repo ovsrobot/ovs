@@ -523,6 +523,7 @@ bool may_fork(void);
 
 int count_cpu_cores(void);
 int count_total_cores(void);
+uint64_t system_memory(void);
 bool thread_is_pmd(void);
 
 #endif /* ovs-thread.h */
