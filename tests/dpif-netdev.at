@@ -636,6 +636,27 @@ OVS_VSWITCHD_STOP(["/flow: in_port is not an exact match/d
 /failed to put/d"])
 AT_CLEANUP
 
+AT_SETUP([dpif-netdev - check dpif-netdev/offload-show])
+OVS_VSWITCHD_START(
+  [add-port br0 p1 \
+   -- set interface p1 type=dummy options:pstream=punix:$OVS_RUNDIR/p0.sock \
+   -- set bridge br0 datapath-type=dummy \
+                     other-config:datapath-id=1234 fail-mode=secure])
+
+AT_CHECK([ovs-appctl dpif-netdev/offload-show | sort], [0], [dnl
+br0: ip_csum: off, tcp_csum: off, udp_csum: off, sctp_csum: off, tso: off
+ovs-dummy: ip_csum: off, tcp_csum: off, udp_csum: off, sctp_csum: off, tso: off
+p1: ip_csum: off, tcp_csum: off, udp_csum: off, sctp_csum: off, tso: off
+], [])
+AT_CHECK([ovs-appctl dpif-netdev/offload-show p1], [0], [dnl
+p1: ip_csum: off, tcp_csum: off, udp_csum: off, sctp_csum: off, tso: off
+], [])
+AT_CHECK([ovs-appctl dpif-netdev/offload-show ovs-dummy p1], [0], [dnl
+p1: ip_csum: off, tcp_csum: off, udp_csum: off, sctp_csum: off, tso: off
+], [])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 # SEND_UDP_PKTS([p_name], [p_ofport])
 #
 # Sends 128 packets to port 'p_name' with different UDP destination ports.
