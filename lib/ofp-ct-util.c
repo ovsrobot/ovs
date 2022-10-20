@@ -23,7 +23,9 @@
 
 #include "ct-dpif.h"
 #include "ofp-ct-util.h"
+#include "openflow/nicira-ext.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/ofp-msgs.h"
 #include "openvswitch/ofp-parse.h"
 #include "openvswitch/ofp-util.h"
 #include "openvswitch/packets.h"
@@ -309,3 +311,41 @@ error:
     free(copy);
     return false;
 }
+
+void
+ofputil_ct_match_decode(struct ofputil_ct_match *match, uint16_t *zone_id,
+                        const struct ofp_header *oh)
+{
+    const struct nx_ct_flush *nx_flush = ofpmsg_body(oh);
+
+    struct ofputil_ct_tuple *orig = &match->tuple_orig;
+    struct ofputil_ct_tuple *reply = &match->tuple_reply;
+
+    *zone_id = ntohs(nx_flush->zone_id);
+
+    match->l3_type = nx_flush->family;
+    match->ip_proto = nx_flush->ip_proto;
+
+    memcpy(&orig->src, &nx_flush->orig_src, sizeof orig->src);
+    memcpy(&orig->dst, &nx_flush->orig_dst, sizeof orig->dst);
+
+    memcpy(&reply->src, &nx_flush->reply_src, sizeof reply->src);
+    memcpy(&reply->dst, &nx_flush->reply_dst, sizeof reply->dst);
+
+    orig->src_port = nx_flush->orig_src_port;
+    reply->src_port = nx_flush->reply_src_port;
+
+    if (match->ip_proto == IPPROTO_ICMP || match->ip_proto == IPPROTO_ICMPV6) {
+        uint16_t icmp = ntohs(nx_flush->orig_dst_port);
+        orig->icmp_type = icmp >> 8 & 0xff;
+        orig->icmp_code = icmp & 0xff;
+
+        icmp = ntohs(nx_flush->reply_dst_port);
+        reply->icmp_type = icmp >> 8 & 0xff;
+        reply->icmp_code = icmp & 0xff;
+    } else {
+        orig->dst_port = nx_flush->orig_dst_port;
+        reply->dst_port = nx_flush->reply_dst_port;
+    }
+}
+

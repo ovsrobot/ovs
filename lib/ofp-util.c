@@ -237,3 +237,39 @@ ofputil_encode_barrier_request(enum ofp_version ofp_version)
 
     return ofpraw_alloc(type, ofp_version, 0);
 }
+
+struct ofpbuf *
+ofputil_ct_match_encode(const struct ofputil_ct_match *match, uint16_t zone_id,
+                        enum ofp_version version)
+{
+    struct ofpbuf *msg = ofpraw_alloc(OFPRAW_NXT_CT_FLUSH, version, 0);
+    struct nx_ct_flush *nx_flush = ofpbuf_put_zeros(msg, sizeof *nx_flush);
+    const struct ofputil_ct_tuple *orig = &match->tuple_orig;
+    const struct ofputil_ct_tuple *reply = &match->tuple_reply;
+
+    nx_flush->ip_proto = match->ip_proto;
+    nx_flush->family = match->l3_type;
+    nx_flush->zone_id = htons(zone_id);
+
+    memcpy(&nx_flush->orig_src, &orig->src, sizeof nx_flush->orig_src);
+    memcpy(&nx_flush->orig_dst, &orig->dst, sizeof nx_flush->orig_dst);
+    memcpy(&nx_flush->reply_src, &reply->src, sizeof nx_flush->reply_src);
+    memcpy(&nx_flush->reply_dst, &reply->dst, sizeof nx_flush->reply_dst);
+
+    nx_flush->orig_src_port = orig->src_port;
+    nx_flush->reply_src_port = reply->src_port;
+
+    if (nx_flush->ip_proto == IPPROTO_ICMP
+        || nx_flush->ip_proto == IPPROTO_ICMPV6) {
+
+        nx_flush->orig_dst_port =
+            htons(orig->icmp_type << 8 | orig->icmp_code);
+        nx_flush->reply_dst_port =
+            htons(reply->icmp_type << 8 | reply->icmp_code);
+    } else {
+        nx_flush->orig_dst_port = orig->dst_port;
+        nx_flush->reply_dst_port = reply->dst_port;
+    }
+
+    return msg;
+}

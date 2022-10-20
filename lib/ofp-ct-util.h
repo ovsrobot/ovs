@@ -31,4 +31,7 @@ void ofputil_ct_match_format(struct ds *ds,
 bool ofputil_ct_match_parse(struct ofputil_ct_match *match, const char *s,
                             struct ds *ds);
 
+void ofputil_ct_match_decode(struct ofputil_ct_match *match, uint16_t *zone_id,
+                             const struct ofp_header *oh);
+
 #endif // lib/ofp-ct-util.h

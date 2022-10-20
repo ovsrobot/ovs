@@ -1064,4 +1064,30 @@ struct nx_zone_id {
 };
 OFP_ASSERT(sizeof(struct nx_zone_id) == 8);
 
+/* NXT_CT_FLUSH.
+ *
+ * Flushes the connection tracking specified by 5-tuple. */
+struct nx_ct_flush {
+    uint8_t ip_proto;          /* IP protocol. */
+    uint8_t family;            /* L3 address family. */
+    ovs_be16 zone_id;          /* CT zone id. */
+
+    /* The orig direction section. */
+    ovs_be32 orig_src[4];      /* CT source IPv6 or mapped IPv4 address. */
+    ovs_be32 orig_dst[4];      /* CT destination IPv6 or mapped IPv4
+                                * address. */
+    ovs_be16 orig_src_port;    /* CT source port or ICMP id. */
+    ovs_be16 orig_dst_port;    /* CT destination port or ICMP type and ICMP
+                                * code. */
+
+    /* The reply direction section. */
+    ovs_be32 reply_src[4];      /* CT source IPv6 or mapped IPv4 address. */
+    ovs_be32 reply_dst[4];      /* CT destination IPv6 or mapped IPv4
+                                * address. */
+    ovs_be16 reply_src_port;    /* CT source port or ICMP id. */
+    ovs_be16 reply_dst_port;    /* CT destination port or ICMP type and ICMP
+                                * code. */
+};
+OFP_ASSERT(sizeof(struct nx_ct_flush) == 76);
+
 #endif /* openflow/nicira-ext.h */

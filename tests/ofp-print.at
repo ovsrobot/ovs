@@ -4073,3 +4073,74 @@ AT_CHECK([ovs-ofctl ofp-print "\
 NXT_CT_FLUSH_ZONE (xid=0x3): zone_id=13
 ])
 AT_CLEANUP
+
+AT_SETUP([NXT_CT_FLUSH])
+AT_KEYWORDS([ofp-print])
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 5c 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+02 \
+00 0d \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 \
+00 50 \
+1f 90 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 \
+1f 90 \
+00 50 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=6,orig=(src=10.10.0.1,dst=10.10.0.2,src_port=80,dst_port=8080),reply=(src=10.10.0.2,dst=10.10.0.1,src_port=8080,dst_port=80),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 5c 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+0a \
+00 0d \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 \
+00 50 \
+1f 90 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 \
+1f 90 \
+00 50 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=10,ip_proto=6,orig=(src=fd18::ffff:abcd:1,dst=fd18::ffff:abcd:2,src_port=80,dst_port=8080),reply=(src=fd18::ffff:abcd:2,dst=fd18::ffff:abcd:1,src_port=8080,dst_port=80),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 5c 00 00 00 03 00 00 23 20 00 00 00 20 \
+01 \
+02 \
+00 0d \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 \
+00 01 \
+08 00 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 \
+00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 \
+00 01 \
+00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=1,orig=(src=10.10.0.1,dst=10.10.0.2,icmp_id=1,icmp_type=8,icmp_code=0),reply=(src=10.10.0.2,dst=10.10.0.1,icmp_id=1,icmp_type=0,icmp_code=0),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 5c 00 00 00 03 00 00 23 20 00 00 00 20 \
+01 \
+0a \
+00 0d \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 \
+00 01 \
+08 00 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 \
+fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 \
+00 01 \
+00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=10,ip_proto=1,orig=(src=fd18::ffff:abcd:1,dst=fd18::ffff:abcd:2,icmp_id=1,icmp_type=8,icmp_code=0),reply=(src=fd18::ffff:abcd:2,dst=fd18::ffff:abcd:1,icmp_id=1,icmp_type=0,icmp_code=0),zone_id=13
+])
+AT_CLEANUP
