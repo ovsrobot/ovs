@@ -40,6 +40,7 @@
 #include "netdev.h"
 #include "netlink.h"
 #include "odp-util.h"
+#include "ofp-ct-util.h"
 #include "openvswitch/ofpbuf.h"
 #include "packets.h"
 #include "openvswitch/shash.h"
@@ -1707,15 +1708,20 @@ dpctl_flush_conntrack(int argc, const char *argv[],
                       struct dpctl_params *dpctl_p)
 {
     struct dpif *dpif = NULL;
-    struct ct_dpif_tuple tuple, *ptuple = NULL;
+    struct ofputil_ct_match match, *pmatch = NULL;
     struct ds ds = DS_EMPTY_INITIALIZER;
     uint16_t zone, *pzone = NULL;
     int error;
     int args = argc - 1;
 
     /* Parse ct tuple */
-    if (args && ct_dpif_parse_tuple(&tuple, argv[args], &ds)) {
-        ptuple = &tuple;
+    if (args) {
+        if (!ofputil_ct_match_parse(&match, argv[args], &ds)) {
+            error = EOPNOTSUPP;
+            goto error;
+        }
+
+        pmatch = &match;
         args--;
     }
 
@@ -1737,7 +1743,7 @@ dpctl_flush_conntrack(int argc, const char *argv[],
         return error;
     }
 
-    error = ct_dpif_flush(dpif, pzone, ptuple);
+    error = ct_dpif_flush(dpif, pzone, pmatch);
     if (!error) {
         dpif_close(dpif);
         return 0;

@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include "ct-dpif.h"
+#include "ofp-ct-util.h"
 #include "openvswitch/ofp-parse.h"
 #include "openvswitch/vlog.h"
 
@@ -80,6 +81,31 @@ ct_dpif_dump_start(struct dpif *dpif, struct ct_dpif_dump_state **dump,
     return err;
 }
 
+static void
+ct_dpif_tuple_from_ofputil_ct_tuple(const struct ofputil_ct_tuple *ofp_tuple,
+                                    struct ct_dpif_tuple *tuple,
+                                    uint16_t l3_type, uint8_t ip_proto)
+{
+    if (l3_type == AF_INET) {
+        tuple->src.ip = in6_addr_get_mapped_ipv4(&ofp_tuple->src);
+        tuple->dst.ip = in6_addr_get_mapped_ipv4(&ofp_tuple->dst);
+    } else {
+        tuple->src.in6 = ofp_tuple->src;
+        tuple->dst.in6 = ofp_tuple->dst;
+    }
+
+    tuple->l3_type = l3_type;
+    tuple->ip_proto = ip_proto;
+    tuple->src_port = ofp_tuple->src_port;
+
+    if (ip_proto == IPPROTO_ICMP || ip_proto == IPPROTO_ICMPV6) {
+        tuple->icmp_code = ofp_tuple->icmp_code;
+        tuple->icmp_type = ofp_tuple->icmp_type;
+    } else {
+        tuple->dst_port = ofp_tuple->dst_port;
+    }
+}
+
 /* Dump one connection from a tracker, and put it in 'entry'.
  *
  * 'dump' should have been initialized by ct_dpif_dump_start().
@@ -109,7 +135,62 @@ ct_dpif_dump_done(struct ct_dpif_dump_state *dump)
             ? dpif->dpif_class->ct_dump_done(dpif, dump)
             : EOPNOTSUPP);
 }
-
+
+static int
+ct_dpif_flush_tuple(struct dpif *dpif, const uint16_t *zone,
+                    const struct ofputil_ct_match *match) {
+    struct ct_dpif_dump_state *dump;
+    struct ct_dpif_entry cte;
+    int error;
+    int tot_bkts;
+
+    if (VLOG_IS_DBG_ENABLED()) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        ofputil_ct_match_format(&ds, match);
+        VLOG_DBG("%s: ct_flush:%s in zone %d", dpif_name(dpif), ds_cstr(&ds),
+                 zone ? *zone : 0);
+        ds_destroy(&ds);
+    }
+
+    if (!dpif->dpif_class->ct_flush) {
+        return EOPNOTSUPP;
+    }
+
+    /* If we have full five tuple in orig just do the flush over that
+     * tuple directly. */
+    if (ofputil_ct_tuple_is_five_tuple(&match->tuple_orig, match->ip_proto)) {
+        struct ct_dpif_tuple tuple;
+        ct_dpif_tuple_from_ofputil_ct_tuple(&match->tuple_orig, &tuple,
+                                            match->l3_type, match->ip_proto);
+        return dpif->dpif_class->ct_flush(dpif, zone, &tuple);
+    }
+
+    error = ct_dpif_dump_start(dpif, &dump, zone, &tot_bkts);
+    if (error) {
+        return error;
+    }
+
+    while (!(error = ct_dpif_dump_next(dump, &cte))) {
+        if (zone && *zone != cte.zone) {
+            continue;
+        }
+
+        if (ofputil_ct_match_cmp(match, &cte)) {
+            error = dpif->dpif_class->ct_flush(dpif, &cte.zone,
+                                               &cte.tuple_orig);
+            if (error) {
+                break;
+            }
+        }
+    }
+    if (error == EOF) {
+        error = 0;
+    }
+
+    ct_dpif_dump_done(dump);
+    return error;
+}
+
 /* Flush the entries in the connection tracker used by 'dpif'.  The
  * arguments have the following behavior:
  *
@@ -120,14 +201,10 @@ ct_dpif_dump_done(struct ct_dpif_dump_state *dump)
  *     in '*zone'. If 'zone' is NULL, use the default zone (zone 0). */
 int
 ct_dpif_flush(struct dpif *dpif, const uint16_t *zone,
-              const struct ct_dpif_tuple *tuple)
+              const struct ofputil_ct_match *match)
 {
-    if (tuple) {
-        struct ds ds = DS_EMPTY_INITIALIZER;
-        ct_dpif_format_tuple(&ds, tuple);
-        VLOG_DBG("%s: ct_flush: %s in zone %d", dpif_name(dpif), ds_cstr(&ds),
-                                                zone ? *zone : 0);
-        ds_destroy(&ds);
+    if (match) {
+        return ct_dpif_flush_tuple(dpif, zone, match);
     } else if (zone) {
         VLOG_DBG("%s: ct_flush: zone %"PRIu16, dpif_name(dpif), *zone);
     } else {
@@ -135,7 +212,7 @@ ct_dpif_flush(struct dpif *dpif, const uint16_t *zone,
     }
 
     return (dpif->dpif_class->ct_flush
-            ? dpif->dpif_class->ct_flush(dpif, zone, tuple)
+            ? dpif->dpif_class->ct_flush(dpif, zone, NULL)
             : EOPNOTSUPP);
 }
 
@@ -581,112 +658,6 @@ ct_dpif_format_tcp_stat(struct ds * ds, int tcp_state, int conn_per_state)
     ds_put_format(ds, "=%u", conn_per_state);
 }
 
-/* Parses a specification of a conntrack 5-tuple from 's' into 'tuple'.
- * Returns true on success.  Otherwise, returns false and puts the error
- * message in 'ds'. */
-bool
-ct_dpif_parse_tuple(struct ct_dpif_tuple *tuple, const char *s, struct ds *ds)
-{
-    char *pos, *key, *value, *copy;
-    memset(tuple, 0, sizeof *tuple);
-
-    pos = copy = xstrdup(s);
-    while (ofputil_parse_key_value(&pos, &key, &value)) {
-        if (!*value) {
-            ds_put_format(ds, "field %s missing value", key);
-            goto error;
-        }
-
-        if (!strcmp(key, "ct_nw_src") || !strcmp(key, "ct_nw_dst")) {
-            if (tuple->l3_type && tuple->l3_type != AF_INET) {
-                ds_put_cstr(ds, "L3 type set multiple times");
-                goto error;
-            } else {
-                tuple->l3_type = AF_INET;
-            }
-            if (!ip_parse(value, key[6] == 's' ? &tuple->src.ip :
-                                                 &tuple->dst.ip)) {
-                goto error_with_msg;
-            }
-        } else if (!strcmp(key, "ct_ipv6_src") ||
-                   !strcmp(key, "ct_ipv6_dst")) {
-            if (tuple->l3_type && tuple->l3_type != AF_INET6) {
-                ds_put_cstr(ds, "L3 type set multiple times");
-                goto error;
-            } else {
-                tuple->l3_type = AF_INET6;
-            }
-            if (!ipv6_parse(value, key[8] == 's' ? &tuple->src.in6 :
-                                                   &tuple->dst.in6)) {
-                goto error_with_msg;
-            }
-        } else if (!strcmp(key, "ct_nw_proto")) {
-            char *err = str_to_u8(value, key, &tuple->ip_proto);
-            if (err) {
-                free(err);
-                goto error_with_msg;
-            }
-        } else if (!strcmp(key, "ct_tp_src") || !strcmp(key,"ct_tp_dst")) {
-            uint16_t port;
-            char *err = str_to_u16(value, key, &port);
-            if (err) {
-                free(err);
-                goto error_with_msg;
-            }
-            if (key[6] == 's') {
-                tuple->src_port = htons(port);
-            } else {
-                tuple->dst_port = htons(port);
-            }
-        } else if (!strcmp(key, "icmp_type") || !strcmp(key, "icmp_code") ||
-                   !strcmp(key, "icmp_id") ) {
-            if (tuple->ip_proto != IPPROTO_ICMP &&
-                tuple->ip_proto != IPPROTO_ICMPV6) {
-                ds_put_cstr(ds, "invalid L4 fields");
-                goto error;
-            }
-            uint16_t icmp_id;
-            char *err;
-            if (key[5] == 't') {
-                err = str_to_u8(value, key, &tuple->icmp_type);
-            } else if (key[5] == 'c') {
-                err = str_to_u8(value, key, &tuple->icmp_code);
-            } else {
-                err = str_to_u16(value, key, &icmp_id);
-                tuple->icmp_id = htons(icmp_id);
-            }
-            if (err) {
-                free(err);
-                goto error_with_msg;
-            }
-        } else {
-            ds_put_format(ds, "invalid conntrack tuple field: %s", key);
-            goto error;
-        }
-    }
-
-    if (ipv6_is_zero(&tuple->src.in6) || ipv6_is_zero(&tuple->dst.in6) ||
-        !tuple->ip_proto) {
-        /* icmp_type, icmp_code, and icmp_id can be 0. */
-        if (tuple->ip_proto != IPPROTO_ICMP &&
-            tuple->ip_proto != IPPROTO_ICMPV6) {
-            if (!tuple->src_port || !tuple->dst_port) {
-                ds_put_cstr(ds, "at least one of the conntrack 5-tuple fields "
-                                "is missing.");
-                goto error;
-            }
-        }
-    }
-
-    free(copy);
-    return true;
-
-error_with_msg:
-    ds_put_format(ds, "failed to parse field %s", key);
-error:
-    free(copy);
-    return false;
-}
 
 void
 ct_dpif_push_zone_limit(struct ovs_list *zone_limits, uint16_t zone,
