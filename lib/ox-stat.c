@@ -209,10 +209,18 @@ oxs_pull_entry__(struct ofpbuf *b, struct oxs_stats *stats,
         stats->idle_age = ntohll(get_unaligned_be64(payload)) >> 32;
         break;
     case OXS_OF_PACKET_COUNT:
+    #ifdef _WIN32
+        stats->packet_count = ntohll(get_32aligned_be64(payload));
+    #else
         stats->packet_count = ntohll(get_unaligned_be64(payload));
+    #endif
         break;
     case OXS_OF_BYTE_COUNT:
+    #ifdef _WIN32
+        stats->byte_count = ntohll(get_32aligned_be64(payload));
+    #else
         stats->byte_count = ntohll(get_unaligned_be64(payload));
+    #endif
         break;
     case OXS_OF_FLOW_COUNT:
         stats->flow_count = ntohl(get_unaligned_be32(payload));
