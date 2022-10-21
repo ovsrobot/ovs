@@ -3889,6 +3889,17 @@ xlate_flow_is_protected(const struct xlate_ctx *ctx, const struct flow *flow, co
             xport_in->xbundle->protected && xport_out->xbundle->protected);
 }
 
+static void
+xlate_ctx_process_freezing(struct xlate_ctx *ctx)
+{
+    if (!ctx->freezing) {
+        xlate_action_set(ctx);
+    }
+    if (ctx->freezing) {
+        finish_freezing(ctx);
+    }
+}
+
 /* Function handles when a packet is sent from one bridge to another bridge.
  *
  * The bridges are internally connected, either with patch ports or with
@@ -3949,12 +3960,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
 
             xlate_table_action(ctx, flow->in_port.ofp_port, 0, true, true,
                                false, is_last_action, clone_xlate_actions);
-            if (!ctx->freezing) {
-                xlate_action_set(ctx);
-            }
-            if (ctx->freezing) {
-                finish_freezing(ctx);
-            }
+            xlate_ctx_process_freezing(ctx);
         } else {
             /* Forwarding is disabled by STP and RSTP.  Let OFPP_NORMAL and
              * the learning action look at the packet, then drop it. */
@@ -5872,12 +5878,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
     if (reversible_actions(actions, actions_len) || is_last_action) {
         old_flow = ctx->xin->flow;
         do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
-        if (!ctx->freezing) {
-            xlate_action_set(ctx);
-        }
-        if (ctx->freezing) {
-            finish_freezing(ctx);
-        }
+        xlate_ctx_process_freezing(ctx);
         goto xlate_done;
     }
 
@@ -5896,12 +5897,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
         /* Use clone action as datapath clone. */
         offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_CLONE);
         do_xlate_actions(actions, actions_len, ctx, true, false);
-        if (!ctx->freezing) {
-            xlate_action_set(ctx);
-        }
-        if (ctx->freezing) {
-            finish_freezing(ctx);
-        }
+        xlate_ctx_process_freezing(ctx);
         nl_msg_end_non_empty_nested(ctx->odp_actions, offset);
         goto dp_clone_done;
     }
@@ -5912,12 +5908,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
         ac_offset = nl_msg_start_nested(ctx->odp_actions,
                                         OVS_SAMPLE_ATTR_ACTIONS);
         do_xlate_actions(actions, actions_len, ctx, true, false);
-        if (!ctx->freezing) {
-            xlate_action_set(ctx);
-        }
-        if (ctx->freezing) {
-            finish_freezing(ctx);
-        }
+        xlate_ctx_process_freezing(ctx);
         if (nl_msg_end_non_empty_nested(ctx->odp_actions, ac_offset)) {
             nl_msg_cancel_nested(ctx->odp_actions, offset);
         } else {
@@ -6478,12 +6469,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     value.u8_val = 1;
     mf_write_subfield_flow(&check_pkt_larger->dst, &value, &ctx->xin->flow);
     do_xlate_actions(remaining_acts, remaining_acts_len, ctx, true, false);
-    if (!ctx->freezing) {
-        xlate_action_set(ctx);
-    }
-    if (ctx->freezing) {
-        finish_freezing(ctx);
-    }
+    xlate_ctx_process_freezing(ctx);
     nl_msg_end_nested(ctx->odp_actions, offset_attr);
 
     ctx->base_flow = old_base;
@@ -6503,12 +6489,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     value.u8_val = 0;
     mf_write_subfield_flow(&check_pkt_larger->dst, &value, &ctx->xin->flow);
     do_xlate_actions(remaining_acts, remaining_acts_len, ctx, true, false);
-    if (!ctx->freezing) {
-        xlate_action_set(ctx);
-    }
-    if (ctx->freezing) {
-        finish_freezing(ctx);
-    }
+    xlate_ctx_process_freezing(ctx);
     nl_msg_end_nested(ctx->odp_actions, offset_attr);
     nl_msg_end_nested(ctx->odp_actions, offset);
 
