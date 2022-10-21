@@ -5777,6 +5777,112 @@ xlate_sample_action(struct xlate_ctx *ctx,
     compose_sample_action(ctx, probability, &cookie, tunnel_out_port, false);
 }
 
+/* Struct to store the xlate_ctx that needs to be restored after
+* clone is finished. */
+struct xlate_ctx_clone_state {
+    struct ofpbuf stack;
+    struct ofpbuf action_set;
+
+    uint32_t odp_actions_size;
+
+    struct flow xin_flow;
+    struct flow base_flow;
+
+    bool was_mpls;
+    bool conntracked;
+
+    size_t recirc_size;
+
+    int resubmit;
+    uint32_t sflow_n_outputs;
+
+    union mf_subvalue stack_buffer[1024 / sizeof(union mf_subvalue)];
+    uint64_t act_set_buffer[1024 / 8];
+};
+
+static void
+xlate_ctx_clone_state_store(struct xlate_ctx *ctx,
+                            struct xlate_ctx_clone_state *state)
+{
+    state->stack = ctx->stack;
+    state->action_set = ctx->action_set;
+    state->odp_actions_size = ctx->odp_actions->size;
+    state->xin_flow = ctx->xin->flow;
+    state->base_flow = ctx->base_flow;
+    state->was_mpls = ctx->was_mpls;
+    state->conntracked = ctx->conntracked;
+    state->recirc_size = ctx->xin->recirc_queue
+        ? ovs_list_size(ctx->xin->recirc_queue)
+        : 0;
+    state->resubmit = ctx->resubmits;
+    state->sflow_n_outputs = ctx->sflow_n_outputs;
+
+    /* Set up a new stack from the provided buffer. */
+    ofpbuf_use_stub(&ctx->stack, state->stack_buffer,
+                    sizeof state->stack_buffer);
+    ofpbuf_put(&ctx->stack, state->stack.data, state->stack.size);
+
+    /* Set up a new action_set from the provided buffer. */
+    ofpbuf_use_stub(&ctx->action_set, state->act_set_buffer,
+                    sizeof state->act_set_buffer);
+    ofpbuf_put(&ctx->action_set, state->action_set.data,
+               state->action_set.size);
+}
+
+/* Restore xlate_ctx member to the old_state, with additional steps for
+ * revert. */
+static void
+xlate_ctx_clone_state_restore(struct xlate_ctx *ctx,
+                              struct xlate_ctx_clone_state *old_state,
+                              bool no_clone_restore, bool revert)
+{
+    ofpbuf_uninit(&ctx->stack);
+    ofpbuf_uninit(&ctx->action_set);
+
+    ctx->stack = old_state->stack;
+    ctx->action_set = old_state->action_set;
+    ctx->xin->flow = old_state->xin_flow;
+
+    /* Restore just common parts when we don't clone. */
+    if (no_clone_restore) {
+        return;
+    }
+
+    /* The clone's conntrack execution should have no effect on the original
+     * packet. */
+    ctx->conntracked = old_state->conntracked;
+
+    /* Popping MPLS from the clone should have no effect on the original
+     * packet. */
+    ctx->was_mpls = old_state->was_mpls;
+
+    /* Restore the 'base_flow' for the next action.  */
+    ctx->base_flow = old_state->base_flow;
+
+    if (revert) {
+        ctx->resubmits = old_state->resubmit;
+        ctx->sflow_n_outputs = old_state->sflow_n_outputs;
+
+        /* Revert the actions that were added by non-clone path. */
+        ctx->odp_actions->size = old_state->odp_actions_size;
+
+        /* Clear recirculations that were added by non-clone path so that
+         * packets are not recirculated twice. */
+        size_t old_recirc_size = old_state->recirc_size;
+        size_t recirc_size = ctx->xin->recirc_queue
+                             ? ovs_list_size(ctx->xin->recirc_queue)
+                             : 0;
+
+        for (; old_recirc_size < recirc_size; old_recirc_size++) {
+            struct oftrace_recirc_node *node =
+                CONTAINER_OF(ovs_list_pop_back(ctx->xin->recirc_queue),
+                             struct oftrace_recirc_node, node);
+
+            oftrace_recirc_node_destroy(node);
+        }
+    }
+}
+
 /* Determine if an datapath action translated from the openflow action
  * can be reversed by another datapath action.
  *
@@ -5858,37 +5964,21 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
 }
 
 static void
-clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
-                    struct xlate_ctx *ctx, bool is_last_action,
-                    bool group_bucket_action OVS_UNUSED)
+do_clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
+                       struct xlate_ctx *ctx)
 {
-    struct ofpbuf old_stack = ctx->stack;
-    union mf_subvalue new_stack[1024 / sizeof(union mf_subvalue)];
-    ofpbuf_use_stub(&ctx->stack, new_stack, sizeof new_stack);
-    ofpbuf_put(&ctx->stack, old_stack.data, old_stack.size);
-
-    struct ofpbuf old_action_set = ctx->action_set;
-    uint64_t actset_stub[1024 / 8];
-    ofpbuf_use_stub(&ctx->action_set, actset_stub, sizeof actset_stub);
-    ofpbuf_put(&ctx->action_set, old_action_set.data, old_action_set.size);
-
     size_t offset, ac_offset;
-    struct flow old_flow = ctx->xin->flow;
+    struct xlate_ctx_clone_state old_state;
 
-    if (reversible_actions(actions, actions_len) || is_last_action) {
-        old_flow = ctx->xin->flow;
-        do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
-        xlate_ctx_process_freezing(ctx);
-        goto xlate_done;
-    }
+    xlate_ctx_clone_state_store(ctx, &old_state);
 
     /* Commit datapath actions before emitting the clone action to
      * avoid emitting those actions twice. Once inside
      * the clone, another time for the action after clone.  */
     xlate_commit_actions(ctx);
-    struct flow old_base = ctx->base_flow;
-    bool old_was_mpls = ctx->was_mpls;
-    bool old_conntracked = ctx->conntracked;
+
+    /* The base needs to be stored after xlate_commit_actions. */
+    old_state.base_flow = ctx->base_flow;
 
     /* The actions are not reversible, a datapath clone action is
      * required to encode the translation. Select the clone action
@@ -5899,10 +5989,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
         do_xlate_actions(actions, actions_len, ctx, true, false);
         xlate_ctx_process_freezing(ctx);
         nl_msg_end_non_empty_nested(ctx->odp_actions, offset);
-        goto dp_clone_done;
-    }
-
-    if (ctx->xbridge->support.sample_nesting > 3) {
+    } else if (ctx->xbridge->support.sample_nesting > 3) {
         /* Use sample action as datapath clone. */
         offset = nl_msg_start_nested(ctx->odp_actions, OVS_ACTION_ATTR_SAMPLE);
         ac_offset = nl_msg_start_nested(ctx->odp_actions,
@@ -5916,31 +6003,46 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
                            UINT32_MAX); /* 100% probability. */
             nl_msg_end_nested(ctx->odp_actions, offset);
         }
-        goto dp_clone_done;
+    } else {
+        /* Datapath does not support clone, skip xlate 'oc' and
+         * report an error */
+        xlate_report_error(ctx, "Failed to compose clone action");
+    }
+    xlate_ctx_clone_state_restore(ctx, &old_state, false, false);
+}
+
+static void
+clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
+                    struct xlate_ctx *ctx, bool is_last_action,
+                    bool group_bucket_action OVS_UNUSED)
+{
+    /* We have to clone if any of the actions is irreversible. */
+    if (!is_last_action && !reversible_actions(actions, actions_len)) {
+        do_clone_xlate_actions(actions, actions_len, ctx);
+        return;
     }
 
-    /* Datapath does not support clone, skip xlate 'oc' and
-     * report an error */
-    xlate_report_error(ctx, "Failed to compose clone action");
+    /* Let's run the actions as if they are reversible, if we find out that
+     * there was any irreversible action we can restore the xlate_ctx and run
+     * the do_clone instead. If the action is last we don't have to check and
+     * can just proceed with the actions. */
+    struct xlate_ctx_clone_state old_state;
 
-dp_clone_done:
-    /* The clone's conntrack execution should have no effect on the original
-     * packet. */
-    ctx->conntracked = old_conntracked;
+    xlate_ctx_clone_state_store(ctx, &old_state);
+    do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
 
-    /* Popping MPLS from the clone should have no effect on the original
-     * packet. */
-    ctx->was_mpls = old_was_mpls;
+    void *added_actions =
+        ofpbuf_at_assert(ctx->odp_actions, old_state.odp_actions_size, 0);
+    uint32_t added_size = ctx->odp_actions->size - old_state.odp_actions_size;
 
-    /* Restore the 'base_flow' for the next action.  */
-    ctx->base_flow = old_base;
-
-xlate_done:
-    ofpbuf_uninit(&ctx->action_set);
-    ctx->action_set = old_action_set;
-    ofpbuf_uninit(&ctx->stack);
-    ctx->stack = old_stack;
-    ctx->xin->flow = old_flow;
+    if (is_last_action
+        || !odp_contains_irreversible_action(added_actions, added_size)) {
+        xlate_ctx_process_freezing(ctx);
+        xlate_ctx_clone_state_restore(ctx, &old_state, true, false);
+    } else {
+        xlate_ctx_clone_state_restore(ctx, &old_state, false, true);
+        do_clone_xlate_actions(actions, actions_len, ctx);
+    }
 }
 
 static void
