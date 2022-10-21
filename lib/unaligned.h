@@ -91,6 +91,8 @@ GCC_UNALIGNED_ACCESSORS(ovs_be32, be32);
 GCC_UNALIGNED_ACCESSORS(ovs_be64, be64);
 #else
 /* Generic implementations. */
+static inline ovs_be64
+get_32aligned_be64(const ovs_32aligned_be64 *x);
 
 static inline uint16_t get_unaligned_u16(const uint16_t *p_)
 {
@@ -126,6 +128,9 @@ static inline void put_unaligned_u32(uint32_t *p_, uint32_t x_)
 
 static inline uint64_t get_unaligned_u64__(const uint64_t *p_)
 {
+#if defined(WIN32)
+     return get_32aligned_be64(p_);
+#else
     const uint8_t *p = (const uint8_t *) p_;
     return ntohll(((uint64_t) p[0] << 56)
                   | ((uint64_t) p[1] << 48)
@@ -135,6 +140,7 @@ static inline uint64_t get_unaligned_u64__(const uint64_t *p_)
                   | (p[5] << 16)
                   | (p[6] << 8)
                   | p[7]);
+#endif
 }
 
 static inline void put_unaligned_u64__(uint64_t *p_, uint64_t x_)
