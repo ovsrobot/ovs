@@ -31,6 +31,7 @@
 #include "openvswitch/list.h"
 #include "netlink.h"
 #include "openvswitch/ofpbuf.h"
+#include "openvswitch/usdt-probes.h"
 #include "ofproto-dpif-ipfix.h"
 #include "ofproto-dpif-sflow.h"
 #include "ofproto-dpif-xlate.h"
@@ -259,6 +260,18 @@ enum ukey_state {
     UKEY_DELETED,       /* Ukey removed from umap, ukey free is deferred. */
 };
 #define N_UKEY_STATES (UKEY_DELETED + 1)
+
+enum flow_del_reason {
+    FDR_FLOW_LIVE = 0,      /* The flow was revalidated. */
+    FDR_FLOW_TIME_OUT,      /* The flow went unused and was deleted. */
+    FDR_TOO_EXPENSIVE,      /* The flow was too expensive to revalidate. */
+    FDR_FLOW_WILDCARDED,    /* The flow needed a narrower wildcard mask. */
+    FDR_BAD_ODP_FIT,        /* The flow had a bad ODP flow fit. */
+    FDR_ASSOCIATED_OFPROTO, /* The flow didn't have an associated ofproto. */
+    FDR_XLATION_ERROR,      /* There was an error translating the flow. */
+    FDR_AVOID_CACHING,      /* Flow deleted to avoid caching. */
+    FDR_KILL_THEM_ALL,      /* All flows being killed. */
+};
 
 /* 'udpif_key's are responsible for tracking the little bit of state udpif
  * needs to do flow expiration which can't be pulled directly from the
@@ -2222,7 +2235,8 @@ populate_xcache(struct udpif *udpif, struct udpif_key *ukey,
 static enum reval_result
 revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
                   uint16_t tcp_flags, struct ofpbuf *odp_actions,
-                  struct recirc_refs *recircs, struct xlate_cache *xcache)
+                  struct recirc_refs *recircs, struct xlate_cache *xcache,
+                  enum flow_del_reason *reason)
 {
     struct xlate_out *xoutp;
     struct netflow *netflow;
@@ -2240,11 +2254,13 @@ revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
     netflow = NULL;
 
     if (xlate_ukey(udpif, ukey, tcp_flags, &ctx)) {
+        *reason = FDR_XLATION_ERROR;
         goto exit;
     }
     xoutp = &ctx.xout;
 
     if (xoutp->avoid_caching) {
+        *reason = FDR_AVOID_CACHING;
         goto exit;
     }
 
@@ -2258,6 +2274,7 @@ revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
         ofpbuf_clear(odp_actions);
 
         if (!ofproto) {
+            *reason = FDR_ASSOCIATED_OFPROTO;
             goto exit;
         }
 
@@ -2269,6 +2286,7 @@ revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
     if (odp_flow_key_to_mask(ukey->mask, ukey->mask_len, &dp_mask, &ctx.flow,
                              NULL)
         == ODP_FIT_ERROR) {
+        *reason = FDR_BAD_ODP_FIT;
         goto exit;
     }
 
@@ -2278,6 +2296,7 @@ revalidate_ukey__(struct udpif *udpif, const struct udpif_key *ukey,
      * down.  Note that we do not know if the datapath has ignored any of the
      * wildcarded bits, so we may be overly conservative here. */
     if (flow_wildcards_has_extra(&dp_mask, ctx.wc)) {
+        *reason = FDR_FLOW_WILDCARDED;
         goto exit;
     }
 
@@ -2323,7 +2342,8 @@ static enum reval_result
 revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
                 const struct dpif_flow_stats *stats,
                 struct ofpbuf *odp_actions, uint64_t reval_seq,
-                struct recirc_refs *recircs, bool offloaded)
+                struct recirc_refs *recircs, bool offloaded,
+                enum flow_del_reason *reason)
     OVS_REQUIRES(ukey->mutex)
 {
     bool need_revalidate = ukey->reval_seq != reval_seq;
@@ -2349,8 +2369,12 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
                 xlate_cache_clear(ukey->xcache);
             }
             result = revalidate_ukey__(udpif, ukey, push.tcp_flags,
-                                       odp_actions, recircs, ukey->xcache);
-        } /* else delete; too expensive to revalidate */
+                                       odp_actions, recircs, ukey->xcache,
+                                       reason);
+        } else {
+            /* Delete the flow as it's too expensive to revalidate. */
+            *reason = FDR_TOO_EXPENSIVE;
+        }
     } else if (!push.n_packets || ukey->xcache
                || !populate_xcache(udpif, ukey, push.tcp_flags)) {
         result = UKEY_KEEP;
@@ -2740,6 +2764,7 @@ revalidate(struct revalidator *revalidator)
             struct recirc_refs recircs = RECIRC_REFS_EMPTY_INITIALIZER;
             struct dpif_flow_stats stats = f->stats;
             enum reval_result result;
+            enum flow_del_reason reason = FDR_FLOW_LIVE;
             struct udpif_key *ukey;
             bool already_dumped;
             int error;
@@ -2787,10 +2812,15 @@ revalidate(struct revalidator *revalidator)
             }
             if (kill_them_all || (used && used < now - max_idle)) {
                 result = UKEY_DELETE;
+                if (kill_them_all) {
+                    reason = FDR_KILL_THEM_ALL;
+                } else {
+                    reason = FDR_FLOW_TIME_OUT;
+                }
             } else {
                 result = revalidate_ukey(udpif, ukey, &stats, &odp_actions,
                                          reval_seq, &recircs,
-                                         f->attrs.offloaded);
+                                         f->attrs.offloaded, &reason);
             }
             ukey->dump_seq = dump_seq;
 
@@ -2799,6 +2829,7 @@ revalidate(struct revalidator *revalidator)
                 udpif_update_flow_pps(udpif, ukey, f);
             }
 
+            OVS_USDT_PROBE(revalidate, flow_result, reason, udpif, ukey);
             if (result != UKEY_KEEP) {
                 /* Takes ownership of 'recircs'. */
                 reval_op_init(&ops[n_ops++], result, udpif, ukey, &recircs,
@@ -2849,6 +2880,7 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
         struct udpif_key *ukey;
         struct umap *umap = &udpif->ukeys[i];
         size_t n_ops = 0;
+        enum flow_del_reason reason = FDR_FLOW_LIVE;
 
         CMAP_FOR_EACH(ukey, cmap_node, &umap->cmap) {
             enum ukey_state ukey_state;
@@ -2875,7 +2907,8 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
                     COVERAGE_INC(revalidate_missed_dp_flow);
                     memset(&stats, 0, sizeof stats);
                     result = revalidate_ukey(udpif, ukey, &stats, &odp_actions,
-                                             reval_seq, &recircs, false);
+                                             reval_seq, &recircs, false,
+                                             &reason);
                 }
                 if (result != UKEY_KEEP) {
                     /* Clears 'recircs' if filled by revalidate_ukey(). */
