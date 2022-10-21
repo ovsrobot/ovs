@@ -410,6 +410,11 @@ enum dpdk_hw_ol_features {
     NETDEV_TX_SCTP_CHECKSUM_OFFLOAD = 1 << 4,
 };
 
+enum dpdk_cp_prot_flags {
+    DPDK_CP_PROT_UNSUPPORTED = 1 << 0,
+    DPDK_CP_PROT_LACP = 1 << 1,
+};
+
 /*
  * In order to avoid confusion in variables names, following naming convention
  * should be used, if possible:
@@ -453,6 +458,7 @@ struct netdev_dpdk {
         };
         struct dpdk_tx_queue *tx_q;
         struct rte_eth_link link;
+        uint16_t reta_size;
     );
 
     PADDED_MEMBERS_CACHELINE_MARKER(CACHE_LINE_SIZE, cacheline1,
@@ -529,6 +535,13 @@ struct netdev_dpdk {
 
         /* VF configuration. */
         struct eth_addr requested_hwaddr;
+
+        /* Requested control plane protection flags,
+         * from the enum set 'dpdk_cp_prot_flags' */
+        uint64_t requested_cp_prot_flags;
+        uint64_t cp_prot_flags;
+        size_t cp_prot_flows_num;
+        struct rte_flow **cp_prot_flows;
     );
 
     PADDED_MEMBERS(CACHE_LINE_SIZE,
@@ -1192,6 +1205,7 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
                       netdev_get_name(&dev->up));
         }
     }
+    dev->reta_size = info.reta_size;
 
     n_rxq = MIN(info.max_rx_queues, dev->up.n_rxq);
     n_txq = MIN(info.max_tx_queues, dev->up.n_txq);
@@ -1309,6 +1323,10 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->requested_n_txq = NR_QUEUE;
     dev->requested_rxq_size = NIC_PORT_DEFAULT_RXQ_SIZE;
     dev->requested_txq_size = NIC_PORT_DEFAULT_TXQ_SIZE;
+    dev->requested_cp_prot_flags = 0;
+    dev->cp_prot_flags = 0;
+    dev->cp_prot_flows_num = 0;
+    dev->cp_prot_flows = NULL;
 
     /* Initialize the flow control to NULL */
     memset(&dev->fc_conf, 0, sizeof dev->fc_conf);
@@ -1904,6 +1922,9 @@ dpdk_set_rxq_config(struct netdev_dpdk *dev, const struct smap *args)
     int new_n_rxq;
 
     new_n_rxq = MAX(smap_get_int(args, "n_rxq", NR_QUEUE), 1);
+    if (dev->requested_cp_prot_flags) {
+        new_n_rxq += 1;
+    }
     if (new_n_rxq != dev->requested_n_rxq) {
         dev->requested_n_rxq = new_n_rxq;
         netdev_request_reconfigure(&dev->up);
@@ -1928,6 +1949,53 @@ dpdk_process_queue_size(struct netdev *netdev, const struct smap *args,
 }
 
 static int
+dpdk_cp_prot_set_config(struct netdev *netdev, struct netdev_dpdk *dev,
+                        const struct smap *args, char **errp)
+{
+    const char *arg = smap_get_def(args, "cp-protection", "");
+    uint64_t flags = 0;
+    char buf[256];
+    char *token, *saveptr;
+
+    ovs_strzcpy(buf, arg, sizeof(buf));
+    buf[sizeof(buf) - 1] = '\0';
+
+    token = strtok_r(buf, ",", &saveptr);
+    while (token) {
+        if (strcmp(token, "lacp") == 0) {
+            flags |= DPDK_CP_PROT_LACP;
+        } else {
+            VLOG_WARN_BUF(
+                errp, "%s options:cp-protection unknown protocol '%s'",
+                netdev_get_name(netdev), token);
+            return -1;
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    if (flags && dev->type != DPDK_DEV_ETH) {
+        VLOG_WARN_BUF( errp,
+            "%s options:cp-protection is only supported on ethernet ports",
+            netdev_get_name(netdev));
+        return -1;
+    }
+
+    if (flags && netdev_is_flow_api_enabled()) {
+        VLOG_WARN_BUF(errp,
+            "%s options:cp-protection is incompatible with hw-offload",
+            netdev_get_name(netdev));
+        return -1;
+    }
+
+    if (flags != dev->requested_cp_prot_flags) {
+        dev->requested_cp_prot_flags = flags;
+        netdev_request_reconfigure(netdev);
+    }
+
+    return 0;
+}
+
+static int
 netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
                        char **errp)
 {
@@ -1945,6 +2013,11 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
 
     ovs_mutex_lock(&dpdk_mutex);
     ovs_mutex_lock(&dev->mutex);
+
+    if (dpdk_cp_prot_set_config(netdev, dev, args, errp) < 0) {
+        err = EINVAL;
+        goto out;
+    }
 
     dpdk_set_rxq_config(dev, args);
 
@@ -3639,8 +3712,10 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     struct rte_eth_dev_info dev_info;
+    uint64_t cp_prot_flags;
     uint32_t link_speed;
     uint32_t dev_flags;
+    int n_rxq;
 
     if (!rte_eth_dev_is_valid_port(dev->port_id)) {
         return ENODEV;
@@ -3651,6 +3726,8 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
     rte_eth_dev_info_get(dev->port_id, &dev_info);
     link_speed = dev->link.link_speed;
     dev_flags = *dev_info.dev_flags;
+    cp_prot_flags = dev->cp_prot_flags;
+    n_rxq = netdev->n_rxq;
     ovs_mutex_unlock(&dev->mutex);
     const struct rte_bus *bus;
     const struct rte_pci_device *pci_dev;
@@ -3701,6 +3778,24 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
     if (dev_flags & RTE_ETH_DEV_REPRESENTOR) {
         smap_add_format(args, "dpdk-vf-mac", ETH_ADDR_FMT,
                         ETH_ADDR_ARGS(dev->hwaddr));
+    }
+
+    if (cp_prot_flags) {
+        if (cp_prot_flags & DPDK_CP_PROT_UNSUPPORTED) {
+            smap_add(args, "cp_protection_queue", "unsupported");
+            if (n_rxq > 1) {
+                smap_add_format(args, "rss_queues", "0-%d", n_rxq - 1);
+            } else {
+                smap_add(args, "rss_queues", "0");
+            }
+        } else {
+            smap_add_format(args, "cp_protection_queue", "%d", n_rxq - 1);
+            if (n_rxq > 2) {
+                smap_add_format(args, "rss_queues", "0-%d", n_rxq - 2);
+            } else {
+                smap_add(args, "rss_queues", "0");
+            }
+        }
     }
 
     return 0;
@@ -4934,6 +5029,179 @@ static const struct dpdk_qos_ops trtcm_policer_ops = {
 };
 
 static int
+dpdk_cp_prot_add_flow(struct netdev_dpdk *dev,
+                      const struct rte_flow_attr *attr,
+                      const struct rte_flow_item items[],
+                      const struct rte_flow_action actions[],
+                      const char *desc, bool dry_run)
+{
+    struct rte_flow_error error;
+    struct rte_flow *flow;
+    size_t num;
+
+    if (dry_run) {
+        int ret;
+        ret = rte_flow_validate(dev->port_id, attr, items, actions, &error);
+        if (rte_flow_validate(dev->port_id, attr, items, actions, &error)) {
+            VLOG_WARN("%s: cp-protection: device does not support %s flow: %s",
+                netdev_get_name(&dev->up), desc, error.message);
+        }
+        return ret;
+    }
+
+    flow = rte_flow_create(dev->port_id, attr, items, actions, &error);
+    if (flow == NULL) {
+        VLOG_WARN("%s: cp-protection: failed to add %s flow: %s",
+            netdev_get_name(&dev->up), desc, error.message);
+        return rte_errno;
+    }
+
+    num = dev->cp_prot_flows_num + 1;
+    dev->cp_prot_flows = xrealloc(dev->cp_prot_flows, sizeof(flow) * num);
+    dev->cp_prot_flows[dev->cp_prot_flows_num] = flow;
+    dev->cp_prot_flows_num = num;
+
+    return 0;
+}
+
+static int
+dpdk_cp_prot_add_traffic_flow(struct netdev_dpdk *dev,
+                              const struct rte_flow_item items[],
+                              const char *desc, bool dry_run)
+{
+    const struct rte_flow_attr attr = { .ingress = 1 };
+    const struct rte_flow_action actions[] = {
+        {
+            .type = RTE_FLOW_ACTION_TYPE_QUEUE,
+            .conf = &(const struct rte_flow_action_queue) {
+                .index = dev->up.n_rxq - 1,
+            },
+        },
+        { .type = RTE_FLOW_ACTION_TYPE_END },
+    };
+
+    if (!dry_run) {
+        VLOG_INFO("%s: cp-protection: redirecting %s traffic to queue %d",
+            netdev_get_name(&dev->up), desc, dev->up.n_rxq - 1);
+    }
+    return dpdk_cp_prot_add_flow(dev, &attr, items, actions, desc, dry_run);
+}
+
+static int
+dpdk_cp_prot_rss_configure(struct netdev_dpdk *dev, int rss_n_rxq)
+{
+    struct rte_eth_rss_reta_entry64 *reta_conf;
+    size_t reta_conf_size;
+    int err;
+
+    if (rss_n_rxq == 1) {
+        VLOG_INFO("%s: cp-protection: redirecting other traffic to queue 0",
+            netdev_get_name(&dev->up));
+    } else {
+        VLOG_INFO("%s: cp-protection: applying rss on queues 0-%d",
+            netdev_get_name(&dev->up), rss_n_rxq - 1);
+    }
+
+    reta_conf_size = (dev->reta_size / RTE_ETH_RETA_GROUP_SIZE)
+        * sizeof(struct rte_eth_rss_reta_entry64);
+    reta_conf = xmalloc(reta_conf_size);
+    memset(reta_conf, 0, reta_conf_size);
+
+    for (uint16_t i = 0; i < dev->reta_size; i++) {
+        uint16_t idx = i / RTE_ETH_RETA_GROUP_SIZE;
+        uint16_t shift = i % RTE_ETH_RETA_GROUP_SIZE;
+        reta_conf[idx].mask |= 1ULL << shift;
+        reta_conf[idx].reta[shift] = i % rss_n_rxq;
+    }
+    err = rte_eth_dev_rss_reta_update(dev->port_id, reta_conf, dev->reta_size);
+    if (err < 0) {
+        VLOG_DBG("%s: failed to configure RSS redirection table: err=%d",
+            netdev_get_name(&dev->up), err);
+    }
+
+    free(reta_conf);
+
+    return err;
+}
+
+static int
+dpdk_cp_prot_configure(struct netdev_dpdk *dev, bool dry_run)
+{
+    int err = 0;
+
+    if (dev->requested_cp_prot_flags & DPDK_CP_PROT_UNSUPPORTED) {
+        goto out;
+    }
+    if (dev->up.n_rxq < 2) {
+        err = ENOTSUP;
+        VLOG_DBG("%s: cp-protection: not enough available rx queues",
+            netdev_get_name(&dev->up));
+        goto out;
+    }
+
+    if (dev->requested_cp_prot_flags & DPDK_CP_PROT_LACP) {
+        err = dpdk_cp_prot_add_traffic_flow(
+            dev,
+            (const struct rte_flow_item []) {
+                {
+                    .type = RTE_FLOW_ITEM_TYPE_ETH,
+                    .spec = &(const struct rte_flow_item_eth){
+                        .type = htons(ETH_TYPE_LACP),
+                    },
+                    .mask = &(const struct rte_flow_item_eth){
+                        .type = htons(0xffff),
+                    },
+                },
+                { .type = RTE_FLOW_ITEM_TYPE_END },
+            },
+            "lacp",
+            dry_run
+        );
+        if (err) {
+            goto out;
+        }
+    }
+
+    if (!dry_run && dev->cp_prot_flows_num) {
+        /* reconfigure RSS reta in all but the cp protection queue */
+        err = dpdk_cp_prot_rss_configure(dev, dev->up.n_rxq - 1);
+    }
+
+out:
+    if (!dry_run) {
+        dev->cp_prot_flags = dev->requested_cp_prot_flags;
+    }
+    if (err) {
+        dev->requested_cp_prot_flags |= DPDK_CP_PROT_UNSUPPORTED;
+    }
+    return err;
+}
+
+static void
+dpdk_cp_prot_unconfigure(struct netdev_dpdk *dev)
+{
+    struct rte_flow_error error;
+
+    if (dev->cp_prot_flows_num == 0) {
+        return;
+    }
+
+    VLOG_DBG("%s: cp-protection: reset flows", netdev_get_name(&dev->up));
+
+    for (int i = 0; i < dev->cp_prot_flows_num; i++) {
+        if (rte_flow_destroy(dev->port_id, dev->cp_prot_flows[i], &error)) {
+            VLOG_DBG("%s: cp-protection: failed to destroy flow: %s",
+                netdev_get_name(&dev->up), error.message);
+        }
+    }
+    free(dev->cp_prot_flows);
+    dev->cp_prot_flows_num = 0;
+    dev->cp_prot_flows = NULL;
+
+    (void) dpdk_cp_prot_rss_configure(dev, dev->up.n_rxq);
+}
+
+static int
 netdev_dpdk_reconfigure(struct netdev *netdev)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
@@ -4943,6 +5211,7 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
 
     if (netdev->n_txq == dev->requested_n_txq
         && netdev->n_rxq == dev->requested_n_rxq
+        && dev->cp_prot_flags == dev->requested_cp_prot_flags
         && dev->mtu == dev->requested_mtu
         && dev->lsc_interrupt_mode == dev->requested_lsc_interrupt_mode
         && dev->rxq_size == dev->requested_rxq_size
@@ -4987,6 +5256,8 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
         }
     }
 
+    dpdk_cp_prot_unconfigure(dev);
+
     err = dpdk_eth_dev_init(dev);
     if (dev->hw_ol_features & NETDEV_TX_TSO_OFFLOAD) {
         netdev->ol_flags |= NETDEV_TX_OFFLOAD_TCP_TSO;
@@ -5013,6 +5284,20 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
     dev->tx_q = netdev_dpdk_alloc_txq(netdev->n_txq);
     if (!dev->tx_q) {
         err = ENOMEM;
+    }
+    if (!err && dev->requested_cp_prot_flags) {
+        /* dry run first */
+        err = dpdk_cp_prot_configure(dev, true);
+        if (!err) {
+            /* if no error, apply configuration */
+            err = dpdk_cp_prot_configure(dev, false);
+        }
+        if (err) {
+            /* no hw support, remove the extra queue & recover gracefully */
+            err = 0;
+            dev->requested_n_rxq -= 1;
+            netdev_request_reconfigure(netdev);
+        }
     }
 
     netdev_change_seq_changed(netdev);
@@ -5215,7 +5500,13 @@ netdev_dpdk_flow_api_supported(struct netdev *netdev)
     ovs_mutex_lock(&dev->mutex);
     if (dev->type == DPDK_DEV_ETH) {
         /* TODO: Check if we able to offload some minimal flow. */
-        ret = true;
+        if (dev->requested_cp_prot_flags || dev->cp_prot_flags) {
+            VLOG_WARN(
+                "%s: hw-offload is mutually exclusive with cp-protection",
+                netdev_get_name(netdev));
+        } else {
+            ret = true;
+        }
     }
     ovs_mutex_unlock(&dev->mutex);
 out:
