@@ -5383,7 +5383,7 @@ xlate_output_action(struct xlate_ctx *ctx, ofp_port_t port,
     }
 }
 
-static void
+static void OVS_NOINLINE
 xlate_output_reg_action(struct xlate_ctx *ctx,
                         const struct ofpact_output_reg *or,
                         bool is_last_action,
@@ -6319,7 +6319,7 @@ put_ct_nat(struct xlate_ctx *ctx)
     nl_msg_end_nested(ctx->odp_actions, nat_offset);
 }
 
-static void
+static void OVS_NOINLINE
 compose_conntrack_action(struct xlate_ctx *ctx, struct ofpact_conntrack *ofc,
                          bool is_last_action)
 {
@@ -6425,7 +6425,7 @@ compose_ct_clear_action(struct xlate_ctx *ctx)
  *
  * It is possible for freezing to happen for both the cases.
  */
-static void
+static void OVS_NOINLINE
 xlate_check_pkt_larger(struct xlate_ctx *ctx,
                        struct ofpact_check_pkt_larger *check_pkt_larger,
                        const struct ofpact *remaining_acts,
@@ -6697,7 +6697,7 @@ rewrite_flow_push_nsh(struct xlate_ctx *ctx,
     return buf;
 }
 
-static void
+static void OVS_NOINLINE
 xlate_generic_encap_action(struct xlate_ctx *ctx,
                            const struct ofpact_encap *encap)
 {
@@ -6845,7 +6845,7 @@ xlate_generic_decap_action(struct xlate_ctx *ctx,
     }
 }
 
-static void
+static void OVS_NOINLINE
 recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
 {
     /* No need to recirculate if already exiting. */
@@ -6972,6 +6972,24 @@ xlate_ofpact_unroll_xlate(struct xlate_ctx *ctx,
 }
 
 static void
+xlate_trace(struct xlate_ctx *ctx, const struct ofpact *a) {
+    struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
+
+    if (ctx->xin->names) {
+        struct ofproto_dpif *ofprotop;
+        ofprotop = ofproto_dpif_lookup_by_name(ctx->xbridge->name);
+        ofproto_append_ports_to_map(&map, ofprotop->up.ports);
+    }
+
+    struct ds s = DS_EMPTY_INITIALIZER;
+    struct ofpact_format_params fp = { .s = &s, .port_map = &map };
+    ofpacts_format(a, OFPACT_ALIGN(a->len), &fp);
+    xlate_report(ctx, OFT_ACTION, "%s", ds_cstr(&s));
+    ds_destroy(&s);
+    ofputil_port_map_destroy(&map);
+}
+
+static void
 do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                  struct xlate_ctx *ctx, bool is_last_action,
                  bool group_bucket_action)
@@ -7013,20 +7031,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         }
 
         if (OVS_UNLIKELY(ctx->xin->trace)) {
-            struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
-
-            if (ctx->xin->names) {
-                struct ofproto_dpif *ofprotop;
-                ofprotop = ofproto_dpif_lookup_by_name(ctx->xbridge->name);
-                ofproto_append_ports_to_map(&map, ofprotop->up.ports);
-            }
-
-            struct ds s = DS_EMPTY_INITIALIZER;
-            struct ofpact_format_params fp = { .s = &s, .port_map = &map };
-            ofpacts_format(a, OFPACT_ALIGN(a->len), &fp);
-            xlate_report(ctx, OFT_ACTION, "%s", ds_cstr(&s));
-            ds_destroy(&s);
-            ofputil_port_map_destroy(&map);
+            xlate_trace(ctx, a);
         }
 
         switch (a->type) {

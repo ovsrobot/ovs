@@ -284,5 +284,12 @@
 #define BUILD_ASSERT_DECL_GCCONLY(EXPR) ((void) 0)
 #endif
 
+/* Used to prevent inlining to aid in reducing stack usage of recursive
+ * functions. */
+#if defined(__has_attribute) && __has_attribute(noinline)
+#define OVS_NOINLINE __attribute__((noinline))
+#else
+#define OVS_NOINLINE
+#endif
 
 #endif /* compiler.h */
