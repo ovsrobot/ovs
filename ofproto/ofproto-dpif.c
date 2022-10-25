@@ -377,7 +377,8 @@ type_run(const char *type)
 
         backer->recv_set_enable = true;
 
-        error = dpif_recv_set(backer->dpif, backer->recv_set_enable);
+        error = dpif_recv_set(backer->dpif, backer->recv_set_enable,
+                              n_handlers);
         if (error) {
             VLOG_ERR("Failed to enable receiving packets in dpif.");
             return error;
@@ -816,7 +817,7 @@ open_dpif_backer(const char *type, struct dpif_backer **backerp)
     check_support(backer);
     atomic_count_init(&backer->tnl_count, 0);
 
-    error = dpif_recv_set(backer->dpif, backer->recv_set_enable);
+    error = dpif_recv_set(backer->dpif, backer->recv_set_enable, n_handlers);
     if (error) {
         VLOG_ERR("failed to listen on datapath of type %s: %s",
                  type, ovs_strerror(error));

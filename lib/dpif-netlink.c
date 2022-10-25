@@ -264,7 +264,8 @@ static void dpif_netlink_handler_uninit(struct dpif_handler *handler);
 static int dpif_netlink_refresh_handlers_vport_dispatch(struct dpif_netlink *,
                                                         uint32_t n_handlers);
 static void destroy_all_channels(struct dpif_netlink *);
-static int dpif_netlink_refresh_handlers_cpu_dispatch(struct dpif_netlink *);
+static int dpif_netlink_refresh_handlers_cpu_dispatch(struct dpif_netlink *,
+                                                      uint32_t n_handlers);
 static void destroy_all_handlers(struct dpif_netlink *);
 
 static void dpif_netlink_vport_to_ofpbuf(const struct dpif_netlink_vport *,
@@ -2586,15 +2587,14 @@ dpif_netlink_calculate_n_handlers(void)
 }
 
 static int
-dpif_netlink_refresh_handlers_cpu_dispatch(struct dpif_netlink *dpif)
+dpif_netlink_refresh_handlers_cpu_dispatch(struct dpif_netlink *dpif,
+                                           uint32_t n_handlers)
     OVS_REQ_WRLOCK(dpif->upcall_lock)
 {
     int handler_id;
     int error = 0;
-    uint32_t n_handlers;
     uint32_t *upcall_pids;
 
-    n_handlers = dpif_netlink_calculate_n_handlers();
     if (dpif->n_handlers != n_handlers) {
         VLOG_DBG("Dispatch mode(per-cpu): initializing %d handlers",
                    n_handlers);
@@ -2770,7 +2770,8 @@ dpif_netlink_recv_set_vport_dispatch(struct dpif_netlink *dpif, bool enable)
 }
 
 static int
-dpif_netlink_recv_set_cpu_dispatch(struct dpif_netlink *dpif, bool enable)
+dpif_netlink_recv_set_cpu_dispatch(struct dpif_netlink *dpif, bool enable,
+                                   uint32_t handler)
     OVS_REQ_WRLOCK(dpif->upcall_lock)
 {
     if ((dpif->handlers != NULL) == enable) {
@@ -2779,19 +2780,19 @@ dpif_netlink_recv_set_cpu_dispatch(struct dpif_netlink *dpif, bool enable)
         destroy_all_handlers(dpif);
         return 0;
     } else {
-        return dpif_netlink_refresh_handlers_cpu_dispatch(dpif);
+        return dpif_netlink_refresh_handlers_cpu_dispatch(dpif, handler);
     }
 }
 
 static int
-dpif_netlink_recv_set(struct dpif *dpif_, bool enable)
+dpif_netlink_recv_set(struct dpif *dpif_, bool enable, uint32_t handlers)
 {
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     int error;
 
     fat_rwlock_wrlock(&dpif->upcall_lock);
     if (dpif_netlink_upcall_per_cpu(dpif)) {
-        error = dpif_netlink_recv_set_cpu_dispatch(dpif, enable);
+        error = dpif_netlink_recv_set_cpu_dispatch(dpif, enable, handlers);
     } else {
         error = dpif_netlink_recv_set_vport_dispatch(dpif, enable);
     }
@@ -2817,7 +2818,8 @@ dpif_netlink_handlers_set(struct dpif *dpif_, uint32_t n_handlers)
     fat_rwlock_wrlock(&dpif->upcall_lock);
     if (dpif->handlers) {
         if (dpif_netlink_upcall_per_cpu(dpif)) {
-            error = dpif_netlink_refresh_handlers_cpu_dispatch(dpif);
+            error = dpif_netlink_refresh_handlers_cpu_dispatch(dpif,
+                                                               n_handlers);
         } else {
             error = dpif_netlink_refresh_handlers_vport_dispatch(dpif,
                                                                  n_handlers);

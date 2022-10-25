@@ -656,6 +656,9 @@ udpif_set_threads(struct udpif *udpif, uint32_t n_handlers_,
         } else {
             n_revalidators_requested = n_revalidators_;
         }
+        if (n_handlers_) {
+            n_handlers_requested = n_handlers_;
+        }
     } else {
         int threads = MAX(count_cpu_cores(), 2);
 

@@ -1459,12 +1459,12 @@ dpif_upcall_type_to_string(enum dpif_upcall_type type)
  * must update all of the flows that have OVS_ACTION_ATTR_USERSPACE actions
  * using the new PID assignment. */
 int
-dpif_recv_set(struct dpif *dpif, bool enable)
+dpif_recv_set(struct dpif *dpif, bool enable, uint32_t n_handlers)
 {
     int error = 0;
 
     if (dpif->dpif_class->recv_set) {
-        error = dpif->dpif_class->recv_set(dpif, enable);
+        error = dpif->dpif_class->recv_set(dpif, enable, n_handlers);
         log_operation(dpif, "recv_set", error);
     }
     return error;

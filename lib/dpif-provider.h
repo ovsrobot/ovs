@@ -342,7 +342,7 @@ struct dpif_class {
      * Turning packet receive off and then back on is allowed to change Netlink
      * PID assignments (see ->port_get_pid()).  The client is responsible for
      * updating flows as necessary if it does this. */
-    int (*recv_set)(struct dpif *dpif, bool enable);
+    int (*recv_set)(struct dpif *dpif, bool enable, uint32_t n_handlers);
 
     /* Attempts to refresh the poll loops and Netlink sockets used for handling
      * upcalls when the number of upcall handlers (upcall receiving thread) is
