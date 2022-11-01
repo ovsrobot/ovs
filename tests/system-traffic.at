@@ -6942,6 +6942,75 @@ recirc_id(0),in_port(br-underlay),ct_state(+trk),eth(src=f0:00:00:01:01:02,dst=f
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([conntrack - ICMP from different source related with NAT])
+AT_SKIP_IF([test $HAVE_NC = no])
+AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+CHECK_CONNTRACK()
+CHECK_CONNTRACK_NAT()
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(client, server)
+
+ADD_VETH(client, client, br0, "192.168.20.10/24", "00:00:00:00:20:10")
+ADD_VETH(server, server, br0, "192.168.10.20/24", "00:00:00:00:10:20")
+
+dnl Send traffic from client to CT, do DNAT if the traffic is new otherwise send it to server
+AT_DATA([flows.txt], [dnl
+table=0,ip,ct_state=-trk,actions=ct(table=1)
+table=1,in_port=ovs-client,ip,ct_state=+trk+new,actions=ct(commit,table=2,nat(dst(192.168.10.20))
+table=1,in_port=ovs-client,icmp,ct_state=+trk+rel,actions=ct(commit,table=2,nat)
+table=1,ip,actions=resubmit(,2)
+table=2,in_port=ovs-client,ip,ct_state=+trk+new,actions=output:ovs-server
+table=2,in_port=ovs-client,icmp,ct_state=+trk+rel,actions=output:ovs-server
+table=2,in_port=ovs-server,ip,ct_state=+trk+rpl,actions=output:ovs-client
+])
+
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+rm server.pcap
+OVS_DAEMONIZE([tcpdump -U -i ovs-server -w server.pcap], [tcpdump.pid])
+sleep 1
+
+dnl Send UDP client->server
+AT_CHECK([ovs-ofctl packet-out br0 "in_port=ovs-client,\
+packet=00000000102000000000201008004500001C000040000A11C762C0A8140AC0A814140001000200080000,actions=resubmit(,0)"])
+dnl Send UDP response server->client
+AT_CHECK([ovs-ofctl packet-out br0 "in_port=ovs-server,\
+packet=00000000201000000000102008004500001C000040000A11D162C0A80A14C0A8140A0002000100080000,actions=resubmit(,0)"])
+dnl Fake router sending ICMP need frag
+AT_CHECK([ovs-ofctl packet-out br0 "in_port=ovs-client,\
+packet=000000001020000000002000080045000038011F0000FF011140C0A81401C0A814140304F778000005784500001C000040000A11C762C0A81414C0A8140A0002000100080000,\
+actions=resubmit(,0)"
+])
+
+AT_CHECK([ovs-appctl revalidator/purge], [0])
+AT_CHECK([ovs-ofctl -O OpenFlow15 dump-flows br0 | ofctl_strip | sort ], [0], [dnl
+ n_packets=3, n_bytes=154, reset_counts ct_state=-trk,ip actions=ct(table=1)
+ table=1, n_packets=1, n_bytes=42, reset_counts ct_state=+new+trk,ip,in_port=1 actions=ct(commit,table=2,nat(dst=192.168.10.20))
+ table=1, n_packets=1, n_bytes=42, reset_counts ip actions=resubmit(,2)
+ table=1, n_packets=1, n_bytes=70, reset_counts ct_state=+rel+trk,icmp,in_port=1 actions=ct(commit,table=2,nat)
+ table=2, n_packets=1, n_bytes=42, reset_counts ct_state=+new+trk,ip,in_port=1 actions=output:2
+ table=2, n_packets=1, n_bytes=42, reset_counts ct_state=+rpl+trk,ip,in_port=2 actions=output:1
+ table=2, n_packets=1, n_bytes=70, reset_counts ct_state=+rel+trk,icmp,in_port=1 actions=output:2
+OFPST_FLOW reply (OF1.5):
+])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "192.168.20.10"], [0], [dnl
+udp,orig=(src=192.168.20.10,dst=192.168.20.20,sport=1,dport=2),reply=(src=192.168.10.20,dst=192.168.20.10,sport=2,dport=1)
+])
+
+OVS_WAIT_UNTIL([ovs-pcap server.pcap | grep 000000001020000000002000])
+
+AT_CHECK([tcpdump -tvnnne "icmp" -r server.pcap 2>/dev/null | sed 's/^\s*//'], [0], [dnl
+00:00:00:00:20:00 > 00:00:00:00:10:20, ethertype IPv4 (0x0800), length 70: (tos 0x0, ttl 255, id 287, offset 0, flags [[none]], proto ICMP (1), length 56)
+192.168.20.1 > 192.168.10.20: ICMP 192.168.20.10 unreachable - need to frag (mtu 1400), length 36
+(tos 0x0, ttl 10, id 0, offset 0, flags [[DF]], proto UDP (17), length 28)
+192.168.10.20.2 > 192.168.20.10.1: UDP, length 0
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_BANNER([IGMP])
 
 AT_SETUP([IGMP - flood under normal action])
