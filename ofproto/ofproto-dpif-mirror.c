@@ -21,6 +21,7 @@
 #include "cmap.h"
 #include "hmapx.h"
 #include "ofproto.h"
+#include "ofproto-dpif-trace.h"
 #include "vlan-bitmap.h"
 #include "openvswitch/vlog.h"
 
@@ -56,6 +57,10 @@ struct mirror {
     /* Selection criteria. */
     struct hmapx srcs;          /* Contains "struct mbundle*"s. */
     struct hmapx dsts;          /* Contains "struct mbundle*"s. */
+
+    /* Filter criteria. */
+    struct miniflow *filter;
+    struct minimask *mask;
 
     /* This is accessed by handler threads assuming RCU protection (see
      * mirror_get()), but can be manipulated by mirror_set() without any
@@ -212,7 +217,9 @@ mirror_set(struct mbridge *mbridge, void *aux, const char *name,
            struct ofbundle **dsts, size_t n_dsts,
            unsigned long *src_vlans, struct ofbundle *out_bundle,
            uint16_t snaplen,
-           uint16_t out_vlan)
+           uint16_t out_vlan,
+           char *filter,
+           const struct ofproto *ofprotop)
 {
     struct mbundle *mbundle, *out;
     mirror_mask_t mirror_bit;
@@ -285,6 +292,31 @@ mirror_set(struct mbridge *mbridge, void *aux, const char *name,
     mirror->out_vlan = out_vlan;
     mirror->snaplen = snaplen;
 
+    if (mirror->filter) {
+        ovsrcu_postpone(free, mirror->filter);
+        ovsrcu_postpone(free, mirror->mask);
+        mirror->filter = NULL;
+    }
+    if (filter) {
+        struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
+        struct flow_wildcards wc = {};
+        struct flow flow = {};
+        char *err;
+
+        ofproto_append_ports_to_map(&map, ofprotop->ports);
+        err = parse_ofp_exact_flow(&flow, &wc,
+                                   ofproto_get_tun_tab(ofprotop),
+                                   filter, &map);
+        ofputil_port_map_destroy(&map);
+        if (err) {
+            VLOG_WARN("filter is invalid: %s", err);
+            return EINVAL;
+        }
+
+        mirror->mask = minimask_create(&wc);
+        mirror->filter = miniflow_create(&flow);
+    }
+
     /* Update mbundles. */
     mirror_bit = MIRROR_MASK_C(1) << mirror->idx;
     CMAP_FOR_EACH (mbundle, cmap_node, &mirror->mbridge->mbundles) {
@@ -338,6 +370,12 @@ mirror_destroy(struct mbridge *mbridge, void *aux)
     unsigned long *vlans = ovsrcu_get(unsigned long *, &mirror->vlans);
     if (vlans) {
         ovsrcu_postpone(free, vlans);
+    }
+
+    if (mirror->filter) {
+        ovsrcu_postpone(free, mirror->filter);
+        ovsrcu_postpone(free, mirror->mask);
+        mirror->filter = NULL;
     }
 
     mbridge->mirrors[mirror->idx] = NULL;
@@ -418,7 +456,8 @@ mirror_update_stats(struct mbridge *mbridge, mirror_mask_t mirrors,
 bool
 mirror_get(struct mbridge *mbridge, int index, const unsigned long **vlans,
            mirror_mask_t *dup_mirrors, struct ofbundle **out,
-           int *snaplen, int *out_vlan)
+           int *snaplen, int *out_vlan, struct flow *flow,
+           struct flow_wildcards *wc)
 {
     struct mirror *mirror;
 
@@ -430,6 +469,16 @@ mirror_get(struct mbridge *mbridge, int index, const unsigned long **vlans,
     if (!mirror) {
         return false;
     }
+
+    if (wc && mirror->filter) {
+        if (miniflow_equal_flow_in_minimask(mirror->filter, flow,
+                                            mirror->mask)) {
+            flow_wildcards_union_with_minimask(wc, mirror->mask);
+        } else {
+            return false;
+        }
+    }
+
     /* Assume 'mirror' is RCU protected, i.e., it will not be freed until this
      * thread quiesces. */
 

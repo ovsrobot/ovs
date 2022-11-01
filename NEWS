@@ -23,6 +23,8 @@ Post-v3.0.0
        bug and CVE fixes addressed since its release.
        If a user wishes to benefit from these fixes it is recommended to use
        DPDK 21.11.2.
+    - ovs-tcpdump:
+      * Added new --filter parameter to apply pre-selection on mirrored flows.
 
 
 v3.0.0 - 15 Aug 2022

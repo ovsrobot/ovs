@@ -2163,7 +2163,9 @@ mirror_packet(struct xlate_ctx *ctx, struct xbundle *xbundle,
         /* Get the details of the mirror represented by the rightmost 1-bit. */
         if (OVS_UNLIKELY(!mirror_get(xbridge->mbridge, raw_ctz(mirrors),
                                      &vlans, &dup_mirrors,
-                                     &out, &snaplen, &out_vlan))) {
+                                     &out, &snaplen, &out_vlan,
+                                     &ctx->xin->flow,
+                                     ctx->wc))) {
             /* The mirror got reconfigured before we got to read it's
              * configuration. */
             mirrors = zero_rightmost_1bit(mirrors);

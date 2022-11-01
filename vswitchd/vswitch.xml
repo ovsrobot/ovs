@@ -5102,6 +5102,12 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
            are not truncated.
         </p>
       </column>
+      <column name="filter">
+        <p>Filter to apply to mirror.</p>
+        <p>Flows that match <ref column="filter"/> will flow through this
+           mirror, flows that do not match will be ignored.
+        </p>
+      </column>
     </group>
 
     <group title="Statistics: Mirror counters">

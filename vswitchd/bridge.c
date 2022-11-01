@@ -5106,6 +5106,8 @@ mirror_configure(struct mirror *m)
         s.snaplen = 0;
     }
 
+    s.filter = cfg->filter;
+
     /* Get port selection. */
     if (cfg->select_all) {
         size_t n_ports = hmap_count(&m->bridge->ports);
