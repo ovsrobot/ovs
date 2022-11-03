@@ -1935,7 +1935,6 @@ void
 dpif_meter_get_features(const struct dpif *dpif,
                         struct ofputil_meter_features *features)
 {
-    memset(features, 0, sizeof *features);
     if (dpif->dpif_class->meter_get_features) {
         dpif->dpif_class->meter_get_features(dpif, features);
     }
