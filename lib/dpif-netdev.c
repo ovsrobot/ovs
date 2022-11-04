@@ -4072,7 +4072,8 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
                && !FLOWMAP_HAS_FIELD(&mask.mf.map, regs));
 
     /* Do not allocate extra space. */
-    flow = xmalloc(sizeof *flow - sizeof flow->cr.flow.mf + mask.len);
+    flow = xmalloc(sizeof *flow - sizeof(flow->cr.flow) +
+                   offsetof(struct netdev_flow_key, mf) + mask.len);
     memset(&flow->stats, 0, sizeof flow->stats);
     atomic_init(&flow->netdev_flow_get_result, 0);
     memset(&flow->last_stats, 0, sizeof flow->last_stats);
@@ -9744,7 +9745,8 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
 
     /* Need to add one. */
     subtable = xmalloc(sizeof *subtable
-                       - sizeof subtable->mask.mf + mask->len);
+                       - sizeof subtable->mask
+                       + offsetof(struct netdev_flow_key, mf) + mask->len);
     cmap_init(&subtable->rules);
     subtable->hit_cnt = 0;
     netdev_flow_key_clone(&subtable->mask, mask);
