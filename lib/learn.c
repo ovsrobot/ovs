@@ -310,9 +310,11 @@ learn_parse_spec(const char *orig, char *name, char *value,
 
                 /* Push value last, as this may reallocate 'spec'! */
                 unsigned int imm_bytes = DIV_ROUND_UP(dst.n_bits, 8);
+                unsigned int offset = dst.field->n_bytes - imm_bytes;
                 uint8_t *src_imm = ofpbuf_put_zeros(ofpacts,
                                                     OFPACT_ALIGN(imm_bytes));
-                memcpy(src_imm, &imm, imm_bytes);
+
+                memcpy(src_imm, (uint8_t *) &imm + offset, imm_bytes);
 
                 free(error);
                 return NULL;
