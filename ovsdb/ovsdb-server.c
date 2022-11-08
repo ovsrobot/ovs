@@ -431,7 +431,7 @@ main(int argc, char *argv[])
     unixctl_command_register("ovsdb-server/compact", "", 0, 1,
                              ovsdb_server_compact, &all_dbs);
     unixctl_command_register("ovsdb-server/memory-trim-on-compaction",
-                             "on|off", 1, 1,
+                             "on|off", 0, 1,
                              ovsdb_server_memory_trim_on_compaction, NULL);
     unixctl_command_register("ovsdb-server/reconnect", "", 0, 0,
                              ovsdb_server_reconnect, jsonrpc);
@@ -1600,13 +1600,19 @@ ovsdb_server_memory_trim_on_compaction(struct unixctl_conn *conn,
                                        const char *argv[],
                                        void *arg OVS_UNUSED)
 {
-    const char *command = argv[1];
+    const char *command = NULL;
 
 #if !HAVE_DECL_MALLOC_TRIM
     unixctl_command_reply_error(conn, "memory trimming is not supported");
     return;
 #endif
 
+    if (argc == 0) {
+        unixctl_command_reply(conn, trim_memory ? "on\n" : "off\n");
+        return;
+    }
+
+    command = argv[1];
     if (!strcmp(command, "on")) {
         trim_memory = true;
     } else if (!strcmp(command, "off")) {
