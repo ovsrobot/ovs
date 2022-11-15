@@ -378,8 +378,9 @@ ofp_print_meter_config_reply(struct ds *s, const struct ofp_header *oh)
         if (retval) {
             break;
         }
+
         ds_put_char(s, '\n');
-        ofputil_format_meter_config(s, &mc);
+        ofputil_format_meter_config(s, &mc, 0);
     }
     ofpbuf_uninit(&bands);
 
@@ -1269,7 +1270,7 @@ ofp_to_string(const void *oh_, size_t len,
     ds_put_hex_dump(&string, oh, len, 0, true);
     return ds_steal_cstr(&string);
 }
-
+
 static void
 print_and_free(FILE *stream, char *string)
 {

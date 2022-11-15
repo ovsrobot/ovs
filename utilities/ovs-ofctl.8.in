@@ -464,20 +464,29 @@ of OpenFlow does Open vSwitch support?'' in the Open vSwitch FAQ.
 Add a meter entry to \fIswitch\fR's tables. The \fImeter\fR syntax is
 described in section \fBMeter Syntax\fR, below.
 .
+.IP "\fBadd\-meters \fIswitch file\fR"
+Add each meter entry to \fIswitch\fR's tables. Each meter specification
+(each line in file) may start with \fBadd\fI, \fBmodify\fI or \fBdelete\fI
+keyword to spicify whether a meter is to be added, modified, or deleted.
+For backwards compatibility a meter specification without one of these keywords
+is treated as a meter add. The \fImeter\fR syntax is described in section
+\fBMeter Syntax\fR, below.
+.
 .IP "\fBmod\-meter \fIswitch meter\fR"
 Modify an existing meter.
 .
 .IP "\fBdel\-meters \fIswitch\fR [\fImeter\fR]"
 Delete entries from \fIswitch\fR's meter table.  To delete only a
-specific meter, specify its number as \fImeter\fR.  Otherwise, if
+specific meter, specify a meter syntax \fBmeter=\fIid\fR.  Otherwise, if
 \fImeter\fR is omitted, or if it is specified as \fBall\fR, then all
 meters are deleted.
 .
 .IP "\fBdump\-meters \fIswitch\fR [\fImeter\fR]"
 Print entries from \fIswitch\fR's meter table.  To print only a
-specific meter, specify its number as \fImeter\fR.  Otherwise, if
+specific meter, specify a meter syntax \fBmeter=\fIid\fR.  Otherwise, if
 \fImeter\fR is omitted, or if it is specified as \fBall\fR, then all
-meters are printed.
+meters are printed.  With \fB\-\-oneline\fR, band information will be
+combined into one line.
 .
 .IP "\fBmeter\-stats \fIswitch\fR [\fImeter\fR]"
 Print meter statistics.  \fImeter\fR can specify a single meter with
@@ -1310,6 +1319,11 @@ The \fBdump\-flows\fR command by default, or with \fB\-\-stats\fR,
 includes flow duration, packet and byte counts, and idle and hard age
 in its output.  With \fB\-\-no\-stats\fR, it omits all of these, as
 well as cookie values and table IDs if they are zero.
+.
+.IP "\fB\-\-oneline\fR"
+The \fBdump\-meters\fR command by default print each band of a meter
+in a separate line. With \fB\-\-oneline\fR, all bands will be printed
+in a single line. This is useful for dump meters to a file and restore.
 .
 .IP "\fB\-\-read-only\fR"
 Do not execute read/write commands.
