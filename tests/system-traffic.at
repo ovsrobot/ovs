@@ -1660,9 +1660,8 @@ AT_CHECK([ovs-ofctl dump-flows br0 | grep "in_port=2" | sed -n 's/.*\(n\_bytes=[
 n_bytes=242
 ])
 dnl After truncation = outer ETH(14) + outer IP(20) + GRE(4) + 100 = 138B
-AT_CHECK([ovs-ofctl dump-flows br-underlay | grep "in_port=LOCAL" | sed -n 's/.*\(n\_bytes=[[0-9]]*\).*/\1/p'], [0], [dnl
-n_bytes=138
-])
+OVS_WAIT_UNTIL([ovs-ofctl dump-flows br-underlay | grep "in_port=LOCAL" | sed -n 's/.*\(n\_bytes=[[0-9]]*\).*/\1/p' | grep "n_bytes=138"],
+               [ovs-ofctl dump-flows br-underlay | grep "in_port=LOCAL" | sed -n 's/.*\(n\_bytes=[[0-9]]*\).*/\1/p'])
 
 dnl check tunnel pop path, from at_ns0 to at_ns1
 dnl This 200-byte packet is simulated on behalf of ns_gre0
@@ -1697,9 +1696,8 @@ AT_CHECK([ovs-ofctl dump-flows br0 | grep "in_port=2" | sed -n 's/.*\(n\_bytes=[
 n_bytes=242
 ])
 dnl After truncation = outer ETH(14) + outer IP(20) + GRE(4) + 100 = 138B
-AT_CHECK([ovs-ofctl dump-flows br-underlay | grep "in_port=LOCAL" | sed -n 's/.*\(n\_bytes=[[0-9]]*\).*/\1/p'], [0], [dnl
-n_bytes=138
-])
+OVS_WAIT_UNTIL([ovs-ofctl dump-flows br-underlay | grep "in_port=LOCAL" | sed -n 's/.*\(n\_bytes=[[0-9]]*\).*/\1/p' | grep "n_bytes=138"],
+               [ovs-ofctl dump-flows br-underlay | grep "in_port=LOCAL" | sed -n 's/.*\(n\_bytes=[[0-9]]*\).*/\1/p'])
 
 dnl check tunnel pop path, from at_ns0 to at_ns1
 dnl This 200-byte packet is simulated on behalf of ns_gre0
@@ -1707,9 +1705,8 @@ ovs-ofctl -O OpenFlow13 packet-out br-underlay "in_port=1 packet=02908ca8a149faa
 
 dnl After truncation = 100 byte at loopback device p2(4)
 OVS_REVALIDATOR_PURGE()
-AT_CHECK([ovs-ofctl dump-flows br0 | grep "in_port=4" | ofctl_strip], [0], [dnl
- n_packets=1, n_bytes=100, priority=1,ip,in_port=4 actions=drop
-])
+OVS_WAIT_UNTIL([ovs-ofctl dump-flows br0 | grep "in_port=4" | ofctl_strip | grep "n_packets=1, n_bytes=100, priority=1,ip,in_port=4 actions=drop"],
+               [ovs-ofctl dump-flows br0 | grep "in_port=4" | ofctl_strip])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
