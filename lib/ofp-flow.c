@@ -1580,6 +1580,9 @@ parse_ofp_str__(struct ofputil_flow_mod *fm, int command, char *string,
         char *error = NULL;
 
         if (ofp_parse_protocol(name, &p)) {
+            if (match.flow.nw_proto) {
+                return xstrdup("TLVs must be ordered");
+            }
             match_set_dl_type(&match, htons(p->dl_type));
             if (p->nw_proto) {
                 match_set_nw_proto(&match, p->nw_proto);
