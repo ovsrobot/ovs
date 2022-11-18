@@ -901,6 +901,17 @@ struct tcp_header {
 };
 BUILD_ASSERT_DECL(TCP_HEADER_LEN == sizeof(struct tcp_header));
 
+/* IPV6 extension header OpenFlow flags */
+#define OFPIEH13_NONEXT 0x001
+#define OFPIEH13_ESP    0x002
+#define OFPIEH13_AUTH   0x004
+#define OFPIEH13_DEST   0x008
+#define OFPIEH13_FRAG   0x010
+#define OFPIEH13_ROUTER 0x020
+#define OFPIEH13_HOP    0x040
+#define OFPIEH13_UNREP  0x080
+#define OFPIEH13_UNSEQ  0x100
+
 /* Connection states.
  *
  * Names like CS_RELATED are bit values, e.g. 1 << 2.
@@ -1119,6 +1130,9 @@ BUILD_ASSERT_DECL(MLD2_RECORD_LEN == sizeof(struct mld2_record));
 
 /* The IPv6 flow label is in the lower 20 bits of the first 32-bit word. */
 #define IPV6_LABEL_MASK 0x000fffff
+
+/* The IPv6 extension headers is in the lower 9 bits of 18-bit halfword. */
+#define IPV6_EXTHDR_MASK 0x01ff
 
 /* Example:
  *
@@ -1612,6 +1626,7 @@ void packet_set_igmp3_query(struct dp_packet *, uint8_t max_resp,
                             uint8_t qqic);
 void packet_format_tcp_flags(struct ds *, uint16_t);
 const char *packet_tcp_flag_to_string(uint32_t flag);
+const char *packet_ipv6_exthdr_flag_to_string(uint32_t flag);
 void *compose_ipv6(struct dp_packet *packet, uint8_t proto,
                    const struct in6_addr *src, const struct in6_addr *dst,
                    uint8_t key_tc, ovs_be32 key_fl, uint8_t key_hl, int size);

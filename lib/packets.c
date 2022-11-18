@@ -34,6 +34,7 @@
 #include "odp-util.h"
 #include "dp-packet.h"
 #include "unaligned.h"
+#include "openflow/openflow.h"
 
 const struct in6_addr in6addr_exact = IN6ADDR_EXACT_INIT;
 const struct in6_addr in6addr_all_hosts = IN6ADDR_ALL_HOSTS_INIT;
@@ -1080,6 +1081,33 @@ ipv6_is_cidr(const struct in6_addr *netmask)
     }
 
     return true;
+}
+
+const char *
+packet_ipv6_exthdr_flag_to_string(uint32_t flag)
+{
+    switch (flag) {
+        case OFPIEH13_NONEXT:
+            return "nonext";
+        case OFPIEH13_ESP:
+            return "esp";
+        case OFPIEH13_AUTH:
+            return "auth";
+        case OFPIEH13_DEST:
+            return "dest";
+        case OFPIEH13_FRAG:
+            return "frag";
+        case OFPIEH13_ROUTER:
+            return "router";
+        case OFPIEH13_HOP:
+            return "hop";
+        case OFPIEH13_UNREP:
+            return "unrep";
+        case OFPIEH13_UNSEQ:
+            return "unseq";
+        default:
+            return NULL;
+    }
 }
 
 /* Populates 'b' with an Ethernet II packet headed with the given 'eth_dst',

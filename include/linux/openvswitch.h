@@ -401,6 +401,7 @@ enum ovs_key_attr {
 	OVS_KEY_ATTR_TUNNEL_INFO,   /* struct ip_tunnel_info.
 				     * For in-kernel use only.
 				     */
+    OVS_KEY_ATTR_IPV6_EXTHDRS,  /* struct ovs_key_ipv6_exthdr */
 	__OVS_KEY_ATTR_MAX
 };
 
@@ -498,6 +499,11 @@ struct ovs_key_ipv6 {
 	__u8   ipv6_tclass;
 	__u8   ipv6_hlimit;
 	__u8   ipv6_frag;	/* One of OVS_FRAG_TYPE_*. */
+};
+
+/* separate structure to support backward compatibility with older user space */
+struct ovs_key_ipv6_exthdrs {
+    __u16  hdrs;
 };
 
 struct ovs_key_tcp {

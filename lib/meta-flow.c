@@ -331,6 +331,9 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
     case MFF_IPV6_LABEL:
         return !wc->masks.ipv6_label;
 
+    case MFF_IPV6_EXTHDR:
+        return !wc->masks.ipv6_exthdr;
+
     case MFF_IP_PROTO:
         return !wc->masks.nw_proto;
     case MFF_IP_DSCP:
@@ -618,6 +621,9 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
     case MFF_IPV6_LABEL:
         return !(value->be32 & ~htonl(IPV6_LABEL_MASK));
 
+    case MFF_IPV6_EXTHDR:
+        return !(value->u16 & ~(IPV6_EXTHDR_MASK));
+
     case MFF_MPLS_LABEL:
         return !(value->be32 & ~htonl(MPLS_LABEL_MASK >> MPLS_LABEL_SHIFT));
 
@@ -869,6 +875,10 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
         value->be32 = flow->ipv6_label;
         break;
 
+    case MFF_IPV6_EXTHDR:
+        value->u16 = flow->ipv6_exthdr;
+        break;
+
     case MFF_IP_PROTO:
         value->u8 = flow->nw_proto;
         break;
@@ -989,7 +999,7 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
  * prerequisites.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string. */
 void
 mf_set_value(const struct mf_field *mf,
@@ -1211,6 +1221,10 @@ mf_set_value(const struct mf_field *mf,
 
     case MFF_IPV6_LABEL:
         match_set_ipv6_label(match, value->be32);
+        break;
+
+    case MFF_IPV6_EXTHDR:
+        match_set_ipv6_exthdr(match, value->u16);
         break;
 
     case MFF_IP_PROTO:
@@ -1633,6 +1647,10 @@ mf_set_flow_value(const struct mf_field *mf,
         flow->ipv6_label = value->be32 & htonl(IPV6_LABEL_MASK);
         break;
 
+    case MFF_IPV6_EXTHDR:
+        flow->ipv6_exthdr = value->u16 & IPV6_EXTHDR_MASK;
+        break;
+
     case MFF_IP_PROTO:
         flow->nw_proto = value->u8;
         break;
@@ -1865,6 +1883,7 @@ mf_is_pipeline_field(const struct mf_field *mf)
     case MFF_IPV6_SRC:
     case MFF_IPV6_DST:
     case MFF_IPV6_LABEL:
+    case MFF_IPV6_EXTHDR:
     case MFF_IP_PROTO:
     case MFF_IP_DSCP:
     case MFF_IP_DSCP_SHIFTED:
@@ -1935,7 +1954,7 @@ mf_is_set(const struct mf_field *mf, const struct flow *flow)
  * prerequisites.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string. */
 void
 mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
@@ -2182,6 +2201,11 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
         match->flow.ipv6_label = htonl(0);
         break;
 
+    case MFF_IPV6_EXTHDR:
+        match->wc.masks.ipv6_exthdr = 0;
+        match->flow.ipv6_exthdr = 0;
+        break;
+
     case MFF_IP_PROTO:
         match->wc.masks.nw_proto = 0;
         match->flow.nw_proto = 0;
@@ -2307,7 +2331,7 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
  * is responsible for ensuring that 'match' meets 'mf''s prerequisites.
  *
  * If non-NULL, 'err_str' returns a malloc'ed string describing any errors
- * with the request or NULL if there is no error. The caller is reponsible
+ * with the request or NULL if there is no error. The caller is responsible
  * for freeing the string.
  *
  * Return a set of enum ofputil_protocol bits (as an uint32_t to avoid circular
@@ -2536,6 +2560,10 @@ mf_set(const struct mf_field *mf,
         } else {
             match_set_ipv6_label_masked(match, value->be32, mask->be32);
         }
+        break;
+
+    case MFF_IPV6_EXTHDR:
+        match_set_ipv6_exthdr_masked(match, value->u16, mask->u16);
         break;
 
     case MFF_ND_TARGET:
@@ -2961,6 +2989,29 @@ parse_mf_flags(const char *s, const char *(*bit_to_string)(uint32_t),
 }
 
 static char *
+parse_mf_flags_le(const char *s, const char *(*bit_to_string)(uint32_t),
+               const char *field_name, uint16_t *flagsp, uint16_t allowed,
+               uint16_t *maskp)
+{
+    int err;
+    char *err_str;
+    uint32_t flags, mask;
+
+    err = parse_flags(s, bit_to_string, '\0', field_name, &err_str,
+                      &flags, allowed, maskp ? &mask : NULL);
+    if (err < 0) {
+        return err_str;
+    }
+
+    *flagsp = flags;
+    if (maskp) {
+        *maskp = mask;
+    }
+
+    return NULL;
+}
+
+static char *
 mf_from_tcp_flags_string(const char *s, ovs_be16 *flagsp, ovs_be16 *maskp)
 {
     return parse_mf_flags(s, packet_tcp_flag_to_string, "TCP", flagsp,
@@ -2972,6 +3023,14 @@ mf_from_tun_flags_string(const char *s, ovs_be16 *flagsp, ovs_be16 *maskp)
 {
     return parse_mf_flags(s, flow_tun_flag_to_string, "tunnel", flagsp,
                           htons(FLOW_TNL_PUB_F_MASK), maskp);
+}
+
+static char *
+mf_from_ipv6_exthdr_flags_string(const char *s, uint16_t *flagsp,
+                                 uint16_t *maskp)
+{
+    return parse_mf_flags_le(s, packet_ipv6_exthdr_flag_to_string, "IPV6_EXT",
+                             flagsp, UINT16_MAX, maskp);
 }
 
 static char *
@@ -3062,6 +3121,11 @@ mf_parse(const struct mf_field *mf, const char *s,
         ovs_assert(mf->n_bytes == sizeof(ovs_be32));
         error = mf_from_packet_type_string(s, &value->be32);
         mask->be32 = OVS_BE32_MAX;
+        break;
+
+    case MFS_IPV6_EXTHDR:
+        ovs_assert(mf->n_bytes == sizeof(uint16_t));
+        error = mf_from_ipv6_exthdr_flags_string(s, &value->u16, &mask->u16);
         break;
 
     default:
@@ -3164,6 +3228,13 @@ mf_format_packet_type_string(ovs_be32 value, ovs_be32 mask, struct ds *s)
     format_packet_type_masked(s, value, mask);
 }
 
+static void
+mf_format_ipv6_exthdr_flags_string(uint16_t value, uint16_t mask, struct ds *s)
+{
+    format_flags_masked(s, NULL, packet_ipv6_exthdr_flag_to_string, value,
+                        mask, UINT16_MAX);
+}
+
 /* Appends to 's' a string representation of field 'mf' whose value is in
  * 'value' and 'mask'.  'mask' may be NULL to indicate an exact match. */
 void
@@ -3235,6 +3306,11 @@ mf_format(const struct mf_field *mf,
     case MFS_PACKET_TYPE:
         mf_format_packet_type_string(value->be32,
                                      mask ? mask->be32 : OVS_BE32_MAX, s);
+        break;
+
+    case MFS_IPV6_EXTHDR:
+        mf_format_ipv6_exthdr_flags_string(value->u16,
+                                   mask ? mask->u16 : UINT16_MAX, s);
         break;
 
     default:

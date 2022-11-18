@@ -20,6 +20,7 @@ in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=17,tclass=0,hlimit=128,frag=no),udp(src=6630,dst=22)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=1,code=2)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=136,code=0),nd(target=::3,sll=00:05:06:07:08:09,tll=00:0a:0b:0c:0d:0e)
+in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),ipv6_ext(hdrs=16),icmpv6(type=136,code=0),nd(target=::3,sll=00:05:06:07:08:09,tll=00:0a:0b:0c:0d:0e)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0806),arp(sip=1.2.3.4,tip=5.6.7.8,op=1,sha=00:0f:10:11:12:13,tha=00:14:15:16:17:18)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=136,code=0),nd(target=::3,sll=00:05:06:07:08:09,tll=00:0a:0b:0c:0d:0e)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=136,code=0),nd(target=::3,sll=00:05:06:07:08:09,tll=00:0a:0b:0c:0d:0e),nd_ext(nd_reserved=0x0,nd_options_type=2)
@@ -119,7 +120,7 @@ in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv4(src=35.8.2.41,dst=172.16.0.20,proto=17,tos=0,ttl=128,frag=no),udp(src=81/0xff00,dst=6632/0xff)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv4(src=35.8.2.41,dst=172.16.0.20,proto=17,tos=0,ttl=128,frag=no),udp(src=81/0xff,dst=6632/0xff00)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv4(src=35.8.2.41,dst=172.16.0.20,proto=1,tos=0,ttl=128,frag=no),icmp(type=1/0xf0,code=2)
-in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1/::255,dst=::2/::255,label=0/0xf0,proto=10/0xf0,tclass=0x70/0xf0,hlimit=128/0xf0,frag=no)
+in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1/::255,dst=::2/::255,label=0xf0/0xf0,proto=10/0xf0,tclass=0x70/0xf0,hlimit=128/0xf0,frag=no)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=6,tclass=0,hlimit=128,frag=no),tcp(src=80/0xff00,dst=8080/0xff)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=17,tclass=0,hlimit=128,frag=no),udp(src=6630/0xff00,dst=22/0xff)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=1/0xf0,code=2)
@@ -128,7 +129,7 @@ in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=136,code=0),nd(target=::3/::250,tll=00:0a:0b:0c:0d:0e/ff:ff:ff:ff:ff:00)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=136,code=0),nd(target=::3/::250,sll=00:05:06:07:08:09/ff:ff:ff:ff:ff:00,tll=00:0a:0b:0c:0d:0e/ff:ff:ff:ff:ff:00)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0806),arp(sip=1.2.3.4/255.255.255.250,tip=5.6.7.8/255.255.255.250,op=1/0xf0,sha=00:0f:10:11:12:13/ff:ff:ff:ff:ff:00,tha=00:14:15:16:17:18/ff:ff:ff:ff:ff:00)
-skb_mark(0x1234/0xfff0),in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),icmpv6(type=136,code=0),nd(target=::3,sll=00:05:06:07:08:09,tll=00:0a:0b:0c:0d:0e)
+skb_mark(0x1234/0xfff0),in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=58,tclass=0,hlimit=128,frag=no),ipv6_ext(hdrs=16),icmpv6(type=136,code=0),nd(target=::3,sll=00:05:06:07:08:09,tll=00:0a:0b:0c:0d:0e)
 ])
 
 (echo '# Valid forms without tun_id or VLAN header.'
@@ -207,6 +208,7 @@ in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv4(src=35.8.2.41,dst=172.16.0.20,proto=1,tos=0,ttl=128,frag=no),icmp(type=1/0xf0,code=2/0xff)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1/::255,dst=::2/::255,label=0/0xf0,proto=10/0xf0,tclass=0x70/0xf0,hlimit=128/0xf0,frag=no)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=6,tclass=0,hlimit=128,frag=no),tcp(src=80/0xff00,dst=8080/0xff)
+in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=6,tclass=0,hlimit=128,frag=no),ipv6_ext(hdrs=16/0x00ff),tcp(src=80/0xff00,dst=8080/0xff)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0806),arp(sip=1.2.3.4/255.255.255.250,tip=5.6.7.8/255.255.255.250,op=1/0xf0,sha=00:0f:10:11:12:13/ff:ff:ff:ff:ff:00,tha=00:14:15:16:17:18/ff:ff:ff:ff:ff:00)
 ])
 AT_DATA([odp-vlan-base.txt], [dnl
@@ -238,6 +240,7 @@ in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x0800),ipv
 AT_DATA([odp-tcp6.txt], [dnl
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1/::255,dst=::2/::255,label=0/0xf0,proto=10/0xf0,tclass=0x70/0xf0,hlimit=128/0xf0,frag=no)
 in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=6,tclass=0,hlimit=128,frag=no),tcp(src=80/0xff00,dst=8080/0xff)
+in_port(1),eth(src=00:01:02:03:04:05,dst=10:11:12:13:14:15),eth_type(0x86dd),ipv6(src=::1,dst=::2,label=0,proto=6,tclass=0,hlimit=128,frag=no),ipv6_ext(hdrs=16/0xff),tcp(src=80/0xff00,dst=8080/0xff)
 ])
 AT_CHECK_UNQUOTED([ovstest test-odp parse-filter filter='dl_type=0x1235' < odp-base.txt], [0], [`cat odp-eth-type.txt`
 ])
@@ -311,6 +314,8 @@ set(ipv6(label=0,proto=10,tclass=0x70,hlimit=128,frag=no))
 set(ipv6(label=0,proto=10,hlimit=128))
 set(ipv6(label=0/0xfff,proto=10,tclass=0x70/0x70))
 set(ipv6(label=0))
+set(ipv6_ext(hdrs=16))
+set(ipv6_ext(hdrs=16/0xff))
 set(icmpv6(type=1,code=2))
 set(vlan(vid=5))
 set(vlan(vid=3,pcp=5))

@@ -384,7 +384,14 @@ copy_entry_value(const struct mf_field *field, union mf_value *value,
         copy_dst = &value->u8 + field->n_bytes - copy_len;
     }
 
-    memcpy(copy_dst, payload, copy_len);
+    // Extension header flags are stored in host byte order.
+    if (field && field->id == MFF_IPV6_EXTHDR) {
+        memcpy(copy_dst, payload + 1, 1);
+        memcpy((uint8_t *)copy_dst + 1, payload, 1);
+    }
+    else {
+        memcpy(copy_dst, payload, copy_len);
+    }
 }
 
 static enum ofperr
@@ -863,6 +870,17 @@ nxm_put_16(struct nxm_put_ctx *ctx,
 }
 
 static void
+nxm_put_16m_le(struct nxm_put_ctx *ctx,
+            enum mf_field_id field, enum ofp_version version,
+            uint16_t value, uint16_t mask)
+{
+    // nxm struct expects values only in network order
+    ovs_be16 value_be16 = htons(value);
+    ovs_be16 mask_be16 = htons(mask);
+    nxm_put(ctx, field, version, &value_be16, &mask_be16, sizeof value_be16);
+}
+
+static void
 nxm_put_32m(struct nxm_put_ctx *ctx,
             enum mf_field_id field, enum ofp_version version,
             ovs_be32 value, ovs_be32 mask)
@@ -966,6 +984,9 @@ nxm_put_ip(struct nxm_put_ctx *ctx,
     nxm_put_32m(ctx, MFF_IPV6_LABEL, oxm,
                 flow->ipv6_label, match->wc.masks.ipv6_label);
 
+    nxm_put_16m_le(ctx, MFF_IPV6_EXTHDR, oxm,
+                   flow->ipv6_exthdr, match->wc.masks.ipv6_exthdr);
+
     if (match->wc.masks.nw_proto) {
         nxm_put_8(ctx, MFF_IP_PROTO, oxm, flow->nw_proto);
 
@@ -1051,7 +1072,7 @@ nx_put_raw(struct ofpbuf *b, enum ofp_version oxm, const struct match *match,
     ovs_be32 spi_mask;
     int match_len;
 
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     struct nxm_put_ctx ctx = { .output = b, .implied_ethernet = false };
 
@@ -1504,7 +1525,7 @@ nx_put_entry(struct ofpbuf *b, const struct mf_field *mff,
 
 /* nx_match_to_string() and helpers. */
 
-static void format_nxm_field_name(struct ds *, uint64_t header);
+static enum mf_field_id format_nxm_field_name(struct ds *, uint64_t header);
 
 char *
 nx_match_to_string(const uint8_t *p, unsigned int match_len)
@@ -1532,16 +1553,31 @@ nx_match_to_string(const uint8_t *p, unsigned int match_len)
             ds_put_cstr(&s, ", ");
         }
 
-        format_nxm_field_name(&s, header);
+        enum mf_field_id header_id = format_nxm_field_name(&s, header);
         ds_put_char(&s, '(');
 
-        for (int i = 0; i < value_len; i++) {
-            ds_put_format(&s, "%02x", ((const uint8_t *) &value)[i]);
+        // Extension header flags are stored in host byte order.
+        if (header_id == MFF_IPV6_EXTHDR) {
+            for (int i = value_len - 1; i >= 0; i--) {
+                ds_put_format(&s, "%02x",((const uint8_t *) &value)[i]);
+            }
+        } else {
+            for (int i = 0; i < value_len; i++) {
+                ds_put_format(&s, "%02x", ((const uint8_t *) &value)[i]);
+            }
         }
+
         if (nxm_hasmask(header)) {
             ds_put_char(&s, '/');
-            for (int i = 0; i < value_len; i++) {
-                ds_put_format(&s, "%02x", ((const uint8_t *) &mask)[i]);
+            // Extension header flags are stored in host byte order.
+            if (header_id == MFF_IPV6_EXTHDR) {
+                for (int i = value_len - 1; i >= 0; i--) {
+                    ds_put_format(&s, "%02x",((const uint8_t *) &mask)[i]);
+                }
+            } else {
+                for (int i = 0; i < value_len; i++) {
+                    ds_put_format(&s, "%02x",((const uint8_t *) &mask)[i]);
+                }
             }
         }
         ds_put_char(&s, ')');
@@ -1603,15 +1639,17 @@ nx_format_field_name(enum mf_field_id id, enum ofp_version version,
     format_nxm_field_name(s, mf_oxm_header(id, version));
 }
 
-static void
+static enum mf_field_id
 format_nxm_field_name(struct ds *s, uint64_t header)
 {
     const struct nxm_field *f = nxm_field_by_header(header, false, NULL);
+
     if (f) {
         ds_put_cstr(s, f->name);
         if (nxm_hasmask(header)) {
             ds_put_cstr(s, "_W");
         }
+        return f->id;
     } else if (header == NXM_NX_COOKIE) {
         ds_put_cstr(s, "NXM_NX_COOKIE");
     } else if (header == NXM_NX_COOKIE_W) {
@@ -1619,6 +1657,8 @@ format_nxm_field_name(struct ds *s, uint64_t header)
     } else {
         ds_put_format(s, "%d:%d", nxm_class(header), nxm_field(header));
     }
+
+    return MFF_N_IDS;
 }
 
 static bool

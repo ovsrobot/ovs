@@ -998,6 +998,7 @@ bad_action 'set_field:1' "1: missing \`->'"
 bad_action 'set_field:1->' "1->: missing field name following \`->'"
 bad_action 'set_field:1->x' 'x is not a valid OXM field name'
 bad_action 'set_field:1->eth_type' 'eth_type is read-only'
+bad_action 'set_field:1->ipv6_ext' 'ipv6_ext is read-only'
 bad_action 'set_field:1->eth_src' '1: invalid Ethernet address'
 bad_action 'set_field:0xffff->ip_dscp' '0xffff: value too large for 1-byte field ip_dscp'
 bad_action 'set_field:0xff->ip_dscp' '0xff is not a valid value for field ip_dscp'

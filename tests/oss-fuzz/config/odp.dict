@@ -72,6 +72,7 @@
 "ipv6"
 "ipv6_dst"
 "ipv6_src"
+"ipv6_ext"
 "l4()"
 "label"
 "lacp"

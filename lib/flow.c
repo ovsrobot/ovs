@@ -30,6 +30,7 @@
 #include "colors.h"
 #include "coverage.h"
 #include "csum.h"
+#include "openflow/openflow.h"
 #include "openvswitch/dynamic-string.h"
 #include "hash.h"
 #include "jhash.h"
@@ -136,7 +137,7 @@ struct mf_ctx {
  * away.  Some GCC versions gave warnings on ALWAYS_INLINE, so these are
  * defined as macros. */
 
-#if (FLOW_WC_SEQ != 42)
+#if (FLOW_WC_SEQ != 43)
 #define MINIFLOW_ASSERT(X) ovs_assert(X)
 BUILD_MESSAGE("FLOW_WC_SEQ changed: miniflow_extract() will have runtime "
                "assertions enabled. Consider updating FLOW_WC_SEQ after "
@@ -572,6 +573,163 @@ parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,
                                  frag_hdr);
 }
 
+uint16_t
+ipv6_ext_header_size__(uint8_t header_type, uint8_t len)
+{
+    /*
+     * Authentication header has different size calculation
+     */
+    if (header_type == IPPROTO_AH) {
+        return (len + 2) << 2;
+    } else {
+        return (len + 1) << 3;
+    }
+}
+
+/**
+ * Parses packet and sets IPv6 extension header flags.
+ *
+ * datap        pointer where extension header data starts in packet
+ * nh           ipv6 header
+ * ext_hdrs     flags are stored here
+ *
+ * OFPIEH13_UNREP is set to 1 if more than one of a given IPv6 extension header
+ * is unexpectedly encountered. (Two destination options headers may be
+ * expected and would not cause this bit to be set.)
+ *
+ * OFPIEH13_UNSEQ is set to 1 if IPv6 extension headers were not in the order
+ * preferred (but not required) by RFC 2460:
+ *
+ * When more than one extension header is used in the same packet, it is
+ * recommended that those headers appear in the following order:
+ *      IPv6 header
+ *      Hop-by-Hop Options header
+ *      Destination Options header
+ *      Routing header
+ *      Fragment header
+ *      Authentication header
+ *      Encapsulating Security Payload header
+ *      Destination Options header
+ *      upper-layer header
+ */
+void
+get_ipv6_ext_hdrs(const void *datap, const struct ovs_16aligned_ip6_hdr *nh,
+        uint16_t *ext_hdrs)
+{
+    uint8_t next_type = nh->ip6_nxt;
+    size_t size = ntohs(nh->ip6_plen);
+    int dest_options_header_count = 0;
+
+    *ext_hdrs = 0;
+
+    while (true) {
+        /*
+         * following switch code is identical to kernel datapath/flow.c
+         * get_ipv6_ext_hdrs() switch code
+         */
+        switch (next_type) {
+            case IPPROTO_NONE:
+                *ext_hdrs |= OFPIEH13_NONEXT;
+                /* stop parsing */
+                return;
+
+            case IPPROTO_ESP:
+                if (*ext_hdrs & OFPIEH13_ESP) {
+                    *ext_hdrs |= OFPIEH13_UNREP;
+                }
+                if ((*ext_hdrs & ~(OFPIEH13_HOP | OFPIEH13_DEST
+                                   | OFPIEH13_ROUTER | IPPROTO_FRAGMENT
+                                   | OFPIEH13_AUTH | OFPIEH13_UNREP))
+                    || dest_options_header_count >= 2) {
+                    *ext_hdrs |= OFPIEH13_UNSEQ;
+                }
+                *ext_hdrs |= OFPIEH13_ESP;
+                break;
+
+            case IPPROTO_AH:
+                if (*ext_hdrs & OFPIEH13_AUTH) {
+                    *ext_hdrs |= OFPIEH13_UNREP;
+                }
+                if ((*ext_hdrs & ~(OFPIEH13_HOP | OFPIEH13_DEST
+                                   | OFPIEH13_ROUTER | IPPROTO_FRAGMENT
+                                   | OFPIEH13_UNREP))
+                    || dest_options_header_count >= 2) {
+                    *ext_hdrs |= OFPIEH13_UNSEQ;
+                }
+                *ext_hdrs |= OFPIEH13_AUTH;
+                break;
+
+            case IPPROTO_DSTOPTS:
+                if (dest_options_header_count == 0) {
+                    if (*ext_hdrs & ~(OFPIEH13_HOP | OFPIEH13_UNREP)) {
+                        *ext_hdrs |= OFPIEH13_UNSEQ;
+                    }
+                    *ext_hdrs |= OFPIEH13_DEST;
+                } else if (dest_options_header_count == 1) {
+                    if (*ext_hdrs & ~(OFPIEH13_HOP | OFPIEH13_DEST
+                                      | OFPIEH13_ROUTER | OFPIEH13_FRAG
+                                      | OFPIEH13_AUTH | OFPIEH13_ESP
+                                      | OFPIEH13_UNREP)) {
+                        *ext_hdrs |= OFPIEH13_UNSEQ;
+                    }
+                } else {
+                    *ext_hdrs |= OFPIEH13_UNREP;
+                }
+                dest_options_header_count ++;
+                break;
+
+            case IPPROTO_FRAGMENT:
+                if (*ext_hdrs & OFPIEH13_FRAG) {
+                    *ext_hdrs |= OFPIEH13_UNREP;
+                }
+                if ((*ext_hdrs & ~(OFPIEH13_HOP | OFPIEH13_DEST
+                                   | OFPIEH13_ROUTER | OFPIEH13_UNREP))
+                    || dest_options_header_count >= 2) {
+                    *ext_hdrs |= OFPIEH13_UNSEQ;
+                }
+                *ext_hdrs |= OFPIEH13_FRAG;
+                break;
+
+            case IPPROTO_ROUTING:
+                if (*ext_hdrs & OFPIEH13_ROUTER) {
+                    *ext_hdrs |= OFPIEH13_UNREP;
+                }
+                if ((*ext_hdrs & ~(OFPIEH13_HOP | OFPIEH13_DEST
+                                   | OFPIEH13_UNREP))
+                    || dest_options_header_count >= 2) {
+                    *ext_hdrs |= OFPIEH13_UNSEQ;
+                }
+                *ext_hdrs |= OFPIEH13_ROUTER;
+                break;
+
+            case IPPROTO_HOPOPTS:
+                if (*ext_hdrs & OFPIEH13_HOP) {
+                    *ext_hdrs |= OFPIEH13_UNREP;
+                }
+                /*
+                 * OFPIEH13_HOP is set to 1 if a hop-by-hop IPv6 extension
+                 * header is present as the first extension header in the
+                 * packet.
+                 */
+                if (*ext_hdrs == 0) {
+                    *ext_hdrs |= OFPIEH13_HOP;
+                } else {
+                    *ext_hdrs |= OFPIEH13_UNSEQ;
+                }
+                break;
+
+            default:
+                return;
+        }
+
+        const struct ip6_ext *ext_hdr = datap;
+        data_try_pull(&datap, &size,
+                      ipv6_ext_header_size__(next_type, ext_hdr->ip6e_len));
+
+        next_type = ext_hdr->ip6e_nxt;
+    }
+}
+
 bool
 parse_nsh(const void **datap, size_t *sizep, struct ovs_key_nsh *key)
 {
@@ -761,7 +919,7 @@ void
 miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
 {
     /* Add code to this function (or its callees) to extract new fields. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     const struct pkt_metadata *md = &packet->md;
     const void *data = dp_packet_data(packet);
@@ -945,11 +1103,19 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         nw_ttl = nh->ip6_hlim;
         nw_proto = nh->ip6_nxt;
 
+        uint16_t ext_hdrs;
+
+        get_ipv6_ext_hdrs(data, nh, &ext_hdrs);
+
         const struct ovs_16aligned_ip6_frag *frag_hdr;
         if (!parse_ipv6_ext_hdrs__(&data, &size, &nw_proto, &nw_frag,
                                    &frag_hdr)) {
             goto out;
         }
+
+        miniflow_pad_from_64(mf, ipv6_exthdr);
+        miniflow_push_uint16(mf, ipv6_exthdr, ext_hdrs);
+        miniflow_pad_to_64(mf, ipv6_exthdr);
 
         /* This needs to be after the parse_ipv6_ext_hdrs__() call because it
          * leaves the nw_frag word uninitialized. */
@@ -1257,7 +1423,7 @@ flow_get_metadata(const struct flow *flow, struct match *flow_metadata)
 {
     int i;
 
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     match_init_catchall(flow_metadata);
     if (flow->tunnel.tun_id != htonll(0)) {
@@ -1843,7 +2009,7 @@ flow_wildcards_init_for_packet(struct flow_wildcards *wc,
     memset(&wc->masks, 0x0, sizeof wc->masks);
 
     /* Update this function whenever struct flow changes. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     if (flow_tnl_dst_is_set(&flow->tunnel)) {
         if (flow->tunnel.flags & FLOW_TNL_F_KEY) {
@@ -1923,6 +2089,7 @@ flow_wildcards_init_for_packet(struct flow_wildcards *wc,
     } else if (dl_type == htons(ETH_TYPE_IPV6)) {
         WC_MASK_FIELD(wc, ipv6_src);
         WC_MASK_FIELD(wc, ipv6_dst);
+        WC_MASK_FIELD(wc, ipv6_exthdr);
         WC_MASK_FIELD(wc, ipv6_label);
         if (is_nd(flow, wc)) {
             WC_MASK_FIELD(wc, arp_sha);
@@ -1996,7 +2163,7 @@ void
 flow_wc_map(const struct flow *flow, struct flowmap *map)
 {
     /* Update this function whenever struct flow changes. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     flowmap_init(map);
 
@@ -2053,6 +2220,7 @@ flow_wc_map(const struct flow *flow, struct flowmap *map)
     } else if (flow->dl_type == htons(ETH_TYPE_IPV6)) {
         FLOWMAP_SET(map, ipv6_src);
         FLOWMAP_SET(map, ipv6_dst);
+        FLOWMAP_SET(map, ipv6_exthdr);
         FLOWMAP_SET(map, ipv6_label);
         FLOWMAP_SET(map, nw_proto);
         FLOWMAP_SET(map, nw_frag);
@@ -2099,7 +2267,7 @@ void
 flow_wildcards_clear_non_packet_fields(struct flow_wildcards *wc)
 {
     /* Update this function whenever struct flow changes. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     memset(&wc->masks.metadata, 0, sizeof wc->masks.metadata);
     memset(&wc->masks.regs, 0, sizeof wc->masks.regs);
@@ -2243,7 +2411,7 @@ flow_wildcards_set_xxreg_mask(struct flow_wildcards *wc, int idx,
 uint32_t
 miniflow_hash_5tuple(const struct miniflow *flow, uint32_t basis)
 {
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
     uint32_t hash = basis;
 
     if (flow) {
@@ -2290,7 +2458,7 @@ ASSERT_SEQUENTIAL(ipv6_src, ipv6_dst);
 uint32_t
 flow_hash_5tuple(const struct flow *flow, uint32_t basis)
 {
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
     uint32_t hash = basis;
 
     if (flow) {
@@ -2968,7 +3136,7 @@ flow_push_mpls(struct flow *flow, int n, ovs_be16 mpls_eth_type,
 
         if (clear_flow_L3) {
             /* Clear all L3 and L4 fields and dp_hash. */
-            BUILD_ASSERT(FLOW_WC_SEQ == 42);
+            BUILD_ASSERT(FLOW_WC_SEQ == 43);
             memset((char *) flow + FLOW_SEGMENT_2_ENDS_AT, 0,
                    sizeof(struct flow) - FLOW_SEGMENT_2_ENDS_AT);
             flow->dp_hash = 0;
@@ -3266,7 +3434,7 @@ flow_compose(struct dp_packet *p, const struct flow *flow,
     /* Add code to this function (or its callees) for emitting new fields or
      * protocols.  (This isn't essential, so it can be skipped for initial
      * testing.) */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 43);
 
     uint32_t pseudo_hdr_csum;
     size_t l4_len;

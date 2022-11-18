@@ -114,6 +114,7 @@ for test_case in \
     'ipv6,ipv6_dst=0:0:0:0:0:0:0:1/::1           NXM,OXM' \
     'ipv6,ipv6_label=5                           NXM,OXM' \
     'ipv6,ipv6_label=5/1                         NXM,OXM' \
+    'ipv6,ipv6_ext=frag                          NXM,OXM' \
     'ip,nw_proto=1                               any' \
     'ipv6,nw_proto=1                             NXM,OXM' \
     'ip,nw_tos=0xf0                              any' \
@@ -542,6 +543,7 @@ tcp,tp_src=123,actions=flood
 in_port=LOCAL dl_vlan=9 dl_src=00:0A:E4:25:6B:B0 actions=drop
 arp,dl_src=00:0A:E4:25:6B:B0,arp_sha=00:0A:E4:25:6B:B0 actions=drop
 ipv6,ipv6_label=0x12345 actions=2
+ipv6,ipv6_ext=frag actions=drop
 ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5 actions=3
 ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5/64 actions=4
 ipv6,ipv6_dst=2001:db8:3c4d:1:2:3:4:5/127 actions=5
@@ -583,6 +585,7 @@ NXT_FLOW_MOD: ADD tcp,tp_src=123 actions=FLOOD
 NXT_FLOW_MOD: ADD in_port=LOCAL,dl_vlan=9,dl_src=00:0a:e4:25:6b:b0 actions=drop
 NXT_FLOW_MOD: ADD arp,dl_src=00:0a:e4:25:6b:b0,arp_sha=00:0a:e4:25:6b:b0 actions=drop
 NXT_FLOW_MOD: ADD ipv6,ipv6_label=0x12345 actions=output:2
+NXT_FLOW_MOD: ADD ipv6,ipv6_ext=frag actions=drop
 NXT_FLOW_MOD: ADD ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5 actions=output:3
 NXT_FLOW_MOD: ADD ipv6,ipv6_src=2001:db8:3c4d:1::/64 actions=output:4
 NXT_FLOW_MOD: ADD ipv6,ipv6_dst=2001:db8:3c4d:1:2:3:4:4/127 actions=output:5
@@ -621,6 +624,7 @@ tcp,tp_src=123,actions=flood
 in_port=LOCAL dl_vlan=9 dl_src=00:0A:E4:25:6B:B0 actions=drop
 arp,dl_src=00:0A:E4:25:6B:B0,arp_sha=00:0A:E4:25:6B:B0 actions=drop
 ipv6,ipv6_label=0x12345 actions=2
+ipv6,ipv6_ext=frag actions=drop
 ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5 actions=3
 ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5/64 actions=4
 ipv6,ipv6_dst=2001:db8:3c4d:1:2:3:4:5/127 actions=5
@@ -661,6 +665,7 @@ NXT_FLOW_MOD: ADD NXM_OF_ETH_TYPE(0800), NXM_OF_IP_PROTO(06), NXM_OF_TCP_SRC(007
 NXT_FLOW_MOD: ADD NXM_OF_IN_PORT(fffe), NXM_OF_ETH_SRC(000ae4256bb0), NXM_OF_VLAN_TCI_W(1009/1fff) actions=drop
 NXT_FLOW_MOD: ADD NXM_OF_ETH_SRC(000ae4256bb0), NXM_OF_ETH_TYPE(0806), NXM_NX_ARP_SHA(000ae4256bb0) actions=drop
 NXT_FLOW_MOD: ADD NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_LABEL(00012345) actions=output:2
+NXT_FLOW_MOD: ADD NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0010) actions=drop
 NXT_FLOW_MOD: ADD NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_SRC(20010db83c4d00010002000300040005) actions=output:3
 NXT_FLOW_MOD: ADD NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_SRC_W(20010db83c4d00010000000000000000/ffffffffffffffff0000000000000000) actions=output:4
 NXT_FLOW_MOD: ADD NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_DST_W(20010db83c4d00010002000300040004/fffffffffffffffffffffffffffffffe) actions=output:5
@@ -899,6 +904,13 @@ NXM_OF_ETH_TYPE(0800) NXM_NX_IPV6_DST_W(20010db83c4d00010000000000000000/fffffff
 NXM_OF_ETH_TYPE(86dd) NXM_NX_IPV6_LABEL(1000000f)
 NXM_NX_IPV6_LABEL(0000000f)
 NXM_OF_ETH_TYPE(86dd) NXM_NX_IPV6_LABEL(0000000f)
+
+# IPv6 Extension Headers
+NXM_OF_ETH_TYPE(86dd) NXM_NX_IPV6_EXTHDR(02ff)
+NXM_NX_IPV6_EXTHDR(0001)
+NXM_OF_ETH_TYPE(86dd) NXM_NX_IPV6_EXTHDR(0001)
+NXM_OF_ETH_TYPE(86dd) NXM_NX_IPV6_EXTHDR_W(0010/00ff)
+NXM_OF_ETH_TYPE(86dd) NXM_NX_IPV6_EXTHDR_W(0010/ffff)
 
 # ND target address
 NXM_OF_ETH_TYPE(86dd) NXM_OF_IP_PROTO(3a) NXM_NX_ICMPV6_TYPE(87) NXM_NX_ND_TARGET(20010db83c4d00010002000300040005)
@@ -1198,6 +1210,13 @@ nx_pull_match() returned error OFPBMC_BAD_PREREQ
 nx_pull_match() returned error OFPBMC_BAD_VALUE
 nx_pull_match() returned error OFPBMC_BAD_PREREQ
 NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_LABEL(0000000f)
+
+# IPv6 Extension Headers
+nx_pull_match() returned error OFPBMC_BAD_VALUE
+nx_pull_match() returned error OFPBMC_BAD_PREREQ
+NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0001)
+NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR_W(0010/00ff)
+NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0010)
 
 # ND target address
 NXM_OF_ETH_TYPE(86dd), NXM_OF_IP_PROTO(3a), NXM_NX_ICMPV6_TYPE(87), NXM_NX_ND_TARGET(20010db83c4d00010002000300040005)
@@ -2075,6 +2094,17 @@ OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_FLABEL_W(0000000f/100fffff)
 OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_FLABEL_W(0000000f/ffffffff)
 OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_FLABEL_W(00000000/00000000)
 
+# IPv6 Extension Headers
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR(1000)
+OXM_OF_IPV6_EXTHDR(0010)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR(0001)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR_W(0010/0010)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR_W(0010/01ff)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR_W(0000/00ff)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR_W(0001/10ff)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR_W(0001/ffff)
+OXM_OF_ETH_TYPE(86dd) OXM_OF_IPV6_EXTHDR_W(0000/0000)
+
 # ND source hardware address
 OXM_OF_ETH_TYPE(86dd) OXM_OF_IP_PROTO(3a) OXM_OF_ICMPV6_TYPE(87) OXM_OF_IPV6_ND_TARGET(20010db83c4d00010002000300040005) OXM_OF_IPV6_ND_SLL(0002e30f80a4)
 OXM_OF_ETH_TYPE(86dd) OXM_OF_IP_PROTO(3a) OXM_OF_ICMPV6_TYPE(88) OXM_OF_IPV6_ND_TARGET(20010db83c4d00010002000300040005) OXM_OF_IPV6_ND_SLL(0002e30f80a4)
@@ -2316,6 +2346,17 @@ OXM_OF_ETH_TYPE(86dd), OXM_OF_IPV6_FLABEL(0000000f)
 OXM_OF_ETH_TYPE(86dd), OXM_OF_IPV6_FLABEL(0000000f)
 OXM_OF_ETH_TYPE(86dd)
 
+# IPv6 Extension Headers
+nx_pull_match() returned error OFPBMC_BAD_VALUE
+nx_pull_match() returned error OFPBMC_BAD_PREREQ
+OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0001)
+OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR_W(0010/0010)
+OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR_W(0010/01ff)
+OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR_W(0000/00ff)
+OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR_W(0001/10ff)
+OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0001)
+OXM_OF_ETH_TYPE(86dd)
+
 # ND source hardware address
 OXM_OF_ETH_TYPE(86dd), OXM_OF_IP_PROTO(3a), OXM_OF_ICMPV6_TYPE(87), OXM_OF_IPV6_ND_TARGET(20010db83c4d00010002000300040005), OXM_OF_IPV6_ND_SLL(0002e30f80a4)
 nx_pull_match() returned error OFPBMC_BAD_PREREQ
@@ -2551,6 +2592,33 @@ AT_CHECK([echo "$tcp_flags" | ovs-ofctl parse-oxm OpenFlow14], [0],
 # OpenFlow 1.5 added an OXM header for TCP flags:
 AT_CHECK([echo "$tcp_flags" | ovs-ofctl parse-oxm OpenFlow15], [0],
   [OXM_OF_ETH_TYPE(0800), OXM_OF_IP_PROTO(06), OXM_OF_TCP_FLAGS(0fff)
+])
+AT_CLEANUP
+
+AT_SETUP([check IPv6 Extension header flags expression in OXM and NXM])
+# NXM/OXM input for matching on Extension header flags.
+exthdr='NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0010)'
+
+# Check that marshaling into NXM gives all NXM headers.
+AT_CHECK([echo "$exthdr" | ovs-ofctl parse-nxm], [0],
+    [NXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0010)
+])
+
+# Check that marshaling in OXM for OF1.2 gives OXM headers except for
+# TCP flags, which didn't have an OXM definition.
+AT_CHECK([echo "$exthdr" | ovs-ofctl parse-oxm OpenFlow12], [0],
+    [OXM_OF_ETH_TYPE(86dd), NXM_NX_IPV6_EXTHDR(0010)
+])
+
+# Check that marshaling in OXM for OF1.3 and up gives OXM headers
+AT_CHECK([echo "$exthdr" | ovs-ofctl parse-oxm OpenFlow13], [0],
+    [OXM_OF_ETH_TYPE(86dd), OXM_OF_IPV6_EXTHDR(0010)
+])
+AT_CHECK([echo "$exthdr" | ovs-ofctl parse-oxm OpenFlow14], [0],
+    [OXM_OF_ETH_TYPE(86dd), OXM_OF_IPV6_EXTHDR(0010)
+])
+AT_CHECK([echo "$exthdr" | ovs-ofctl parse-oxm OpenFlow15], [0],
+    [OXM_OF_ETH_TYPE(86dd), OXM_OF_IPV6_EXTHDR(0010)
 ])
 AT_CLEANUP
 
@@ -3027,6 +3095,63 @@ AT_CHECK([tail -1 stdout], [0],
 
 dnl Inbound web traffic with SYN bit without ACK or RST bits
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=50:54:00:00:00:07,dst=50:54:00:00:00:05),eth_type(0x0800),ipv4(src=192.168.0.2,dst=192.168.0.1,proto=6,tos=0,ttl=64,frag=no),tcp(src=80,dst=8),tcp_flags(0xfeb)'], [0], [stdout])
+AT_CHECK([tail -1 stdout], [0],
+  [Datapath actions: drop
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([IPv6 Extension header flags - filtering])
+OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=dummy ofport_request=1 \
+                    -- add-port br0 p2 -- set Interface p2 type=dummy ofport_request=2])
+AT_DATA([flows.txt], [dnl
+        in_port=1,ipv6,ipv6_ext=frag,action=2
+        in_port=1,ipv6,ipv6_ext=router,action=2
+        in_port=1,ipv6,ipv6_ext=+router+auth,action=2
+        in_port=2,ipv6,ipv6_ext=auth,action=1
+        in_port=2,ipv6,ipv6_ext=router,action=1
+        priority=0,in_port=1,action=drop  # Default drop outbound
+        priority=0,in_port=2,action=drop  # Default drop inbound
+])
+
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+AT_CHECK([ovs-ofctl add-flow br0 "ipv6,ipv6_ext=+frag-frag,action="], [1], [],
+  [ovs-ofctl: frag: Each IPV6_EXT flag can be specified only once
+])
+
+AT_CHECK([ovs-appctl dpif/show | tail -n +4], [0], [dnl
+    p1 1/1: (dummy)
+    p2 2/2: (dummy)
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88),ipv6_ext(hdrs=0x0010)'], [0], [stdout])
+AT_CHECK([tail -1 stdout], [0],
+  [Datapath actions: 2
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88),ipv6_ext(hdrs=0x0020)'], [0], [stdout])
+AT_CHECK([tail -1 stdout], [0],
+  [Datapath actions: 2
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88),ipv6_ext(hdrs=0x0024)'], [0], [stdout])
+AT_CHECK([tail -1 stdout], [0],
+  [Datapath actions: 2
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88),ipv6_ext(hdrs=0x0020)'], [0], [stdout])
+AT_CHECK([tail -1 stdout], [0],
+  [Datapath actions: 1
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88),ipv6_ext(hdrs=0x0004)'], [0], [stdout])
+AT_CHECK([tail -1 stdout], [0],
+  [Datapath actions: 1
+])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(2),eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88),ipv6_ext(hdrs=0x0024)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
   [Datapath actions: drop
 ])

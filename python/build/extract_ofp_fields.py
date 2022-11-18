@@ -16,6 +16,7 @@ VERSION_REVERSE = dict((v, k) for k, v in VERSION.items())
 
 TYPES = {
     "u8": (1, False),
+    "u16": (2, False),
     "be16": (2, False),
     "be32": (4, False),
     "MAC": (6, False),
@@ -37,6 +38,7 @@ FORMATTING = {
     "tunnel flags": ("MFS_TNL_FLAGS", 2, 2),
     "TCP flags": ("MFS_TCP_FLAGS", 2, 2),
     "packet type": ("MFS_PACKET_TYPE", 4, 4),
+    "IPV6 ext hdr": ("MFS_IPV6_EXTHDR", 2, 2),
 }
 
 PREREQS = {
