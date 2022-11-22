@@ -161,7 +161,10 @@ m4_define([TESTABLE_LOG], [-vPATTERN:ANY:'%c|%p|%m'])
 # before starting ovs-vswitchd.
 #
 m4_define([_OVS_VSWITCHD_START],
-  [dnl Create database.
+  [dnl Check if test needs to be run.
+   OVS_SKIP_TEST_IF_REQUESTED()
+
+   dnl Create database.
    touch .conf.db.~lock~
    AT_CHECK([ovsdb-tool create conf.db $abs_top_srcdir/vswitchd/vswitch.ovsschema])
 
