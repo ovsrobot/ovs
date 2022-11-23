@@ -347,3 +347,6 @@ m4_define([OVS_CHECK_CT_CLEAR],
 # OVS_REVALIDATOR_PURGE()
 m4_define([OVS_REVALIDATOR_PURGE],
     [AT_CHECK([ovs-appctl revalidator/purge], [0])])
+
+# DPCTL_DUMP_CONNTRACK()
+m4_define([DPCTL_DUMP_CONNTRACK], [ovs-appctl dpctl/dump-conntrack])
