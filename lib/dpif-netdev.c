@@ -7861,6 +7861,10 @@ dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
         ds_destroy(&ds);
     }
 
+    /* The packet is going to be encapsulated and sent to
+     * the controller. */
+    dp_packet_ol_send_prepare(packet_, 0);
+
     return dp->upcall_cb(packet_, flow, ufid, pmd->core_id, type, userdata,
                          actions, wc, put_actions, dp->upcall_aux);
 }
