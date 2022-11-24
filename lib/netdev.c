@@ -2306,3 +2306,38 @@ netdev_free_custom_stats_counters(struct netdev_custom_stats *custom_stats)
         }
     }
 }
+
+void
+netdev_ol_flags_to_string(struct ds *string, const struct netdev *netdev)
+{
+    /* Sort by dependency, if any. */
+    if (netdev->ol_flags & NETDEV_TX_OFFLOAD_IPV4_CKSUM) {
+        ds_put_format(string, "ip_csum: on, ");
+    } else {
+        ds_put_format(string, "ip_csum: off, ");
+    }
+
+    if (netdev->ol_flags & NETDEV_TX_OFFLOAD_TCP_CKSUM) {
+        ds_put_format(string, "tcp_csum: on, ");
+    } else {
+        ds_put_format(string, "tcp_csum: off, ");
+    }
+
+    if (netdev->ol_flags & NETDEV_TX_OFFLOAD_UDP_CKSUM) {
+        ds_put_format(string, "udp_csum: on, ");
+    } else {
+        ds_put_format(string, "udp_csum: off, ");
+    }
+
+    if (netdev->ol_flags & NETDEV_TX_OFFLOAD_SCTP_CKSUM) {
+        ds_put_format(string, "sctp_csum: on, ");
+    } else {
+        ds_put_format(string, "sctp_csum: off, ");
+    }
+
+    if (netdev->ol_flags & NETDEV_TX_OFFLOAD_TCP_TSO) {
+        ds_put_format(string, "tso: on");
+    } else {
+        ds_put_format(string, "tso: off");
+    }
+}
