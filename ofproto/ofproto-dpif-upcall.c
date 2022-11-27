@@ -2427,25 +2427,29 @@ push_dp_ops(struct udpif *udpif, struct ukey_op *ops, size_t n_ops)
 
     for (i = 0; i < n_ops; i++) {
         struct ukey_op *op = &ops[i];
-        struct dpif_flow_stats *push, *stats, push_buf;
 
-        stats = op->dop.flow_del.stats;
-        push = &push_buf;
+        if (op->dop.error) {
+            if (op->ukey) {
+                ovs_mutex_lock(&op->ukey->mutex);
+                if (op->dop.type == DPIF_OP_FLOW_DEL)
+                    transition_ukey(op->ukey, UKEY_EVICTED);
+                else {
+                    transition_ukey(op->ukey, UKEY_EVICTING);
+                }
+                ovs_mutex_unlock(&op->ukey->mutex);
+            }
+            continue;
+        }
 
         if (op->dop.type != DPIF_OP_FLOW_DEL) {
             /* Only deleted flows need their stats pushed. */
             continue;
         }
 
-        if (op->dop.error) {
-            /* flow_del error, 'stats' is unusable. */
-            if (op->ukey) {
-                ovs_mutex_lock(&op->ukey->mutex);
-                transition_ukey(op->ukey, UKEY_EVICTED);
-                ovs_mutex_unlock(&op->ukey->mutex);
-            }
-            continue;
-        }
+        struct dpif_flow_stats *push, *stats, push_buf;
+
+        stats = op->dop.flow_del.stats;
+        push = &push_buf;
 
         if (op->ukey) {
             ovs_mutex_lock(&op->ukey->mutex);
@@ -2859,6 +2863,13 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
                 continue;
             }
             ukey_state = ukey->state;
+
+            if (ukey_state == UKEY_EVICTING) {
+                /* previous modify operation fails on this ukey and ukey_state is set
+                 * to UKEY_EVICTING, issue a delete operation on this ukey.
+                 */
+                delete_op_init(udpif, &ops[n_ops++], ukey);
+            }
             if (ukey_state == UKEY_OPERATIONAL
                 || (ukey_state == UKEY_VISIBLE && purge)) {
                 struct recirc_refs recircs = RECIRC_REFS_EMPTY_INITIALIZER;
