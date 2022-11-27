@@ -8293,12 +8293,11 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
     if (OVS_LIKELY(error != ENOSPC)) {
         struct dp_netdev_flow *netdev_flow;
 
-        /* XXX: There's a race window where a flow covering this packet
-         * could have already been installed since we last did the flow
-         * lookup before upcall.  This could be solved by moving the
-         * mutex lock outside the loop, but that's an awful long time
-         * to be locking revalidators out of making flow modifications. */
         ovs_mutex_lock(&pmd->flow_mutex);
+        /* Two scenarios that race could happen:
+         * 1) manually add megaflow through dpctl/add-flow
+         * 2) handler installs a megaflow with pmd-id == PMD_ID_NULL
+         */
         netdev_flow = dp_netdev_pmd_lookup_flow(pmd, key, NULL);
         if (OVS_LIKELY(!netdev_flow)) {
             netdev_flow = dp_netdev_flow_add(pmd, &match, &ufid,
