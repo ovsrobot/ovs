@@ -788,6 +788,23 @@
          The default value is <code>25%</code>.
         </p>
       </column>
+      <column name="other_config" key="pmd-powersave"
+              type='{"type": "boolean"}'>
+        <p>
+         Enables PMD thread sleeping up to 250 uS per iteration based on
+         rx queue batch sizes.
+        </p>
+        <p>
+          The default value is <code>false</code>.
+        </p>
+        <p>
+          Set this value to <code>true</code> to enable this option.
+        </p>
+        <p>
+         Sleep time will be reset to 0 when any rx queue has a batch of
+         16 or more packets.
+        </p>
+      </column>
       <column name="other_config" key="userspace-tso-enable"
               type='{"type": "boolean"}'>
         <p>

@@ -169,6 +169,13 @@ static struct odp_support dp_netdev_support = {
 /* Time in microseconds to try RCU quiescing. */
 #define PMD_RCU_QUIESCE_INTERVAL 10000LL
 
+/* Max time in nanoseconds for a pmd thread to sleep based on load. */
+#define PMD_PWR_MAX_SLEEP 250000
+/* Number of pkts Rx on an interface that will stop pmd thread sleeping. */
+#define PMD_PWR_NO_SLEEP_THRESH (NETDEV_MAX_BURST/2)
+/* Time in nanosecond to increment a pmd thread sleep time. */
+#define PMD_PWR_INC 1000
+
 struct dpcls {
     struct cmap_node node;      /* Within dp_netdev_pmd_thread.classifiers */
     odp_port_t in_port;
@@ -277,6 +284,8 @@ struct dp_netdev {
     atomic_uint32_t emc_insert_min;
     /* Enable collection of PMD performance metrics. */
     atomic_bool pmd_perf_metrics;
+    /* Enable PMD load based sleeping. */
+    atomic_bool pmd_powersave;
     /* Enable the SMC cache from ovsdb config */
     atomic_bool smc_enable_db;
 
@@ -4914,6 +4923,19 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
     bool autolb_state = smap_get_bool(other_config, "pmd-auto-lb", false);
 
     set_pmd_auto_lb(dp, autolb_state, log_autolb);
+
+    bool powersave = smap_get_bool(other_config, "pmd-powersave", false);
+    bool cur_powersave;
+    atomic_read_relaxed(&dp->pmd_powersave, &cur_powersave);
+    if (powersave != cur_powersave) {
+        atomic_store_relaxed(&dp->pmd_powersave, powersave);
+        if (powersave) {
+            VLOG_INFO("PMD powersave is enabled.");
+        } else {
+            VLOG_INFO("PMD powersave is disabled.");
+        }
+    }
+
     return 0;
 }
 
@@ -6872,9 +6894,11 @@ pmd_thread_main(void *f_)
     bool reload_tx_qid;
     bool exiting;
     bool reload;
+    bool powersave;
     int poll_cnt;
     int i;
     int process_packets = 0;
+    uint64_t sleep_time = 0;
 
     poll_list = NULL;
 
@@ -6934,9 +6958,16 @@ reload:
     ovs_mutex_lock(&pmd->perf_stats.stats_mutex);
     for (;;) {
         uint64_t rx_packets = 0, tx_packets = 0;
+        bool nosleep_hit = false;
+        bool max_sleep_hit = false;
+        uint64_t time_slept = 0;
 
         pmd_perf_start_iteration(s);
-
+        atomic_read_relaxed(&pmd->dp->pmd_powersave, &powersave);
+        if (!powersave) {
+            /* Reset sleep_time as policy may have changed. */
+            sleep_time = 0;
+        }
         atomic_read_relaxed(&pmd->dp->smc_enable_db, &pmd->ctx.smc_enable_db);
 
         for (i = 0; i < poll_cnt; i++) {
@@ -6956,6 +6987,10 @@ reload:
                 dp_netdev_process_rxq_port(pmd, poll_list[i].rxq,
                                            poll_list[i].port_no);
             rx_packets += process_packets;
+            if (process_packets >= PMD_PWR_NO_SLEEP_THRESH) {
+                nosleep_hit = true;
+                sleep_time = 0;
+            }
         }
 
         if (!rx_packets) {
@@ -6963,7 +6998,21 @@ reload:
              * Check if we need to send something.
              * There was no time updates on current iteration. */
             pmd_thread_ctx_time_update(pmd);
-            tx_packets = dp_netdev_pmd_flush_output_packets(pmd, false);
+            tx_packets = dp_netdev_pmd_flush_output_packets(pmd,
+                                                   sleep_time ? true : false);
+        }
+
+        if (powersave) {
+            if (sleep_time) {
+                xnanosleep(sleep_time);
+                time_slept = sleep_time;
+            }
+            if (sleep_time < PMD_PWR_MAX_SLEEP) {
+                /* Increase potential sleep time for next iteration. */
+                sleep_time += PMD_PWR_INC;
+            } else {
+                max_sleep_hit = true;
+            }
         }
 
         /* Do RCU synchronization at fixed interval.  This ensures that
@@ -7003,7 +7052,8 @@ reload:
             break;
         }
 
-        pmd_perf_end_iteration(s, rx_packets, tx_packets,
+        pmd_perf_end_iteration(s, rx_packets, tx_packets, max_sleep_hit,
+                               nosleep_hit, time_slept,
                                pmd_perf_metrics_enabled(pmd));
     }
     ovs_mutex_unlock(&pmd->perf_stats.stats_mutex);

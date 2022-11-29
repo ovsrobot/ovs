@@ -80,6 +80,9 @@ enum pmd_stat_type {
     PMD_CYCLES_ITER_IDLE,   /* Cycles spent in idle iterations. */
     PMD_CYCLES_ITER_BUSY,   /* Cycles spent in busy iterations. */
     PMD_CYCLES_UPCALL,      /* Cycles spent processing upcalls. */
+    PMD_PWR_NO_SLEEP_HIT,   /* Iterations with Rx above no-sleep thresh. */
+    PMD_PWR_MAX_SLEEP_HIT,  /* Number of times max sleep value hit. */
+    PMD_PWR_SLEEP_TIME,     /* Total time slept to save power. */
     PMD_N_STATS
 };
 
@@ -408,7 +411,9 @@ void
 pmd_perf_start_iteration(struct pmd_perf_stats *s);
 void
 pmd_perf_end_iteration(struct pmd_perf_stats *s, int rx_packets,
-                       int tx_packets, bool full_metrics);
+                       int tx_packets, bool max_sleep_hit,
+                       bool no_sleep_hit, uint64_t sleep_time,
+                       bool full_metrics);
 
 /* Formatting the output of commands. */
 

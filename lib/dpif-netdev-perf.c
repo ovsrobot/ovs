@@ -230,18 +230,25 @@ pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
     uint64_t tot_iter = histogram_samples(&s->pkts);
     uint64_t idle_iter = s->pkts.bin[0];
     uint64_t busy_iter = tot_iter >= idle_iter ? tot_iter - idle_iter : 0;
+    uint64_t no_sleep_hit = stats[PMD_PWR_NO_SLEEP_HIT];
+    uint64_t max_sleep_hit = stats[PMD_PWR_MAX_SLEEP_HIT];
+    uint64_t tot_sleep_time = stats[PMD_PWR_SLEEP_TIME];
 
     ds_put_format(str,
             "  Iterations:         %12"PRIu64"  (%.2f us/it)\n"
             "  - Used TSC cycles:  %12"PRIu64"  (%5.1f %% of total cycles)\n"
             "  - idle iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
-            "  - busy iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n",
+            "  - busy iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
+            "  - No-sleep thresh:  %12"PRIu64"  (%5.1f %% of busy it)\n"
+            "  - Max sleeps:       %12"PRIu64"  (%3"PRIu64" us/it avg.)\n",
             tot_iter, tot_cycles * us_per_cycle / tot_iter,
             tot_cycles, 100.0 * (tot_cycles / duration) / tsc_hz,
             idle_iter,
             100.0 * stats[PMD_CYCLES_ITER_IDLE] / tot_cycles,
             busy_iter,
-            100.0 * stats[PMD_CYCLES_ITER_BUSY] / tot_cycles);
+            100.0 * stats[PMD_CYCLES_ITER_BUSY] / tot_cycles,
+            no_sleep_hit, busy_iter ? 100.0 * no_sleep_hit / busy_iter : 0,
+            max_sleep_hit, tot_iter ? (tot_sleep_time / 1000) / tot_iter : 0);
     if (rx_packets > 0) {
         ds_put_format(str,
             "  Rx packets:         %12"PRIu64"  (%.0f Kpps, %.0f cycles/pkt)\n"
@@ -518,7 +525,9 @@ OVS_REQUIRES(s->stats_mutex)
 
 void
 pmd_perf_end_iteration(struct pmd_perf_stats *s, int rx_packets,
-                       int tx_packets, bool full_metrics)
+                       int tx_packets, bool max_sleep_hit,
+                       bool no_sleep_hit, uint64_t sleep_time,
+                       bool full_metrics)
 {
     uint64_t now_tsc = cycles_counter_update(s);
     struct iter_stats *cum_ms;
@@ -538,6 +547,16 @@ pmd_perf_end_iteration(struct pmd_perf_stats *s, int rx_packets,
     /* Add iteration samples to histograms. */
     histogram_add_sample(&s->cycles, cycles);
     histogram_add_sample(&s->pkts, rx_packets);
+
+    if (no_sleep_hit) {
+        pmd_perf_update_counter(s, PMD_PWR_NO_SLEEP_HIT, 1);
+    }
+    if (max_sleep_hit) {
+        pmd_perf_update_counter(s, PMD_PWR_MAX_SLEEP_HIT, 1);
+    }
+    if (sleep_time) {
+        pmd_perf_update_counter(s, PMD_PWR_SLEEP_TIME, sleep_time);
+    }
 
     if (!full_metrics) {
         return;
