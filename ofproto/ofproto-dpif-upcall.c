@@ -2327,6 +2327,7 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
     OVS_REQUIRES(ukey->mutex)
 {
     bool need_revalidate = ukey->reval_seq != reval_seq;
+    bool stats_workaround;
     enum reval_result result = UKEY_DELETE;
     struct dpif_flow_stats push;
 
@@ -2334,7 +2335,8 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
 
     push.used = stats->used;
     push.tcp_flags = stats->tcp_flags;
-    push.n_packets = (stats->n_packets > ukey->stats.n_packets
+    stats_workaround = stats->n_packets < ukey->stats.n_packets;
+    push.n_packets = (!stats_workaround
                       ? stats->n_packets - ukey->stats.n_packets
                       : 0);
     push.n_bytes = (stats->n_bytes > ukey->stats.n_bytes
@@ -2342,7 +2344,8 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
                     : 0);
 
     if (need_revalidate) {
-        if (should_revalidate(udpif, push.n_packets, ukey->stats.used)) {
+        if (stats_workaround ||
+            should_revalidate(udpif, push.n_packets, ukey->stats.used)) {
             if (!ukey->xcache) {
                 ukey->xcache = xlate_cache_new();
             } else {
