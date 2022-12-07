@@ -757,6 +757,19 @@ dpdk_mp_create(struct netdev_dpdk *dev, int mtu)
     n_mbufs = dpdk_calculate_mbufs(dev, mtu);
 
     do {
+        /* For eth dev, dpdk X_rx_queue_start fuction will pre alloc mbuf
+         * for rxq, if n_mbufs < n_rxq * rxq_size, dev will start error
+         * becuse of it cannot allocate memory.
+         */
+        if ((!per_port_mp) && (dev->type == DPDK_DEV_ETH) &&
+            (n_mbufs < dev->requested_n_rxq * dev->requested_rxq_size)) {
+            VLOG_ERR("Port %s: a mempool of %u mbuffs is not enough "
+                     "for %d Rx queues and %d queue size",
+                     netdev_name, n_mbufs, dev->requested_n_rxq,
+                     dev->requested_rxq_size);
+             break;
+        }
+
         /* Full DPDK memory pool name must be unique and cannot be
          * longer than RTE_MEMPOOL_NAMESIZE. Note that for the shared
          * mempool case this can result in one device using a mempool
