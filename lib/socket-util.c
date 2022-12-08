@@ -711,8 +711,14 @@ inet_open_passive(int style, const char *target, int default_port,
     struct sockaddr_storage ss;
     int fd = 0, error;
     unsigned int yes = 1;
+    bool dns_failure;
 
-    if (!inet_parse_passive(target, default_port, &ss, true, NULL)) {
+    if (!inet_parse_passive(target, default_port, &ss, true, &dns_failure)) {
+        if (dns_failure) {
+        /* dns_failure means asynchronous DNS resolution is in progress,
+         * or that the name does currently not resolve. */
+            return -ENODATA;
+        }
         return -EAFNOSUPPORT;
     }
     kernel_chooses_port = ss_get_port(&ss) == 0;
