@@ -267,9 +267,25 @@ ovsdb_jsonrpc_server_add_remote(struct ovsdb_jsonrpc_server *svr,
     int error;
 
     error = jsonrpc_pstream_open(name, &listener, options->dscp);
-    if (error && error != EAFNOSUPPORT) {
-        VLOG_ERR_RL(&rl, "%s: listen failed: %s", name, ovs_strerror(error));
-        return NULL;
+    if (error) {
+        switch (error) {
+        case EAFNOSUPPORT:
+            /* Not a listener, attempt creation of active jsonrpc sesssion */
+            break;
+        case ENODATA:
+            /* DNS resolution in progress, or the name does currently not
+             * resolve, need to try again later */
+            VLOG_DBG_RL(&rl,
+                        "%s: listen failed: DNS resolution in progress"
+                        "or host not found",
+                        name);
+            return NULL;
+        default:
+            VLOG_ERR_RL(&rl, "%s: listen failed: %s", name,
+                        ovs_strerror(error));
+            return NULL;
+        }
+        /* FALL THROUGH */
     }
 
     remote = xmalloc(sizeof *remote);
