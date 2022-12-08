@@ -1064,4 +1064,34 @@ struct nx_zone_id {
 };
 OFP_ASSERT(sizeof(struct nx_zone_id) == 8);
 
+/* CT flush available TLVs. */
+enum nx_ct_flush_tlv_type {
+    /* Outer types. */
+    NXT_CT_ORIG_DIRECTION,    /* CT orig direction outer type. */
+    NXT_CT_REPLY_DIRECTION,   /* CT reply direction outer type. */
+
+    /* Nested types. */
+    NXT_CT_SRC,               /* CT source IPv6 or mapped IPv4 address. */
+    NXT_CT_DST,               /* CT destination IPv6 or mapped IPv4 address. */
+    NXT_CT_SRC_PORT,          /* CT source port. */
+    NXT_CT_DST_PORT,          /* CT destination port. */
+    NXT_CT_ICMP_ID,           /* CT ICMP id. */
+    NXT_CT_ICMP_TYPE,         /* CT ICMP type. */
+    NXT_CT_ICMP_CODE,         /* CT ICMP code. */
+
+    /* Primitive types. */
+    NXT_CT_ZONE_ID,           /* CT zone id. */
+};
+
+/* NXT_CT_FLUSH.
+ *
+ * Flushes the connection tracking specified by 5-tuple.
+ * The struct should be followed by TLVs specifying the matching parameters. */
+struct nx_ct_flush {
+    uint8_t ip_proto;          /* IP protocol. */
+    uint8_t family;            /* L3 address family. */
+    uint8_t zero[6];           /* Must be zero. */
+};
+OFP_ASSERT(sizeof(struct nx_ct_flush) == 8);
+
 #endif /* openflow/nicira-ext.h */

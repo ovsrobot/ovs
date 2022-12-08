@@ -4073,3 +4073,96 @@ AT_CHECK([ovs-ofctl ofp-print "\
 NXT_CT_FLUSH_ZONE (xid=0x3): zone_id=13
 ])
 AT_CLEANUP
+
+AT_SETUP([NXT_CT_FLUSH])
+AT_KEYWORDS([ofp-print])
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 18 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+02 \
+00 00 00 00 00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=6,orig=(src=::,dst=::,src_port=0,dst_port=0),reply=(src=::,dst=::,src_port=0,dst_port=0),zone_id=0
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 20 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+02 \
+00 00 00 00 00 00 \
+00 09 00 08 00 0d 00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=6,orig=(src=::,dst=::,src_port=0,dst_port=0),reply=(src=::,dst=::,src_port=0,dst_port=0),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 68 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+02 \
+00 00 00 00 00 00 \
+00 09 00 08 00 0d 00 00 \
+00 00 00 48 00 00 00 00 \
+00 02 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 00 00 00 00 \
+00 03 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 00 00 00 00 \
+00 04 00 08 00 50 00 00 \
+00 05 00 08 1f 90 00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=6,orig=(src=10.10.0.1,dst=10.10.0.2,src_port=80,dst_port=8080),reply=(src=::,dst=::,src_port=0,dst_port=0),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 68 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+02 \
+00 00 00 00 00 00 \
+00 09 00 08 00 0d 00 00 \
+00 01 00 48 00 00 00 00 \
+00 03 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 00 00 00 00 \
+00 02 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 00 00 00 00 \
+00 05 00 08 00 50 00 00 \
+00 04 00 08 1f 90 00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=6,orig=(src=::,dst=::,src_port=0,dst_port=0),reply=(src=10.10.0.2,dst=10.10.0.1,src_port=8080,dst_port=80),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 b0 00 00 00 03 00 00 23 20 00 00 00 20 \
+06 \
+02 \
+00 00 00 00 00 00 \
+00 09 00 08 00 0d 00 00 \
+00 00 00 48 00 00 00 00 \
+00 02 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 00 00 00 00 \
+00 03 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 00 00 00 00 \
+00 04 00 08 00 50 00 00 \
+00 05 00 08 1f 90 00 00 \
+00 01 00 48 00 00 00 00 \
+00 03 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 01 00 00 00 00 \
+00 02 00 14 00 00 00 00 00 00 00 00 00 00 ff ff 0a 0a 00 02 00 00 00 00 \
+00 05 00 08 00 50 00 00 \
+00 04 00 08 1f 90 00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=2,ip_proto=6,orig=(src=10.10.0.1,dst=10.10.0.2,src_port=80,dst_port=8080),reply=(src=10.10.0.2,dst=10.10.0.1,src_port=8080,dst_port=80),zone_id=13
+])
+
+AT_CHECK([ovs-ofctl ofp-print "\
+01 04 00 b8 00 00 00 03 00 00 23 20 00 00 00 20 \
+01 \
+0a \
+00 00 00 00 00 00 \
+00 00 00 50 00 00 00 00 \
+00 02 00 14 fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 00 00 00 00 \
+00 03 00 14 fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 00 00 00 00 \
+00 06 00 08 00 0a 00 00 \
+00 07 00 05 01 00 00 00 \
+00 08 00 05 02 00 00 00 \
+00 01 00 50 00 00 00 00 \
+00 02 00 14 fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 02 00 00 00 00 \
+00 02 00 14 fd 18 00 00 00 00 00 00 00 00 ff ff ab cd 00 01 00 00 00 00 \
+00 06 00 08 00 0a 00 00 \
+00 07 00 05 03 00 00 00 \
+00 08 00 05 04 00 00 00 \
+"], [0], [dnl
+NXT_CT_FLUSH (xid=0x3): l3_type=10,ip_proto=1,orig=(src=fd18::ffff:abcd:1,dst=fd18::ffff:abcd:2,icmp_id=10,icmp_type=1,icmp_code=2),reply=(src=fd18::ffff:abcd:1,dst=::,icmp_id=10,icmp_type=3,icmp_code=4),zone_id=0
+])
+AT_CLEANUP

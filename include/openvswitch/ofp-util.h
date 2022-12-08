@@ -65,6 +65,10 @@ struct ofpbuf *ofputil_encode_echo_reply(const struct ofp_header *);
 
 struct ofpbuf *ofputil_encode_barrier_request(enum ofp_version);
 
+struct ofpbuf *ofputil_ct_match_encode(const struct ofputil_ct_match *match,
+                                       uint16_t *zone_id,
+                                       enum ofp_version version);
+
 #ifdef __cplusplus
 }
 #endif
