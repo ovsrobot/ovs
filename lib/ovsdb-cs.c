@@ -894,6 +894,7 @@ ovsdb_cs_db_get_table(struct ovsdb_cs_db *db, const char *table)
     t->name = xstrdup(table);
     t->new_cond = json_array_create_1(json_boolean_create(true));
     hmap_insert(&db->tables, &t->hmap_node, hash);
+    db->cond_changed = true;
     return t;
 }
 

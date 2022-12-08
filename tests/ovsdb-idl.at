@@ -599,6 +599,33 @@ OVSDB_CHECK_IDL([simple idl, conditional, true condition],
 004: done
 ]])
 
+dnl This test ensures that the first explicitly set monitor condition
+dnl is sent to the server.
+OVSDB_CHECK_IDL([simple idl, conditional, wait for condition],
+  [],
+  [['["idltest",
+       {"op": "insert",
+       "table": "simple",
+       "row": {"i": 1,
+               "r": 2.0,
+               "b": true}}]' \
+     'condition simple [true]' \
+     '^["idltest",
+       {"op": "insert",
+       "table": "simple",
+       "row": {"i": 2,
+               "r": 4.0,
+               "b": true}}]']],
+  [[000: empty
+001: {"error":null,"result":[{"uuid":["uuid","<0>"]}]}
+002: table simple: i=1 r=2 b=true s= u=<1> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<0>
+003: change conditions
+004: {"error":null,"result":[{"uuid":["uuid","<2>"]}]}
+005: table simple: i=1 r=2 b=true s= u=<1> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<0>
+005: table simple: i=2 r=4 b=true s= u=<1> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<2>
+006: done
+]])
+
 OVSDB_CHECK_IDL([simple idl, conditional, multiple clauses in condition],
   [['["idltest",
        {"op": "insert",

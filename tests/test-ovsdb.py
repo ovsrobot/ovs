@@ -627,6 +627,7 @@ def idl_set(idl, commands, step):
 
 
 def update_condition(idl, commands):
+    expected_seqno = 0
     commands = commands[len("condition "):].split(";")
     for command in commands:
         command = command.split(" ")
@@ -637,7 +638,8 @@ def update_condition(idl, commands):
         table = command[0]
         cond = ovs.json.from_string(command[1])
 
-        idl.cond_change(table, cond)
+        expected_seqno = max(expected_seqno, idl.cond_change(table, cond))
+    return expected_seqno
 
 
 def do_idl(schema_file, remote, *commands):
@@ -694,6 +696,7 @@ def do_idl(schema_file, remote, *commands):
     else:
         rpc = None
 
+    next_cond_seqno = 0
     symtab = {}
     seqno = 0
     step = 0
@@ -717,7 +720,7 @@ def do_idl(schema_file, remote, *commands):
 
     commands = list(commands)
     if len(commands) >= 1 and "condition" in commands[0]:
-        update_condition(idl, commands.pop(0))
+        next_cond_seqno = update_condition(idl, commands.pop(0))
         sys.stdout.write("%03d: change conditions\n" % step)
         sys.stdout.flush()
         step += 1
@@ -732,6 +735,17 @@ def do_idl(schema_file, remote, *commands):
         if command.startswith("+"):
             # The previous transaction didn't change anything.
             command = command[1:]
+        elif command.startswith("^"):
+            # Wait for condition change to be acked by the server.
+            command = command[1:]
+            while idl.cond_seqno != next_cond_seqno and \
+                    not idl.run():
+                rpc.run()
+
+                poller = ovs.poller.Poller()
+                idl.wait(poller)
+                rpc.wait(poller)
+                poller.block()
         else:
             # Wait for update.
             while idl.change_seqno == seqno and not idl.run():
@@ -753,7 +767,7 @@ def do_idl(schema_file, remote, *commands):
             step += 1
             idl.force_reconnect()
         elif "condition" in command:
-            update_condition(idl, command)
+            next_cond_seqno = update_condition(idl, command)
             sys.stdout.write("%03d: change conditions\n" % step)
             sys.stdout.flush()
             step += 1
