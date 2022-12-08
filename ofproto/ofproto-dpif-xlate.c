@@ -411,6 +411,18 @@ struct xlate_ctx {
     enum xlate_error error;     /* Translation failed. */
 };
 
+/* This structure is used to save stack space in actions that need to
+ * retain a large amount of xlate_ctx state. */
+struct xsaved_state {
+    union mf_subvalue new_stack[1024 / sizeof(union mf_subvalue)];
+    uint64_t actset_stub[1024 / 8];
+    struct ofpbuf old_stack;
+    struct ofpbuf old_action_set;
+    struct flow old_flow;
+    struct flow old_base;
+    struct flow_tnl flow_tnl;
+};
+
 /* Structure to track VLAN manipulation */
 struct xvlan_single {
     uint16_t tpid;
@@ -3906,20 +3918,21 @@ static void
 patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
                   struct xport *out_dev, bool is_last_action)
 {
-    struct flow *flow = &ctx->xin->flow;
-    struct flow old_flow = ctx->xin->flow;
-    struct flow_tnl old_flow_tnl_wc = ctx->wc->masks.tunnel;
-    bool old_conntrack = ctx->conntracked;
-    bool old_was_mpls = ctx->was_mpls;
-    ovs_version_t old_version = ctx->xin->tables_version;
-    struct ofpbuf old_stack = ctx->stack;
-    uint8_t new_stack[1024];
-    struct ofpbuf old_action_set = ctx->action_set;
+    struct xsaved_state * old_state = xmalloc(sizeof * old_state);
     struct ovs_list *old_trace = ctx->xin->trace;
-    uint64_t actset_stub[1024 / 8];
+    bool old_conntrack = ctx->conntracked;
+    struct flow *flow = &ctx->xin->flow;
+    bool old_was_mpls = ctx->was_mpls;
 
-    ofpbuf_use_stub(&ctx->stack, new_stack, sizeof new_stack);
-    ofpbuf_use_stub(&ctx->action_set, actset_stub, sizeof actset_stub);
+    old_state->old_flow = ctx->xin->flow;
+    old_state->flow_tnl = ctx->wc->masks.tunnel;
+    ovs_version_t old_version = ctx->xin->tables_version;
+    old_state->old_stack = ctx->stack;
+    old_state->old_action_set = ctx->action_set;
+    ofpbuf_use_stub(&ctx->stack, old_state->new_stack,
+                    sizeof old_state->new_stack);
+    ofpbuf_use_stub(&ctx->action_set, old_state->actset_stub,
+                    sizeof old_state->actset_stub);
     flow->in_port.ofp_port = out_dev->ofp_port;
     flow->metadata = htonll(0);
     memset(&flow->tunnel, 0, sizeof flow->tunnel);
@@ -3958,14 +3971,14 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
         } else {
             /* Forwarding is disabled by STP and RSTP.  Let OFPP_NORMAL and
              * the learning action look at the packet, then drop it. */
-            struct flow old_base_flow = ctx->base_flow;
             size_t old_size = ctx->odp_actions->size;
+            old_state->old_base = ctx->base_flow;
             mirror_mask_t old_mirrors2 = ctx->mirrors;
 
             xlate_table_action(ctx, flow->in_port.ofp_port, 0, true, true,
                                false, is_last_action, clone_xlate_actions);
             ctx->mirrors = old_mirrors2;
-            ctx->base_flow = old_base_flow;
+            ctx->base_flow = old_state->old_base;
             ctx->odp_actions->size = old_size;
 
             /* Undo changes that may have been done for freezing. */
@@ -3977,18 +3990,18 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
     if (independent_mirrors) {
         ctx->mirrors = old_mirrors;
     }
-    ctx->xin->flow = old_flow;
+    ctx->xin->flow = old_state->old_flow;
     ctx->xbridge = in_dev->xbridge;
     ofpbuf_uninit(&ctx->action_set);
-    ctx->action_set = old_action_set;
+    ctx->action_set = old_state->old_action_set;
     ofpbuf_uninit(&ctx->stack);
-    ctx->stack = old_stack;
+    ctx->stack = old_state->old_stack;
 
     /* Restore calling bridge's lookup version. */
     ctx->xin->tables_version = old_version;
 
     /* Restore to calling bridge tunneling information */
-    ctx->wc->masks.tunnel = old_flow_tnl_wc;
+    ctx->wc->masks.tunnel = old_state->flow_tnl;
 
     /* The out bridge popping MPLS should have no effect on the original
      * bridge. */
@@ -4022,6 +4035,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
         entry->dev.rx = netdev_ref(out_dev->netdev);
         entry->dev.bfd = bfd_ref(out_dev->bfd);
     }
+    free(old_state);
 }
 
 static bool
@@ -4238,7 +4252,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
     const struct xport *xport = get_ofp_port(ctx->xbridge, ofp_port);
     struct flow_wildcards *wc = ctx->wc;
     struct flow *flow = &ctx->xin->flow;
-    struct flow_tnl flow_tnl;
+    struct flow_tnl *flow_tnl;
     union flow_vlan_hdr flow_vlans[FLOW_MAX_VLAN_HEADERS];
     uint8_t flow_nw_tos;
     odp_port_t out_port, odp_port, odp_tnl_port;
@@ -4252,7 +4266,6 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
     /* If 'struct flow' gets additional metadata, we'll need to zero it out
      * before traversing a patch port. */
     BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
-    memset(&flow_tnl, 0, sizeof flow_tnl);
 
     if (!check_output_prerequisites(ctx, xport, flow, check_stp)) {
         return;
@@ -4278,6 +4291,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
        return;
     }
 
+    flow_tnl = xzalloc(sizeof * flow_tnl);
     memcpy(flow_vlans, flow->vlans, sizeof flow_vlans);
     flow_nw_tos = flow->nw_tos;
 
@@ -4296,7 +4310,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
           * the Logical (tunnel) Port are not visible for any further
           * matches, while explicit set actions on tunnel metadata are.
           */
-        flow_tnl = flow->tunnel;
+        *flow_tnl = flow->tunnel;
         odp_port = tnl_port_send(xport->ofport, flow, ctx->wc);
         if (odp_port == ODPP_NONE) {
             xlate_report(ctx, OFT_WARN, "Tunneling decided against output");
@@ -4327,7 +4341,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
             tnl_type = tnl_port_get_type(xport->ofport);
             commit_odp_tunnel_action(flow, &ctx->base_flow,
                                      ctx->odp_actions, tnl_type);
-            flow->tunnel = flow_tnl; /* Restore tunnel metadata */
+            flow->tunnel = *flow_tnl; /* Restore tunnel metadata */
         }
     } else {
         odp_port = xport->odp_port;
@@ -4371,7 +4385,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
             /* Output to native tunnel port. */
             native_tunnel_output(ctx, xport, flow, odp_port, truncate,
                                  is_last_action);
-            flow->tunnel = flow_tnl; /* Restore tunnel metadata */
+            flow->tunnel = *flow_tnl; /* Restore tunnel metadata */
 
         } else if (terminate_native_tunnel(ctx, xport, flow, wc,
                                            &odp_tnl_port)) {
@@ -4414,7 +4428,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
                                          xport->xbundle));
     }
 
- out:
+out:
     /* Restore flow */
     memcpy(flow->vlans, flow_vlans, sizeof flow->vlans);
     flow->nw_tos = flow_nw_tos;
@@ -4422,6 +4436,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
     flow->dl_src = flow_dl_src;
     flow->packet_type = flow_packet_type;
     flow->dl_type = flow_dl_type;
+    free(flow_tnl);
 }
 
 static void
@@ -5864,21 +5879,26 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
                     struct xlate_ctx *ctx, bool is_last_action,
                     bool group_bucket_action OVS_UNUSED)
 {
-    struct ofpbuf old_stack = ctx->stack;
-    union mf_subvalue new_stack[1024 / sizeof(union mf_subvalue)];
-    ofpbuf_use_stub(&ctx->stack, new_stack, sizeof new_stack);
-    ofpbuf_put(&ctx->stack, old_stack.data, old_stack.size);
-
-    struct ofpbuf old_action_set = ctx->action_set;
-    uint64_t actset_stub[1024 / 8];
-    ofpbuf_use_stub(&ctx->action_set, actset_stub, sizeof actset_stub);
-    ofpbuf_put(&ctx->action_set, old_action_set.data, old_action_set.size);
-
+    struct xsaved_state * old_state = xmalloc(sizeof * old_state);
     size_t offset, ac_offset;
-    struct flow old_flow = ctx->xin->flow;
+
+    old_state->old_stack = ctx->stack;
+
+    ofpbuf_use_stub(&ctx->stack, old_state->new_stack,
+                    sizeof old_state->new_stack);
+    ofpbuf_use_stub(&ctx->action_set, old_state->actset_stub,
+                    sizeof old_state->actset_stub);
+
+    old_state->old_action_set = ctx->action_set;
+
+    ofpbuf_put(&ctx->stack, old_state->old_stack.data,
+               old_state->old_stack.size);
+    ofpbuf_put(&ctx->action_set, old_state->old_action_set.data,
+               old_state->old_action_set.size);
+
+    old_state->old_flow = ctx->xin->flow;
 
     if (reversible_actions(actions, actions_len) || is_last_action) {
-        old_flow = ctx->xin->flow;
         do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
         if (!ctx->freezing) {
             xlate_action_set(ctx);
@@ -5893,7 +5913,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
      * avoid emitting those actions twice. Once inside
      * the clone, another time for the action after clone.  */
     xlate_commit_actions(ctx);
-    struct flow old_base = ctx->base_flow;
+    old_state->old_base = ctx->base_flow;
     bool old_was_mpls = ctx->was_mpls;
     bool old_conntracked = ctx->conntracked;
 
@@ -5950,14 +5970,15 @@ dp_clone_done:
     ctx->was_mpls = old_was_mpls;
 
     /* Restore the 'base_flow' for the next action.  */
-    ctx->base_flow = old_base;
+    ctx->base_flow = old_state->old_base;
 
 xlate_done:
     ofpbuf_uninit(&ctx->action_set);
-    ctx->action_set = old_action_set;
+    ctx->action_set = old_state->old_action_set;
     ofpbuf_uninit(&ctx->stack);
-    ctx->stack = old_stack;
-    ctx->xin->flow = old_flow;
+    ctx->stack = old_state->old_stack;
+    ctx->xin->flow = old_state->old_flow;
+    free(old_state);
 }
 
 static void
@@ -6461,19 +6482,22 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
         return;
     }
 
-    struct ofpbuf old_stack = ctx->stack;
-    union mf_subvalue new_stack[1024 / sizeof(union mf_subvalue)];
-    ofpbuf_use_stub(&ctx->stack, new_stack, sizeof new_stack);
-    ofpbuf_put(&ctx->stack, old_stack.data, old_stack.size);
+    struct xsaved_state * old_state = xmalloc(sizeof * old_state);
 
-    struct ofpbuf old_action_set = ctx->action_set;
-    uint64_t actset_stub[1024 / 8];
-    ofpbuf_use_stub(&ctx->action_set, actset_stub, sizeof actset_stub);
-    ofpbuf_put(&ctx->action_set, old_action_set.data, old_action_set.size);
+    old_state->old_stack = ctx->stack;
+    old_state->old_action_set = ctx->action_set;
+    ofpbuf_use_stub(&ctx->stack, old_state->new_stack,
+                    sizeof old_state->new_stack);
+    ofpbuf_put(&ctx->stack, old_state->old_stack.data,
+               old_state->old_stack.size);
+    ofpbuf_use_stub(&ctx->action_set, old_state->actset_stub,
+                    sizeof old_state->actset_stub);
+    ofpbuf_put(&ctx->action_set, old_state->old_action_set.data,
+               old_state->old_action_set.size);
 
-    struct flow old_flow = ctx->xin->flow;
+    old_state->old_flow = ctx->xin->flow;
     xlate_commit_actions(ctx);
-    struct flow old_base = ctx->base_flow;
+    old_state->old_base = ctx->base_flow;
     bool old_was_mpls = ctx->was_mpls;
     bool old_conntracked = ctx->conntracked;
 
@@ -6494,10 +6518,10 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     }
     nl_msg_end_nested(ctx->odp_actions, offset_attr);
 
-    ctx->base_flow = old_base;
+    ctx->base_flow = old_state->old_base;
     ctx->was_mpls = old_was_mpls;
     ctx->conntracked = old_conntracked;
-    ctx->xin->flow = old_flow;
+    ctx->xin->flow = old_state->old_flow;
 
     /* If the flow translation for the IF_GREATER case requires freezing,
      * then ctx->exit would be true. Reset to false so that we can
@@ -6521,14 +6545,15 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     nl_msg_end_nested(ctx->odp_actions, offset);
 
     ofpbuf_uninit(&ctx->action_set);
-    ctx->action_set = old_action_set;
+    ctx->action_set = old_state->old_action_set;
     ofpbuf_uninit(&ctx->stack);
-    ctx->stack = old_stack;
-    ctx->base_flow = old_base;
+    ctx->stack = old_state->old_stack;
+    ctx->base_flow = old_state->old_base;
     ctx->was_mpls = old_was_mpls;
     ctx->conntracked = old_conntracked;
-    ctx->xin->flow = old_flow;
+    ctx->xin->flow = old_state->old_flow;
     ctx->exit = old_exit;
+    free(old_state);
 }
 
 static void
@@ -6980,6 +7005,24 @@ xlate_ofpact_unroll_xlate(struct xlate_ctx *ctx,
 }
 
 static void
+xlate_trace(struct xlate_ctx *ctx, const struct ofpact *a) {
+    struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
+
+    if (ctx->xin->names) {
+        struct ofproto_dpif *ofprotop;
+        ofprotop = ofproto_dpif_lookup_by_name(ctx->xbridge->name);
+        ofproto_append_ports_to_map(&map, ofprotop->up.ports);
+    }
+
+    struct ds s = DS_EMPTY_INITIALIZER;
+    struct ofpact_format_params fp = { .s = &s, .port_map = &map };
+    ofpacts_format(a, OFPACT_ALIGN(a->len), &fp);
+    xlate_report(ctx, OFT_ACTION, "%s", ds_cstr(&s));
+    ds_destroy(&s);
+    ofputil_port_map_destroy(&map);
+}
+
+static void
 do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                  struct xlate_ctx *ctx, bool is_last_action,
                  bool group_bucket_action)
@@ -7021,20 +7064,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         }
 
         if (OVS_UNLIKELY(ctx->xin->trace)) {
-            struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
-
-            if (ctx->xin->names) {
-                struct ofproto_dpif *ofprotop;
-                ofprotop = ofproto_dpif_lookup_by_name(ctx->xbridge->name);
-                ofproto_append_ports_to_map(&map, ofprotop->up.ports);
-            }
-
-            struct ds s = DS_EMPTY_INITIALIZER;
-            struct ofpact_format_params fp = { .s = &s, .port_map = &map };
-            ofpacts_format(a, OFPACT_ALIGN(a->len), &fp);
-            xlate_report(ctx, OFT_ACTION, "%s", ds_cstr(&s));
-            ds_destroy(&s);
-            ofputil_port_map_destroy(&map);
+            xlate_trace(ctx, a);
         }
 
         switch (a->type) {
