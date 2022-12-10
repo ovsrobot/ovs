@@ -30,8 +30,7 @@ This document describes how to build and install Open vSwitch using
 AF_XDP netdev.
 
 .. warning::
-  The AF_XDP support of Open vSwitch is considered 'experimental',
-  and it is not compiled in by default.
+  The AF_XDP support of Open vSwitch is considered 'experimental'.
 
 
 Introduction

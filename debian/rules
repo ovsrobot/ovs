@@ -23,7 +23,8 @@ override_dh_auto_configure:
 	test -d _debian || mkdir _debian
 	cd _debian && ( \
 		test -e Makefile || \
-		../configure --prefix=/usr --localstatedir=/var --enable-ssl \
+		../configure --prefix=/usr --localstatedir=/var \
+					 --enable-ssl --disable-afxdp \
 					 --sysconfdir=/etc \
 					 $(DATAPATH_CONFIGURE_OPTS) \
 					 $(EXTRA_CONFIGURE_OPTS) \
@@ -33,8 +34,9 @@ ifeq (,$(filter nodpdk, $(DEB_BUILD_OPTIONS)))
 	test -d _dpdk || mkdir _dpdk
 	cd _dpdk && ( \
 		test -e Makefile || \
-        ../configure --prefix=/usr --localstatedir=/var --enable-ssl \
-                     --with-dpdk=shared --sysconfdir=/etc \
+	../configure --prefix=/usr --localstatedir=/var \
+					 --enable-ssl --disable-afxdp \
+					 --with-dpdk=shared --sysconfdir=/etc \
 					 $(DATAPATH_CONFIGURE_OPTS) \
 					 $(EXTRA_CONFIGURE_OPTS) \
 					 )
