@@ -1441,6 +1441,28 @@ packet_set_icmp(struct dp_packet *packet, uint8_t type, uint8_t code)
     pkt_metadata_init_conn(&packet->md);
 }
 
+/* Sets the ICMP id of the ICMP header contained in 'packet'.
+ * 'packet' must be a valid ICMP packet with its l4 offset properly
+ * populated. */
+void
+packet_set_icmp_id(struct dp_packet *packet, ovs_be16 icmp_id)
+{
+    struct icmp_header *ih = dp_packet_l4(packet);
+    ovs_be16 orig_ic = ih->icmp_fields.echo.id;
+
+    if (icmp_id != orig_ic) {
+        ih->icmp_fields.echo.id = icmp_id;
+        ih->icmp_csum = recalc_csum16(ih->icmp_csum, orig_ic, icmp_id);
+    }
+    pkt_metadata_init_conn(&packet->md);
+}
+
+uint8_t
+packet_get_icmp_type(const struct dp_packet *packet)
+{
+    struct icmp_header *ih = dp_packet_l4(packet);
+    return ih->icmp_type;
+}
 /* Sets the IGMP type to IGMP_HOST_MEMBERSHIP_QUERY and populates the
  * v3 query header fields in 'packet'. 'packet' must be a valid IGMPv3
  * query packet with its l4 offset properly populated.

@@ -697,6 +697,36 @@ get_ip_proto(const struct dp_packet *pkt)
     return ip_proto;
 }
 
+static bool _is_icmpv4_info_message(uint8_t nw_proto,uint8_t icmp_type)
+{
+    if (nw_proto != IPPROTO_ICMP) {
+        return false;
+    }
+    switch (icmp_type) {
+        case ICMP4_ECHO_REQUEST:
+        case ICMP4_TIMESTAMP:
+        case ICMP4_INFOREQUEST:
+        case ICMP4_ECHO_REPLY:
+        case ICMP4_TIMESTAMPREPLY:
+        case ICMP4_INFOREPLY:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool packet_is_icmpv4_info_message(const struct dp_packet *pkt)
+{
+    uint8_t ip_proto,icmp_type;
+    ip_proto = get_ip_proto(pkt);
+    if (ip_proto != IPPROTO_ICMP) {
+        return false;
+    } else {
+        icmp_type = packet_get_icmp_type(pkt);
+    }
+    return _is_icmpv4_info_message(ip_proto,icmp_type);
+}
+
 static bool
 is_ftp_ctl(const enum ct_alg_ctl_type ct_alg_ctl)
 {
@@ -773,6 +803,9 @@ pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             struct udp_header *uh = dp_packet_l4(pkt);
             packet_set_udp_port(pkt, conn->rev_key.dst.port, uh->udp_dst);
+        } else if (packet_is_icmpv4_info_message(pkt) &&
+            conn->key.nw_proto == IPPROTO_ICMP) {
+            packet_set_icmp_id(pkt, conn->rev_key.dst.icmp_id);
         }
     } else if (conn->nat_action & NAT_ACTION_DST) {
         if (conn->key.nw_proto == IPPROTO_TCP) {
@@ -781,6 +814,9 @@ pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             packet_set_udp_port(pkt, conn->rev_key.dst.port,
                                 conn->rev_key.src.port);
+        } else if (packet_is_icmpv4_info_message(pkt) &&
+            conn->key.nw_proto == IPPROTO_ICMP) {
+            packet_set_icmp_id(pkt, conn->rev_key.src.icmp_id);
         }
     }
 }
@@ -831,13 +867,19 @@ un_pat_packet(struct dp_packet *pkt, const struct conn *conn)
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             struct udp_header *uh = dp_packet_l4(pkt);
             packet_set_udp_port(pkt, uh->udp_src, conn->key.src.port);
-        }
+        } else if (packet_is_icmpv4_info_message(pkt) &&
+            conn->key.nw_proto == IPPROTO_ICMP) {
+            packet_set_icmp_id(pkt, conn->key.src.icmp_id);
+       }
     } else if (conn->nat_action & NAT_ACTION_DST) {
         if (conn->key.nw_proto == IPPROTO_TCP) {
             packet_set_tcp_port(pkt, conn->key.dst.port, conn->key.src.port);
         } else if (conn->key.nw_proto == IPPROTO_UDP) {
             packet_set_udp_port(pkt, conn->key.dst.port, conn->key.src.port);
-        }
+        } else if (packet_is_icmpv4_info_message(pkt) &&
+            conn->key.nw_proto == IPPROTO_ICMP) {
+            packet_set_icmp_id(pkt, conn->key.dst.icmp_id);
+       }
     }
 }
 
@@ -2366,8 +2408,8 @@ store_addr_to_key(union ct_addr *addr, struct conn_key *key,
 
 static bool
 nat_get_unique_l4(struct conntrack *ct, struct conn *nat_conn,
-                  ovs_be16 *port, uint16_t curr, uint16_t min,
-                  uint16_t max)
+                  ovs_be16 *port, ovs_be16 *peer_port,
+                  uint16_t curr, uint16_t min, uint16_t max)
 {
     static const unsigned int max_attempts = 128;
     uint16_t range = max - min + 1;
@@ -2388,6 +2430,9 @@ another_round:
         }
 
         *port = htons(curr);
+        if (peer_port) {
+            *peer_port = htons(curr);
+        }
         if (!conn_lookup(ct, &nat_conn->rev_key,
                          time_msec(), NULL, NULL)) {
             return true;
@@ -2401,6 +2446,9 @@ another_round:
     }
 
     *port = htons(orig);
+     if (peer_port) {
+         *peer_port = htons(orig);
+     }
 
     return false;
 }
@@ -2434,7 +2482,8 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
     uint32_t hash = nat_range_hash(conn, ct->hash_basis, nat_info);
     union ct_addr min_addr = {0}, max_addr = {0}, addr = {0};
     bool pat_proto = conn->key.nw_proto == IPPROTO_TCP ||
-                     conn->key.nw_proto == IPPROTO_UDP;
+                     conn->key.nw_proto == IPPROTO_UDP ||
+                     conn->key.nw_proto == IPPROTO_ICMP;
     uint16_t min_dport, max_dport, curr_dport;
     uint16_t min_sport, max_sport, curr_sport;
 
@@ -2469,11 +2518,13 @@ nat_get_unique_tuple(struct conntrack *ct, const struct conn *conn,
     bool found = false;
     if (nat_info->nat_action & NAT_ACTION_DST_PORT) {
         found = nat_get_unique_l4(ct, nat_conn, &nat_conn->rev_key.src.port,
-                                  curr_dport, min_dport, max_dport);
+                                  NULL,curr_dport, min_dport, max_dport);
     }
 
     if (!found) {
         found = nat_get_unique_l4(ct, nat_conn, &nat_conn->rev_key.dst.port,
+                                  nat_conn->rev_key.nw_proto == IPPROTO_ICMP ?
+                                  &nat_conn->rev_key.src.port : NULL,
                                   curr_sport, min_sport, max_sport);
     }
 
