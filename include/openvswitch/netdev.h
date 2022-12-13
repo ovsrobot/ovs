@@ -87,6 +87,9 @@ struct netdev_stats {
     uint64_t rx_oversize_errors;
     uint64_t rx_fragmented_errors;
     uint64_t rx_jabber_errors;
+
+    uint64_t tx_upcall_success;
+    uint64_t tx_upcall_fail;
 };
 
 /* Structure representation of custom statistics counter */
