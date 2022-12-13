@@ -744,6 +744,10 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
                 print_stat(dpctl_p, "    collisions:", s.collisions);
                 dpctl_print(dpctl_p, "\n");
 
+                print_stat(dpctl_p, "    upcall success:", s.tx_upcall_success);
+                print_stat(dpctl_p, " upcall fail:", s.tx_upcall_fail);
+                dpctl_print(dpctl_p, "\n");
+
                 print_stat(dpctl_p, "    RX bytes:", s.rx_bytes);
                 print_human_size(dpctl_p, s.rx_bytes);
                 print_stat(dpctl_p, "  TX bytes:", s.tx_bytes);
