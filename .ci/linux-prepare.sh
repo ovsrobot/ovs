@@ -10,14 +10,11 @@ fi
 
 # Build and install sparse.
 #
-# Explicitly disable sparse support for llvm because some travis
-# environments claim to have LLVM (llvm-config exists and works) but
-# linking against it fails.
 # Disabling sqlite support because sindex build fails and we don't
 # really need this utility being installed.
 git clone git://git.kernel.org/pub/scm/devel/sparse/sparse.git
 cd sparse
-make -j4 HAVE_LLVM= HAVE_SQLITE= install
+make -j4 HAVE_SQLITE= install
 cd ..
 
 # Installing wheel separately because it may be needed to build some
@@ -45,7 +42,5 @@ fi
 # Install python test dependencies
 pip3 install -r python/test_requirements.txt
 
-# IPv6 is supported by kernel but disabled in TravisCI images:
-#   https://github.com/travis-ci/travis-ci/issues/8891
-# Enable it to avoid skipping of IPv6 related tests.
+# Make sure IPv6 is enabled to avoid skipping of IPv6 related tests.
 sudo sysctl -w net.ipv6.conf.all.disable_ipv6=0
