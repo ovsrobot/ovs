@@ -459,7 +459,7 @@ xsk_configure_queue(struct netdev_linux *dev, int ifindex, int queue_id,
              netdev_get_name(&dev->up), queue_id, xdp_modes[mode].name,
              dev->use_need_wakeup ? "true" : "false");
     xsk_info = xsk_configure(ifindex, queue_id, mode, dev->use_need_wakeup,
-                             report_socket_failures);
+                             report_socket_failures, dev->inhibit);
     if (!xsk_info) {
         VLOG(report_socket_failures ? VLL_ERR : VLL_DBG,
              "%s: Failed to create AF_XDP socket on queue %d in %s mode.",
@@ -582,9 +582,11 @@ xsk_destroy_all(struct netdev *netdev)
         dev->xsks = NULL;
     }
 
-    VLOG_INFO("%s: Removing xdp program.", netdev_get_name(netdev));
-    ifindex = linux_get_ifindex(netdev_get_name(netdev));
-    xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+    if (!dev->inhinit) {
+        VLOG_INFO("%s: Removing xdp program.", netdev_get_name(netdev));
+        ifindex = linux_get_ifindex(netdev_get_name(netdev));
+        xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+    }
 
     if (dev->tx_locks) {
         for (i = 0; i < netdev_n_txq(netdev); i++) {
@@ -602,7 +604,7 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     const char *str_xdp_mode;
     enum afxdp_mode xdp_mode;
-    bool need_wakeup;
+    bool need_wakeup, need_inhibit;
     int new_n_rxq;
 
     ovs_mutex_lock(&dev->mutex);
@@ -636,13 +638,16 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
         need_wakeup = false;
     }
 #endif
+    need_inhibit = smap_get_bool(args, "inhibit", false);
 
     if (dev->requested_n_rxq != new_n_rxq
         || dev->requested_xdp_mode != xdp_mode
-        || dev->requested_need_wakeup != need_wakeup) {
+        || dev->requested_need_wakeup != need_wakeup
+        || dev->requested_inhibit != need_inhibit) {
         dev->requested_n_rxq = new_n_rxq;
         dev->requested_xdp_mode = xdp_mode;
         dev->requested_need_wakeup = need_wakeup;
+        dev->requested_inhibit = need_inhibit;
         netdev_request_reconfigure(netdev);
     }
     ovs_mutex_unlock(&dev->mutex);
@@ -661,6 +666,8 @@ netdev_afxdp_get_config(const struct netdev *netdev, struct smap *args)
                     xdp_modes[dev->xdp_mode_in_use].name);
     smap_add_format(args, "use-need-wakeup", "%s",
                     dev->use_need_wakeup ? "true" : "false");
+    smap_add_format(args, "inhibit", "%s",
+                    dev->inhibit ? "true" : "false");
     ovs_mutex_unlock(&dev->mutex);
     return 0;
 }
@@ -696,6 +703,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     if (netdev->n_rxq == dev->requested_n_rxq
         && dev->xdp_mode == dev->requested_xdp_mode
         && dev->use_need_wakeup == dev->requested_need_wakeup
+        && dev->inhibit == dev->requested_inhibit
         && dev->xsks) {
         goto out;
     }
@@ -713,6 +721,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
         VLOG_ERR("setrlimit(RLIMIT_MEMLOCK) failed: %s", ovs_strerror(errno));
     }
     dev->use_need_wakeup = dev->requested_need_wakeup;
+    dev->inhibit = dev->requested_inhibit;
 
     err = xsk_configure_all(netdev);
     if (err) {
@@ -762,10 +771,12 @@ signal_remove_xdp(struct netdev *netdev)
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     int ifindex;
 
-    ifindex = linux_get_ifindex(netdev_get_name(netdev));
+    if (!dev->inhibit) {
+        ifindex = linux_get_ifindex(netdev_get_name(netdev));
 
-    VLOG_WARN("Force removing xdp program.");
-    xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+        VLOG_WARN("Force removing xdp program.");
+        xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+    }
 }
 
 static struct dp_packet_afxdp *
@@ -1183,6 +1194,8 @@ netdev_afxdp_construct(struct netdev *netdev)
     dev->requested_n_rxq = NR_QUEUE;
     dev->requested_xdp_mode = OVS_AF_XDP_MODE_BEST_EFFORT;
     dev->requested_need_wakeup = NEED_WAKEUP_DEFAULT;
+    dev->requested_inhibit = false;
+    dev->inhibit = false;
 
     dev->xsks = NULL;
     dev->tx_locks = NULL;
