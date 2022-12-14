@@ -119,6 +119,9 @@ struct netdev_linux {
     bool use_need_wakeup;
     bool requested_need_wakeup;
 
+    bool inhibit;
+    bool requested_inhibit;
+
     struct netdev_afxdp_tx_lock *tx_locks;  /* Array of locks for TX queues. */
 #endif
 };

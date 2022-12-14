@@ -95,7 +95,8 @@ BUILD_ASSERT_DECL(PROD_NUM_DESCS == CONS_NUM_DESCS);
 static struct xsk_socket_info *xsk_configure(int ifindex, int xdp_queue_id,
                                              enum afxdp_mode mode,
                                              bool use_need_wakeup,
-                                             bool report_socket_failures);
+                                             bool report_socket_failures,
+                                             bool inhibit);
 static void xsk_remove_xdp_program(uint32_t ifindex, enum afxdp_mode);
 static void xsk_destroy(struct xsk_socket_info *xsk);
 static int xsk_configure_all(struct netdev *netdev);
@@ -334,7 +335,8 @@ xsk_configure_umem(void *buffer, uint64_t size)
 static struct xsk_socket_info *
 xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
                      uint32_t queue_id, enum afxdp_mode mode,
-                     bool use_need_wakeup, bool report_socket_failures)
+                     bool use_need_wakeup, bool report_socket_failures,
+                     bool inhibit)
 {
     struct xsk_socket_config cfg;
     struct xsk_socket_info *xsk;
@@ -348,6 +350,9 @@ xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
     cfg.rx_size = CONS_NUM_DESCS;
     cfg.tx_size = PROD_NUM_DESCS;
     cfg.libbpf_flags = 0;
+    if (inhibit) {
+        cfg.libbpf_flags = XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD;
+    }
     cfg.bind_flags = xdp_modes[mode].bind_flags;
     cfg.xdp_flags = xdp_modes[mode].xdp_flags | XDP_FLAGS_UPDATE_IF_NOEXIST;
 
@@ -413,7 +418,7 @@ xsk_configure_socket(struct xsk_umem_info *umem, uint32_t ifindex,
 
 static struct xsk_socket_info *
 xsk_configure(int ifindex, int xdp_queue_id, enum afxdp_mode mode,
-              bool use_need_wakeup, bool report_socket_failures)
+              bool use_need_wakeup, bool report_socket_failures, bool inhibit)
 {
     struct xsk_socket_info *xsk;
     struct xsk_umem_info *umem;
@@ -435,7 +440,8 @@ xsk_configure(int ifindex, int xdp_queue_id, enum afxdp_mode mode,
     VLOG_DBG("Allocated umem pool at 0x%"PRIxPTR, (uintptr_t) umem);
 
     xsk = xsk_configure_socket(umem, ifindex, xdp_queue_id, mode,
-                               use_need_wakeup, report_socket_failures);
+                               use_need_wakeup, report_socket_failures,
+                               inhibit);
     if (!xsk) {
         /* Clean up umem and xpacket pool. */
         if (xsk_umem__delete(umem->umem)) {
@@ -459,7 +465,7 @@ xsk_configure_queue(struct netdev_linux *dev, int ifindex, int queue_id,
              netdev_get_name(&dev->up), queue_id, xdp_modes[mode].name,
              dev->use_need_wakeup ? "true" : "false");
     xsk_info = xsk_configure(ifindex, queue_id, mode, dev->use_need_wakeup,
-                             report_socket_failures);
+                             report_socket_failures, dev->inhibit);
     if (!xsk_info) {
         VLOG(report_socket_failures ? VLL_ERR : VLL_DBG,
              "%s: Failed to create AF_XDP socket on queue %d in %s mode.",
@@ -582,9 +588,11 @@ xsk_destroy_all(struct netdev *netdev)
         dev->xsks = NULL;
     }
 
-    VLOG_INFO("%s: Removing xdp program.", netdev_get_name(netdev));
-    ifindex = linux_get_ifindex(netdev_get_name(netdev));
-    xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+    if (!dev->inhibit) {
+        VLOG_INFO("%s: Removing xdp program.", netdev_get_name(netdev));
+        ifindex = linux_get_ifindex(netdev_get_name(netdev));
+        xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+    }
 
     if (dev->tx_locks) {
         for (i = 0; i < netdev_n_txq(netdev); i++) {
@@ -602,7 +610,7 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     const char *str_xdp_mode;
     enum afxdp_mode xdp_mode;
-    bool need_wakeup;
+    bool need_wakeup, need_inhibit;
     int new_n_rxq;
 
     ovs_mutex_lock(&dev->mutex);
@@ -636,13 +644,16 @@ netdev_afxdp_set_config(struct netdev *netdev, const struct smap *args,
         need_wakeup = false;
     }
 #endif
+    need_inhibit = smap_get_bool(args, "inhibit", false);
 
     if (dev->requested_n_rxq != new_n_rxq
         || dev->requested_xdp_mode != xdp_mode
-        || dev->requested_need_wakeup != need_wakeup) {
+        || dev->requested_need_wakeup != need_wakeup
+        || dev->requested_inhibit != need_inhibit) {
         dev->requested_n_rxq = new_n_rxq;
         dev->requested_xdp_mode = xdp_mode;
         dev->requested_need_wakeup = need_wakeup;
+        dev->requested_inhibit = need_inhibit;
         netdev_request_reconfigure(netdev);
     }
     ovs_mutex_unlock(&dev->mutex);
@@ -661,6 +672,8 @@ netdev_afxdp_get_config(const struct netdev *netdev, struct smap *args)
                     xdp_modes[dev->xdp_mode_in_use].name);
     smap_add_format(args, "use-need-wakeup", "%s",
                     dev->use_need_wakeup ? "true" : "false");
+    smap_add_format(args, "inhibit", "%s",
+                    dev->inhibit ? "true" : "false");
     ovs_mutex_unlock(&dev->mutex);
     return 0;
 }
@@ -696,6 +709,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
     if (netdev->n_rxq == dev->requested_n_rxq
         && dev->xdp_mode == dev->requested_xdp_mode
         && dev->use_need_wakeup == dev->requested_need_wakeup
+        && dev->inhibit == dev->requested_inhibit
         && dev->xsks) {
         goto out;
     }
@@ -713,6 +727,7 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
         VLOG_ERR("setrlimit(RLIMIT_MEMLOCK) failed: %s", ovs_strerror(errno));
     }
     dev->use_need_wakeup = dev->requested_need_wakeup;
+    dev->inhibit = dev->requested_inhibit;
 
     err = xsk_configure_all(netdev);
     if (err) {
@@ -762,10 +777,12 @@ signal_remove_xdp(struct netdev *netdev)
     struct netdev_linux *dev = netdev_linux_cast(netdev);
     int ifindex;
 
-    ifindex = linux_get_ifindex(netdev_get_name(netdev));
+    if (!dev->inhibit) {
+        ifindex = linux_get_ifindex(netdev_get_name(netdev));
 
-    VLOG_WARN("Force removing xdp program.");
-    xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+        VLOG_WARN("Force removing xdp program.");
+        xsk_remove_xdp_program(ifindex, dev->xdp_mode_in_use);
+    }
 }
 
 static struct dp_packet_afxdp *
@@ -1183,6 +1200,8 @@ netdev_afxdp_construct(struct netdev *netdev)
     dev->requested_n_rxq = NR_QUEUE;
     dev->requested_xdp_mode = OVS_AF_XDP_MODE_BEST_EFFORT;
     dev->requested_need_wakeup = NEED_WAKEUP_DEFAULT;
+    dev->requested_inhibit = false;
+    dev->inhibit = false;
 
     dev->xsks = NULL;
     dev->tx_locks = NULL;
