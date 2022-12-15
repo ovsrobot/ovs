@@ -34,6 +34,7 @@
 #include "openvswitch/hmap.h"
 #include "netdev.h"
 #include "nx-match.h"
+#include "ofp-ct-util.h"
 #include "ofproto.h"
 #include "ofproto-provider.h"
 #include "openflow/nicira-ext.h"
@@ -934,7 +935,31 @@ handle_nxt_ct_flush_zone(struct ofconn *ofconn, const struct ofp_header *oh)
 
     uint16_t zone = ntohs(nzi->zone_id);
     if (ofproto->ofproto_class->ct_flush) {
-        ofproto->ofproto_class->ct_flush(ofproto, &zone);
+        ofproto->ofproto_class->ct_flush(ofproto, &zone, NULL);
+    } else {
+        return EOPNOTSUPP;
+    }
+
+    return 0;
+}
+
+static enum ofperr
+handle_nxt_ct_flush(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+    struct ofproto *ofproto = ofconn_get_ofproto(ofconn);
+    struct ofputil_ct_match match = {0};
+    bool with_zone = false;
+    uint16_t zone_id = 0;
+
+    enum ofperr error =
+        ofputil_ct_match_decode(&match, &with_zone, &zone_id, oh);
+    if (error) {
+        return error;
+    }
+
+    if (ofproto->ofproto_class->ct_flush) {
+        ofproto->ofproto_class->ct_flush(ofproto, with_zone ? &zone_id : NULL,
+                                         &match);
     } else {
         return EOPNOTSUPP;
     }
@@ -8786,6 +8811,9 @@ handle_single_part_openflow(struct ofconn *ofconn, const struct ofp_header *oh,
 
     case OFPTYPE_CT_FLUSH_ZONE:
         return handle_nxt_ct_flush_zone(ofconn, oh);
+
+    case OFPTYPE_CT_FLUSH:
+        return handle_nxt_ct_flush(ofconn, oh);
 
     case OFPTYPE_HELLO:
     case OFPTYPE_ERROR:

@@ -16,6 +16,9 @@ Post-v3.0.0
      by specifying 'max-rate' or '[r]stp-path-cost' accordingly.
    - ovs-dpctl and related ovs-appctl commands:
      * "flush-conntrack" is capable of handling partial 5-tuple.
+   - OpenFlow:
+      * New OpenFlow extension NXT_CT_FLUSH to flush connections matching
+        the specified fields.
 
 
 v3.0.0 - 15 Aug 2022
