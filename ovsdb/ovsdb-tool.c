@@ -187,7 +187,7 @@ usage(void)
            "  compare-versions A OP B  compare OVSDB schema version numbers\n"
            "  query [DB] TRNS         execute read-only transaction on DB\n"
            "  transact [DB] TRNS      execute read/write transaction on DB\n"
-           "  cluster-to-standalone DB DB    Convert clustered DB to\n"
+           "  cluster-to-standalone DB clustered-DB  Convert clustered DB to\n"
            "      standalone DB when cluster is down and cannot be\n"
            "        revived\n"
            "  [-m]... show-log [DB]   print DB's log entries\n"
