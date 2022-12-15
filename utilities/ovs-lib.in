@@ -475,11 +475,16 @@ upgrade_db () {
 }
 
 upgrade_cluster () {
-    local DB_SCHEMA=$1 DB_SERVER=$2
+    local DB_SCHEMA=$1 DB_SERVER=$2 TIMEOUT_SECONDS=$3
     local schema_name=$(ovsdb-tool schema-name $1) || return 1
 
-    action "Waiting for $schema_name to come up" ovsdb-client -t 30 wait "$DB_SERVER" "$schema_name" connected || return $?
-    local db_version=$(ovsdb-client -t 10 get-schema-version "$DB_SERVER" "$schema_name") || return $?
+    timeout_arg=30
+    if [ -n "$TIMEOUT_SECONDS" ]; then
+      timeout_arg="$TIMEOUT_SECONDS"
+    fi
+
+    action "Waiting for $schema_name to come up" ovsdb-client -t $timeout_arg wait "$DB_SERVER" "$schema_name" connected || return $?
+    local db_version=$(ovsdb-client -t $timeout_arg get-schema-version "$DB_SERVER" "$schema_name") || return $?
     local target_version=$(ovsdb-tool schema-version "$DB_SCHEMA") || return $?
 
     if ovsdb-tool compare-versions "$db_version" == "$target_version"; then
@@ -487,7 +492,7 @@ upgrade_cluster () {
     elif ovsdb-tool compare-versions "$db_version" ">" "$target_version"; then
         log_warning_msg "Database $schema_name has newer schema version ($db_version) than our local schema ($target_version), possibly an upgrade is partially complete?"
     else
-        action "Upgrading database $schema_name from schema version $db_version to $target_version" ovsdb-client -t 30 convert "$DB_SERVER" "$DB_SCHEMA"
+        action "Upgrading database $schema_name from schema version $db_version to $target_version" ovsdb-client -t $timeout_arg convert "$DB_SERVER" "$DB_SCHEMA"
     fi
 }
 
