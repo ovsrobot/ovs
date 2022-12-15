@@ -2181,6 +2181,13 @@ netdev_stats_from_ovs_vport_stats(struct netdev_stats *dst,
     dst->tx_window_errors = 0;
 }
 
+static void netdev_stats_from_ovs_vport_upcall_stats(struct netdev_stats *dst,
+                                  struct dpif_netlink_vport *vport)
+{
+    dst->tx_upcall_success = vport->upcall_stats.tx_success;
+    dst->tx_upcall_fail = vport->upcall_stats.tx_fail;
+}
+
 static int
 get_stats_via_vport__(const struct netdev *netdev, struct netdev_stats *stats)
 {
@@ -2197,6 +2204,7 @@ get_stats_via_vport__(const struct netdev *netdev, struct netdev_stats *stats)
     }
 
     netdev_stats_from_ovs_vport_stats(stats, reply.stats);
+    netdev_stats_from_ovs_vport_upcall_stats(stats, &reply);
 
     ofpbuf_delete(buf);
 

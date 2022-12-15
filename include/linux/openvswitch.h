@@ -141,6 +141,11 @@ struct ovs_vport_stats {
 	__u64   tx_dropped;		/* no space available in linux  */
 };
 
+struct ovs_vport_upcall_stats {
+	uint64_t   tx_success;		/* total packets upcall succeed */
+	uint64_t   tx_fail;		/* total packets upcall failed  */
+};
+
 /* Allow last Netlink attribute to be unaligned */
 #define OVS_DP_F_UNALIGNED	(1 << 0)
 
@@ -301,10 +306,24 @@ enum ovs_vport_attr {
 	OVS_VPORT_ATTR_PAD,
 	OVS_VPORT_ATTR_IFINDEX,
 	OVS_VPORT_ATTR_NETNSID,
+	OVS_VPORT_ATTR_UPCALL_STATS,
 	__OVS_VPORT_ATTR_MAX
 };
 
 #define OVS_VPORT_ATTR_MAX (__OVS_VPORT_ATTR_MAX - 1)
+
+/**
+* enum OVS_VPORT_UPCALL_ATTR -- attributes for %OVS_VPORT_UPCALL* commands
+* @OVS_VPORT_UPCALL_ATTR_SUCCESS: 64-bit upcall success packets.
+* @OVS_VPORT_UPCALL_ATTR_FAIL: 64-bit upcall fail packets.
+*/
+enum OVS_VPORT_UPCALL_ATTR {
+	OVS_VPORT_UPCALL_ATTR_SUCCESS,
+	OVS_VPORT_UPCALL_ATTR_FAIL,
+	__OVS_VPORT_UPCALL_ATTR_MAX,
+};
+
+#define OVS_VPORT_UPCALL_ATTR_MAX (__OVS_VPORT_UPCALL_ATTR_MAX - 1)
 
 enum {
 	OVS_VXLAN_EXT_UNSPEC,
