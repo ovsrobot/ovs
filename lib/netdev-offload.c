@@ -256,6 +256,65 @@ meter_offload_del(ofproto_meter_id meter_id, struct ofputil_meter_stats *stats)
     return 0;
 }
 
+void
+dpdk_meter_offload_set(struct netdev *dev,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_config *config)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    /* Offload APIs could fail, for example, because the offload is not
+     * supported. This is fine, as the offload API should take care of this. */
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->dpdk_meter_set) {
+            int ret = rfa->flow_api->dpdk_meter_set(dev, meter_id, config);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed setting meter %u for flow api %s, "
+                            "error %d", meter_id.uint32, rfa->flow_api->type,
+                            ret);
+           }
+        }
+    }
+}
+
+void
+dpdk_meter_offload_get(struct netdev *dev,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_stats *stats)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->dpdk_meter_get) {
+            int ret = rfa->flow_api->dpdk_meter_get(dev, meter_id, stats);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed getting meter %u for flow api %s, "
+                            "error %d", meter_id.uint32, rfa->flow_api->type,
+                            ret);
+           }
+        }
+    }
+}
+
+void
+dpdk_meter_offload_del(struct netdev *dev,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_stats *stats)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->dpdk_meter_del) {
+            int ret = rfa->flow_api->dpdk_meter_del(dev, meter_id, stats);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed deleting meter %u for flow api %s, "
+                            "error %d", meter_id.uint32, rfa->flow_api->type,
+                            ret);
+            }
+        }
+    }
+}
+
 int
 netdev_flow_flush(struct netdev *netdev)
 {

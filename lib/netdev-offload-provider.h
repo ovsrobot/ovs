@@ -102,6 +102,16 @@ struct netdev_flow_api {
     int (*meter_set)(ofproto_meter_id meter_id,
                      struct ofputil_meter_config *config);
 
+    /* Offloads or modifies the offloaded meter on the netdev with the given
+     * 'meter_id' and the configuration in 'config'. On failure, a non-zero
+     * error code is returned.
+     *
+     * The meter id specified through 'config->meter_id' is converted as an
+     * internal meter id. */
+    int (*dpdk_meter_set)(struct netdev *,
+                          ofproto_meter_id meter_id,
+                          struct ofputil_meter_config *);
+
     /* Queries HW for meter stats with the given 'meter_id'. Store the stats
      * of dropped packets to band 0. On failure, a non-zero error code is
      * returned.
@@ -113,6 +123,18 @@ struct netdev_flow_api {
     int (*meter_get)(ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *stats);
 
+    /* Queries netdev for meter stats with the given 'meter_id'. Store the
+     * stats of dropped packets to band 0. On failure, a non-zero error code
+     * is returned.
+     *
+     * Note that the 'stats' structure is already initialized, and only the
+     * available statistics should be incremented, not replaced. Those fields
+     * are packet_in_count, byte_in_count and band[]->byte_count and
+     * band[]->packet_count. */
+    int (*dpdk_meter_get)(struct netdev *,
+                          ofproto_meter_id meter_id,
+                          struct ofputil_meter_stats *);
+
     /* Removes meter 'meter_id' from HW. Store the stats of dropped packets to
      * band 0. On failure, a non-zero error code is returned.
      *
@@ -120,6 +142,14 @@ struct netdev_flow_api {
      * function for additional details on the 'stats' usage. */
     int (*meter_del)(ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *stats);
+
+    /* Removes meter 'meter_id' from netdev. Store the stats of dropped packets
+     * to band 0. On failure, a non-zero error code is returned.
+     *
+     * If del success, 'stats' will be set zero. */
+    int (*dpdk_meter_del)(struct netdev *,
+                          ofproto_meter_id meter_id,
+                          struct ofputil_meter_stats *stats);
 
     /* Initializies the netdev flow api.
      * Return 0 if successful, otherwise returns a positive errno value. */

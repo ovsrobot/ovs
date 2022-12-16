@@ -401,10 +401,11 @@ Supported actions for hardware offload are:
 - Modification of IPv6 (set_field:<ADDR>->ipv6_src/ipv6_dst/mod_nw_ttl).
 - Clone/output (tnl_push and output) for encapsulating over a tunnel.
 - Tunnel pop, for packets received on physical ports.
+- Meter.
 
 .. note::
-  Tunnel offloads are experimental APIs in DPDK. In order to enable it,
-  compile with -DALLOW_EXPERIMENTAL_API.
+  Tunnel offloads and Meter offloads are experimental APIs in DPDK. To enable
+  these features, compile with -DALLOW_EXPERIMENTAL_API.
 
 Multiprocess
 ------------
