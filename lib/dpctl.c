@@ -40,6 +40,7 @@
 #include "netdev.h"
 #include "netlink.h"
 #include "odp-util.h"
+#include "ofp-ct-util.h"
 #include "openvswitch/ofpbuf.h"
 #include "packets.h"
 #include "openvswitch/shash.h"
@@ -1707,47 +1708,38 @@ dpctl_flush_conntrack(int argc, const char *argv[],
                       struct dpctl_params *dpctl_p)
 {
     struct dpif *dpif = NULL;
-    struct ct_dpif_tuple tuple, *ptuple = NULL;
-    struct ds ds = DS_EMPTY_INITIALIZER;
-    uint16_t zone, *pzone = NULL;
-    int error;
+    struct ofputil_ct_match match = {0};
+    uint16_t zone;
+    bool with_zone = false;
     int args = argc - 1;
 
     /* Parse ct tuple */
-    if (args && ct_dpif_parse_tuple(&tuple, argv[args], &ds)) {
-        ptuple = &tuple;
+    if (args) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        if (!ofputil_ct_match_parse(&match, argv[args], &ds)) {
+            dpctl_error(dpctl_p, EINVAL, "%s", ds_cstr(&ds));
+            ds_destroy(&ds);
+            return EINVAL;
+        }
         args--;
     }
 
     /* Parse zone */
     if (args && ovs_scan(argv[args], "zone=%"SCNu16, &zone)) {
-        pzone = &zone;
-        args--;
+        with_zone = true;
     }
 
-    /* Report error if there are more than one unparsed argument. */
-    if (args > 1) {
-        ds_put_cstr(&ds, "invalid arguments");
-        error = EINVAL;
-        goto error;
-    }
-
-    error = opt_dpif_open(argc, argv, dpctl_p, 4, &dpif);
+    int error = opt_dpif_open(argc, argv, dpctl_p, 4, &dpif);
     if (error) {
+        dpctl_error(dpctl_p, error, "Cannot open dpif");
         return error;
     }
 
-    error = ct_dpif_flush(dpif, pzone, ptuple);
-    if (!error) {
-        dpif_close(dpif);
-        return 0;
-    } else {
-        ds_put_cstr(&ds, "failed to flush conntrack");
+    error = ct_dpif_flush(dpif, with_zone ? &zone : NULL, &match);
+    if (error) {
+        dpctl_error(dpctl_p, error, "Failed to flush conntrack");
     }
 
-error:
-    dpctl_error(dpctl_p, error, "%s", ds_cstr(&ds));
-    ds_destroy(&ds);
     dpif_close(dpif);
     return error;
 }
