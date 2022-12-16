@@ -54,6 +54,19 @@ netdev_dpdk_get_port_id(struct netdev *netdev);
 
 #ifdef ALLOW_EXPERIMENTAL_API
 
+int netdev_dpdk_meter_create(struct netdev *netdev,
+                             const uint32_t meter_profile_id,
+                             const uint64_t rate,
+                             const uint64_t burst,
+                             const int flag);
+int netdev_dpdk_meter_del(struct netdev *netdev,
+                          const uint32_t meter_id,
+                          const uint32_t meter_profile_id,
+                          const uint32_t meter_policy_id);
+int netdev_dpdk_meter_get(struct netdev *netdev,
+                          const uint32_t meter_id,
+                          uint64_t *byte_in_count,
+                          uint64_t *packet_in_count);
 int netdev_dpdk_rte_flow_tunnel_decap_set(struct netdev *,
                                           struct rte_flow_tunnel *,
                                           struct rte_flow_action **,
@@ -78,6 +91,34 @@ int netdev_dpdk_rte_flow_tunnel_item_release(struct netdev *,
                                              struct rte_flow_error *);
 
 #else
+
+static inline int
+netdev_dpdk_meter_create(struct netdev *netdev OVS_UNUSED,
+                         const uint32_t meter_profile_id OVS_UNUSED,
+                         const uint64_t rate OVS_UNUSED,
+                         const uint64_t burst OVS_UNUSED,
+                         const int flag OVS_UNUSED)
+{
+    return -1;
+}
+
+static inline int
+netdev_dpdk_meter_del(struct netdev *netdev OVS_UNUSED,
+                      const uint32_t meter_id OVS_UNUSED,
+                      const uint32_t meter_profile_id OVS_UNUSED,
+                      const uint32_t meter_policy_id OVS_UNUSED)
+{
+    return -1;
+}
+
+static inline int
+netdev_dpdk_meter_get(struct netdev *netdev OVS_UNUSED,
+                      const uint32_t meter_id OVS_UNUSED,
+                      uint64_t *byte_in_count OVS_UNUSED,
+                      uint64_t *packet_in_count OVS_UNUSED)
+{
+    return -1;
+}
 
 static inline void
 set_error(struct rte_flow_error *error, enum rte_flow_error_type type)
