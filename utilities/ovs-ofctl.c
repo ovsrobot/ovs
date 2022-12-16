@@ -40,6 +40,7 @@
 #include "fatal-signal.h"
 #include "nx-match.h"
 #include "odp-util.h"
+#include "ofp-ct-util.h"
 #include "ofp-version-opt.h"
 #include "ofproto/ofproto.h"
 #include "openflow/nicira-ext.h"
@@ -485,6 +486,8 @@ usage(void)
            "  dump-ipfix-bridge SWITCH    print ipfix stats of bridge\n"
            "  dump-ipfix-flow SWITCH      print flow ipfix of a bridge\n"
            "  ct-flush-zone SWITCH ZONE   flush conntrack entries in ZONE\n"
+           "  flush-conntrack SWITCH [[ZONE=N] CT_TUPLE] flush conntrack"
+           " entries specified by CT_TUPLE and ZONE\n"
            "\nFor OpenFlow switches and controllers:\n"
            "  probe TARGET                probe whether TARGET is up\n"
            "  ping TARGET [N]             latency of N-byte echos\n"
@@ -3051,6 +3054,40 @@ ofctl_ct_flush_zone(struct ovs_cmdl_context *ctx)
 }
 
 static void
+ofctl_ct_flush_conntrack(struct ovs_cmdl_context *ctx)
+{
+    struct vconn *vconn;
+    struct ofputil_ct_match match = {0};
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    uint16_t zone;
+    bool with_zone = false;
+    int args = ctx->argc - 2;
+
+    /* Parse ct tuple */
+    if (args) {
+        if (!ofputil_ct_match_parse(&match, ctx->argv[ctx->argc - 1], &ds)) {
+            ovs_fatal(0, "Failed to parse ct-tuple: %s", ds_cstr(&ds));
+        }
+        args--;
+    }
+
+    /* Parse zone */
+    if (args && ovs_scan(ctx->argv[ctx->argc - 2], "zone=%"SCNu16, &zone)) {
+        with_zone = true;
+    }
+
+    open_vconn(ctx->argv[1], &vconn);
+    enum ofp_version version = vconn_get_version(vconn);
+
+    struct ofpbuf *msg =
+        ofputil_ct_match_encode(&match, with_zone ? &zone : NULL, version);
+
+    ds_destroy(&ds);
+    transact_noreply(vconn, msg);
+    vconn_close(vconn);
+}
+
+static void
 ofctl_dump_ipfix_flow(struct ovs_cmdl_context *ctx)
 {
     dump_trivial_transaction(ctx->argv[1], OFPRAW_NXST_IPFIX_FLOW_REQUEST);
@@ -5062,6 +5099,9 @@ static const struct ovs_cmdl_command all_commands[] = {
 
     { "ct-flush-zone", "switch zone",
       2, 2, ofctl_ct_flush_zone, OVS_RO },
+
+    { "flush-conntrack", "switch [[zone=N] ct-tuple]",
+      1, 3, ofctl_ct_flush_conntrack, OVS_RO },
 
     { "ofp-parse", "file",
       1, 1, ofctl_ofp_parse, OVS_RW },
