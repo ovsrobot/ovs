@@ -227,6 +227,10 @@ assert ovs.json.from_string('{\"a\": 42}') == {'a': 42}"
     exit 0
 fi
 
+if [ "$CFG_OPTS" ]; then
+    CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${CFG_OPTS}"
+fi
+
 if [ "$KERNEL" ]; then
     install_kernel $KERNEL
 fi
