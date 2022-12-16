@@ -5275,6 +5275,50 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
     return ret;
 }
 
+/* RTE_MTR_TRTCM_RFC2697 meter profile */
+static void
+netdev_dpdk_meter_profile_rfc2697_create(struct rte_mtr_meter_profile *profile,
+                                         const uint64_t rate,
+                                         const uint64_t burst,
+                                         const int flag)
+{
+       profile->alg = RTE_MTR_SRTCM_RFC2697;
+       profile->packet_mode = flag;
+       profile->srtcm_rfc2697.cir = rate;
+       profile->srtcm_rfc2697.cbs = burst;
+       profile->srtcm_rfc2697.ebs = burst;
+}
+
+/* RTE_MTR_TRTCM_RFC2698 meter profile */
+static void
+netdev_dpdk_meter_profile_rfc2698_create(struct rte_mtr_meter_profile *profile,
+                                         const uint64_t rate,
+                                         const uint64_t burst,
+                                         const int flag)
+{
+       profile->alg = RTE_MTR_TRTCM_RFC2698;
+       profile->packet_mode = flag;
+       profile->trtcm_rfc2698.cir = rate;
+       profile->trtcm_rfc2698.cbs = burst;
+       profile->trtcm_rfc2698.pir = rate;
+       profile->trtcm_rfc2698.pbs = burst;
+}
+
+/* RTE_MTR_TRTCM_RFC2698 meter profile */
+static void
+netdev_dpdk_meter_profile_rfc4115_create(struct rte_mtr_meter_profile *profile,
+                                         const uint64_t rate,
+                                         const uint64_t burst,
+                                         const int flag)
+{
+       profile->alg = RTE_MTR_TRTCM_RFC4115;
+       profile->packet_mode = flag;
+       profile->trtcm_rfc4115.cir = rate;
+       profile->trtcm_rfc4115.cbs = burst;
+       profile->trtcm_rfc4115.eir = rate;
+       profile->trtcm_rfc4115.ebs = burst;
+}
+
 static int OVS_UNUSED
 netdev_dpdk_meter_profile_create(struct rte_mtr_meter_profile *profile,
                                  struct rte_mtr_capabilities *cap,
@@ -5282,15 +5326,15 @@ netdev_dpdk_meter_profile_create(struct rte_mtr_meter_profile *profile,
                                  const uint64_t burst,
                                  const int flag)
 {
-    if (!cap->meter_srtcm_rfc2697_n_max) {
+    if (cap->meter_srtcm_rfc2697_n_max) {
+        netdev_dpdk_meter_profile_rfc2697_create(profile, rate, burst, flag);
+    } else if (cap->meter_trtcm_rfc2698_n_max) {
+        netdev_dpdk_meter_profile_rfc2698_create(profile, rate, burst, flag);
+    } else if (cap->meter_trtcm_rfc4115_n_max) {
+        netdev_dpdk_meter_profile_rfc4115_create(profile, rate, burst, flag);
+    } else {
         return EOPNOTSUPP;
     }
-
-    profile->alg = RTE_MTR_SRTCM_RFC2697;
-    profile->packet_mode = flag;
-    profile->srtcm_rfc2697.cir = rate;
-    profile->srtcm_rfc2697.cbs = burst;
-    profile->srtcm_rfc2697.ebs = burst;
 
     return 0;
 }
