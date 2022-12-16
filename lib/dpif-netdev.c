@@ -7206,6 +7206,96 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     ovs_mutex_unlock(&meter->lock);
 }
 
+static void
+dpif_netdev_offload_meter_set(struct dp_netdev *dp,
+                              ofproto_meter_id meter_id,
+                              struct ofputil_meter_config *config)
+{
+    struct dp_netdev_port *port;
+    struct netdev *dev;
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+
+    /* Add the meter with all ports in the datapath */
+    HMAP_FOR_EACH (port, node, &dp->ports) {
+        dev = port->netdev;
+        if (netdev_is_pmd(dev)) {
+            dpdk_meter_offload_set(dev, meter_id, config);
+        }
+    }
+
+    ovs_mutex_unlock(&dp_netdev_mutex);
+}
+
+static void
+dpif_netdev_offload_meter_del(struct dp_netdev *dp,
+                              ofproto_meter_id meter_id_,
+                              struct ofputil_meter_stats *stats)
+{
+    uint32_t meter_id = meter_id_.uint32;
+    const struct dp_meter *meter;
+    struct dp_netdev_port *port;
+    struct netdev *dev;
+
+    meter = dp_meter_lookup(&dp->meters, meter_id);
+    if (!meter) {
+        return;
+    }
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+
+    HMAP_FOR_EACH (port, node, &dp->ports) {
+        dev = port->netdev;
+        if (netdev_is_pmd(dev)) {
+            dpdk_meter_offload_del(dev, meter_id_, stats);
+        }
+    }
+
+    ovs_mutex_unlock(&dp_netdev_mutex);
+}
+
+static void
+dpif_netdev_offload_meter_get(struct dp_netdev *dp,
+                              ofproto_meter_id meter_id_,
+                              struct ofputil_meter_stats *stats)
+{
+    struct ofputil_meter_stats offload_stats;
+    uint32_t meter_id = meter_id_.uint32;
+    const struct dp_meter *meter;
+    struct dp_netdev_port *port;
+    struct netdev *dev;
+
+    meter = dp_meter_lookup(&dp->meters, meter_id);
+    if (!meter) {
+        return;
+    }
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+
+    HMAP_FOR_EACH (port, node, &dp->ports) {
+        memset(&offload_stats, 0, sizeof(struct ofputil_meter_stats));
+        dev = port->netdev;
+        if (netdev_is_pmd(dev)) {
+            dpdk_meter_offload_get(dev, meter_id_, &offload_stats);
+            if (!offload_stats.byte_in_count &&
+                       !offload_stats.packet_in_count) {
+                continue;
+            }
+            ovs_mutex_lock(&meter->lock);
+
+            stats->byte_in_count += offload_stats.byte_in_count;
+            stats->packet_in_count += offload_stats.packet_in_count;
+            /* nit: Meter offload currently only supports one band */
+            if (meter->n_bands) {
+                stats->bands[0].packet_count = stats->packet_in_count;
+                stats->bands[0].byte_count = stats->byte_in_count;
+            }
+            ovs_mutex_unlock(&meter->lock);
+        }
+    }
+    ovs_mutex_unlock(&dp_netdev_mutex);
+}
+
 /* Meter set/get/del processing is still single-threaded. */
 static int
 dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
@@ -7277,6 +7367,10 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
 
     ovs_mutex_unlock(&dp->meters_lock);
 
+    if (netdev_is_flow_api_enabled()) {
+        dpif_netdev_offload_meter_set(dp, meter_id, config);
+    }
+
     return 0;
 }
 
@@ -7315,6 +7409,10 @@ dpif_netdev_meter_get(const struct dpif *dpif,
         stats->n_bands = i;
     }
 
+    if (netdev_is_flow_api_enabled()) {
+        dpif_netdev_offload_meter_get(dp, meter_id_, stats);
+    }
+
     return 0;
 }
 
@@ -7329,6 +7427,10 @@ dpif_netdev_meter_del(struct dpif *dpif,
     error = dpif_netdev_meter_get(dpif, meter_id_, stats, n_bands);
     if (!error) {
         uint32_t meter_id = meter_id_.uint32;
+
+        if (netdev_is_flow_api_enabled()) {
+            dpif_netdev_offload_meter_del(dp, meter_id_, stats);
+        }
 
         ovs_mutex_lock(&dp->meters_lock);
         dp_meter_detach_free(&dp->meters, meter_id);
