@@ -1192,3 +1192,46 @@ ovs-appctl: ovs-vswitchd: server returned an error
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+dnl Check default state
+AT_SETUP([PMD - pmd sleep])
+OVS_VSWITCHD_START
+OVS_WAIT_UNTIL([grep "PMD powersave is disabled." ovs-vswitchd.log])
+
+dnl Check can be enabled
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave="true"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave is enabled."])
+
+dnl Check can be disabled
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave="false"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave is disabled."])
+
+dnl Check default max sleep
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave="true"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave max sleep request is 250 usecs."])
+
+dnl Check low value max sleep
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave-maxsleep="1"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave max sleep request is 1 usecs."])
+
+dnl Check high value max sleep
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave-maxsleep="10000"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave max sleep request is 10000 usecs."])
+
+dnl Check setting max sleep to zero
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave-maxsleep="0"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave max sleep request is 0 usecs."])
+
+dnl Check above high value max sleep
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-powersave-maxsleep="10001"])
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD powersave max sleep request is 10000 usecs."])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP

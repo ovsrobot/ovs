@@ -788,6 +788,40 @@
          The default value is <code>25%</code>.
         </p>
       </column>
+      <column name="other_config" key="pmd-powersave"
+              type='{"type": "boolean"}'>
+        <p>
+          Enables PMD thread requesting to sleep for values up to the
+          maximum PMD sleep time of
+          <ref column="other_config" key="pmd-powersave-maxsleep"/>) per
+          iteration. The request and value that will be used is based on the
+          number of packets available from the Rx queues that the PMD polls.
+        </p>
+        <p>
+          The default value is <code>false</code>.
+        </p>
+        <p>
+          Set this value to <code>true</code> to enable this option.
+        </p>
+        <p>
+          Sleep time for the PMD will be reset to 0 uS (i.e. no sleep) when
+          any Rx queue that it polls has 16 or more packets available for Rx.
+        </p>
+      </column>
+      <column name="other_config" key="pmd-powersave-maxsleep"
+              type='{"type": "integer",
+                     "minInteger": 0, "maxInteger": 10000}'>
+        <p>
+          Specifies the maximum sleep time that will be requested in
+          microseconds per iteration for a PMD with no or low load.
+        </p>
+        <p>
+          The default value is <code>250 microseconds</code>.
+        </p>
+        <p>
+          The maximum value is <code>10000 microseconds</code>.
+        </p>
+      </column>
       <column name="other_config" key="userspace-tso-enable"
               type='{"type": "boolean"}'>
         <p>
