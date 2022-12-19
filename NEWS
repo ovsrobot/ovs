@@ -1,5 +1,7 @@
 Post-v3.0.0
 --------------------
+   - AF_XDP:
+     * Added support for building with libxdp and libbpf >= 0.7.
    - ovs-appctl:
      * "ovs-appctl ofproto/trace" command can now display port names with the
        "--names" option.
