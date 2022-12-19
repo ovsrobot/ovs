@@ -7440,3 +7440,30 @@ OVS_WAIT_UNTIL([cat p2.pcap | grep -E "0x0050: *0000 *0000 *5002 *2000 *b85e *00
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([autoattach - malformed lldp])
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0)
+
+dnl Set up simple bridge port to receive lldp packets
+ADD_VETH(p0, at_ns0, br0, "172.31.1.1/24", "f6:b4:26:aa:5f:00")
+
+NETNS_DAEMONIZE([at_ns0], [tcpdump -l -n -xx -U -i p0 > p0.pcap], [tcpdump.pid])
+sleep 1
+
+dnl Enable lldp
+AT_CHECK([ovs-vsctl set interface ovs-p0 lldp:enable=true])
+
+dnl Send a malformed lldp packet
+NS_CHECK_EXEC([at_ns0], [$PYTHON3 $srcdir/sendpkt.py p0 01 80 c2 00 00 0e f6 b4 26 aa 5f 00 88 cc 02 07 04 f6 b4 26 aa 5f 00 04 03 05 76 32 06 02 00 78 0c 50 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 44 45 41 44 42 45 45 46 fe 05 00 04 0d 0c 01 00 00 >/dev/null])
+
+dnl Check the expected lldp packet by looking for the end
+OVS_WAIT_UNTIL([cat p0.pcap | grep -E "0x0070: *4546 *fe05 *0004 *0d0c *0100 *00" 2>&1 1>/dev/null])
+
+AT_CHECK([grep -o "ISID_VLAN_ASGNS TLV too short" ovs-vswitchd.log], [0], [dnl
+ISID_VLAN_ASGNS TLV too short
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP(["/|WARN|ISID_VLAN_ASGNS TLV too short received on ovs-p0/d"])
+AT_CLEANUP
