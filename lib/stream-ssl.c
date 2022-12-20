@@ -76,6 +76,12 @@ enum session_type {
     SERVER
 };
 
+enum ssl_update_result {
+    SSL_UPDATE_ERROR,
+    SSL_NOT_UPDATED,
+    SSL_UPDATED
+};
+
 struct ssl_stream
 {
     struct stream stream;
@@ -186,6 +192,7 @@ static unsigned int next_session_nr;
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(10, 25);
 
 static int ssl_init(void);
+static SSL_CTX *new_ssl_ctx(void);
 static int do_ssl_init(void);
 static bool ssl_wants_io(int ssl_error);
 static void ssl_close(struct stream *);
@@ -201,7 +208,8 @@ static void stream_ssl_set_ca_cert_file__(const char *file_name,
                                           bool bootstrap, bool force);
 static void ssl_protocol_cb(int write_p, int version, int content_type,
                             const void *, size_t, SSL *, void *sslv_);
-static bool update_ssl_config(struct ssl_config_file *, const char *file_name);
+static enum ssl_update_result update_ssl_config(struct ssl_config_file *,
+                                                const char *file_name);
 static int sock_errno(void);
 
 static short int
@@ -1010,11 +1018,39 @@ ssl_init(void)
     return init_status;
 }
 
-static int
-do_ssl_init(void)
+static SSL_CTX *
+new_ssl_ctx(void)
 {
     SSL_METHOD *method;
 
+    /* OpenSSL has a bunch of "connection methods": SSLv2_method(),
+     * SSLv3_method(), TLSv1_method(), SSLv23_method(), ...  Most of these
+     * support exactly one version of SSL, e.g. TLSv1_method() supports TLSv1
+     * only, not any earlier *or later* version.  The only exception is
+     * SSLv23_method(), which in fact supports *any* version of SSL and TLS.
+     * We don't want SSLv2 or SSLv3 support, so we turn it off below with
+     * SSL_CTX_set_options().
+     *
+     * The cast is needed to avoid a warning with newer versions of OpenSSL in
+     * which SSLv23_method() returns a "const" pointer. */
+    method = CONST_CAST(SSL_METHOD *, SSLv23_method());
+    if (method == NULL) {
+        VLOG_ERR("TLSv1_method: %s", ERR_error_string(ERR_get_error(), NULL));
+        return NULL;
+    }
+
+    SSL_CTX *new_ctx = SSL_CTX_new(method);
+    if (new_ctx == NULL) {
+        VLOG_ERR_RL(&rl, "SSL_new: %s",
+                    ERR_error_string(ERR_get_error(), NULL));
+        return NULL;
+    }
+    return new_ctx;
+}
+
+static int
+do_ssl_init(void)
+{
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined (LIBRESSL_VERSION_NUMBER)
 #ifdef _WIN32
     /* The following call is needed if we "#include <openssl/applink.c>". */
@@ -1054,25 +1090,8 @@ do_ssl_init(void)
         RAND_seed(seed, sizeof seed);
     }
 
-    /* OpenSSL has a bunch of "connection methods": SSLv2_method(),
-     * SSLv3_method(), TLSv1_method(), SSLv23_method(), ...  Most of these
-     * support exactly one version of SSL, e.g. TLSv1_method() supports TLSv1
-     * only, not any earlier *or later* version.  The only exception is
-     * SSLv23_method(), which in fact supports *any* version of SSL and TLS.
-     * We don't want SSLv2 or SSLv3 support, so we turn it off below with
-     * SSL_CTX_set_options().
-     *
-     * The cast is needed to avoid a warning with newer versions of OpenSSL in
-     * which SSLv23_method() returns a "const" pointer. */
-    method = CONST_CAST(SSL_METHOD *, SSLv23_method());
-    if (method == NULL) {
-        VLOG_ERR("TLSv1_method: %s", ERR_error_string(ERR_get_error(), NULL));
-        return ENOPROTOOPT;
-    }
-
-    ctx = SSL_CTX_new(method);
+    ctx = new_ssl_ctx();
     if (ctx == NULL) {
-        VLOG_ERR("SSL_CTX_new: %s", ERR_error_string(ERR_get_error(), NULL));
         return ENOPROTOOPT;
     }
     SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
@@ -1132,14 +1151,19 @@ stream_ssl_is_configured(void)
     return private_key.file_name || certificate.file_name || ca_cert.file_name;
 }
 
-static bool
+/* Returns:
+ *   SSL_UPDATED if updated,
+ *   SSL_NOT_UPDATED if unchanged,
+ *   SSL_ERROR in case of error.
+ */
+static enum ssl_update_result
 update_ssl_config(struct ssl_config_file *config, const char *file_name)
 {
     struct timespec mtime;
     int error;
 
     if (ssl_init() || !file_name) {
-        return false;
+        return SSL_UPDATE_ERROR;
     }
 
     /* If the file name hasn't changed and neither has the file contents, stop
@@ -1153,7 +1177,7 @@ update_ssl_config(struct ssl_config_file *config, const char *file_name)
         && !strcmp(config->file_name, file_name)
         && mtime.tv_sec == config->mtime.tv_sec
         && mtime.tv_nsec == config->mtime.tv_nsec) {
-        return false;
+        return SSL_NOT_UPDATED;
     }
 
     /* Update 'config'. */
@@ -1162,7 +1186,7 @@ update_ssl_config(struct ssl_config_file *config, const char *file_name)
         free(config->file_name);
         config->file_name = xstrdup(file_name);
     }
-    return true;
+    return SSL_UPDATED;
 }
 
 static void
@@ -1179,7 +1203,7 @@ stream_ssl_set_private_key_file__(const char *file_name)
 void
 stream_ssl_set_private_key_file(const char *file_name)
 {
-    if (update_ssl_config(&private_key, file_name)) {
+    if (update_ssl_config(&private_key, file_name) == SSL_UPDATED) {
         stream_ssl_set_private_key_file__(file_name);
     }
 }
@@ -1198,7 +1222,7 @@ stream_ssl_set_certificate_file__(const char *file_name)
 void
 stream_ssl_set_certificate_file(const char *file_name)
 {
-    if (update_ssl_config(&certificate, file_name)) {
+    if (update_ssl_config(&certificate, file_name) == SSL_UPDATED) {
         stream_ssl_set_certificate_file__(file_name);
     }
 }
@@ -1224,15 +1248,51 @@ stream_ssl_set_certificate_file(const char *file_name)
  *
  * This function avoids both problems by, whenever either the certificate or
  * the private key file changes, re-reading both of them, in the correct order.
+ *
+ * If either the certificate or the private key file failed to update (e.g.
+ * empty file), then those files are not applied as this used to cause segv.
+ * This function also avoids breaking setup while the second component is not
+ * updated.
  */
 void
 stream_ssl_set_key_and_cert(const char *private_key_file,
                             const char *certificate_file)
 {
-    if (update_ssl_config(&private_key, private_key_file)
-        && update_ssl_config(&certificate, certificate_file)) {
+    int priv_key_updated = update_ssl_config(&private_key, private_key_file);
+    SSL_CTX *tmp_ctx = NULL;
+
+    if (((priv_key_updated == SSL_UPDATED) &&
+         (update_ssl_config(&certificate,certificate_file)
+                           != SSL_UPDATE_ERROR)) ||
+        ((priv_key_updated != SSL_UPDATE_ERROR) &&
+         (update_ssl_config(&certificate, certificate_file) == SSL_UPDATED))) {
+        tmp_ctx = new_ssl_ctx();
+        if (tmp_ctx == NULL) {
+            goto error;
+        }
+        if (SSL_CTX_use_certificate_file(tmp_ctx, certificate_file,
+                                         SSL_FILETYPE_PEM) != 1) {
+            VLOG_ERR_RL(&rl, "SSL_use_certificate_file: %s",
+                        ERR_error_string(ERR_get_error(), NULL));
+            goto error;
+        }
+        if (SSL_CTX_use_PrivateKey_file(tmp_ctx, private_key_file,
+                                        SSL_FILETYPE_PEM) != 1) {
+            VLOG_ERR_RL(&rl, "SSL_use_PrivateKey_file: %s",
+                        ERR_error_string(ERR_get_error(), NULL));
+            goto error;
+        }
+        if (SSL_CTX_check_private_key(tmp_ctx) != 1) {
+            VLOG_ERR_RL(&rl, "SSL_check_private_key: %s",
+                        ERR_error_string(ERR_get_error(), NULL));
+            goto error;
+        }
         stream_ssl_set_certificate_file__(certificate_file);
         stream_ssl_set_private_key_file__(private_key_file);
+    }
+error:
+    if (tmp_ctx) {
+        SSL_CTX_free(tmp_ctx);
     }
 }
 
@@ -1427,7 +1487,7 @@ stream_ssl_set_ca_cert_file__(const char *file_name,
 {
     struct stat s;
 
-    if (!update_ssl_config(&ca_cert, file_name) && !force) {
+    if ((update_ssl_config(&ca_cert, file_name) != SSL_UPDATED) && !force) {
         return;
     }
 

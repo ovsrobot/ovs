@@ -1311,6 +1311,42 @@ AT_CHECK([test $(get_memory_value atoms) -eq $initial_db_atoms])
 OVS_APP_EXIT_AND_WAIT([ovsdb-server])
 AT_CLEANUP
 
+
+AT_SETUP([ssl certificate update])
+AT_KEYWORDS([ovsdb server ssl])
+AT_SKIP_IF([test "$HAVE_OPENSSL" = no])
+PKIDIR=$abs_top_builddir/tests
+AT_CHECK([ovsdb-tool create db $abs_top_srcdir/vswitchd/vswitch.ovsschema], [0], [stdout], [ignore])
+on_exit 'kill `cat *.pid`'
+
+# ssl certificate update with empty private_key
+AT_CHECK([ovsdb-server --log-file --detach --no-chdir --pidfile --private-key=db:Open_vSwitch,SSL,private_key --certificate=db:Open_vSwitch,SSL,certificate --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert --remote=punix:./db.sock --remote=db:Open_vSwitch,Open_vSwitch,manager_options db], [0], [ignore], [ignore])
+AT_CHECK([ovs-vsctl --no-wait init])
+AT_CHECK([ovs-vsctl --no-wait set-ssl pkey.key cert.cert ca.cert])
+AT_CHECK([ovs-vsctl --no-wait set SSL . private_key='""'])
+AT_CHECK([ovs-vsctl --no-wait set SSL . certificate='cert.new'])
+
+OVS_APP_EXIT_AND_WAIT([ovsdb-server])
+
+# Use wrong key/cert combination
+cp $PKIDIR/testpki-privkey2.pem key.pem
+cp $PKIDIR/testpki-cert.pem cert.pem
+AT_CHECK([ovsdb-server --log-file --detach --no-chdir --pidfile --private-key=key.pem --certificate=cert.pem --ca-cert=$PKIDIR/testpki-cacert.pem --remote=pssl:0:127.0.0.1 db], [0], [ignore], [ignore])
+PARSE_LISTENING_PORT([ovsdb-server.log], [SSL_PORT])
+OVS_WAIT_UNTIL([grep "ERR|SSL_use_PrivateKey_file" ovsdb-server.log | grep mismatch])
+
+# Use good combination and try to connect
+cp $PKIDIR/testpki-cert2.pem cert.pem
+AT_CHECK([ovsdb-client --private-key=$PKIDIR/testpki-privkey.pem --certificate=$PKIDIR/testpki-cert.pem --ca-cert=$PKIDIR/testpki-cacert.pem wait ssl:127.0.0.1:$SSL_PORT _Server connected  > ovsdb-client.stdout 2> ovsdb-client.stderr])
+
+# Set wrong key/cert combination
+cp $PKIDIR/testpki-privkey.pem key.pem
+# Check that we can still connect
+AT_CHECK([ovsdb-client --private-key=$PKIDIR/testpki-privkey.pem --certificate=$PKIDIR/testpki-cert.pem --ca-cert=$PKIDIR/testpki-cacert.pem wait ssl:127.0.0.1:$SSL_PORT _Server connected  > ovsdb-client.stdout 2> ovsdb-client.stderr])
+
+OVSDB_SERVER_SHUTDOWN
+AT_CLEANUP
+
 AT_BANNER([OVSDB -- ovsdb-server transactions (SSL IPv4 sockets)])
 
 # OVSDB_CHECK_EXECUTION(TITLE, SCHEMA, TRANSACTIONS, OUTPUT, [KEYWORDS])
