@@ -2095,7 +2095,7 @@ ukey_delete(struct umap *umap, struct udpif_key *ukey)
 
 static bool
 should_revalidate(const struct udpif *udpif, uint64_t packets,
-                  long long int used)
+                  long long int used, bool offloaded)
 {
     long long int metric, now, duration;
 
@@ -2124,8 +2124,12 @@ should_revalidate(const struct udpif *udpif, uint64_t packets,
     duration = now - used;
     metric = duration / packets;
 
-    if (metric < 1000 / ofproto_min_revalidate_pps) {
-        /* The flow is receiving more than min-revalidate-pps, so keep it. */
+    if (metric < 1000 / ofproto_min_revalidate_pps ||
+        (offloaded && duration < 2000)) {
+        /* The flow is receiving more than min-revalidate-pps, so keep it.
+         * Or it's a hardware offloaded flow that might take up to 2 seconds
+         * to update its statistics. Until we are sure the statistics had a
+         * chance to be updated, also keep it. */
         return true;
     }
     return false;
@@ -2342,7 +2346,8 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
                     : 0);
 
     if (need_revalidate) {
-        if (should_revalidate(udpif, push.n_packets, ukey->stats.used)) {
+        if (should_revalidate(udpif, push.n_packets, ukey->stats.used,
+                              offloaded)) {
             if (!ukey->xcache) {
                 ukey->xcache = xlate_cache_new();
             } else {
