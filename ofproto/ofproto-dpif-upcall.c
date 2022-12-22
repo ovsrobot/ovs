@@ -2334,12 +2334,8 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
 
     push.used = stats->used;
     push.tcp_flags = stats->tcp_flags;
-    push.n_packets = (stats->n_packets > ukey->stats.n_packets
-                      ? stats->n_packets - ukey->stats.n_packets
-                      : 0);
-    push.n_bytes = (stats->n_bytes > ukey->stats.n_bytes
-                    ? stats->n_bytes - ukey->stats.n_bytes
-                    : 0);
+    push.n_packets = stats->n_packets - ukey->stats.n_packets;
+    push.n_bytes = stats->n_bytes - ukey->stats.n_bytes;
 
     if (need_revalidate) {
         if (should_revalidate(udpif, push.n_packets, ukey->stats.used)) {
