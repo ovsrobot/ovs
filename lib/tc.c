@@ -84,6 +84,11 @@ struct flower_key_to_pedit {
     int boundary_shift;
 };
 
+struct tc_flow_stats {
+    uint64_t n_packets;
+    uint64_t n_bytes;
+};
+
 static struct flower_key_to_pedit flower_pedit_map[] = {
     {
         TCA_PEDIT_KEY_EX_HDR_TYPE_IP4,
@@ -1852,66 +1857,89 @@ static const struct nl_policy act_policy[] = {
     [TCA_ACT_STATS] = { .type = NL_A_NESTED, .optional = false, },
 };
 
-static const struct nl_policy stats_policy[] = {
-    [TCA_STATS_BASIC] = { .type = NL_A_UNSPEC,
-                          .min_len = sizeof(struct gnet_stats_basic),
-                          .optional = false, },
-    [TCA_STATS_BASIC_HW] = { .type = NL_A_UNSPEC,
-                             .min_len = sizeof(struct gnet_stats_basic),
-                             .optional = true, },
-    [TCA_STATS_QUEUE] = { .type = NL_A_UNSPEC,
-                          .min_len = sizeof(struct gnet_stats_queue),
-                          .optional = true, },
-};
-
 static int
 nl_parse_action_stats(struct nlattr *act_stats,
                       struct ovs_flow_stats *stats_sw,
                       struct ovs_flow_stats *stats_hw,
                       struct ovs_flow_stats *stats_dropped)
 {
-    struct nlattr *stats_attrs[ARRAY_SIZE(stats_policy)];
-    struct gnet_stats_basic bs_all, bs_sw, bs_hw;
-    const struct gnet_stats_queue *qs;
+    struct tc_flow_stats s_sw = {0}, s_hw = {0};
+    uint16_t prev_type = __TCA_STATS_MAX;
+    const struct nlattr *nla;
+    uint32_t s_dropped = 0;
+    unsigned int seen = 0;
+    size_t left;
 
-    if (!nl_parse_nested(act_stats, stats_policy, stats_attrs,
-                         ARRAY_SIZE(stats_policy))) {
-        VLOG_ERR_RL(&error_rl, "Failed to parse action stats policy");
-        return EPROTO;
+    /* Cannot use nl_parse_nested due to duplicate attributes. */
+    NL_ATTR_FOR_EACH (nla, left, nl_attr_get(act_stats),
+                      nl_attr_get_size(act_stats)) {
+        const struct gnet_stats_basic *stats_basic;
+        const struct gnet_stats_queue *qs;
+        uint16_t type = nl_attr_type(nla);
+        uint64_t packets;
+
+        seen |= 1 << type;
+
+        switch (type) {
+            case TCA_STATS_BASIC:
+                stats_basic = nl_attr_get_unspec(nla, sizeof *stats_basic);
+                s_sw.n_packets = get_unaligned_u32(&stats_basic->packets);
+                s_sw.n_bytes = get_unaligned_u64(&stats_basic->bytes);
+                break;
+            case TCA_STATS_BASIC_HW:
+                stats_basic = nl_attr_get_unspec(nla, sizeof *stats_basic);
+                s_hw.n_packets = get_unaligned_u32(&stats_basic->packets);
+                s_hw.n_bytes = get_unaligned_u64(&stats_basic->bytes);
+                break;
+            case TCA_STATS_QUEUE:
+                qs = nl_attr_get_unspec(nla, sizeof *qs);
+                s_dropped = get_unaligned_u32(&qs->drops);
+                break;
+            case TCA_STATS_PKT64:
+                packets = nl_attr_get_u64(nla);
+
+                if (prev_type == TCA_STATS_BASIC) {
+                    s_sw.n_packets = packets;
+                } else if (prev_type == TCA_STATS_BASIC_HW) {
+                    s_hw.n_packets = packets;
+                } else {
+                    goto err;
+                }
+                break;
+            default:
+                break;
+        }
+        prev_type = type;
     }
 
-    memcpy(&bs_all,
-           nl_attr_get_unspec(stats_attrs[TCA_STATS_BASIC], sizeof bs_all),
-           sizeof bs_all);
-    if (stats_attrs[TCA_STATS_BASIC_HW]) {
-        memcpy(&bs_hw, nl_attr_get_unspec(stats_attrs[TCA_STATS_BASIC_HW],
-                                          sizeof bs_hw),
-               sizeof bs_hw);
-
-        bs_sw.packets = bs_all.packets - bs_hw.packets;
-        bs_sw.bytes = bs_all.bytes - bs_hw.bytes;
-    } else {
-        bs_sw.packets = bs_all.packets;
-        bs_sw.bytes = bs_all.bytes;
+    if (!(seen & 1 << TCA_STATS_BASIC)) {
+        goto err;
     }
 
-    if (bs_sw.packets > get_32aligned_u64(&stats_sw->n_packets)) {
-        put_32aligned_u64(&stats_sw->n_packets, bs_sw.packets);
-        put_32aligned_u64(&stats_sw->n_bytes, bs_sw.bytes);
+    if (seen & 1 << TCA_STATS_BASIC_HW) {
+        s_sw.n_packets = s_sw.n_packets - s_hw.n_packets;
+        s_sw.n_bytes = s_sw.n_bytes - s_hw.n_bytes;
+
+        if (s_hw.n_packets > get_32aligned_u64(&stats_hw->n_packets)) {
+            put_32aligned_u64(&stats_hw->n_packets, s_hw.n_packets);
+            put_32aligned_u64(&stats_hw->n_bytes, s_hw.n_bytes);
+        }
     }
 
-    if (stats_attrs[TCA_STATS_BASIC_HW]
-        && bs_hw.packets > get_32aligned_u64(&stats_hw->n_packets)) {
-        put_32aligned_u64(&stats_hw->n_packets, bs_hw.packets);
-        put_32aligned_u64(&stats_hw->n_bytes, bs_hw.bytes);
+    if (s_sw.n_packets > get_32aligned_u64(&stats_sw->n_packets)) {
+        put_32aligned_u64(&stats_sw->n_packets, s_sw.n_packets);
+        put_32aligned_u64(&stats_sw->n_bytes, s_sw.n_bytes);
     }
 
-    if (stats_dropped && stats_attrs[TCA_STATS_QUEUE]) {
-        qs = nl_attr_get_unspec(stats_attrs[TCA_STATS_QUEUE], sizeof *qs);
-        put_32aligned_u64(&stats_dropped->n_packets, qs->drops);
+    if (stats_dropped && (seen & 1 << TCA_STATS_QUEUE)) {
+        put_32aligned_u64(&stats_dropped->n_packets, s_dropped);
     }
 
     return 0;
+
+err:
+    VLOG_ERR_RL(&error_rl, "Failed to parse action stats policy");
+    return EPROTO;
 }
 
 static int
