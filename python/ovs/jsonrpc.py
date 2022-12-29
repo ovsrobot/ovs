@@ -186,7 +186,7 @@ class Connection(object):
         self.stream = stream
         self.status = 0
         self.input = ""
-        self.output = ""
+        self.output = b''
         self.parser = None
         self.received_bytes = 0
 
@@ -238,7 +238,7 @@ class Connection(object):
         self.__log_msg("send", msg)
 
         was_empty = len(self.output) == 0
-        self.output += ovs.json.to_string(msg.to_json())
+        self.output += ovs.json.to_string(msg.to_json()).encode("utf-8")
         if was_empty:
             self.run()
         return self.status
@@ -365,7 +365,7 @@ class Connection(object):
         if self.status == 0:
             self.status = error
             self.stream.close()
-            self.output = ""
+            self.output = b''
 
 
 class Session(object):
