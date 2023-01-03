@@ -53,11 +53,13 @@ VLOG_DEFINE_THIS_MODULE(ofproto_dpif_upcall);
 COVERAGE_DEFINE(dumped_duplicate_flow);
 COVERAGE_DEFINE(dumped_new_flow);
 COVERAGE_DEFINE(handler_duplicate_upcall);
-COVERAGE_DEFINE(upcall_ukey_contention);
-COVERAGE_DEFINE(upcall_ukey_replace);
 COVERAGE_DEFINE(revalidate_missed_dp_flow);
+COVERAGE_DEFINE(ukey_dp_change);
 COVERAGE_DEFINE(upcall_flow_limit_hit);
 COVERAGE_DEFINE(upcall_flow_limit_kill);
+COVERAGE_DEFINE(upcall_ukey_contention);
+COVERAGE_DEFINE(upcall_ukey_replace);
+
 
 /* A thread that reads upcalls from dpif, forwards each upcall's packet,
  * and possibly sets up a kernel flow as a cache. */
@@ -287,6 +289,7 @@ struct udpif_key {
 
     struct ovs_mutex mutex;                   /* Guards the following. */
     struct dpif_flow_stats stats OVS_GUARDED; /* Last known stats.*/
+    const char *dp_layer OVS_GUARDED;         /* Last known dp_layer. */
     long long int created OVS_GUARDED;        /* Estimate of creation time. */
     uint64_t dump_seq OVS_GUARDED;            /* Tracks udpif->dump_seq. */
     uint64_t reval_seq OVS_GUARDED;           /* Tracks udpif->reval_seq. */
@@ -1766,6 +1769,7 @@ ukey_create__(const struct nlattr *key, size_t key_len,
     ukey->created = ukey->flow_time = time_msec();
     memset(&ukey->stats, 0, sizeof ukey->stats);
     ukey->stats.used = used;
+    ukey->dp_layer = "ovs";
     ukey->xcache = NULL;
 
     ukey->offloaded = false;
@@ -2756,6 +2760,16 @@ revalidate(struct revalidator *revalidator)
                     }
                 }
                 continue;
+            }
+
+            if (strcmp(ukey->dp_layer, f->attrs.dp_layer)) {
+                /* The dp_layer has changed this is probably due to an earlier
+                 * revalidate cycle moving it to/from hw offload. In this case
+                 * we should reset the ukey stored statistics, as they are
+                 * from the deleted DP flow. */
+                COVERAGE_INC(ukey_dp_change);
+                ukey->dp_layer = f->attrs.dp_layer;
+                memset(&ukey->stats, 0, sizeof ukey->stats);
             }
 
             already_dumped = ukey->dump_seq == dump_seq;
