@@ -161,6 +161,8 @@ OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
 \@VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostuser0) failed to connect: No such file or directory@d
 \@dpdkvhostuser ports are considered deprecated;  please migrate to dpdkvhostuserclient ports.@d
 \@failed to enumerate system datapaths: No such file or directory@d
+\@Removing port 'dpdkvhostuser0' while vhost device still attached.@d
+\@To restore connectivity after re-adding of port, VM on socket .*@d
 ])")
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
