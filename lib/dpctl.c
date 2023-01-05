@@ -734,6 +734,10 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
                 print_stat(dpctl_p, " frame:", s.rx_frame_errors);
                 dpctl_print(dpctl_p, "\n");
 
+                print_stat(dpctl_p, "    upcall success:", s.upcall_success);
+                print_stat(dpctl_p, " upcall fail:", s.upcall_fail);
+                dpctl_print(dpctl_p, "\n");
+
                 print_stat(dpctl_p, "    TX packets:", s.tx_packets);
                 print_stat(dpctl_p, " errors:", s.tx_errors);
                 print_stat(dpctl_p, " dropped:", s.tx_dropped);
