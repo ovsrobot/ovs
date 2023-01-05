@@ -1132,7 +1132,8 @@ static inline bool is_arp(const struct flow *flow)
 static inline bool is_garp(const struct flow *flow,
                            struct flow_wildcards *wc)
 {
-    if (is_arp(flow)) {
+    if (is_arp(flow) &&
+        eth_addr_is_broadcast(FLOW_WC_GET_AND_MASK_WC(flow, wc, dl_dst))) {
         return (FLOW_WC_GET_AND_MASK_WC(flow, wc, nw_src) ==
                 FLOW_WC_GET_AND_MASK_WC(flow, wc, nw_dst));
     }
