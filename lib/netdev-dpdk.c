@@ -417,6 +417,11 @@ enum dpdk_hw_ol_features {
     NETDEV_TX_SCTP_CHECKSUM_OFFLOAD = 1 << 4,
 };
 
+enum dpdk_cp_prot_flags {
+    DPDK_CP_PROT_UNSUPPORTED = 1 << 0,
+    DPDK_CP_PROT_LACP = 1 << 1,
+};
+
 /*
  * In order to avoid confusion in variables names, following naming convention
  * should be used, if possible:
@@ -536,6 +541,13 @@ struct netdev_dpdk {
 
         /* VF configuration. */
         struct eth_addr requested_hwaddr;
+
+        /* Requested control plane protection flags,
+         * from the enum set 'dpdk_cp_prot_flags' */
+        uint64_t requested_cp_prot_flags;
+        uint64_t cp_prot_flags;
+        size_t cp_prot_flows_num;
+        struct rte_flow **cp_prot_flows;
     );
 
     PADDED_MEMBERS(CACHE_LINE_SIZE,
@@ -1315,6 +1327,10 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->requested_n_txq = NR_QUEUE;
     dev->requested_rxq_size = NIC_PORT_DEFAULT_RXQ_SIZE;
     dev->requested_txq_size = NIC_PORT_DEFAULT_TXQ_SIZE;
+    dev->requested_cp_prot_flags = 0;
+    dev->cp_prot_flags = 0;
+    dev->cp_prot_flows_num = 0;
+    dev->cp_prot_flows = NULL;
 
     /* Initialize the flow control to NULL */
     memset(&dev->fc_conf, 0, sizeof dev->fc_conf);
@@ -1489,6 +1505,8 @@ common_destruct(struct netdev_dpdk *dev)
     ovs_mutex_destroy(&dev->mutex);
 }
 
+static void dpdk_cp_prot_unconfigure(struct netdev_dpdk *dev);
+
 static void
 netdev_dpdk_destruct(struct netdev *netdev)
 {
@@ -1525,6 +1543,9 @@ netdev_dpdk_destruct(struct netdev *netdev)
                 break;
             }
         }
+
+        /* Destroy any rte flows to allow RXQs to be removed. */
+        dpdk_cp_prot_unconfigure(dev);
 
         /* Retrieve eth device data before closing it. */
         rte_eth_dev_info_get(dev->port_id, &dev_info);
@@ -1910,6 +1931,10 @@ dpdk_set_rxq_config(struct netdev_dpdk *dev, const struct smap *args)
     int new_n_rxq;
 
     new_n_rxq = MAX(smap_get_int(args, "n_rxq", NR_QUEUE), 1);
+    if ((dev->requested_cp_prot_flags & ~DPDK_CP_PROT_UNSUPPORTED) &&
+            !(dev->requested_cp_prot_flags & DPDK_CP_PROT_UNSUPPORTED)) {
+        new_n_rxq += 1;
+    }
     if (new_n_rxq != dev->requested_n_rxq) {
         dev->requested_n_rxq = new_n_rxq;
         netdev_request_reconfigure(&dev->up);
@@ -1933,6 +1958,48 @@ dpdk_process_queue_size(struct netdev *netdev, const struct smap *args,
     }
 }
 
+static void
+dpdk_cp_prot_set_config(struct netdev *netdev, struct netdev_dpdk *dev,
+                        const struct smap *args, char **errp)
+{
+    const char *arg = smap_get_def(args, "cp-protection", "");
+    uint64_t flags = 0;
+    char *token, *saveptr, *buf;
+
+    buf = xstrdup(arg);
+    token = strtok_r(buf, ",", &saveptr);
+    while (token) {
+        if (strcmp(token, "lacp") == 0) {
+            flags |= DPDK_CP_PROT_LACP;
+        } else {
+            VLOG_WARN_BUF(
+                errp, "%s options:cp-protection unknown protocol '%s'",
+                netdev_get_name(netdev), token);
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+    free(buf);
+
+    if (flags && dev->type != DPDK_DEV_ETH) {
+        VLOG_WARN_BUF( errp,
+            "%s options:cp-protection is only supported on ethernet ports",
+            netdev_get_name(netdev));
+        flags = 0;
+    }
+
+    if (flags && netdev_is_flow_api_enabled()) {
+        VLOG_WARN_BUF(errp,
+            "%s options:cp-protection is incompatible with hw-offload",
+            netdev_get_name(netdev));
+        flags = 0;
+    }
+
+    if (flags != (dev->requested_cp_prot_flags & ~DPDK_CP_PROT_UNSUPPORTED)) {
+        dev->requested_cp_prot_flags = flags;
+        netdev_request_reconfigure(netdev);
+    }
+}
+
 static int
 netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
                        char **errp)
@@ -1951,6 +2018,9 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
 
     ovs_mutex_lock(&dpdk_mutex);
     ovs_mutex_lock(&dev->mutex);
+
+    /* needs to be called before rxq_config */
+    dpdk_cp_prot_set_config(netdev, dev, args, errp);
 
     dpdk_set_rxq_config(dev, args);
 
@@ -3646,8 +3716,10 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     struct rte_eth_dev_info dev_info;
     const char *bus_info;
+    uint64_t cp_prot_flags;
     uint32_t link_speed;
     uint32_t dev_flags;
+    int n_rxq;
 
     if (!rte_eth_dev_is_valid_port(dev->port_id)) {
         return ENODEV;
@@ -3659,6 +3731,8 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
     link_speed = dev->link.link_speed;
     dev_flags = *dev_info.dev_flags;
     bus_info = rte_dev_bus_info(dev_info.device);
+    cp_prot_flags = dev->cp_prot_flags;
+    n_rxq = netdev->n_rxq;
     ovs_mutex_unlock(&dev->mutex);
     ovs_mutex_unlock(&dpdk_mutex);
 
@@ -3699,6 +3773,19 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
     if (dev_flags & RTE_ETH_DEV_REPRESENTOR) {
         smap_add_format(args, "dpdk-vf-mac", ETH_ADDR_FMT,
                         ETH_ADDR_ARGS(dev->hwaddr));
+    }
+
+    if (cp_prot_flags) {
+        if (cp_prot_flags & DPDK_CP_PROT_UNSUPPORTED) {
+            smap_add(args, "cp_protection", "unsupported");
+        } else {
+            smap_add_format(args, "cp_protection_queue", "%d", n_rxq - 1);
+            if (n_rxq > 2) {
+                smap_add_format(args, "rss_queues", "0-%d", n_rxq - 2);
+            } else {
+                smap_add(args, "rss_queues", "0");
+            }
+        }
     }
 
     return 0;
@@ -4932,6 +5019,202 @@ static const struct dpdk_qos_ops trtcm_policer_ops = {
 };
 
 static int
+dpdk_cp_prot_add_flow(struct netdev_dpdk *dev,
+                      const struct rte_flow_attr *attr,
+                      const struct rte_flow_item items[],
+                      const struct rte_flow_action actions[],
+                      const char *desc, bool dry_run)
+{
+    struct rte_flow_error error;
+    struct rte_flow *flow;
+    size_t num;
+
+    if (dry_run) {
+        int ret;
+        ret = rte_flow_validate(dev->port_id, attr, items, actions, &error);
+        if (ret) {
+            VLOG_WARN("%s: cp-protection: device does not support %s flow: %s",
+                netdev_get_name(&dev->up), desc, error.message);
+        }
+        return ret;
+    }
+
+    flow = rte_flow_create(dev->port_id, attr, items, actions, &error);
+    if (flow == NULL) {
+        VLOG_WARN("%s: cp-protection: failed to add %s flow: %s",
+            netdev_get_name(&dev->up), desc, error.message);
+        return rte_errno;
+    }
+
+    num = dev->cp_prot_flows_num + 1;
+    dev->cp_prot_flows = xrealloc(dev->cp_prot_flows, sizeof(flow) * num);
+    dev->cp_prot_flows[dev->cp_prot_flows_num] = flow;
+    dev->cp_prot_flows_num = num;
+
+    return 0;
+}
+
+static int
+dpdk_cp_prot_add_traffic_flow(struct netdev_dpdk *dev,
+                              const struct rte_flow_item items[],
+                              const char *desc, bool dry_run)
+{
+    const struct rte_flow_attr attr = { .ingress = 1 };
+    const struct rte_flow_action actions[] = {
+        {
+            .type = RTE_FLOW_ACTION_TYPE_QUEUE,
+            .conf = &(const struct rte_flow_action_queue) {
+                .index = dev->up.n_rxq - 1,
+            },
+        },
+        { .type = RTE_FLOW_ACTION_TYPE_END },
+    };
+
+    if (!dry_run) {
+        VLOG_INFO("%s: cp-protection: redirecting %s traffic to queue %d",
+            netdev_get_name(&dev->up), desc, dev->up.n_rxq - 1);
+    }
+    return dpdk_cp_prot_add_flow(dev, &attr, items, actions, desc, dry_run);
+}
+
+#define RETA_CONF_SIZE (RTE_ETH_RSS_RETA_SIZE_512 / RTE_ETH_RETA_GROUP_SIZE)
+
+static int
+dpdk_cp_prot_rss_configure(struct netdev_dpdk *dev, int rss_n_rxq,
+                           bool verbose)
+{
+    struct rte_eth_rss_reta_entry64 reta_conf[RETA_CONF_SIZE];
+    struct rte_eth_dev_info info;
+    int err;
+
+    if (rss_n_rxq == 1 && verbose) {
+        VLOG_INFO("%s: cp-protection: redirecting other traffic to queue 0",
+            netdev_get_name(&dev->up));
+    } else if (verbose) {
+        VLOG_INFO("%s: cp-protection: applying rss on queues 0-%d",
+            netdev_get_name(&dev->up), rss_n_rxq - 1);
+    }
+
+    err = rte_eth_dev_info_get(dev->port_id, &info);
+    if (err < 0) {
+        goto out;
+    }
+
+    if (info.reta_size % rss_n_rxq != 0 &&
+        info.reta_size < RTE_ETH_RSS_RETA_SIZE_128) {
+        /*
+         * Some drivers set reta_size equal to the total number of rxqs that
+         * are configured when it is a power of two. Since we are actually
+         * reconfiguring the redirection table to exclude the last rxq, we may
+         * end up with an imbalanced redirection table. For example, such
+         * configuration:
+         *
+         *   options:n_rxq=3 options:cp-protection=lacp
+         *
+         * Will actually configure 4 rxqs on the NIC, and the default reta to:
+         *
+         *   [0, 1, 2, 3]
+         *
+         * And dpdk_cp_prot_rss_configure() will reconfigure reta to:
+         *
+         *   [0, 1, 2, 0]
+         *
+         * Causing queue 0 to receive twice as much traffic as queues 1 and 2.
+         *
+         * Work around that corner case by forcing a bigger redirection table
+         * size to 128 entries when reta_size is not a multiple of rss_n_rxq
+         * and when reta_size is less than 128. This value seems to be
+         * supported by most of the drivers that also support rte flow.
+         */
+        info.reta_size = RTE_ETH_RSS_RETA_SIZE_128;
+    }
+
+    memset(reta_conf, 0, sizeof(reta_conf));
+    for (uint16_t i = 0; i < info.reta_size; i++) {
+        uint16_t idx = i / RTE_ETH_RETA_GROUP_SIZE;
+        uint16_t shift = i % RTE_ETH_RETA_GROUP_SIZE;
+        reta_conf[idx].mask |= 1ULL << shift;
+        reta_conf[idx].reta[shift] = i % rss_n_rxq;
+    }
+    err = rte_eth_dev_rss_reta_update(dev->port_id, reta_conf, info.reta_size);
+
+out:
+    if (err < 0) {
+        VLOG_WARN("%s: failed to configure RSS redirection table: err=%d",
+            netdev_get_name(&dev->up), err);
+    }
+    return err;
+}
+
+static int
+dpdk_cp_prot_configure(struct netdev_dpdk *dev, bool dry_run)
+{
+    int err = 0;
+
+    if (dev->up.n_rxq < 2) {
+        err = ENOTSUP;
+        VLOG_WARN("%s: cp-protection: not enough available rx queues",
+            netdev_get_name(&dev->up));
+        goto out;
+    }
+
+    if (dev->requested_cp_prot_flags & DPDK_CP_PROT_LACP) {
+        err = dpdk_cp_prot_add_traffic_flow(
+            dev,
+            (const struct rte_flow_item []) {
+                {
+                    .type = RTE_FLOW_ITEM_TYPE_ETH,
+                    .spec = &(const struct rte_flow_item_eth){
+                        .type = htons(ETH_TYPE_LACP),
+                    },
+                    .mask = &(const struct rte_flow_item_eth){
+                        .type = htons(0xffff),
+                    },
+                },
+                { .type = RTE_FLOW_ITEM_TYPE_END },
+            },
+            "lacp",
+            dry_run
+        );
+        if (err) {
+            goto out;
+        }
+    }
+
+    if (!dry_run && dev->cp_prot_flows_num) {
+        /* reconfigure RSS reta in all but the cp protection queue */
+        err = dpdk_cp_prot_rss_configure(dev, dev->up.n_rxq - 1, true);
+    }
+
+out:
+    return err;
+}
+
+static void
+dpdk_cp_prot_unconfigure(struct netdev_dpdk *dev)
+{
+    struct rte_flow_error error;
+
+    if (dev->cp_prot_flows_num == 0) {
+        return;
+    }
+
+    VLOG_DBG("%s: cp-protection: reset flows", netdev_get_name(&dev->up));
+
+    for (int i = 0; i < dev->cp_prot_flows_num; i++) {
+        if (rte_flow_destroy(dev->port_id, dev->cp_prot_flows[i], &error)) {
+            VLOG_DBG("%s: cp-protection: failed to destroy flow: %s",
+                netdev_get_name(&dev->up), error.message);
+        }
+    }
+    free(dev->cp_prot_flows);
+    dev->cp_prot_flows_num = 0;
+    dev->cp_prot_flows = NULL;
+
+    (void) dpdk_cp_prot_rss_configure(dev, dev->up.n_rxq, false);
+}
+
+static int
 netdev_dpdk_reconfigure(struct netdev *netdev)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
@@ -4941,6 +5224,7 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
 
     if (netdev->n_txq == dev->requested_n_txq
         && netdev->n_rxq == dev->requested_n_rxq
+        && dev->cp_prot_flags == dev->requested_cp_prot_flags
         && dev->mtu == dev->requested_mtu
         && dev->lsc_interrupt_mode == dev->requested_lsc_interrupt_mode
         && dev->rxq_size == dev->requested_rxq_size
@@ -4967,6 +5251,8 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
     if (err && err != EEXIST) {
         goto out;
     }
+
+    dpdk_cp_prot_unconfigure(dev);
 
     dev->lsc_interrupt_mode = dev->requested_lsc_interrupt_mode;
 
@@ -5012,6 +5298,29 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
     if (!dev->tx_q) {
         err = ENOMEM;
     }
+    if (!err && dev->requested_cp_prot_flags &&
+            !(dev->requested_cp_prot_flags & DPDK_CP_PROT_UNSUPPORTED)) {
+        /* dry run first */
+        err = dpdk_cp_prot_configure(dev, true);
+        if (!err) {
+            /* if no error, apply configuration */
+            err = dpdk_cp_prot_configure(dev, false);
+        }
+        if (err) {
+            /* no hw support, disable & recover gracefully */
+            err = 0;
+            dev->requested_cp_prot_flags |= DPDK_CP_PROT_UNSUPPORTED;
+            /*
+             * The extra queue must be explicitly removed here to ensure that
+             * it is unconfigured immediately.
+             */
+            dev->requested_n_rxq -= 1;
+            netdev_request_reconfigure(netdev);
+        }
+    } else if (dev->cp_prot_flags != dev->requested_cp_prot_flags) {
+        VLOG_INFO("%s: cp-protection: disabled", netdev_get_name(&dev->up));
+    }
+    dev->cp_prot_flags = dev->requested_cp_prot_flags;
 
     netdev_change_seq_changed(netdev);
 
@@ -5213,7 +5522,13 @@ netdev_dpdk_flow_api_supported(struct netdev *netdev)
     ovs_mutex_lock(&dev->mutex);
     if (dev->type == DPDK_DEV_ETH) {
         /* TODO: Check if we able to offload some minimal flow. */
-        ret = true;
+        if (dev->requested_cp_prot_flags) {
+            VLOG_WARN(
+                "%s: hw-offload is mutually exclusive with cp-protection",
+                netdev_get_name(netdev));
+        } else {
+            ret = true;
+        }
     }
     ovs_mutex_unlock(&dev->mutex);
 out:
