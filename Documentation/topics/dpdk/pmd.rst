@@ -312,6 +312,10 @@ If not set, the default variance improvement threshold is 25%.
     when all PMD threads are running on cores from a single NUMA node. In this
     case cross-NUMA datapaths will not change after reassignment.
 
+    For the same reason, please ensure that the pmd threads are pinned to SMT
+    siblings if HyperThreading is enabled. Otherwise, PMDs within a NUMA may
+    not have the same performance.
+
 The minimum time between 2 consecutive PMD auto load balancing iterations can
 also be configured by::
 
