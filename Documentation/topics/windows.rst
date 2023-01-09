@@ -190,8 +190,8 @@ the kernel datapath and was ported independently of the kernel datapath effort.
 
 As explained in the OVS porting design document [7]_, DPIF is the portion of
 userspace that interfaces with the kernel portion of the OVS. The interface
-that each DPIF provider has to implement is defined in ``dpif-provider.h``
-[3]_.  Though each platform is allowed to have its own implementation of the
+that each DPIF provider has to implement is defined in ``dpif-provider.h``.
+Though each platform is allowed to have its own implementation of the
 DPIF provider, it was found, via community feedback, that it is desired to
 share code whenever possible. Thus, the DPIF provider for OVS on Hyper-V shares
 code with the DPIF provider on Linux. This interface is implemented in
@@ -501,7 +501,6 @@ References
 
 .. [1] Hyper-V Extensible Switch https://msdn.microsoft.com/windows/hardware/drivers/network/hyper-v-extensible-switch
 .. [2] Hyper-V Extensible Switch Extensions https://msdn.microsoft.com/windows/hardware/drivers/network/hyper-v-extensible-switch-extensions
-.. [3] DPIF Provider http://openvswitch.sourcearchive.com/documentation/1.1.0-1/dpif-provider_8h_source.html
 .. [4] Hyper-V Extensible Switch Components https://msdn.microsoft.com/windows/hardware/drivers/network/hyper-v-extensible-switch-components
 .. [5] Windows Filtering Platform https://msdn.microsoft.com/en-us/library/windows/desktop/aa366510(v=vs.85).aspx
 .. [6] IP Helper https://msdn.microsoft.com/windows/hardware/drivers/network/ip-helper
