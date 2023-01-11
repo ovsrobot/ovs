@@ -535,6 +535,21 @@ missing_operator_error(const char *arg, const char **allowed_operators,
     return ds_steal_cstr(&s);
 }
 
+static char * OVS_WARN_UNUSED_RESULT
+generate_choices_str(char *choices[], int choice_size, char *valuep)
+{
+    struct ds s;
+    ds_init(&s);
+
+    ds_put_format(&s, "Could not find choice \"%s\". ", valuep);
+    ds_put_format(&s, "Your choices are ");
+    for (int choice = 0; choice < choice_size; choice++) {
+        ds_put_format(&s, "%s, ", choices[choice]);
+    }
+
+    return ds_steal_cstr(&s);
+}
+
 /* Breaks 'arg' apart into a number of fields in the following order:
  *
  *      - The name of a column in 'table', stored into '*columnp'.  The column
@@ -561,8 +576,20 @@ parse_column_key_value(const char *arg,
                        const char **allowed_operators, size_t n_allowed,
                        char **valuep)
 {
+    char *tc_policy_choices[] = {"skip_sw", "skip_hw", "none"};
+    char *hw_offload_choices[] = {"true", "false", "0", "1"};
+    int hw_size = ARRAY_SIZE(hw_offload_choices);
+    int tc_size = ARRAY_SIZE(tc_policy_choices);
+
+    const char *TX_FLUSH = "tx-flush-interval";
+    const char *HW_OFFLOAD = "hw-offload";
+    const char *TC_POLICY = "tc-policy";
+    int mintx_flush_interval_max = 1000000;
+    int mintx_flush_interval_min = 0;
+
     const char *p = arg;
     char *column_name;
+    char *choicep;
     char *error;
 
     ovs_assert(!(operatorp && !valuep));
@@ -635,6 +662,46 @@ parse_column_key_value(const char *arg,
             goto error;
         }
     }
+
+    bool invalid = false;
+    if (!strncmp(*keyp, TC_POLICY, strlen(TC_POLICY))) {
+        invalid = true;
+        for (int choice = 0; choice < tc_size; choice++) {
+            choicep = tc_policy_choices[choice];
+            if (!strncmp(*valuep, choicep, strlen(choicep))) {
+                invalid = false;
+            }
+        }
+        if (invalid) {
+            error = xasprintf("%s", generate_choices_str(tc_policy_choices,
+                                                         tc_size, *valuep));
+            goto error;
+        }
+    } else if (!strncmp(*keyp, HW_OFFLOAD, strlen(HW_OFFLOAD))) {
+        invalid = true;
+        for (int choice = 0; choice < hw_size; choice++) {
+            choicep = hw_offload_choices[choice];
+            if (!strncmp(*valuep, choicep, strlen(choicep))) {
+                invalid = false;
+            }
+        }
+        if (invalid) {
+            error = xasprintf("%s", generate_choices_str(hw_offload_choices,
+                                                         hw_size, *valuep));
+            goto error;
+        }
+    } else if (!strncmp(*keyp, TX_FLUSH, strlen(TX_FLUSH))) {
+        long int_value = atol(*valuep);
+        if (int_value < mintx_flush_interval_min ||
+            int_value > mintx_flush_interval_max) {
+            error = xasprintf("The value %ld is not in the range [%d, %d] "
+                              "required for %s", int_value,
+                              mintx_flush_interval_min,
+                              mintx_flush_interval_max, *keyp);
+            goto error;
+        }
+    }
+
     return NULL;
 
  error:
