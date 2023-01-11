@@ -204,7 +204,7 @@ dummy_packet_stream_create(struct stream *stream)
 {
     struct dummy_packet_stream *s;
 
-    s = xzalloc(sizeof *s);
+    s = xzalloc_cacheline(sizeof *s);
     dummy_packet_stream_init(s, stream);
 
     return s;
@@ -469,7 +469,7 @@ dummy_pconn_run(struct netdev_dummy *dev)
         pconn->streams = xrealloc(pconn->streams,
                                 ((pconn->n_streams + 1)
                                  * sizeof s));
-        s = xmalloc(sizeof *s);
+        s = xzalloc_cacheline(sizeof *s);
         pconn->streams[pconn->n_streams++] = s;
         dummy_packet_stream_init(s, new_stream);
     } else if (error != EAGAIN) {
