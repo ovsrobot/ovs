@@ -17,6 +17,7 @@
 #define OVS_OFP_CT_UTIL_H
 
 #include "ct-dpif.h"
+#include "openflow/nicira-ext.h"
 #include "openvswitch/ofp-util.h"
 
 bool ofputil_ct_match_cmp(const struct ofputil_ct_match *match,
@@ -36,5 +37,13 @@ bool ofputil_ct_tuple_parse(struct ofputil_ct_tuple *tuple, const char *s,
                             uint16_t *l3_type);
 
 bool ofputil_is_ct_match_zero(const struct ofputil_ct_match *match);
+
+enum ofperr ofputil_ct_match_decode(struct ofputil_ct_match *match,
+                                    bool *with_zone, uint16_t *zone_id,
+                                    const struct ofp_header *oh);
+
+void ofputil_ct_tuple_encode(const struct ofputil_ct_tuple *tuple,
+                             struct ofpbuf *buf,
+                             enum nx_ct_flush_tlv_type type, uint8_t ip_proto);
 
 #endif /* lib/ofp-ct-util.h */

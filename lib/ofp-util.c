@@ -31,6 +31,7 @@
 #include "multipath.h"
 #include "netdev.h"
 #include "nx-match.h"
+#include "ofp-ct-util.h"
 #include "id-pool.h"
 #include "openflow/netronome-ext.h"
 #include "openvswitch/dynamic-string.h"
@@ -236,4 +237,27 @@ ofputil_encode_barrier_request(enum ofp_version ofp_version)
     }
 
     return ofpraw_alloc(type, ofp_version, 0);
+}
+
+struct ofpbuf *
+ofputil_ct_match_encode(const struct ofputil_ct_match *match,
+                        uint16_t *zone_id, enum ofp_version version)
+{
+    struct ofpbuf *msg = ofpraw_alloc(OFPRAW_NXT_CT_FLUSH, version, 0);
+    struct nx_ct_flush *nx_flush = ofpbuf_put_zeros(msg, sizeof *nx_flush);
+    const struct ofputil_ct_tuple *orig = &match->tuple_orig;
+    const struct ofputil_ct_tuple *reply = &match->tuple_reply;
+
+    nx_flush->ip_proto = match->ip_proto;
+
+    ofputil_ct_tuple_encode(orig, msg, NXT_CT_ORIG_DIRECTION,
+                            match->ip_proto);
+    ofputil_ct_tuple_encode(reply, msg, NXT_CT_REPLY_DIRECTION,
+                            match->ip_proto);
+
+    if (zone_id) {
+        ofpprop_put_u16(msg, NXT_CT_ZONE_ID, *zone_id);
+    }
+
+    return msg;
 }

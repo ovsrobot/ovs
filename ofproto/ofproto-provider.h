@@ -49,6 +49,7 @@
 #include "openvswitch/ofp-port.h"
 #include "openvswitch/ofp-switch.h"
 #include "openvswitch/ofp-table.h"
+#include "openvswitch/ofp-util.h"
 #include "ovs-atomic.h"
 #include "ovs-rcu.h"
 #include "ovs-thread.h"
@@ -1902,8 +1903,10 @@ struct ofproto_class {
 /* ## Connection tracking ## */
 /* ## ------------------- ## */
     /* Flushes the connection tracking tables. If 'zone' is not NULL,
-     * only deletes connections in '*zone'. */
-    void (*ct_flush)(const struct ofproto *, const uint16_t *zone);
+     * only deletes connections in '*zone'. If 'match' is not NULL,
+     * deletes connections specified by the match. */
+    void (*ct_flush)(const struct ofproto *, const uint16_t *zone,
+                     const struct ofputil_ct_match *match);
 
     /* Sets conntrack timeout policy specified by 'timeout_policy' to 'zone'
      * in datapath type 'dp_type'. */

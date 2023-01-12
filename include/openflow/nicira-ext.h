@@ -1064,4 +1064,45 @@ struct nx_zone_id {
 };
 OFP_ASSERT(sizeof(struct nx_zone_id) == 8);
 
+/* CT flush available TLVs. */
+enum nx_ct_flush_tlv_type {
+    /* Outer types. */
+    NXT_CT_ORIG_DIRECTION = 0,/* CT orig direction outer type. */
+    NXT_CT_REPLY_DIRECTION,   /* CT reply direction outer type. */
+
+    /* Primitive types. */
+    NXT_CT_ZONE_ID,           /* CT zone id. */
+};
+
+/* CT flush nested TLVs. */
+enum nx_ct_flush_nested_tlv_type {
+    NXT_CT_SRC = 0,           /* CT source IPv6 or mapped IPv4 address. */
+    NXT_CT_DST,               /* CT destination IPv6 or mapped IPv4 address. */
+    NXT_CT_SRC_PORT,          /* CT source port. */
+    NXT_CT_DST_PORT,          /* CT destination port. */
+    NXT_CT_ICMP_ID,           /* CT ICMP id. */
+    NXT_CT_ICMP_TYPE,         /* CT ICMP type. */
+    NXT_CT_ICMP_CODE,         /* CT ICMP code. */
+};
+
+/* NXT_CT_FLUSH.
+ *
+ * Flushes the connection tracking specified by 5-tuple.
+ * The struct should be followed by TLVs specifying the matching parameters. */
+struct nx_ct_flush {
+    uint8_t ip_proto;          /* IP protocol. */
+    uint8_t pad[7];           /* Must be zero. */
+    /* Followed by optional TLVs specifying the matching parameters.
+     *  - Regular TLV containing be16.
+     *  - Nested TLV (original/reply) direction containing on or more:
+     *      - IPv6 or mapped IPv4 source IP.
+     *      - IPv6 or mapped IPv4 destination IP.
+     *      - be16 source port.
+     *      - be16 destination port.
+     *      - be16 ICMP id.
+     *      - u8 ICMP type.
+     *      - u8 ICMP code. */
+};
+OFP_ASSERT(sizeof(struct nx_ct_flush) == 8);
+
 #endif /* openflow/nicira-ext.h */
