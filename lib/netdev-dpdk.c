@@ -49,6 +49,7 @@
 #include "dpif-netdev.h"
 #include "fatal-signal.h"
 #include "if-notifier.h"
+#include "mpsc-queue.h"
 #include "netdev-provider.h"
 #include "netdev-vport.h"
 #include "odp-util.h"
@@ -4255,30 +4256,37 @@ destroy_device(int vid)
     }
 }
 
-static int
-vring_state_changed(int vid, uint16_t queue_id, int enable)
+static struct mpsc_queue vhost_state_change_queue
+    = MPSC_QUEUE_INITIALIZER(&vhost_state_change_queue);
+
+struct vhost_state_change {
+    struct mpsc_queue_node node;
+    char ifname[IF_NAME_SZ];
+    uint16_t queue_id;
+    int enable;
+};
+
+static void
+vring_state_changed__(struct vhost_state_change *sc)
 {
     struct netdev_dpdk *dev;
     bool exists = false;
-    int qid = queue_id / VIRTIO_QNUM;
-    bool is_rx = (queue_id % VIRTIO_QNUM) == VIRTIO_TXQ;
-    char ifname[IF_NAME_SZ];
-
-    rte_vhost_get_ifname(vid, ifname, sizeof ifname);
+    int qid = sc->queue_id / VIRTIO_QNUM;
+    bool is_rx = (sc->queue_id % VIRTIO_QNUM) == VIRTIO_TXQ;
 
     ovs_mutex_lock(&dpdk_mutex);
     LIST_FOR_EACH (dev, list_node, &dpdk_list) {
         ovs_mutex_lock(&dev->mutex);
-        if (nullable_string_is_equal(ifname, dev->vhost_id)) {
+        if (nullable_string_is_equal(sc->ifname, dev->vhost_id)) {
             if (is_rx) {
                 bool old_state = dev->vhost_rxq_enabled[qid];
 
-                dev->vhost_rxq_enabled[qid] = enable != 0;
+                dev->vhost_rxq_enabled[qid] = sc->enable != 0;
                 if (old_state != dev->vhost_rxq_enabled[qid]) {
                     netdev_change_seq_changed(&dev->up);
                 }
             } else {
-                if (enable) {
+                if (sc->enable) {
                     dev->tx_q[qid].map = qid;
                 } else {
                     dev->tx_q[qid].map = OVS_VHOST_QUEUE_DISABLED;
@@ -4295,11 +4303,41 @@ vring_state_changed(int vid, uint16_t queue_id, int enable)
 
     if (exists) {
         VLOG_INFO("State of queue %d ( %s_qid %d ) of vhost device '%s' "
-                  "changed to \'%s\'", queue_id, is_rx == true ? "rx" : "tx",
-                  qid, ifname, (enable == 1) ? "enabled" : "disabled");
+                  "changed to \'%s\'", sc->queue_id, is_rx ? "rx" : "tx",
+                  qid, sc->ifname, sc->enable == 1 ? "enabled" : "disabled");
     } else {
-        VLOG_INFO("vHost Device '%s' not found", ifname);
-        return -1;
+        VLOG_INFO("vHost Device '%s' not found", sc->ifname);
+    }
+}
+
+static void
+netdev_dpdk_vhost_run(const struct netdev_class *netdev_class OVS_UNUSED)
+{
+    struct mpsc_queue_node *node;
+
+    mpsc_queue_acquire(&vhost_state_change_queue);
+    MPSC_QUEUE_FOR_EACH_POP (node, &vhost_state_change_queue) {
+        struct vhost_state_change *sc;
+
+        sc = CONTAINER_OF(node, struct vhost_state_change, node);
+        vring_state_changed__(sc);
+        free(sc);
+    }
+    mpsc_queue_release(&vhost_state_change_queue);
+}
+
+static int
+vring_state_changed(int vid, uint16_t queue_id, int enable)
+{
+    struct vhost_state_change *sc;
+
+    sc = xmalloc(sizeof *sc);
+    if (!rte_vhost_get_ifname(vid, sc->ifname, sizeof sc->ifname)) {
+        sc->queue_id = queue_id;
+        sc->enable = enable;
+        mpsc_queue_insert(&vhost_state_change_queue, &sc->node);
+    } else {
+        free(sc);
     }
 
     return 0;
@@ -5766,6 +5804,7 @@ static const struct netdev_class dpdk_vhost_class = {
 static const struct netdev_class dpdk_vhost_client_class = {
     .type = "dpdkvhostuserclient",
     NETDEV_DPDK_CLASS_COMMON,
+    .run = netdev_dpdk_vhost_run,
     .construct = netdev_dpdk_vhost_client_construct,
     .destruct = netdev_dpdk_vhost_destruct,
     .set_config = netdev_dpdk_vhost_client_set_config,
