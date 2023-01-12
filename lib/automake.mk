@@ -226,6 +226,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/ofp-actions.c \
 	lib/ofp-bundle.c \
 	lib/ofp-connection.c \
+	lib/ofp-ct-util.c \
+	lib/ofp-ct-util.h \
 	lib/ofp-ed-props.c \
 	lib/ofp-errors.c \
 	lib/ofp-flow.c \

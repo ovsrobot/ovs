@@ -19,6 +19,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+
 #include "openvswitch/ofp-protocol.h"
 
 struct ofp_header;
@@ -26,6 +29,31 @@ struct ofp_header;
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct ofputil_ct_tuple {
+    struct in6_addr src;
+    struct in6_addr dst;
+
+    union {
+        ovs_be16 src_port;
+        ovs_be16 icmp_id;
+    };
+    union {
+        ovs_be16 dst_port;
+        struct {
+            uint8_t icmp_code;
+            uint8_t icmp_type;
+        };
+    };
+};
+
+struct ofputil_ct_match {
+    uint8_t ip_proto;
+    uint16_t l3_type;
+
+    struct ofputil_ct_tuple tuple_orig;
+    struct ofputil_ct_tuple tuple_reply;
+};
 
 bool ofputil_decode_hello(const struct ofp_header *,
                           uint32_t *allowed_versions);
