@@ -185,9 +185,6 @@ struct dp_netdev_pmd_thread {
      * than 'cmap_count(dp->poll_threads)'. */
     uint32_t static_tx_qid;
 
-    /* Number of filled output batches. */
-    int n_output_batches;
-
     struct ovs_mutex port_mutex;    /* Mutex for 'poll_list' and 'tx_ports'. */
     /* List of rx queues to poll. */
     struct hmap poll_list OVS_GUARDED;
@@ -212,6 +209,10 @@ struct dp_netdev_pmd_thread {
      * other instance will only be accessed by its own pmd thread. */
     struct hmap tnl_port_cache;
     struct hmap send_port_cache;
+
+    /* Keep track of the ports with buffered output packets in
+     * send_port_cache. */
+    struct ovs_list pending_tx_ports;
 
     /* Keep track of detailed PMD performance statistics. */
     struct pmd_perf_stats perf_stats;
