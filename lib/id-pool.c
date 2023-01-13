@@ -17,25 +17,20 @@
 
 #include <config.h>
 #include "id-pool.h"
-#include "openvswitch/hmap.h"
-#include "hash.h"
+#include "bitmap.h"
 
-struct id_node {
-    struct hmap_node node;
-    uint32_t id;
-};
+#define ID_POOL_BASE_ALLOC 64
 
 struct id_pool {
-    struct hmap map;
+    unsigned long *bitmap;
+    uint32_t bitmap_size;  /* Current highest offset the bitmap can hold */
     uint32_t base;         /* IDs in the range of [base, base + n_ids). */
     uint32_t n_ids;        /* Total number of ids in the pool. */
-    uint32_t next_free_id; /* Possible next free id. */
 };
 
 static void id_pool_init(struct id_pool *pool,
                          uint32_t base, uint32_t n_ids);
 static void id_pool_uninit(struct id_pool *pool);
-static struct id_node *id_pool_find(struct id_pool *pool, uint32_t id);
 
 struct id_pool *
 id_pool_create(uint32_t base, uint32_t n_ids)
@@ -62,96 +57,81 @@ id_pool_init(struct id_pool *pool, uint32_t base, uint32_t n_ids)
 {
     pool->base = base;
     pool->n_ids = n_ids;
-    pool->next_free_id = base;
-    hmap_init(&pool->map);
+    pool->bitmap_size = MIN(n_ids, ID_POOL_BASE_ALLOC);
+    pool->bitmap = bitmap_allocate(pool->bitmap_size);
 }
 
 static void
 id_pool_uninit(struct id_pool *pool)
 {
-    struct id_node *id_node;
-
-    HMAP_FOR_EACH_POP(id_node, node, &pool->map) {
-        free(id_node);
-    }
-
-    hmap_destroy(&pool->map);
+    free(pool->bitmap);
+    pool->bitmap = NULL;
 }
 
-static struct id_node *
-id_pool_find(struct id_pool *pool, uint32_t id)
+static bool
+id_pool_expand(struct id_pool *pool, uint32_t target)
 {
-    size_t hash;
-    struct id_node *id_node;
-
-    hash = hash_int(id, 0);
-    HMAP_FOR_EACH_WITH_HASH(id_node, node, hash, &pool->map) {
-        if (id == id_node->id) {
-            return id_node;
-        }
+    if (target >= pool->n_ids) {
+        return false;
     }
-    return NULL;
+
+    uint32_t new_bitmap_size = MAX(pool->bitmap_size * 2, target);
+    new_bitmap_size = MAX(new_bitmap_size, pool->n_ids);
+    unsigned long *new_bitmap = bitmap_allocate(new_bitmap_size);
+
+    memcpy(new_bitmap, pool->bitmap, bitmap_n_bytes(pool->bitmap_size));
+
+    id_pool_uninit(pool);
+    pool->bitmap = new_bitmap;
+    pool->bitmap_size = new_bitmap_size;
+    return true;
+}
+
+static bool
+id_pool_add__(struct id_pool *pool, uint32_t offset)
+{
+    if (offset >= pool->n_ids) {
+        return false;
+    }
+
+    if (offset >= pool->bitmap_size && !id_pool_expand(pool, offset)) {
+        return false;
+    }
+
+    bitmap_set1(pool->bitmap, offset);
+    return true;
 }
 
 void
 id_pool_add(struct id_pool *pool, uint32_t id)
 {
-    struct id_node *id_node = xmalloc(sizeof *id_node);
-    size_t hash;
+    if (id < pool->base) {
+        return;
+    }
 
-    id_node->id = id;
-    hash = hash_int(id, 0);
-    hmap_insert(&pool->map, &id_node->node, hash);
+    id_pool_add__(pool, id - pool->base);
 }
 
 bool
 id_pool_alloc_id(struct id_pool *pool, uint32_t *id_)
 {
-    uint32_t id;
+    size_t offset;
 
     if (pool->n_ids == 0) {
         return false;
     }
 
-    if (!(id_pool_find(pool, pool->next_free_id))) {
-        id = pool->next_free_id;
-        goto found_free_id;
+    offset = bitmap_scan(pool->bitmap, 0, 0, pool->bitmap_size);
+    if (!id_pool_add__(pool, offset)) {
+        return false;
     }
 
-    for(id = pool->base; id < pool->base + pool->n_ids; id++) {
-        if (!id_pool_find(pool, id)) {
-            goto found_free_id;
-        }
-    }
-
-    /* Not available. */
-    return false;
-
-found_free_id:
-    id_pool_add(pool, id);
-
-    if (id + 1 < pool->base + pool->n_ids) {
-        pool->next_free_id = id + 1;
-    } else {
-        pool->next_free_id = pool->base;
-    }
-
-    *id_ = id;
+    *id_ = offset + pool->base;
     return true;
 }
 
 void
 id_pool_free_id(struct id_pool *pool, uint32_t id)
 {
-    struct id_node *id_node;
-    if (id >= pool->base && (id < pool->base + pool->n_ids)) {
-        id_node = id_pool_find(pool, id);
-        if (id_node) {
-            hmap_remove(&pool->map, &id_node->node);
-            if (id < pool->next_free_id) {
-                pool->next_free_id = id;
-            }
-            free(id_node);
-        }
-    }
+    bitmap_set0(pool->bitmap, id - pool->base);
 }
