@@ -36,6 +36,12 @@ Post-v3.0.0
    - ovs-dpctl and 'ovs-appctl dpctl/' commands:
      * "flush-conntrack" is now capable of handling partial 5-tuple,
         with additional optional parameter to specify the reply direction.
+   - OpenFlow:
+     * New OpenFlow extension NXT_CT_FLUSH to flush connections matching
+       the specified fields.
+   - ovs-ofctl:
+     * New command "flush-conntrack" that accepts zone and 5-tuple or partial
+       5-tuple for both directions.
 
 
 v3.0.0 - 15 Aug 2022
