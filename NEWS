@@ -33,6 +33,9 @@ Post-v3.0.0
      * Add new experimental PMD load based sleeping feature. PMD threads can
        request to sleep up to a user configured 'pmd-maxsleep' value under
        low load conditions.
+   - ovs-dpctl and 'ovs-appctl dpctl/' commands:
+     * "flush-conntrack" is now capable of handling partial 5-tuple,
+        with additional optional parameter to specify the reply direction.
 
 
 v3.0.0 - 15 Aug 2022
