@@ -33,6 +33,8 @@ Post-v3.0.0
      * Add new experimental PMD load based sleeping feature. PMD threads can
        request to sleep up to a user configured 'pmd-maxsleep' value under
        low load conditions.
+   - IPFIX template and statistics intervals can be configured through two new
+       options in the IPFIX table: 'template_interval' and 'stats_interval'.
 
 
 v3.0.0 - 15 Aug 2022
