@@ -46,6 +46,8 @@ v3.1.0 - xx xxx xxxx
      * Add new experimental PMD load based sleeping feature. PMD threads can
        request to sleep up to a user configured 'pmd-maxsleep' value under
        low load conditions.
+   - SRv6 Tunnel Protocol
+     * Only support for userspace datapath.
 
 
 v3.0.0 - 15 Aug 2022
