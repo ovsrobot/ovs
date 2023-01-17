@@ -3617,20 +3617,24 @@ propagate_tunnel_data_to_flow(struct xlate_ctx *ctx, struct eth_addr dmac,
     struct flow *base_flow, *flow;
     flow = &ctx->xin->flow;
     base_flow = &ctx->base_flow;
-    uint8_t nw_proto = 0;
+    uint8_t nw_protos[2] = {0};
 
     switch (tnl_type) {
     case OVS_VPORT_TYPE_GRE:
     case OVS_VPORT_TYPE_ERSPAN:
     case OVS_VPORT_TYPE_IP6ERSPAN:
     case OVS_VPORT_TYPE_IP6GRE:
-        nw_proto = IPPROTO_GRE;
+        nw_protos[0] = IPPROTO_GRE;
         break;
     case OVS_VPORT_TYPE_VXLAN:
     case OVS_VPORT_TYPE_GENEVE:
     case OVS_VPORT_TYPE_GTPU:
     case OVS_VPORT_TYPE_BAREUDP:
-        nw_proto = IPPROTO_UDP;
+        nw_protos[0] = IPPROTO_UDP;
+        break;
+    case OVS_VPORT_TYPE_SRV6:
+        nw_protos[0] = IPPROTO_IPIP;
+        nw_protos[1] = IPPROTO_IPV6;
         break;
     case OVS_VPORT_TYPE_LISP:
     case OVS_VPORT_TYPE_STT:
@@ -3645,10 +3649,10 @@ propagate_tunnel_data_to_flow(struct xlate_ctx *ctx, struct eth_addr dmac,
      * Update base_flow first followed by flow as the dst_flow gets modified
      * in the function.
      */
-    propagate_tunnel_data_to_flow__(base_flow, flow, dmac, smac, s_ip6, s_ip,
-                                    is_tnl_ipv6, nw_proto);
-    propagate_tunnel_data_to_flow__(flow, flow, dmac, smac, s_ip6, s_ip,
-                                    is_tnl_ipv6, nw_proto);
+    propagate_tunnel_data_to_flow__(base_flow, flow, dmac, smac, s_ip6,
+                                    s_ip, is_tnl_ipv6, nw_protos[0]);
+    propagate_tunnel_data_to_flow__(flow, flow, dmac, smac, s_ip6,
+                                    s_ip, is_tnl_ipv6, nw_protos[0]);
 }
 
 static int

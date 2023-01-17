@@ -163,6 +163,7 @@ SYSTEM_USERSPACE_TESTSUITE_AT = \
 	tests/system-userspace-testsuite.at \
 	tests/system-userspace-macros.at \
 	tests/system-userspace-packet-type-aware.at \
+	tests/system-userspace-traffic.at \
 	tests/system-route.at
 
 SYSTEM_TSO_TESTSUITE_AT = \
