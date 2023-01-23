@@ -24,6 +24,7 @@ usdt_SCRIPTS += \
 	utilities/usdt-scripts/bridge_loop.bt \
 	utilities/usdt-scripts/dpif_nl_exec_monitor.py \
 	utilities/usdt-scripts/upcall_cost.py \
+	utilities/usdt-scripts/reval_monitor.py \
 	utilities/usdt-scripts/upcall_monitor.py
 
 completion_SCRIPTS += \
@@ -70,7 +71,8 @@ EXTRA_DIST += \
 	utilities/usdt-scripts/bridge_loop.bt \
 	utilities/usdt-scripts/dpif_nl_exec_monitor.py \
 	utilities/usdt-scripts/upcall_cost.py \
-	utilities/usdt-scripts/upcall_monitor.py
+	utilities/usdt-scripts/upcall_monitor.py \
+	utilities/usdt-scripts/reval_monitor.py
 MAN_ROOTS += \
 	utilities/ovs-testcontroller.8.in \
 	utilities/ovs-dpctl.8.in \
