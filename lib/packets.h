@@ -1146,6 +1146,10 @@ extern const struct in6_addr in6addr_all_routers;
 #define IN6ADDR_ALL_ROUTERS_INIT { { { 0xff,0x02,0x00,0x00,0x00,0x00,0x00,0x00, \
                                        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02 } } }
 
+extern const struct in6_addr in6addr_all_site_routers;
+#define IN6ADDR_ALL_SITE_ROUTERS_INIT { { { 0xff,0x05,0x00,0x00,0x00,0x00,0x00,0x00, \
+                                            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02 } } }
+
 static inline bool ipv6_addr_equals(const struct in6_addr *a,
                                     const struct in6_addr *b)
 {
@@ -1167,6 +1171,14 @@ static inline bool ipv6_mask_is_exact(const struct in6_addr *mask) {
 
 static inline bool ipv6_is_all_hosts(const struct in6_addr *addr) {
     return ipv6_addr_equals(addr, &in6addr_all_hosts);
+}
+
+static inline bool ipv6_is_all_router(const struct in6_addr *addr) {
+    return ipv6_addr_equals(addr, &in6addr_all_routers);
+}
+
+static inline bool ipv6_is_all_site_router(const struct in6_addr *addr) {
+    return ipv6_addr_equals(addr, &in6addr_all_site_routers);
 }
 
 static inline bool ipv6_addr_is_set(const struct in6_addr *addr) {
@@ -1207,6 +1219,7 @@ in6_addr_get_mapped_ipv4(const struct in6_addr *addr)
 
 void in6_addr_solicited_node(struct in6_addr *addr,
                              const struct in6_addr *ip6);
+bool in6_addr_is_solicited_node(struct in6_addr *addr);
 
 void in6_generate_eui64(struct eth_addr ea, const struct in6_addr *prefix,
                         struct in6_addr *lla);

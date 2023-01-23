@@ -38,6 +38,7 @@
 const struct in6_addr in6addr_exact = IN6ADDR_EXACT_INIT;
 const struct in6_addr in6addr_all_hosts = IN6ADDR_ALL_HOSTS_INIT;
 const struct in6_addr in6addr_all_routers = IN6ADDR_ALL_ROUTERS_INIT;
+const struct in6_addr in6addr_all_site_routers = IN6ADDR_ALL_SITE_ROUTERS_INIT;
 
 struct in6_addr
 flow_tnl_dst(const struct flow_tnl *tnl)
@@ -603,6 +604,16 @@ in6_addr_solicited_node(struct in6_addr *addr, const struct in6_addr *ip6)
     taddr->be16[5] = htons(0x1);
     taddr->be16[6] = htons(0xff00);
     memcpy(&addr->s6_addr[13], &ip6->s6_addr[13], 3);
+}
+
+bool
+in6_addr_is_solicited_node(struct in6_addr *addr)
+{
+    union ovs_16aligned_in6_addr *taddr =
+        (union ovs_16aligned_in6_addr *) addr;
+    return taddr->be16[0] ==  htons(0xff02) &&
+           taddr->be16[5] ==  htons(0x1) &&
+           taddr->be16[6] ==  htons(0xff00);
 }
 
 /*
