@@ -38,6 +38,8 @@ function install_dpdk()
             if [ "${VER}" = "${DPDK_VER}" ]; then
                 # Update the library paths.
                 sudo ldconfig
+                # Expose dpdk binaries.
+                export PATH=$(pwd)/dpdk-dir/build/bin:$PATH
                 echo "Found cached DPDK ${VER} build in $(pwd)/dpdk-dir"
                 return
             fi
@@ -64,8 +66,10 @@ function install_dpdk()
 
     # OVS compilation and "normal" unit tests (run in the CI) do not depend on
     # any DPDK driver being present.
-    # We can disable all drivers to save compilation time.
-    DPDK_OPTS="$DPDK_OPTS -Ddisable_drivers=*/*"
+    # check-dpdk unit tests requires testpmd and some net/ driver.
+    # We can disable all drivers but them, in order to save compilation time.
+    DPDK_OPTS="$DPDK_OPTS -Denable_apps=test-pmd"
+    DPDK_OPTS="$DPDK_OPTS -Denable_drivers=net/null,net/tap,net/virtio"
 
     # Install DPDK using prefix.
     DPDK_OPTS="$DPDK_OPTS --prefix=$(pwd)/build"
@@ -76,7 +80,8 @@ function install_dpdk()
 
     # Update the library paths.
     sudo ldconfig
-
+    # Expose dpdk binaries.
+    export PATH=$(pwd)/build/bin:$PATH
 
     echo "Installed DPDK source in $(pwd)"
     popd
@@ -163,7 +168,7 @@ fi
 
 OPTS="${EXTRA_OPTS} ${OPTS} $*"
 
-if [ "$TESTSUITE" ]; then
+if [ "$TESTSUITE" = 'test' ]; then
     # 'distcheck' will reconfigure with required options.
     # Now we only need to prepare the Makefile without sparse-wrapped CC.
     configure_ovs
@@ -173,6 +178,15 @@ if [ "$TESTSUITE" ]; then
         TESTSUITEFLAGS=-j4 RECHECK=yes
 else
     build_ovs
+    if [ -n "$TESTSUITE" ]; then
+        if [ "${TESTSUITE##*dpdk}" != "$TESTSUITE" ]; then
+            sudo sh -c 'echo 1024 > /proc/sys/vm/nr_hugepages' || true
+            [ "$(cat /proc/sys/vm/nr_hugepages)" = '1024' ]
+            export DPDK_EAL_OPTIONS="--lcores 0@1,1@1,2@1"
+        fi
+        sudo -E PATH=$PATH make $TESTSUITE \
+            TESTSUITEFLAGS=-j4 RECHECK=yes
+    fi
 fi
 
 exit 0
