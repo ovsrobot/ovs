@@ -185,6 +185,7 @@ SYSTEM_TESTSUITE_AT = \
 
 SYSTEM_OFFLOADS_TESTSUITE_AT = \
 	tests/system-common-macros.at \
+	tests/system-offloads.at \
 	tests/system-offloads-traffic.at \
 	tests/system-offloads-testsuite.at
 
