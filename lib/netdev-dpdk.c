@@ -508,6 +508,7 @@ struct netdev_dpdk {
         int requested_n_rxq;
         int requested_rxq_size;
         int requested_txq_size;
+        int device_n_txq;
 
         /* Number of rx/tx descriptors for physical devices */
         int rxq_size;
@@ -1124,6 +1125,7 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev, int n_rxq, int n_txq)
 
         dev->up.n_rxq = n_rxq;
         dev->up.n_txq = n_txq;
+        dev->device_n_txq = n_txq;
 
         return 0;
     }
@@ -2133,15 +2135,20 @@ netdev_dpdk_get_numa_id(const struct netdev *netdev)
 static int
 netdev_dpdk_set_tx_multiq(struct netdev *netdev, unsigned int n_txq)
 {
+    unsigned int req_n_txq;
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
 
     ovs_mutex_lock(&dev->mutex);
 
-    if (dev->requested_n_txq == n_txq) {
+    req_n_txq = MIN(n_txq, dev->device_n_txq);
+    if (dev->requested_n_txq == req_n_txq) {
         goto out;
     }
-
-    dev->requested_n_txq = n_txq;
+    if (!dev->device_n_txq) {
+       dev->device_n_txq = 1;
+       req_n_txq = 1;
+    }
+    dev->requested_n_txq = req_n_txq;
     netdev_request_reconfigure(netdev);
 
 out:
