@@ -7644,3 +7644,52 @@ AT_CHECK([test $(tcpdump -r ipfix.pcap --count "udp port 5555 and udp[[20:4]] = 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ipfix - configure template timeout])
+AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24")
+
+dnl Create a dummy IPFIX collector just in localhost so that port seems open.
+OVS_DAEMONIZE([nc -l -u 127.0.0.1 5555 > /dev/null], [nc.pid])
+
+OVS_DAEMONIZE([tcpdump -n -i lo udp port 5555 -w ipfix.pcap], [tcpdump.pid])
+sleep 1
+
+dnl Configure a Flow Sample Collector Set with id = 1.
+AT_CHECK([ovs-vsctl -- --id=@br get Bridge br0 \
+                    -- --id=@i create IPFIX targets=\"127.0.0.1:5555\" template_interval=1 stats_interval=1 \
+                    -- create Flow_Sample_Collector_Set bridge=@br id=1 ipfix=@i],
+         [ignore], [ignore])
+
+dnl Push flows that will allow communication between the network namespaces
+dnl and sample all ICMP traffic with multiple observation domain IDs.
+AT_DATA([flows.txt], [dnl
+table=0,priority=100,in_port=ovs-p0,ip,icmp actions=sample(probability=65535,collector_set_id=1,obs_domain_id=1),NORMAL
+table=0,priority=100,in_port=ovs-p1,ip,icmp actions=sample(probability=65535,collector_set_id=1,obs_domain_id=2),NORMAL
+table=0,priority=0,actions=NORMAL
+])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+NS_CHECK_EXEC([at_ns0], [ping -q -c 5 10.1.1.2 | FORMAT_PING], [0], [dnl
+5 packets transmitted, 5 received, 0% packet loss, time 0ms
+])
+
+sleep 1
+kill $(cat tcpdump.pid)
+wait $(cat tcpdump.pid) 2> /dev/null
+
+dnl Check template (Flow ID = 0x02) with Template ID 256 (the first one) was
+dnl sent to both ObservationDomains at least 4 times.
+AT_CHECK([test $(tcpdump -r ipfix.pcap --count "udp port 5555 and udp[[20:4]] = 0x00000001  and udp[[24:2]] = 0x02 and udp[[28:2]] = 0x0100" 2>/dev/null | tr -d "packets") -ge 4])
+AT_CHECK([test $(tcpdump -r ipfix.pcap --count "udp port 5555 and udp[[20:4]] = 0x00000002  and udp[[24:2]] = 0x02 and udp[[28:2]] = 0x0100" 2>/dev/null | tr -d "packets") -ge 4])
+dnl Check statistics (ObservationDomain = 0 and Template ID = 462) where sent
+dnl sent at least 4 times.
+AT_CHECK([test $(tcpdump -r ipfix.pcap --count "udp port 5555 and udp[[20:4]] = 0x00000000  and udp[[24:2]] = 0x01ce" 2>/dev/null | tr -d "packets") -ge 4])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
