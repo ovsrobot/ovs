@@ -371,3 +371,10 @@ dnl Add a rule to always accept the traffic.
 m4_define([IPTABLES_ACCEPT],
   [AT_CHECK([iptables -I INPUT 1 -i $1 -j ACCEPT])
    on_exit 'iptables -D INPUT 1 -i $1'])
+
+# OVS_TEST_SKIP_LIST()
+m4_define([OVS_TEST_SKIP_LIST], [ echo ""])
+
+# OVS_SKIP_TEST_IF_REQUESTED()
+m4_define([OVS_SKIP_TEST_IF_REQUESTED],
+    [AT_SKIP_IF([OVS_TEST_SKIP_LIST() | grep -qx "$at_desc"])])
