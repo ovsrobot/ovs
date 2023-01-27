@@ -340,6 +340,7 @@ set_defaults () {
     SELF_CONFINEMENT=yes
     MONITOR=yes
     OVS_USER=
+    OVS_UMASK=
     OVSDB_SERVER=yes
     OVS_VSWITCHD=yes
     OVSDB_SERVER_PRIORITY=-10
@@ -421,6 +422,8 @@ Other important options for "start", "restart" and "force-reload-kmod":
                      add given key-value pair to Open_vSwitch external-ids
   --delete-bridges   delete all bridges just before starting ovs-vswitchd
   --ovs-user="user[:group]"  pass the --user flag to ovs daemons
+  --ovs-umask=XXXX  Set umask prior to run OVS daemons.
+                    This is needed to manage socket group permissions.
 
 Less important options for "start", "restart" and "force-reload-kmod":
   --daemon-cwd=DIR               set working dir for OVS daemons (default: $DAEMON_CWD)
@@ -549,6 +552,11 @@ do
             ;;
     esac
 done
+
+if [ -n "$OVS_UMASK" ]; then
+    umask "$OVS_UMASK"
+fi
+
 case $command in
     start)
         start_ovsdb || exit 1
