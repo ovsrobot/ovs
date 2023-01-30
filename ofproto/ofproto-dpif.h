@@ -61,6 +61,7 @@ struct ofproto_dpif;
 struct uuid;
 struct xlate_cache;
 struct xlate_ctx;
+struct id_pool;
 
 /* Number of implemented OpenFlow tables. */
 enum { N_TABLES = 255 };
@@ -260,6 +261,8 @@ struct dpif_backer {
 
     /* Meter. */
     struct id_pool *meter_ids;     /* Datapath meter allocation. */
+    struct hmap fail_meter_hmap;   /* Hashmap for meter with failed deletion
+                                    * in datapath */
 
     /* Connection tracking. */
     struct id_pool *tp_ids;             /* Datapath timeout policy id

@@ -378,6 +378,7 @@
 
 #include "dpdk.h"
 #include "dp-packet.h"
+#include "id-pool.h"
 #include "netdev.h"
 #include "openflow/openflow.h"
 #include "openvswitch/ofp-meter.h"
@@ -905,6 +906,7 @@ int dpif_meter_get(const struct dpif *, ofproto_meter_id meter_id,
                    struct ofputil_meter_stats *, uint16_t n_bands);
 int dpif_meter_del(struct dpif *, ofproto_meter_id meter_id,
                    struct ofputil_meter_stats *, uint16_t n_bands);
+void dpif_meter_revalidate(struct dpif *dpif, struct hmap *meter_map);
 
 /* Bonding. */
 

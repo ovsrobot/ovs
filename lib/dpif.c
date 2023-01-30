@@ -2028,6 +2028,13 @@ dpif_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
     return error;
 }
 
+void
+dpif_meter_revalidate(struct dpif *dpif, struct hmap *meter_map){
+    if (dpif->dpif_class->meter_revalidate) {
+        dpif->dpif_class->meter_revalidate(dpif, meter_map);
+    }
+}
+
 int
 dpif_bond_add(struct dpif *dpif, uint32_t bond_id, odp_port_t *member_map)
 {

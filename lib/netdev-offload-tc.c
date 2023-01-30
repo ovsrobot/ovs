@@ -2980,8 +2980,11 @@ meter_tc_del_policer(ofproto_meter_id meter_id,
                         police_index, meter_id.uint32, ovs_strerror(err));
         } else {
             meter_free_police_index(police_index);
+            /* Do not remove the mapping between meter_id and police_index
+             * until this meter is deleted successfully in datapath. This
+             * mapping will be used in meter deletion in revalidator. */
+            meter_id_remove(meter_id.uint32);
         }
-        meter_id_remove(meter_id.uint32);
     }
 
     return err;

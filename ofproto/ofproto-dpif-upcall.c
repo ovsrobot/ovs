@@ -2828,6 +2828,12 @@ revalidate(struct revalidator *revalidator)
         }
         ovsrcu_quiesce();
     }
+    /* When fail_meter_hmap is not empty, revalidate to delete meters in this
+     * hashmap. */
+    if (hmap_count(&udpif->backer->fail_meter_hmap)) {
+        dpif_meter_revalidate(udpif->dpif, &udpif->backer->fail_meter_hmap);
+    }
+
     dpif_flow_dump_thread_destroy(dump_thread);
     ofpbuf_uninit(&odp_actions);
 }

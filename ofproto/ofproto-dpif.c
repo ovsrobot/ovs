@@ -835,6 +835,7 @@ open_dpif_backer(const char *type, struct dpif_backer **backerp)
     dpif_meter_get_features(backer->dpif, &features);
     if (features.max_meters) {
         backer->meter_ids = id_pool_create(0, features.max_meters);
+        hmap_init(&backer->fail_meter_hmap);
     } else {
         backer->meter_ids = NULL;
     }
@@ -6790,8 +6791,15 @@ static void
 free_meter_id(struct free_meter_id_args *args)
 {
     struct ofproto_dpif *ofproto = args->ofproto;
+    int err;
 
-    dpif_meter_del(ofproto->backer->dpif, args->meter_id, NULL, 0);
+    err = dpif_meter_del(ofproto->backer->dpif, args->meter_id, NULL, 0);
+    /* Add fail deleted meter to fail_meter_hmap and waiting to be deleted in
+     * revalidator. */
+    if (err == EPERM) {
+        id_hmap_add(&ofproto->backer->fail_meter_hmap, args->meter_id.uint32);
+    }
+
     id_pool_free_id(ofproto->backer->meter_ids, args->meter_id.uint32);
     free(args);
 }

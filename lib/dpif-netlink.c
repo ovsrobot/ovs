@@ -25,6 +25,7 @@
 #include <net/if.h>
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
+#include <linux/rtnetlink.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -37,6 +38,7 @@
 #include "dpif-provider.h"
 #include "fat-rwlock.h"
 #include "flow.h"
+#include "id-pool.h"
 #include "netdev-linux.h"
 #include "netdev-offload.h"
 #include "netdev-provider.h"
@@ -61,6 +63,7 @@
 #include "packets.h"
 #include "random.h"
 #include "sset.h"
+#include "tc.h"
 #include "timeval.h"
 #include "unaligned.h"
 #include "util.h"
@@ -4363,10 +4366,30 @@ dpif_netlink_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
     err  = dpif_netlink_meter_get_stats(dpif, meter_id, stats,
                                         max_bands, OVS_METER_CMD_DEL);
     if (!err && netdev_is_flow_api_enabled()) {
-        meter_offload_del(meter_id, stats);
+        return meter_offload_del(meter_id, stats);
     }
 
     return err;
+}
+
+static void
+dpif_netlink_meter_revalidate(struct dpif *dpif_ OVS_UNUSED,
+                              struct hmap *meter_map)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+    ofproto_meter_id meter_id;
+    struct id_node *id_node;
+
+    HMAP_FOR_EACH_POP (id_node, node, meter_map) {
+        meter_id.uint32 = id_node->id;
+
+        if (meter_offload_del(meter_id, NULL) == EPERM) {
+            id_hmap_add(meter_map, meter_id.uint32);
+        } else {
+            VLOG_DBG_RL(&rl, "Delete meter %u in datapath success",
+                        meter_id.uint32);
+        }
+    }
 }
 
 static bool
@@ -4588,6 +4611,7 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_meter_set,
     dpif_netlink_meter_get,
     dpif_netlink_meter_del,
+    dpif_netlink_meter_revalidate,
     NULL,                       /* bond_add */
     NULL,                       /* bond_del */
     NULL,                       /* bond_stats_get */

@@ -241,19 +241,21 @@ int
 meter_offload_del(ofproto_meter_id meter_id, struct ofputil_meter_stats *stats)
 {
     struct netdev_registered_flow_api *rfa;
+    int ret = 0;
 
     CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
         if (rfa->flow_api->meter_del) {
-            int ret = rfa->flow_api->meter_del(meter_id, stats);
-            if (ret) {
+            int err = rfa->flow_api->meter_del(meter_id, stats);
+            if (err) {
                 VLOG_DBG_RL(&rl, "Failed deleting meter %u for flow api %s, "
                             "error %d", meter_id.uint32, rfa->flow_api->type,
                             ret);
+                ret = err;
             }
         }
     }
 
-    return 0;
+    return ret;
 }
 
 int
