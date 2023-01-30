@@ -21,6 +21,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "openvswitch/hmap.h"
+#include "hash.h"
+
+struct id_node {
+    struct hmap_node node;
+    uint32_t id;
+};
 
 struct id_pool;
 

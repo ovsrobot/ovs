@@ -17,13 +17,6 @@
 
 #include <config.h>
 #include "id-pool.h"
-#include "openvswitch/hmap.h"
-#include "hash.h"
-
-struct id_node {
-    struct hmap_node node;
-    uint32_t id;
-};
 
 struct id_pool {
     struct hmap map;
