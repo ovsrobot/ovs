@@ -35,6 +35,7 @@ struct id_pool *id_pool_create(uint32_t base, uint32_t n_ids);
 void id_pool_destroy(struct id_pool *);
 bool id_pool_alloc_id(struct id_pool *, uint32_t *id);
 void id_pool_free_id(struct id_pool *, uint32_t id);
+void id_hmap_add(struct hmap *map, uint32_t id);
 void id_pool_add(struct id_pool *, uint32_t id);
 
 /*

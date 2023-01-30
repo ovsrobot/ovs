@@ -87,14 +87,22 @@ id_pool_find(struct id_pool *pool, uint32_t id)
 }
 
 void
-id_pool_add(struct id_pool *pool, uint32_t id)
+id_hmap_add(struct hmap *map, uint32_t id)
 {
     struct id_node *id_node = xmalloc(sizeof *id_node);
     size_t hash;
 
     id_node->id = id;
     hash = hash_int(id, 0);
-    hmap_insert(&pool->map, &id_node->node, hash);
+    hmap_insert(map, &id_node->node, hash);
+}
+
+void
+id_pool_add(struct id_pool *pool, uint32_t id)
+{
+    struct hmap *map = &pool->map;
+
+    id_hmap_add(map, id);
 }
 
 bool
