@@ -240,8 +240,9 @@ del_filter_and_ufid_mapping(struct tcf_id *id, const ovs_u128 *ufid)
     int err;
 
     err = tc_del_flower_filter(id);
-    if (!err) {
+    if (!err || err == ENODEV) {
         del_ufid_tc_mapping(ufid);
+        return 0;
     }
     return err;
 }
