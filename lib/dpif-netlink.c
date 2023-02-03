@@ -4511,6 +4511,12 @@ dpif_netlink_cache_set_size(struct dpif *dpif_, uint32_t level, uint32_t size)
     return error;
 }
 
+static bool
+dpif_netlink_synced_dp_layers(struct dpif *dpif OVS_UNUSED)
+{
+    return false;
+}
+
 
 const struct dpif_class dpif_netlink_class = {
     "system",
@@ -4544,6 +4550,7 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_flow_dump_next,
     dpif_netlink_operate,
     NULL,                       /* offload_stats_get */
+    dpif_netlink_synced_dp_layers,
     dpif_netlink_recv_set,
     dpif_netlink_handlers_set,
     dpif_netlink_number_handlers_required,

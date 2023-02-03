@@ -9613,6 +9613,12 @@ dpif_netdev_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
     return 0;
 }
 
+static bool
+dpif_netdev_synced_dp_layers(struct dpif *dpif OVS_UNUSED)
+{
+    return true;
+}
+
 const struct dpif_class dpif_netdev_class = {
     "netdev",
     true,                       /* cleanup_required */
@@ -9645,6 +9651,7 @@ const struct dpif_class dpif_netdev_class = {
     dpif_netdev_flow_dump_next,
     dpif_netdev_operate,
     dpif_netdev_offload_stats_get,
+    dpif_netdev_synced_dp_layers,
     NULL,                       /* recv_set */
     NULL,                       /* handlers_set */
     NULL,                       /* number_handlers_required */

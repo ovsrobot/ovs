@@ -338,6 +338,15 @@ struct dpif_class {
     int (*offload_stats_get)(struct dpif *dpif,
                              struct netdev_custom_stats *stats);
 
+    /* This function will return true if the specific dpif implementation
+     * synchronizes the various datapath implementation layers, i.e., the
+     * dpif's layer in combination with the underlying netdev offload layers.
+     * For example, dpif-netlink does not sync its kernel flows with the tc
+     * ones, i.e., only one gets installed. On the other hand, dpif-netdev
+     * installs both flows, and internally keeps track of both, and represents
+     * them as one. */
+    bool (*synced_dp_layers)(struct dpif *dpif);
+
     /* Enables or disables receiving packets with dpif_recv() for 'dpif'.
      * Turning packet receive off and then back on is allowed to change Netlink
      * PID assignments (see ->port_get_pid()).  The client is responsible for

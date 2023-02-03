@@ -2109,3 +2109,10 @@ dpif_cache_set_size(struct dpif *dpif, uint32_t level, uint32_t size)
            ? dpif->dpif_class->cache_set_size(dpif, level, size)
            : EOPNOTSUPP;
 }
+
+bool dpif_synced_dp_layers(struct dpif *dpif)
+{
+    return dpif->dpif_class->synced_dp_layers
+           ? dpif->dpif_class->synced_dp_layers(dpif)
+           : false;
+}
