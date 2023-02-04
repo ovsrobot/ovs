@@ -303,6 +303,10 @@ struct dp_netdev {
     dp_purge_callback *dp_purge_cb;
     void *dp_purge_aux;
 
+    /* Callback function for notifying clean ukey */
+    del_ukey_callback *del_ukey_cb;
+    void *del_ukey_aux;
+
     /* Stores all 'struct dp_netdev_pmd_thread's. */
     struct cmap poll_threads;
     /* id pool for per thread static_tx_qid. */
@@ -1859,6 +1863,7 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
     dp_netdev_disable_upcall(dp);
     dp->upcall_aux = NULL;
     dp->upcall_cb = NULL;
+    dp->del_ukey_cb = NULL;
 
     dp->conntrack = conntrack_init();
 
@@ -3050,6 +3055,62 @@ queue_netdev_flow_put(struct dp_netdev_pmd_thread *pmd,
 
     item->timestamp = pmd->ctx.now;
     dp_netdev_offload_flow_enqueue(item);
+}
+
+static void
+dp_netdev_remove_ukey(struct dp_netdev_flow *flow,
+                      struct dp_netdev_pmd_thread *pmd)
+{
+    struct dp_netdev *dp = pmd->dp;
+
+    if (dp->del_ukey_cb) {
+        dp->del_ukey_cb(dp->del_ukey_aux,flow->ufid,pmd->core_id);
+    }
+}
+
+static void
+dp_netdev_pmd_remove_flow_and_ukey(struct dp_netdev_pmd_thread *pmd,
+                          struct dp_netdev_flow *flow)
+    OVS_REQUIRES(pmd->flow_mutex)
+{
+    struct cmap_node *node = CONST_CAST(struct cmap_node *, &flow->node);
+    struct dpcls *cls;
+    odp_port_t in_port = flow->flow.in_port.odp_port;
+
+    cls = dp_netdev_pmd_lookup_dpcls(pmd, in_port);
+    ovs_assert(cls != NULL);
+    dpcls_remove(cls, &flow->cr);
+    dp_netdev_simple_match_remove(pmd, flow);
+    cmap_remove(&pmd->flow_table, node, dp_netdev_flow_hash(&flow->ufid));
+    ccmap_dec(&pmd->n_flows, odp_to_u32(in_port));
+    queue_netdev_flow_del(pmd, flow);
+    flow->dead = true;
+    dp_netdev_remove_ukey(flow,pmd);
+    dp_netdev_flow_unref(flow);
+}
+
+static void
+dp_netdev_pmd_flow_and_ukey_flush(struct dp_netdev_pmd_thread *pmd)
+{
+    struct dp_netdev_flow *netdev_flow;
+
+    ovs_mutex_lock(&pmd->flow_mutex);
+    CMAP_FOR_EACH (netdev_flow, node, &pmd->flow_table) {
+        dp_netdev_pmd_remove_flow_and_ukey(pmd, netdev_flow);
+    }
+    ovs_mutex_unlock(&pmd->flow_mutex);
+}
+
+static int
+dpif_netdev_flow_and_ukey_flush(struct dpif *dpif)
+{
+    struct dp_netdev *dp = get_dp_netdev(dpif);
+    struct dp_netdev_pmd_thread *pmd;
+
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        dp_netdev_pmd_flow_and_ukey_flush(pmd);
+    }
+    return 0;
 }
 
 static void
@@ -8654,6 +8715,15 @@ dpif_netdev_register_upcall_cb(struct dpif *dpif, upcall_callback *cb,
 }
 
 static void
+dpif_netdev_register_del_ukey_cb(struct dpif *dpif, del_ukey_callback *cb,
+                               void *aux)
+{
+    struct dp_netdev *dp = get_dp_netdev(dpif);
+    dp->del_ukey_aux = aux;
+    dp->del_ukey_cb = cb;
+}
+
+static void
 dpif_netdev_xps_revalidate_pmd(const struct dp_netdev_pmd_thread *pmd,
                                bool purge)
 {
@@ -9655,6 +9725,7 @@ const struct dpif_class dpif_netdev_class = {
     NULL,                       /* recv_purge */
     dpif_netdev_register_dp_purge_cb,
     dpif_netdev_register_upcall_cb,
+    dpif_netdev_register_del_ukey_cb,
     dpif_netdev_enable_upcall,
     dpif_netdev_disable_upcall,
     dpif_netdev_get_datapath_version,
@@ -9696,6 +9767,7 @@ const struct dpif_class dpif_netdev_class = {
     NULL,                       /* cache_get_name */
     NULL,                       /* cache_get_size */
     NULL,                       /* cache_set_size */
+    dpif_netdev_flow_and_ukey_flush,
 };
 
 static void

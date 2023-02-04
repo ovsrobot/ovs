@@ -1579,7 +1579,7 @@ dpctl_del_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
         return error;
     }
 
-    error = dpif_flow_flush(dpif);
+    error = dpif_flow_and_ukey_flush(dpif);
     if (error) {
         dpctl_error(dpctl_p, error, "deleting all flows");
     }
