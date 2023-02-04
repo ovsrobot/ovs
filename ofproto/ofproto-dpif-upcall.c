@@ -415,6 +415,7 @@ static int udpif_flow_unprogram(struct udpif *udpif, struct udpif_key *ukey,
 
 static upcall_callback upcall_cb;
 static dp_purge_callback dp_purge_cb;
+static del_ukey_callback dp_del_ukey_cb;
 
 static atomic_bool enable_megaflows = ATOMIC_VAR_INIT(true);
 static atomic_bool enable_ufid = ATOMIC_VAR_INIT(true);
@@ -473,6 +474,7 @@ udpif_create(struct dpif_backer *backer, struct dpif *dpif)
 
     dpif_register_upcall_cb(dpif, upcall_cb, udpif);
     dpif_register_dp_purge_cb(dpif, dp_purge_cb, udpif);
+    dpif_register_del_ukey_cb(dpif, dp_del_ukey_cb, udpif);
 
     return udpif;
 }
@@ -2972,7 +2974,33 @@ dp_purge_cb(void *aux, unsigned pmd_id)
     }
     udpif_resume_revalidators(udpif);
 }
-
+
+static int
+dp_del_ukey_cb(void *aux, ovs_u128 ufid, unsigned pmd_id)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
+{
+    struct udpif *udpif = aux;
+    size_t i;
+
+    for (i = 0; i < N_UMAPS; i++) {
+        struct ukey_op ops[REVALIDATE_MAX_BATCH];
+        struct udpif_key *ukey;
+        struct umap *umap = &udpif->ukeys[i];
+        size_t n_ops = 0;
+
+        CMAP_FOR_EACH (ukey, cmap_node, &umap->cmap) {
+            if (ovs_u128_equals(ukey->ufid, ufid) &&
+                pmd_id == ukey->pmd_id) {
+                transition_ukey(ukey, UKEY_EVICTING);
+                ovs_mutex_lock(&umap->mutex);
+                ukey_delete(umap, ukey);
+                ovs_mutex_unlock(&umap->mutex);
+            }
+        }
+        ovsrcu_quiesce();
+    }
+}
+
 static void
 upcall_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                     const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)

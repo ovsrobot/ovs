@@ -934,6 +934,18 @@ dpif_flow_flush(struct dpif *dpif)
     return error;
 }
 
+/* deletes all flows and ukeys from 'dpif'. Return 0 if successful,
+*  otherwise a positive errno value */
+int
+dpif_flow_and_ukey_flush(struct dpif *dpif)
+{
+    int error;
+
+    error = dpif->dpif_class->ukey_and_flow_flush(dpif);
+    log_operation(dpif, "ukey_and_flow_flush", error);
+    return error;
+
+}
 /* Attempts to install 'key' into the datapath, fetches it, then deletes it.
  * Returns true if the datapath supported installing 'flow', false otherwise.
  */
@@ -1523,6 +1535,14 @@ dpif_register_dp_purge_cb(struct dpif *dpif, dp_purge_callback *cb, void *aux)
 {
     if (dpif->dpif_class->register_dp_purge_cb) {
         dpif->dpif_class->register_dp_purge_cb(dpif, cb, aux);
+    }
+}
+
+void
+dpif_register_del_ukey_cb(struct dpif *dpif, del_ukey_callback *cb, void *aux)
+{
+    if (dpif->dpif_class->register_del_ukey_cb) {
+        dpif->dpif_class->register_del_ukey_cb(dpif, cb, aux);
     }
 }
 

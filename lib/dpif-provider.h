@@ -431,6 +431,14 @@ struct dpif_class {
      * callback on invocation. */
     void (*register_upcall_cb)(struct dpif *, upcall_callback *, void *aux);
 
+    /* When 'dpif' is about to delete flow,the ukey associated with the flow
+     * is alse deleted.(e.g. Command line: ovs-appctl dpctl/del-flows)
+     *
+     * Registers an upcall callback function with 'dpif'. This is only used
+     * if 'dpif' needs to notify the deltete the flows. 'aux' is passed to
+     * the callback on invocation. */
+    void (*register_del_ukey_cb)(struct dpif *, del_ukey_callback *,void *aux);
+
     /* Enables upcalls if 'dpif' directly executes upcall functions. */
     void (*enable_upcall)(struct dpif *);
 
@@ -662,6 +670,9 @@ struct dpif_class {
 
     /* Set cache size. */
     int (*cache_set_size)(struct dpif *dpif, uint32_t level, uint32_t size);
+
+    /* delete ukey and flow */
+    int (*ukey_and_flow_flush)(struct dpif *dpif);
 };
 
 extern const struct dpif_class dpif_netlink_class;

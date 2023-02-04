@@ -882,6 +882,9 @@ typedef int upcall_callback(const struct dp_packet *packet,
 
 void dpif_register_upcall_cb(struct dpif *, upcall_callback *, void *aux);
 
+typedef int del_ukey_callback(void *aux, ovs_u128 ufid,unsigned pmd_id);
+void dpif_register_del_ukey_cb(struct dpif *, del_ukey_callback *, void *aux);
+
 int dpif_recv_set(struct dpif *, bool enable);
 int dpif_handlers_set(struct dpif *, uint32_t n_handlers);
 bool dpif_number_handlers_required(struct dpif *, uint32_t *n_handlers);

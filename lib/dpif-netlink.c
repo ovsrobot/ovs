@@ -4554,6 +4554,7 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_recv_purge,
     NULL,                       /* register_dp_purge_cb */
     NULL,                       /* register_upcall_cb */
+    NULL,                       /* register_del_ukey_cb */
     NULL,                       /* enable_upcall */
     NULL,                       /* disable_upcall */
     dpif_netlink_get_datapath_version, /* get_datapath_version */
@@ -4595,6 +4596,7 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_cache_get_name,
     dpif_netlink_cache_get_size,
     dpif_netlink_cache_set_size,
+    NULL,
 };
 
 static int
