@@ -4,6 +4,13 @@ Post-v3.1.0
      * OVS now collects per-interface upcall statistics that can be obtained
        via 'ovs-appctl dpctl/show -s' or the interface's statistics column
        in OVSDB.  Available with upstream kernel 6.2+.
+   - ovs-ctl:
+     * Added support to set umask value when starting OVS daemons.  New options
+       --ovsdb-server-umask=MODE and --ovs-vswitchd-umask=MODE were added for
+       that.  For instance, when write access on befalf of OVS group is needed
+       for ovsdb-server, pass --ovsdb-umask=0002.  Use --vswitchd-umask to set
+       umask ovs-vswitchd daemon umask.  This will allow ovsdb-server or
+       ovs-vswitchd to create sockets with access mode of 0770.
 
 
 v3.1.0 - xx xxx xxxx
