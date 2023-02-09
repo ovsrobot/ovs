@@ -1008,6 +1008,15 @@ dpdk_watchdog(void *dummy OVS_UNUSED)
 }
 
 static int
+dpdk_limit_desc_size(int desc_size, struct rte_eth_desc_lim *lim)
+{
+    desc_size = ROUND_UP(desc_size, lim->nb_align);
+    desc_size = MIN(desc_size, lim->nb_max);
+    desc_size = MAX(desc_size, lim->nb_min);
+    return desc_size;
+}
+
+static int
 dpdk_eth_dev_port_config(struct netdev_dpdk *dev, int n_rxq, int n_txq)
 {
     int diag = 0;
@@ -1054,6 +1063,9 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev, int n_rxq, int n_txq)
     } else {
         conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
     }
+
+    dev->rxq_size = dpdk_limit_desc_size(dev->rxq_size, &info.rx_desc_lim);
+    dev->txq_size = dpdk_limit_desc_size(dev->txq_size, &info.tx_desc_lim);
 
     /* A device may report more queues than it makes available (this has
      * been observed for Intel xl710, which reserves some of them for
