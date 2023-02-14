@@ -2750,7 +2750,7 @@ revalidate(struct revalidator *revalidator)
 
         max_idle = n_dp_flows > flow_limit ? 100 : ofproto_max_idle;
 
-        udpif->dpif->current_ms = time_msec();
+        udpif->dpif->current_ms = now;
         for (f = flows; f < &flows[n_dumped]; f++) {
             long long int used = f->stats.used;
             struct recirc_refs recircs = RECIRC_REFS_EMPTY_INITIALIZER;
