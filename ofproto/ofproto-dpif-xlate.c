@@ -7078,6 +7078,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_SET_VLAN_VID:
+            ctx->mirrors = 0;
             wc->masks.vlans[0].tci |= htons(VLAN_VID_MASK | VLAN_CFI);
             if (flow->vlans[0].tci & htons(VLAN_CFI) ||
                 ofpact_get_SET_VLAN_VID(a)->push_vlan_if_needed) {
@@ -7092,6 +7093,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_SET_VLAN_PCP:
+            ctx->mirrors = 0;
             wc->masks.vlans[0].tci |= htons(VLAN_PCP_MASK | VLAN_CFI);
             if (flow->vlans[0].tci & htons(VLAN_CFI) ||
                 ofpact_get_SET_VLAN_PCP(a)->push_vlan_if_needed) {
@@ -7106,27 +7108,32 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_STRIP_VLAN:
+            ctx->mirrors = 0;
             flow_pop_vlan(flow, wc);
             break;
 
         case OFPACT_PUSH_VLAN:
+            ctx->mirrors = 0;
             flow_push_vlan_uninit(flow, wc);
             flow->vlans[0].tpid = ofpact_get_PUSH_VLAN(a)->ethertype;
             flow->vlans[0].tci = htons(VLAN_CFI);
             break;
 
         case OFPACT_SET_ETH_SRC:
+            ctx->mirrors = 0;
             WC_MASK_FIELD(wc, dl_src);
             flow->dl_src = ofpact_get_SET_ETH_SRC(a)->mac;
             break;
 
         case OFPACT_SET_ETH_DST:
+            ctx->mirrors = 0;
             WC_MASK_FIELD(wc, dl_dst);
             flow->dl_dst = ofpact_get_SET_ETH_DST(a)->mac;
             break;
 
         case OFPACT_SET_IPV4_SRC:
             if (flow->dl_type == htons(ETH_TYPE_IP)) {
+                ctx->mirrors = 0;
                 memset(&wc->masks.nw_src, 0xff, sizeof wc->masks.nw_src);
                 flow->nw_src = ofpact_get_SET_IPV4_SRC(a)->ipv4;
             }
@@ -7134,6 +7141,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_SET_IPV4_DST:
             if (flow->dl_type == htons(ETH_TYPE_IP)) {
+                ctx->mirrors = 0;
                 memset(&wc->masks.nw_dst, 0xff, sizeof wc->masks.nw_dst);
                 flow->nw_dst = ofpact_get_SET_IPV4_DST(a)->ipv4;
             }
@@ -7141,6 +7149,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_SET_IP_DSCP:
             if (is_ip_any(flow)) {
+                ctx->mirrors = 0;
                 wc->masks.nw_tos |= IP_DSCP_MASK;
                 flow->nw_tos &= ~IP_DSCP_MASK;
                 flow->nw_tos |= ofpact_get_SET_IP_DSCP(a)->dscp;
@@ -7149,6 +7158,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_SET_IP_ECN:
             if (is_ip_any(flow)) {
+                ctx->mirrors = 0;
                 wc->masks.nw_tos |= IP_ECN_MASK;
                 flow->nw_tos &= ~IP_ECN_MASK;
                 flow->nw_tos |= ofpact_get_SET_IP_ECN(a)->ecn;
@@ -7157,6 +7167,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_SET_IP_TTL:
             if (is_ip_any(flow)) {
+                ctx->mirrors = 0;
                 wc->masks.nw_ttl = 0xff;
                 flow->nw_ttl = ofpact_get_SET_IP_TTL(a)->ttl;
             }
@@ -7164,6 +7175,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_SET_L4_SRC_PORT:
             if (is_ip_any(flow) && !(flow->nw_frag & FLOW_NW_FRAG_LATER)) {
+                ctx->mirrors = 0;
                 memset(&wc->masks.nw_proto, 0xff, sizeof wc->masks.nw_proto);
                 memset(&wc->masks.tp_src, 0xff, sizeof wc->masks.tp_src);
                 flow->tp_src = htons(ofpact_get_SET_L4_SRC_PORT(a)->port);
@@ -7172,6 +7184,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_SET_L4_DST_PORT:
             if (is_ip_any(flow) && !(flow->nw_frag & FLOW_NW_FRAG_LATER)) {
+                ctx->mirrors = 0;
                 memset(&wc->masks.nw_proto, 0xff, sizeof wc->masks.nw_proto);
                 memset(&wc->masks.tp_dst, 0xff, sizeof wc->masks.tp_dst);
                 flow->tp_dst = htons(ofpact_get_SET_L4_DST_PORT(a)->port);
@@ -7224,6 +7237,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
             /* Set the field only if the packet actually has it. */
             if (mf_are_prereqs_ok(mf, flow, wc)) {
+                ctx->mirrors = 0;
                 mf_mask_field_masked(mf, ofpact_set_field_mask(set_field), wc);
                 mf_set_flow_value_masked(mf, set_field->value,
                                          ofpact_set_field_mask(set_field),
@@ -7246,39 +7260,47 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_PUSH_MPLS:
+            ctx->mirrors = 0;
             compose_mpls_push_action(ctx, ofpact_get_PUSH_MPLS(a));
             break;
 
         case OFPACT_POP_MPLS:
+            ctx->mirrors = 0;
             compose_mpls_pop_action(ctx, ofpact_get_POP_MPLS(a)->ethertype);
             break;
 
         case OFPACT_SET_MPLS_LABEL:
+            ctx->mirrors = 0;
             compose_set_mpls_label_action(
                 ctx, ofpact_get_SET_MPLS_LABEL(a)->label);
             break;
 
         case OFPACT_SET_MPLS_TC:
+            ctx->mirrors = 0;
             compose_set_mpls_tc_action(ctx, ofpact_get_SET_MPLS_TC(a)->tc);
             break;
 
         case OFPACT_SET_MPLS_TTL:
+            ctx->mirrors = 0;
             compose_set_mpls_ttl_action(ctx, ofpact_get_SET_MPLS_TTL(a)->ttl);
             break;
 
         case OFPACT_DEC_MPLS_TTL:
+            ctx->mirrors = 0;
             if (compose_dec_mpls_ttl_action(ctx)) {
                 return;
             }
             break;
 
         case OFPACT_DEC_NSH_TTL:
+            ctx->mirrors = 0;
             if (compose_dec_nsh_ttl_action(ctx)) {
                 return;
             }
             break;
 
         case OFPACT_DEC_TTL:
+            ctx->mirrors = 0;
             wc->masks.nw_ttl = 0xff;
             if (compose_dec_ttl(ctx, ofpact_get_DEC_TTL(a))) {
                 return;
@@ -7370,17 +7392,21 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_ENCAP:
+            ctx->mirrors = 0;
             xlate_generic_encap_action(ctx, ofpact_get_ENCAP(a));
             break;
 
         case OFPACT_DECAP: {
             bool recirc_needed =
                     xlate_generic_decap_action(ctx, ofpact_get_DECAP(a));
-            if (!ctx->error && recirc_needed) {
-                /* Recirculate for parsing of inner packet. */
-                ctx_trigger_freeze(ctx);
-                /* Then continue with next action. */
-                a = ofpact_next(a);
+            if (!ctx->error) {
+                ctx->mirrors = 0;
+                if (recirc_needed) {
+                    /* Recirculate for parsing of inner packet. */
+                    ctx_trigger_freeze(ctx);
+                    /* Then continue with next action. */
+                    a = ofpact_next(a);
+                }
             }
             break;
         }
@@ -7397,6 +7423,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_NAT:
             /* This will be processed by compose_conntrack_action(). */
+            ctx->mirrors = 0;
             ctx->ct_nat_action = ofpact_get_NAT(a);
             break;
 
