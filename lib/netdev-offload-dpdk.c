@@ -355,8 +355,18 @@ dump_flow_pattern(struct ds *s,
 
     if (item->type == RTE_FLOW_ITEM_TYPE_END) {
         ds_put_cstr(s, "end ");
+    } else if (item->type == RTE_FLOW_ITEM_TYPE_REPRESENTED_PORT) {
+        const struct rte_flow_item_ethdev *ethdev_spec = item->spec;
+        const struct rte_flow_item_ethdev *ethdev_mask = item->mask;
+
+        ds_put_cstr(s, "represented_port ");
+
+        DUMP_PATTERN_ITEM(ethdev_mask->port_id, false, "ethdev_port_id",
+                          "%"PRIu16, ethdev_spec->port_id,
+                          ethdev_mask->port_id, 0);
     } else if (flow_patterns->tnl_pmd_items_cnt &&
-               pattern_index < flow_patterns->tnl_pmd_items_cnt) {
+               pattern_index < 1 /* REPRESENTED_PORT */ +
+                               flow_patterns->tnl_pmd_items_cnt) {
         return;
     } else if (item->type == RTE_FLOW_ITEM_TYPE_ETH) {
         const struct rte_flow_item_eth *eth_spec = item->spec;
@@ -882,7 +892,12 @@ dump_flow(struct ds *s, struct ds *s_extra,
         dump_flow_attr(s, s_extra, attr, flow_patterns, flow_actions);
     }
     ds_put_cstr(s, "pattern ");
-    for (i = 0; i < flow_patterns->cnt; i++) {
+    /*
+     * The 1st item in any pattern is a traffic source one.
+     * It is skipped in the case of non-transfer rules and
+     * must not be indicated when printing such rules, too.
+     */
+    for (i = 1 - attr->transfer; i < flow_patterns->cnt; i++) {
         dump_flow_pattern(s, flow_patterns, i);
     }
     ds_put_cstr(s, "actions ");
@@ -920,7 +935,8 @@ netdev_offload_dpdk_flow_create(struct netdev *netdev,
             extra_str = ds_cstr(&s_extra);
             VLOG_DBG_RL(&rl, "%s: rte_flow 0x%"PRIxPTR" %s  flow create %d %s",
                         netdev_get_name(netdev), (intptr_t) flow, extra_str,
-                        netdev_dpdk_get_port_id(netdev), ds_cstr(&s));
+                        netdev_dpdk_get_port_id(netdev, attr->transfer),
+                        ds_cstr(&s));
         }
     } else {
         enum vlog_level level = VLL_WARN;
@@ -935,7 +951,8 @@ netdev_offload_dpdk_flow_create(struct netdev *netdev,
             extra_str = ds_cstr(&s_extra);
             VLOG_RL(&rl, level, "%s: Failed flow: %s  flow create %d %s",
                     netdev_get_name(netdev), extra_str,
-                    netdev_dpdk_get_port_id(netdev), ds_cstr(&s));
+                    netdev_dpdk_get_port_id(netdev, attr->transfer),
+                    ds_cstr(&s));
         }
     }
     ds_destroy(&s);
@@ -1028,6 +1045,10 @@ free_flow_patterns(struct flow_patterns *patterns)
     struct rte_flow_error error;
     int i;
 
+    /* REPRESENTED_PORT */
+    free(CONST_CAST(void *, patterns->items[0].spec));
+    free(CONST_CAST(void *, patterns->items[0].mask));
+
     if (patterns->tnl_pmd_items) {
         struct rte_flow_item *tnl_pmd_items = patterns->tnl_pmd_items;
         uint32_t tnl_pmd_items_cnt = patterns->tnl_pmd_items_cnt;
@@ -1042,7 +1063,8 @@ free_flow_patterns(struct flow_patterns *patterns)
         }
     }
 
-    for (i = patterns->tnl_pmd_items_cnt; i < patterns->cnt; i++) {
+    for (i = 1 /* REPRESENTED_PORT */ + patterns->tnl_pmd_items_cnt;
+         i < patterns->cnt; i++) {
         if (patterns->items[i].spec) {
             free(CONST_CAST(void *, patterns->items[i].spec));
         }
@@ -1114,13 +1136,13 @@ vport_to_rte_tunnel(struct netdev *vport,
         tunnel->tp_dst = tnl_cfg->dst_port;
         if (!VLOG_DROP_DBG(&rl)) {
             ds_put_format(s_tnl, "flow tunnel create %d type vxlan; ",
-                          netdev_dpdk_get_port_id(netdev));
+                          netdev_dpdk_get_port_id(netdev, true));
         }
     } else if (!strcmp(netdev_get_type(vport), "gre")) {
         tunnel->type = RTE_FLOW_ITEM_TYPE_GRE;
         if (!VLOG_DROP_DBG(&rl)) {
             ds_put_format(s_tnl, "flow tunnel create %d type gre; ",
-                          netdev_dpdk_get_port_id(netdev));
+                          netdev_dpdk_get_port_id(netdev, true));
         }
     } else {
         VLOG_DBG_RL(&rl, "vport type '%s' is not supported",
@@ -1382,9 +1404,18 @@ parse_flow_match(struct netdev *netdev,
                  struct flow_patterns *patterns,
                  struct match *match)
 {
+    struct netdev *physdev = netdev_ports_get(orig_in_port, netdev->dpif_type);
+    struct rte_flow_item_ethdev *ethdev_spec = xzalloc(sizeof *ethdev_spec);
+    struct rte_flow_item_ethdev *ethdev_mask = xzalloc(sizeof *ethdev_mask);
     struct rte_flow_item_eth *eth_spec = NULL, *eth_mask = NULL;
     struct flow *consumed_masks;
     uint8_t proto = 0;
+
+    /* Add an explicit traffic source item to the beginning of the pattern. */
+    ethdev_spec->port_id = netdev_dpdk_get_port_id(physdev, false);
+    *ethdev_mask = rte_flow_item_ethdev_mask;
+    add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_REPRESENTED_PORT,
+                     ethdev_spec, ethdev_mask, NULL);
 
     consumed_masks = &match->wc.masks;
 
@@ -1782,7 +1813,7 @@ add_represented_port_action(struct flow_actions *actions,
     struct rte_flow_action_ethdev *ethdev;
     int outdev_id;
 
-    outdev_id = netdev_dpdk_get_port_id(outdev);
+    outdev_id = netdev_dpdk_get_port_id(outdev, false);
     if (outdev_id < 0) {
         return -1;
     }
@@ -2322,6 +2353,7 @@ netdev_offload_dpdk_flow_destroy(struct ufid_to_rte_flow_data *rte_flow_data)
     struct netdev *physdev;
     struct netdev *netdev;
     ovs_u128 *ufid;
+    bool transfer;
     int ret;
 
     ovs_mutex_lock(&rte_flow_data->lock);
@@ -2333,12 +2365,13 @@ netdev_offload_dpdk_flow_destroy(struct ufid_to_rte_flow_data *rte_flow_data)
 
     rte_flow_data->dead = true;
 
+    transfer = rte_flow_data->actions_offloaded;
     rte_flow = rte_flow_data->rte_flow;
     physdev = rte_flow_data->physdev;
     netdev = rte_flow_data->netdev;
     ufid = &rte_flow_data->ufid;
 
-    ret = netdev_dpdk_rte_flow_destroy(physdev, rte_flow, &error);
+    ret = netdev_dpdk_rte_flow_destroy(physdev, transfer, rte_flow, &error);
 
     if (ret == 0) {
         struct netdev_offload_dpdk_data *data;
@@ -2353,12 +2386,12 @@ netdev_offload_dpdk_flow_destroy(struct ufid_to_rte_flow_data *rte_flow_data)
                     " flow destroy %d ufid " UUID_FMT,
                     netdev_get_name(netdev), netdev_get_name(physdev),
                     (intptr_t) rte_flow,
-                    netdev_dpdk_get_port_id(physdev),
+                    netdev_dpdk_get_port_id(physdev, transfer),
                     UUID_ARGS((struct uuid *) ufid));
     } else {
         VLOG_ERR("Failed flow: %s/%s: flow destroy %d ufid " UUID_FMT,
                  netdev_get_name(netdev), netdev_get_name(physdev),
-                 netdev_dpdk_get_port_id(physdev),
+                 netdev_dpdk_get_port_id(physdev, transfer),
                  UUID_ARGS((struct uuid *) ufid));
     }
 
