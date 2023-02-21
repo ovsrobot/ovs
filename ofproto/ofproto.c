@@ -4827,6 +4827,10 @@ flow_stats_ds(struct ofproto *ofproto, struct rule *rule, struct ds *results,
     if (rule->table_id != 0) {
         ds_put_format(results, "table_id=%"PRIu8", ", rule->table_id);
     }
+    if (rule->flow_cookie != 0) {
+        ds_put_format(results, "cookie=0x%"PRIx64", ",
+                      ntohll(rule->flow_cookie));
+    }
     ds_put_format(results, "duration=%llds, ", (time_msec() - created) / 1000);
     ds_put_format(results, "n_packets=%"PRIu64", ", stats.n_packets);
     ds_put_format(results, "n_bytes=%"PRIu64", ", stats.n_bytes);
