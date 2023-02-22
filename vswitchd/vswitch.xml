@@ -3453,6 +3453,32 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         <p>This option may only be used with dpdk VF representors.</p>
       </column>
 
+      <column name="options" key="cp-protection"
+              type='{"type": "string", "enum": ["set", ["lacp"]]}'>
+        <p>
+          Allocate an extra Rx queue for control plane packets of the specified
+          protocol(s).
+        </p>
+        <p>
+          If the user has already configured multiple
+          <code>options:n_rxq</code> on the port, an additional one will be
+          allocated for control plane packets. If the hardware cannot satisfy
+          the requested number of requested Rx queues, the last Rx queue will
+          be assigned for control plane. If only one Rx queue is available or
+          if the hardware does not support the RTE flow matchers/actions
+          required to redirect the selected protocols,
+          <code>cp-protection</code> will be disabled.
+        </p>
+        <p>
+          This feature is multually exclusive with
+          <code>other_options:hw-offload</code> as it may conflict with the
+          offloaded RTE flows.
+        </p>
+        <p>
+          Disabled by default.
+        </p>
+      </column>
+
       <column name="other_config" key="tx-steering"
               type='{"type": "string",
                      "enum": ["set", ["thread", "hash"]]}'>
