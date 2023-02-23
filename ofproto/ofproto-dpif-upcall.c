@@ -840,10 +840,25 @@ recv_upcalls(struct handler *handler)
             break;
         }
 
-        upcall->fitness = odp_flow_key_to_flow(dupcall->key, dupcall->key_len,
-                                               flow, NULL);
-        if (upcall->fitness == ODP_FIT_ERROR) {
-            goto free_dupcall;
+        /* If it is normal upcalls, datapath will provide key and key_len
+         * to construct flow. But for netdev offload upcalls, key and
+         * key_len are not available. Construct partial flow using available
+         * info.
+         */
+        if (dupcall->key && dupcall->key_len) {
+            upcall->fitness = odp_flow_key_to_flow(dupcall->key,
+                                                   dupcall->key_len,
+                                                   flow, NULL);
+            if (upcall->fitness == ODP_FIT_ERROR) {
+                goto free_dupcall;
+            }
+        } else {
+            memset(flow, 0, sizeof *flow);
+            if (dupcall->in_tun) {
+                memcpy(&flow->tunnel, dupcall->in_tun, sizeof flow->tunnel);
+            }
+            flow->in_port.odp_port =
+                netdev_ifindex_to_odp_port(dupcall->iifindex);
         }
 
         if (dupcall->mru) {
