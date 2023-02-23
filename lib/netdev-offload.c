@@ -257,6 +257,38 @@ meter_offload_del(ofproto_meter_id meter_id, struct ofputil_meter_stats *stats)
 }
 
 int
+netdev_offload_recv(struct dpif_upcall *upcall, struct ofpbuf *buf)
+{
+    struct netdev_registered_flow_api *rfa;
+    int ret;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->sflow_recv) {
+            ret = rfa->flow_api->sflow_recv(upcall, buf);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed to receive psample packet, error %d, "
+                            "type: %s", ret, rfa->flow_api->type);
+                return ret;
+           }
+        }
+    }
+
+    return 0;
+}
+
+void
+netdev_offload_recv_wait(void)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->sflow_recv_wait) {
+            rfa->flow_api->sflow_recv_wait();
+        }
+    }
+}
+
+int
 netdev_flow_flush(struct netdev *netdev)
 {
     const struct netdev_flow_api *flow_api =
