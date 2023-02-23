@@ -836,6 +836,13 @@ struct dpif_upcall {
     struct nlattr *userdata;    /* Argument to OVS_ACTION_ATTR_USERSPACE. */
     struct nlattr *out_tun_key;    /* Output tunnel key. */
     struct nlattr *actions;    /* Argument to OVS_ACTION_ATTR_USERSPACE. */
+    /* SFlow offload only.
+     * When receiving sampled packets from psample socket, there is no
+     * flow key. But input tunnel and input ifindex are available. They
+     * are enough to construct flow and continue to process sFlow.
+     */
+    struct flow_tnl *in_tun;    /* Input tunnel key. */
+    uint32_t iifindex;          /* Input ifindex. */
 };
 
 /* A callback to notify higher layer of dpif about to be purged, so that

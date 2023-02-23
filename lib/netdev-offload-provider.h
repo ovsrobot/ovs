@@ -121,6 +121,17 @@ struct netdev_flow_api {
     int (*meter_del)(ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *stats);
 
+    /* Receives sampled packets in 'buf' from psample socket and fill the
+     * necessary members in 'upcall'.
+     * Return 0 if successful, otherwise returns a positive errno value.
+     */
+    int (*sflow_recv)(struct dpif_upcall *upcall, struct ofpbuf *buf);
+
+    /* Add psample socket fd to poll list. Wake the upcall thread up to
+     * process it if there is any sampled packets,
+     */
+    void (*sflow_recv_wait)(void);
+
     /* Initializies the netdev flow api.
      * Return 0 if successful, otherwise returns a positive errno value. */
     int (*init_flow_api)(struct netdev *);
