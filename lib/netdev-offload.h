@@ -81,6 +81,15 @@ struct offload_info {
     bool tc_modify_flow_deleted; /* Indicate the tc modify flow put success
                                   * to delete the original flow. */
     odp_port_t orig_in_port; /* Originating in_port for tnl flows. */
+
+    /* To avoid passing too many parameters when offloading sample action,
+     * aggregate them here.
+     */
+    struct {
+        const struct flow_tnl *tnl; /* Tunnel info. */
+        const ovs_u128 *ufid;       /* Ufid. */
+        uint32_t gid;               /* Generated gid. */
+    } sample;
 };
 
 DECLARE_EXTERN_PER_THREAD_DATA(unsigned int, netdev_offload_thread_id);

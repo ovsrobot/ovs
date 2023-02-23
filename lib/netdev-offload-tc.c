@@ -109,6 +109,12 @@ static int get_ufid_adjust_stats(const ovs_u128 *ufid,
 static struct nl_sock *psample_sock;
 static int psample_family;
 
+static bool
+psample_supported(void)
+{
+    return psample_sock != NULL;
+}
+
 /* When offloading sample action to TC, userspace creates a unique ID
  * to map sFlow action and tunnel info and passes this ID to kernel
  * instead of the sFlow info. Psample will send this ID and sampled
@@ -994,6 +1000,19 @@ parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
         action = &flower->actions[i];
 
         switch (action->type) {
+        case TC_ACT_SAMPLE: {
+            const struct sgid_node *node;
+
+            node = sgid_find(action->sample.group_id);
+            if (!node) {
+                VLOG_WARN("Can't find sample group ID data for ID: %u",
+                          action->sample.group_id);
+                return ENOENT;
+            }
+            nl_msg_put(buf, node->sflow.action,
+                       node->sflow.action->nla_len);
+        }
+        break;
         case TC_ACT_VLAN_POP: {
             nl_msg_put_flag(buf, OVS_ACTION_ATTR_POP_VLAN);
         }
@@ -2099,6 +2118,172 @@ parse_match_ct_state_to_flower(struct tc_flower *flower, struct match *match)
     }
 }
 
+static int
+parse_userspace_attributes(const struct nlattr *actions,
+                           struct offload_sflow *sflow)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+    const struct nlattr *nla;
+    unsigned int left;
+
+    NL_NESTED_FOR_EACH_UNSAFE (nla, left, actions) {
+        if (nl_attr_type(nla) == OVS_USERSPACE_ATTR_USERDATA) {
+            struct user_action_cookie *cookie;
+
+            cookie = (struct user_action_cookie *) nl_attr_get(nla);
+            if (cookie->type == USER_ACTION_COOKIE_SFLOW) {
+                sflow->userdata = (struct nlattr *) nla;
+                return 0;
+            }
+        }
+    }
+
+    VLOG_DBG_RL(&rl, "Can't offload userspace action other than sFlow");
+    return EOPNOTSUPP;
+}
+
+static int
+parse_sample_actions_attribute(const struct nlattr *actions,
+                               struct offload_sflow *sflow)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+    const struct nlattr *nla;
+    unsigned int left;
+    int err = EINVAL;
+
+    NL_NESTED_FOR_EACH_UNSAFE (nla, left, actions) {
+        if (nl_attr_type(nla) == OVS_ACTION_ATTR_USERSPACE) {
+            err = parse_userspace_attributes(nla, sflow);
+        } else {
+            /* We can't offload other nested actions */
+            VLOG_DBG_RL(&rl, "Can only offload OVS_ACTION_ATTR_USERSPACE"
+                             " attribute");
+            return EINVAL;
+        }
+    }
+
+    if (err) {
+        VLOG_ERR_RL(&error_rl, "No OVS_ACTION_ATTR_USERSPACE attribute");
+    }
+    return err;
+}
+
+static int
+parse_sample_action(struct tc_flower *flower, struct tc_action *tc_action,
+                    const struct nlattr *actions, size_t actions_len,
+                    const struct nlattr *sample_action,
+                    struct offload_info *info)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+    struct nlattr *new_actions = NULL;
+    struct offload_sflow sflow;
+    const struct nlattr *nla;
+    unsigned int left;
+    int err = EINVAL;
+
+    if (info->sample.gid) {
+        VLOG_ERR_RL(&error_rl,
+                    "Only a single TC_SAMPLE action per flow is supported");
+        return EOPNOTSUPP;
+    }
+
+    memset(&sflow, 0, sizeof sflow);
+    sflow.ufid = *(info->sample.ufid);
+    sflow.action = (struct nlattr *) sample_action;
+
+    if (flower->tunnel) {
+        sflow.tunnel = CONST_CAST(struct flow_tnl *, info->sample.tnl);
+    } else {
+        new_actions = xmalloc(actions_len + NLA_HDRLEN);
+        nullable_memcpy((char *) new_actions + NLA_HDRLEN, actions,
+                         actions_len);
+        new_actions->nla_len = actions_len + NLA_HDRLEN;
+        sflow.actions = new_actions;
+    }
+
+    NL_NESTED_FOR_EACH_UNSAFE (nla, left, sample_action) {
+        if (nl_attr_type(nla) == OVS_SAMPLE_ATTR_ACTIONS) {
+            err = parse_sample_actions_attribute(nla, &sflow);
+        } else if (nl_attr_type(nla) == OVS_SAMPLE_ATTR_PROBABILITY) {
+            tc_action->type = TC_ACT_SAMPLE;
+            tc_action->sample.rate = UINT32_MAX / nl_attr_get_u32(nla);
+        } else {
+            err = EINVAL;
+            goto out;
+        }
+    }
+
+    if (!tc_action->sample.rate || err) {
+        err = EINVAL;
+        goto out;
+    }
+
+    info->sample.gid = sgid_alloc_ctx(&sflow);
+    if (!info->sample.gid) {
+        VLOG_DBG_RL(&rl, "Failed allocating group id for sample action");
+        err = ENOENT;
+        goto out;
+    }
+    tc_action->sample.group_id = info->sample.gid;
+    flower->action_count++;
+
+out:
+    free(new_actions);
+    return err;
+}
+
+static int
+parse_userspace_action(struct tc_flower *flower, struct tc_action *tc_action,
+                       const struct nlattr *actions, size_t actions_len,
+                       const struct nlattr *userspace_action,
+                       struct offload_info *info)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+    struct nlattr *new_actions = NULL;
+    struct offload_sflow sflow;
+    int err;
+
+    if (info->sample.gid) {
+        VLOG_ERR_RL(&error_rl,
+                    "Only a single TC_SAMPLE action per flow is supported");
+        return EOPNOTSUPP;
+    }
+
+    /* If sampling rate is 1, there is only a sFlow cookie inside of a
+     * userspace action, but no sample attribute. That means we can
+     * only offload userspace actions for sFlow.
+     */
+    memset(&sflow, 0, sizeof sflow);
+    sflow.ufid = *(info->sample.ufid);
+    if (flower->tunnel) {
+        sflow.tunnel = CONST_CAST(struct flow_tnl *, info->sample.tnl);
+    } else {
+        new_actions = xmalloc(actions_len + NLA_HDRLEN);
+        nullable_memcpy((char *) new_actions + NLA_HDRLEN, actions,
+                        actions_len);
+        new_actions->nla_len = actions_len + NLA_HDRLEN;
+        sflow.actions = new_actions;
+    }
+    err = parse_userspace_attributes(userspace_action, &sflow);
+    if (err) {
+        goto out;
+    }
+    sflow.action = (struct nlattr *) userspace_action;
+    info->sample.gid = sgid_alloc_ctx(&sflow);
+    if (!info->sample.gid) {
+        VLOG_DBG_RL(&rl, "Failed allocating group id for sample action");
+        err = ENOENT;
+        goto out;
+    }
+    tc_action->type = TC_ACT_SAMPLE;
+    tc_action->sample.group_id = info->sample.gid;
+    tc_action->sample.rate = 1;
+    flower->action_count++;
+
+out:
+    free(new_actions);
+    return err;
+}
 
 static int
 parse_check_pkt_len_action(struct netdev *netdev, struct tc_flower *flower,
@@ -2350,10 +2535,27 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
                 return err;
             }
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SAMPLE) {
-            struct offload_sflow sflow;
-
-            memset(&sflow, 0, sizeof sflow);
-            sgid_alloc_ctx(&sflow);
+            if (!psample_supported()) {
+                VLOG_DBG_RL(&rl, "Unsupported put action type: %d, psample is "
+                            "not initialized successfully", nl_attr_type(nla));
+                return EOPNOTSUPP;
+            }
+            err = parse_sample_action(flower, action, actions, actions_len,
+                                      nla, info);
+            if (err) {
+                return err;
+            }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_USERSPACE) {
+            if (!psample_supported()) {
+                VLOG_DBG_RL(&rl, "Unsupported put action type: %d, psample is "
+                            "not initialized successfully", nl_attr_type(nla));
+                return EOPNOTSUPP;
+            }
+            err = parse_userspace_action(flower, action, actions, actions_len,
+                                         nla, info);
+            if (err) {
+                return err;
+            }
         } else {
             VLOG_DBG_RL(&rl, "unsupported put action type: %d",
                         nl_attr_type(nla));
@@ -2657,17 +2859,21 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         return err;
     }
 
+    info->sample.tnl = tnl;
+    info->sample.ufid = ufid;
+    info->sample.gid = 0;
     /* Parse all (nested) actions. */
     err = netdev_tc_parse_nl_actions(netdev, &flower, info,
                                      actions, actions_len, &recirc_act,
                                      false, NULL);
     if (err) {
-        return err;
+        goto out;
     }
 
     if ((chain || recirc_act) && !info->recirc_id_shared_with_tc) {
         VLOG_DBG_RL(&rl, "flow_put: recirc_id sharing not supported");
-        return EOPNOTSUPP;
+        err = EOPNOTSUPP;
+        goto out;
     }
 
     memset(&adjust_stats, 0, sizeof adjust_stats);
@@ -2681,21 +2887,31 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     prio = get_prio_for_tc_flower(&flower);
     if (prio == 0) {
         VLOG_ERR_RL(&rl, "couldn't get tc prio: %s", ovs_strerror(ENOSPC));
-        return ENOSPC;
+        err = ENOSPC;
+        goto out;
     }
 
     flower.act_cookie.data = ufid;
     flower.act_cookie.len = sizeof *ufid;
 
     block_id = get_block_id_from_netdev(netdev);
-    id = tc_make_tcf_id_chain(ifindex, block_id, chain, prio, hook);
+    id = tc_make_tcf_id_all(ifindex, block_id, chain, prio, hook,
+                            info->sample.gid);
     err = tc_replace_flower(&id, &flower);
-    if (!err) {
-        if (stats) {
-            memset(stats, 0, sizeof *stats);
-            netdev_tc_adjust_stats(stats, &adjust_stats);
-        }
-        add_ufid_tc_mapping(netdev, ufid, &id, &adjust_stats);
+    if (err) {
+        goto out;
+    }
+
+    if (stats) {
+        memset(stats, 0, sizeof *stats);
+        netdev_tc_adjust_stats(stats, &adjust_stats);
+    }
+    add_ufid_tc_mapping(netdev, ufid, &id, &adjust_stats);
+    return 0;
+
+out:
+    if (info->sample.gid) {
+        sgid_free(info->sample.gid);
     }
 
     return err;
