@@ -3561,6 +3561,42 @@ AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(172.16.0.3)], [0], [dnl
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([conntrack - ICMP related NAT with single port])
+AT_SKIP_IF([test $HAVE_NC = no])
+AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+CHECK_CONNTRACK()
+CHECK_CONNTRACK_NAT()
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24", "f0:00:00:01:01:01")
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24", "f0:00:00:01:01:02")
+
+NS_CHECK_EXEC([at_ns0], [ip neigh add 10.1.1.240 lladdr f0:00:00:01:01:02 dev p0])
+NS_CHECK_EXEC([at_ns1], [ip neigh add 10.1.1.1 lladdr f0:00:00:01:01:01 dev p1])
+
+AT_DATA([flows.txt], [dnl
+table=0,ip,ct_state=-trk,actions=ct(table=0,nat)
+table=0,in_port=ovs-p0,udp,ct_state=+trk+new,actions=ct(commit,nat(dst=10.1.1.2:8080)),ovs-p1
+table=0,in_port=ovs-p1,ct_state=+trk+rel+rpl,icmp,actions=ovs-p0
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+
+rm p0.pcap
+NETNS_DAEMONIZE([at_ns0], [tcpdump -l -U -i p0 -w p0.pcap 2>tcpdump0_err], [tcpdump0.pid])
+NS_CHECK_EXEC([at_ns0], [bash -c "echo dest_unreach | nc $NC_EOF_OPT -p 1234 -u 10.1.1.240 80"])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "orig=.src=10\.1\.1\.1," | sort], [0], [dnl
+udp,orig=(src=10.1.1.1,dst=10.1.1.240,sport=1234,dport=80),reply=(src=10.1.1.2,dst=10.1.1.1,sport=8080,dport=1234)
+])
+
+OVS_WAIT_UNTIL([ovs-pcap p0.pcap | grep -Eq "f00000010101f00000010102080045c00045[[[:xdigit:]]]{4}00004001[[[:xdigit:]]]{4}0a0101f00a010101030314160000000045000029[[[:xdigit:]]]{4}40004011[[[:xdigit:]]]{4}0a0101010a0101f004d2005000156b24646573745f756e72656163680a"])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([conntrack - IPv4 fragmentation])
 CHECK_CONNTRACK()
 OVS_TRAFFIC_VSWITCHD_START()
@@ -6551,6 +6587,42 @@ AT_CHECK([tcpdump -v "icmp6" -r p0.pcap 2>/dev/null | grep -E 'wrong|bad'], [1],
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(fc00::2)], [0], [dnl
 udp,orig=(src=fc00::1,dst=fc00::2,sport=<cleared>,dport=<cleared>),reply=(src=fc00::2,dst=fc00::240,sport=<cleared>,dport=<cleared>)
 ])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([conntrack - ICMPv6 related NAT with single port])
+AT_SKIP_IF([test $HAVE_NC = no])
+AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+CHECK_CONNTRACK()
+CHECK_CONNTRACK_NAT()
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "fc00::1/96", "f0:00:00:01:01:01", [], "nodad")
+ADD_VETH(p1, at_ns1, br0, "fc00::2/96", "f0:00:00:01:01:02", [], "nodad")
+
+NS_CHECK_EXEC([at_ns0], [ip -6 neigh add fc00::240 lladdr f0:00:00:01:01:02 dev p0])
+NS_CHECK_EXEC([at_ns1], [ip -6 neigh add fc00::1 lladdr f0:00:00:01:01:01 dev p1])
+
+AT_DATA([flows.txt], [dnl
+table=0,ipv6,ct_state=-trk,actions=ct(table=0,nat)
+table=0,in_port=ovs-p0,udp6,ct_state=+trk+new,actions=ct(commit,nat(dst=[[fc00::2]]:8080)),ovs-p1
+table=0,in_port=ovs-p1,ct_state=+trk+rel+rpl,icmp6,actions=ovs-p0
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+
+rm p0.pcap
+NETNS_DAEMONIZE([at_ns0], [tcpdump -l -U -i p0 -w p0.pcap 2>tcpdump0_err], [tcpdump0.pid])
+NS_CHECK_EXEC([at_ns0], [bash -c "echo dest_unreach | nc -6 $NC_EOF_OPT -p 1234 -u fc00::240 80"])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "orig=.src=fc00::1," | sort], [0], [dnl
+udp,orig=(src=fc00::1,dst=fc00::240,sport=1234,dport=80),reply=(src=fc00::2,dst=fc00::1,sport=8080,dport=1234)
+])
+
+OVS_WAIT_UNTIL([ovs-pcap p0.pcap | grep -Eq "f00000010101f0000001010286dd60[[[:xdigit:]]]{6}00453a40fc000000000000000000000000000240fc0000000000000000000000000000010104[[[:xdigit:]]]{4}0000000060[[[:xdigit:]]]{6}00151140fc000000000000000000000000000001fc00000000000000000000000000024004d20050001587d4646573745f756e72656163680a"])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
