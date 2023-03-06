@@ -2360,8 +2360,10 @@ priority=100,in_port=2,icmp,action=ct(zone=5,commit),1
 ])
 
 AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+dp=$(ovs-appctl dpctl/dump-dps)
 
 m4_foreach([FLUSH_CMD], [[ovs-appctl dpctl/flush-conntrack],
+                         [ovs-appctl dpctl/flush-conntrack $dp],
                          [ovs-ofctl ct-flush br0]], [
 AS_BOX([Testing with FLUSH_CMD])
 
