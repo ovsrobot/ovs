@@ -161,6 +161,15 @@ int netdev_ports_get_n_flows(const char *dpif_type,
 void meter_offload_set(ofproto_meter_id, struct ofputil_meter_config *);
 int meter_offload_get(ofproto_meter_id, struct ofputil_meter_stats *);
 int meter_offload_del(ofproto_meter_id, struct ofputil_meter_stats *);
+void dpdk_meter_offload_set(const char *dpif_type,
+                            ofproto_meter_id meter_id,
+                            struct ofputil_meter_config *config);
+void dpdk_meter_offload_del(const char *dpif_type,
+                            ofproto_meter_id meter_id_,
+                            struct ofputil_meter_stats *stats);
+void dpdk_meter_offload_get(const char *dpif_type,
+                            ofproto_meter_id meter_id_,
+                            struct ofputil_meter_stats *stats);
 
 #ifdef  __cplusplus
 }

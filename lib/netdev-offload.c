@@ -895,3 +895,102 @@ netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
         }
     }
 }
+
+void
+dpdk_meter_offload_set(const char *dpif_type,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_config *config)
+{
+    struct netdev_registered_flow_api *rfa;
+    struct port_to_netdev_data *data;
+    struct netdev *dev;
+    int ret;
+
+    ovs_rwlock_rdlock(&netdev_hmap_rwlock);
+    HMAP_FOR_EACH (data, portno_node, &port_to_netdev) {
+        dev = data->netdev;
+        if (netdev_get_dpif_type(dev) == dpif_type) {
+            /* Offload APIs could fail, for example, because the offload is not
+             * supported. This is fine, as the offload API should take care of
+             * this. */
+            CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+                if (rfa->flow_api->dpdk_meter_set) {
+                    ret = rfa->flow_api->dpdk_meter_set(dev, meter_id, config);
+                    if (ret) {
+                        VLOG_DBG_RL(&rl, "Failed setting meter %u for flow api"
+                                    " %s, error %d", meter_id.uint32,
+                                    rfa->flow_api->type, ret);
+                    }
+                }
+            }
+        }
+    }
+    ovs_rwlock_unlock(&netdev_hmap_rwlock);
+}
+
+void
+dpdk_meter_offload_get(const char *dpif_type,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_stats *stats)
+{
+    struct netdev_registered_flow_api *rfa;
+    struct ofputil_meter_stats offload_stats;
+    struct port_to_netdev_data *data;
+    struct netdev *dev;
+    int ret;
+
+    ovs_rwlock_rdlock(&netdev_hmap_rwlock);
+    HMAP_FOR_EACH (data, portno_node, &port_to_netdev) {
+        memset(&offload_stats, 0, sizeof(struct ofputil_meter_stats));
+        dev = data->netdev;
+        if (netdev_get_dpif_type(dev) == dpif_type) {
+            CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+                if (rfa->flow_api->dpdk_meter_get) {
+                    ret = rfa->flow_api->dpdk_meter_get(dev, meter_id, stats);
+                    if (ret) {
+                        VLOG_DBG_RL(&rl, "Failed getting meter %u for flow "
+                                    "api %s, error %d", meter_id.uint32,
+                                    rfa->flow_api->type, ret);
+                    }
+                }
+            }
+
+            if (!offload_stats.byte_in_count &&
+                       !offload_stats.packet_in_count) {
+                continue;
+            }
+            stats->byte_in_count += offload_stats.byte_in_count;
+            stats->packet_in_count += offload_stats.packet_in_count;
+        }
+    }
+    ovs_rwlock_unlock(&netdev_hmap_rwlock);
+}
+
+void
+dpdk_meter_offload_del(const char *dpif_type,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_stats *stats)
+{
+    struct netdev_registered_flow_api *rfa;
+    struct port_to_netdev_data *data;
+    struct netdev *dev;
+    int ret;
+
+    ovs_rwlock_rdlock(&netdev_hmap_rwlock);
+    HMAP_FOR_EACH (data, portno_node, &port_to_netdev) {
+        dev = data->netdev;
+        if (netdev_get_dpif_type(dev) == dpif_type) {
+            CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+                if (rfa->flow_api->dpdk_meter_del) {
+                    ret = rfa->flow_api->dpdk_meter_del(dev, meter_id, stats);
+                    if (ret) {
+                        VLOG_DBG_RL(&rl, "Failed deleting meter %u for flow "
+                                    "api %s, error %d", meter_id.uint32,
+                                    rfa->flow_api->type, ret);
+                    }
+                }
+            }
+        }
+    }
+    ovs_rwlock_unlock(&netdev_hmap_rwlock);
+}
