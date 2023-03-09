@@ -51,6 +51,8 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
                                  struct rte_flow_error *error);
 int
 netdev_dpdk_get_port_id(struct netdev *netdev);
+int
+netdev_dpdk_get_prox_port_id(struct netdev *netdev);
 
 #ifdef ALLOW_EXPERIMENTAL_API
 

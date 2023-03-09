@@ -435,6 +435,7 @@ enum dpdk_hw_ol_features {
 struct netdev_dpdk {
     PADDED_MEMBERS_CACHELINE_MARKER(CACHE_LINE_SIZE, cacheline0,
         dpdk_port_t port_id;
+        dpdk_port_t flow_transfer_proxy_port_id;
 
         /* If true, device was attached by rte_eth_dev_attach(). */
         bool attached;
@@ -1153,6 +1154,24 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
     uint32_t rx_chksm_offload_capa = RTE_ETH_RX_OFFLOAD_UDP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
+    int ret;
+
+    /* Managing "transfer" flows requires that the user communicate them
+     * via a port which has the privilege to control the embedded switch.
+     * For some vendors, all ports in a given switching domain have
+     * this privilege. For other vendors, it's only one port.
+     *
+     * Get the proxy port ID and remember it for later use.
+     */
+    ret = rte_flow_pick_transfer_proxy(dev->port_id,
+                                       &dev->flow_transfer_proxy_port_id,
+                                       NULL);
+    if (ret != 0) {
+        /* The PMD does not indicate the proxy port.
+         * Assume the proxy is unneeded.
+         */
+        dev->flow_transfer_proxy_port_id = dev->port_id;
+    }
 
     rte_eth_dev_info_get(dev->port_id, &info);
 
@@ -3943,6 +3962,7 @@ netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
     struct ds used_interfaces = DS_EMPTY_INITIALIZER;
     struct rte_eth_dev_info dev_info;
     dpdk_port_t sibling_port_id;
+    struct netdev_dpdk *dev;
     dpdk_port_t port_id;
     bool used = false;
     char *response;
@@ -3960,8 +3980,6 @@ netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
                   argv[1]);
 
     RTE_ETH_FOREACH_DEV_SIBLING (sibling_port_id, port_id) {
-        struct netdev_dpdk *dev;
-
         LIST_FOR_EACH (dev, list_node, &dpdk_list) {
             if (dev->port_id != sibling_port_id) {
                 continue;
@@ -3981,6 +3999,17 @@ netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
     }
     ds_destroy(&used_interfaces);
 
+    /* The device being detached may happen to be a flow proxy port
+     * for another device (still attached). Update the flow proxy port id,
+     * indicate that the device being detached no longer needs a flow proxy.
+     */
+    LIST_FOR_EACH (dev, list_node, &dpdk_list) {
+        if (dev->port_id == port_id) {
+            dev->flow_transfer_proxy_port_id = port_id;
+            break;
+        }
+    }
+
     rte_eth_dev_info_get(port_id, &dev_info);
     rte_eth_dev_close(port_id);
     if (rte_dev_remove(dev_info.device) < 0) {
@@ -3990,6 +4019,16 @@ netdev_dpdk_detach(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
     response = xasprintf("All devices shared with device '%s' "
                          "have been detached", argv[1]);
+
+    /* The device being detached may happen to be a flow proxy port.
+     * After the flow proxy port was detached, the related ports
+     * will reconfigure the device and update the proxy_port_id.
+     */
+    LIST_FOR_EACH (dev, list_node, &dpdk_list) {
+         if (dev->flow_transfer_proxy_port_id == port_id) {
+                netdev_request_reconfigure(&dev->up);
+        }
+    }
 
     ovs_mutex_unlock(&dpdk_mutex);
     unixctl_command_reply(conn, response);
@@ -5444,6 +5483,23 @@ netdev_dpdk_get_port_id(struct netdev *netdev)
     ret = dev->port_id;
     ovs_mutex_unlock(&dev->mutex);
 out:
+    return ret;
+}
+
+int
+netdev_dpdk_get_prox_port_id(struct netdev *netdev)
+{
+    struct netdev_dpdk *dev;
+    int ret = -1;
+
+    if (!is_dpdk_class(netdev->netdev_class)) {
+        return ret;
+    }
+
+    dev = netdev_dpdk_cast(netdev);
+    ovs_mutex_lock(&dev->mutex);
+    ret = dev->flow_transfer_proxy_port_id;
+    ovs_mutex_unlock(&dev->mutex);
     return ret;
 }
 
