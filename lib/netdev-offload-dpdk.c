@@ -2453,6 +2453,92 @@ netdev_offload_dpdk_flow_del(struct netdev *netdev OVS_UNUSED,
 }
 
 static int
+netdev_offload_dpdk_meter_set(struct netdev *dev,
+                              ofproto_meter_id meter_id,
+                              struct ofputil_meter_config *config)
+{
+    uint32_t mid = meter_id.uint32;
+    uint64_t burst;
+    uint64_t rate;
+    int ret = 0;
+    int flag;
+
+    if (config->n_bands != 1 || config->bands[0].type != OFPMBT13_DROP) {
+        return 0;
+    }
+
+    if (!(config->flags & (OFPMF13_KBPS | OFPMF13_PKTPS))) {
+        return EBADF;
+    }
+
+    if (config->flags & OFPMF13_KBPS) {
+        flag = 0;
+    } else {
+        flag = 1;
+    }
+
+    rate = config->bands[0].rate;
+    burst = config->bands[0].burst_size;
+    if (flag == 0) {
+        rate *= 1024 / 8;
+        burst *= 1024 / 8;
+    }
+
+    if (!config->bands[0].burst_size) {
+        burst = rate / 5;
+    }
+    ret = netdev_dpdk_meter_create(dev, mid, rate, burst, flag);
+    if (ret) {
+        VLOG_ERR("Failed offload the flow to the %s", dev->name);
+    }
+    return ret;
+}
+
+static int
+netdev_offload_dpdk_meter_del(struct netdev *dev,
+                              ofproto_meter_id meter_id,
+                              struct ofputil_meter_stats *stats)
+{
+    uint32_t meter_profile_id = meter_id.uint32;
+    uint32_t meter_policy_id = meter_id.uint32;
+    int ret = 0;
+
+    ret = netdev_dpdk_meter_del(dev, meter_id.uint32, meter_profile_id,
+                                meter_policy_id);
+    if (ret) {
+        VLOG_ERR("Failed del the flow to the %s", dev->name);
+        return ret;
+    }
+
+    if (stats) {
+        memset(stats, 0, sizeof *stats);
+    }
+
+    return 0;
+}
+
+static int
+netdev_offload_dpdk_meter_get(struct netdev *dev,
+                              ofproto_meter_id meter_id,
+                              struct ofputil_meter_stats *stats)
+{
+    uint64_t byte_in_count = 0;
+    uint64_t packet_in_count = 0;
+    int ret = 0;
+
+    ret = netdev_dpdk_meter_get(dev, meter_id.uint32, &byte_in_count,
+                                &packet_in_count);
+    if (ret) {
+        VLOG_ERR("Failed get the flow to the %s", dev->name);
+        return ret;
+    }
+    stats->byte_in_count = byte_in_count;
+    stats->packet_in_count = packet_in_count;
+
+    return 0;
+}
+
+static int
 netdev_offload_dpdk_init_flow_api(struct netdev *netdev)
 {
     int ret = EOPNOTSUPP;
@@ -2738,6 +2824,9 @@ const struct netdev_flow_api netdev_offload_dpdk = {
     .type = "dpdk_flow_api",
     .flow_put = netdev_offload_dpdk_flow_put,
     .flow_del = netdev_offload_dpdk_flow_del,
+    .dpdk_meter_set = netdev_offload_dpdk_meter_set,
+    .dpdk_meter_get = netdev_offload_dpdk_meter_get,
+    .dpdk_meter_del = netdev_offload_dpdk_meter_del,
     .init_flow_api = netdev_offload_dpdk_init_flow_api,
     .uninit_flow_api = netdev_offload_dpdk_uninit_flow_api,
     .flow_get = netdev_offload_dpdk_flow_get,
