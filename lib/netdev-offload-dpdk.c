@@ -2114,6 +2114,16 @@ parse_clone_actions(struct netdev *netdev,
     return 0;
 }
 
+static void OVS_UNUSED
+parse_meter_action(struct flow_actions *actions, uint32_t meter_id)
+{
+    struct rte_flow_action_meter *rte_meter;
+
+    rte_meter = xzalloc(sizeof *rte_meter);
+    rte_meter->mtr_id = meter_id;
+    add_flow_action(actions, RTE_FLOW_ACTION_TYPE_METER, rte_meter);
+}
+
 static void
 add_jump_action(struct flow_actions *actions, uint32_t group)
 {
@@ -2220,6 +2230,9 @@ parse_flow_actions(struct netdev *netdev,
             if (add_tnl_pop_action(netdev, actions, nla)) {
                 return -1;
             }
+        }  else if (nl_attr_type(nla) == OVS_ACTION_ATTR_METER) {
+            uint32_t meter_id =  nl_attr_get_u32(nla);
+            parse_meter_action(actions, meter_id);
 #endif
         } else {
             VLOG_DBG_RL(&rl, "Unsupported action type %d", nl_attr_type(nla));
