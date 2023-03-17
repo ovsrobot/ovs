@@ -395,7 +395,6 @@ monitor_daemon(pid_t daemon_pid)
                     }
                 }
 
-                log_received_backtrace(daemonize_fd);
                 close(daemonize_fd);
                 daemonize_fd = -1;
 

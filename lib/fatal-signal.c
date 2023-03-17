@@ -35,8 +35,8 @@
 
 #include "openvswitch/type-props.h"
 
-#ifdef HAVE_UNWIND
-#include "daemon-private.h"
+#ifdef HAVE_BACKTRACE
+#include <execinfo.h>
 #endif
 
 #ifndef SIG_ATOMIC_MAX
@@ -94,6 +94,13 @@ fatal_signal_init(void)
         inited = true;
 
         ovs_mutex_init_recursive(&mutex);
+
+        /* The dummy backtrace is needed see comment for
+         * send_backtrace_to_monitor(). */
+        struct backtrace dummy_bt;
+        backtrace_capture(&dummy_bt);
+        VLOG_DBG("Load needed libraries by capturing dummy backtrace,"
+                 " n_frames=%d", dummy_bt.n_frames);
 #ifndef _WIN32
         xpipe_nonblocking(signal_fds);
 #else
@@ -175,20 +182,21 @@ llong_to_hex_str(unsigned long long value, char *str)
     return i + 1;
 }
 
-/* Send the backtrace buffer to monitor thread.
+/* Print backtrace.
  *
  * Note that this runs in the signal handling context, any system
  * library functions used here must be async-signal-safe.
  */
 static inline void
-send_backtrace_to_monitor(void) {
+print_backtrace(void) {
     /* volatile added to prevent a "clobbered" error on ppc64le with gcc */
     volatile int dep;
     struct unw_backtrace unw_bt[UNW_MAX_DEPTH];
     unw_cursor_t cursor;
     unw_context_t uc;
 
-    if (daemonize_fd == -1) {
+    int log_fd = vlog_fd();
+    if (!log_fd) {
         return;
     }
 
@@ -204,44 +212,58 @@ send_backtrace_to_monitor(void) {
         dep++;
     }
 
-    if (monitor) {
-        ignore(write(daemonize_fd, unw_bt,
-                     dep * sizeof(struct unw_backtrace)));
-    } else {
-        /* Since there is no monitor daemon running, write backtrace
-         * in current process.
-         */
-        char str[] = "SIGSEGV detected, backtrace:\n";
-        char ip_str[16], offset_str[6];
-        char line[64], fn_name[UNW_MAX_FUNCN];
+    char ip_str[16], offset_str[6];
+    char line[64], fn_name[UNW_MAX_FUNCN];
 
-        vlog_direct_write_to_log_file_unsafe(str);
+    ignore(write(log_fd, BACKTRACE_DUMP_MSG, strlen(BACKTRACE_DUMP_MSG)));
 
-        for (int i = 0; i < dep; i++) {
-            memset(line, 0, sizeof line);
-            memset(fn_name, 0, sizeof fn_name);
-            memset(offset_str, 0, sizeof offset_str);
-            memset(ip_str, ' ', sizeof ip_str);
-            ip_str[sizeof(ip_str) - 1] = 0;
+    for (int i = 0; i < dep; i++) {
+        memset(line, 0, sizeof line);
+        memset(fn_name, 0, sizeof fn_name);
+        memset(offset_str, 0, sizeof offset_str);
+        memset(ip_str, ' ', sizeof ip_str);
+        ip_str[sizeof(ip_str) - 1] = 0;
 
-            llong_to_hex_str(unw_bt[i].ip, ip_str);
-            llong_to_hex_str(unw_bt[i].offset, offset_str);
+        llong_to_hex_str(unw_bt[i].ip, ip_str);
+        llong_to_hex_str(unw_bt[i].offset, offset_str);
 
-            strcat(line, "0x");
-            strcat(line, ip_str);
-            strcat(line, "<");
-            memcpy(fn_name, unw_bt[i].func, UNW_MAX_FUNCN - 1);
-            strcat(line, fn_name);
-            strcat(line, "+0x");
-            strcat(line, offset_str);
-            strcat(line, ">\n");
-            vlog_direct_write_to_log_file_unsafe(line);
-        }
+        strcat(line, "0x");
+        strcat(line, ip_str);
+        strcat(line, "<");
+        memcpy(fn_name, unw_bt[i].func, UNW_MAX_FUNCN - 1);
+        strcat(line, fn_name);
+        strcat(line, "+0x");
+        strcat(line, offset_str);
+        strcat(line, ">\n");
+        ignore(write(log_fd, line, strlen(line)));
     }
+}
+#elif HAVE_BACKTRACE
+/* Print backtrace.
+ *
+ * Note that this runs in the signal handling context, any system
+ * library functions used here must be async-signal-safe.
+ * backtrace() is only signal safe if the "libgcc" or equivalent was loaded
+ * before the signal handler. In order to keep it safe the fatal_signal_init()
+ * should always call backtrace_capture which will ensure that "libgcc" or
+ * equivlent is loaded.
+ */
+static inline void
+print_backtrace(void) {
+    int log_fd = vlog_fd();
+    if (!log_fd) {
+        return;
+    }
+
+    struct backtrace bt;
+    backtrace_capture(&bt);
+
+    ignore(write(log_fd, BACKTRACE_DUMP_MSG, strlen(BACKTRACE_DUMP_MSG)));
+    backtrace_symbols_fd(bt.frames, bt.n_frames, log_fd);
 }
 #else
 static inline void
-send_backtrace_to_monitor(void) {
+print_backtrace(void) {
     /* Nothing. */
 }
 #endif
@@ -261,7 +283,7 @@ fatal_signal_handler(int sig_nr)
 #ifndef _WIN32
     if (sig_nr == SIGSEGV) {
         signal(sig_nr, SIG_DFL); /* Set it back immediately. */
-        send_backtrace_to_monitor();
+        print_backtrace();
         raise(sig_nr);
     }
     ignore(write(signal_fds[1], "", 1));
