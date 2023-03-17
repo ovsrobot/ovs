@@ -649,19 +649,11 @@ vlog_set_syslog_target(const char *target)
     ovs_rwlock_unlock(&pattern_rwlock);
 }
 
-/*
- * This function writes directly to log file without using async writer or
- * taking a lock.  Caller must hold 'log_file_mutex' or be sure that it's
- * not necessary.  Could be used in exceptional cases like dumping of backtrace
- * on fatal signals.
- */
-void
-vlog_direct_write_to_log_file_unsafe(const char *s)
+int
+vlog_fd(void)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
-    if (log_fd >= 0) {
-        ignore(write(log_fd, s, strlen(s)));
-    }
+    return log_fd;
 }
 
 /* Returns 'false' if 'facility' is not a valid string. If 'facility'

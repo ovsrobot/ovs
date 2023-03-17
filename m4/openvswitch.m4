@@ -359,9 +359,12 @@ AC_DEFUN([OVS_CHECK_DBDIR],
 
 dnl Defines HAVE_BACKTRACE if backtrace() is found.
 AC_DEFUN([OVS_CHECK_BACKTRACE],
-  [AC_SEARCH_LIBS([backtrace], [execinfo ubacktrace],
-                  [AC_DEFINE([HAVE_BACKTRACE], [1],
-                             [Define to 1 if you have backtrace(3).])])])
+  [AC_SEARCH_LIBS([backtrace], [execinfo ubacktrace], [HAVE_BACKTRACE=yes], [HAVE_BACKTRACE=no])
+   if test "$HAVE_BACKTRACE" = "yes"; then
+     AC_DEFINE([HAVE_BACKTRACE], [1], [Define to 1 if you have backtrace(3).])
+   fi
+   AM_CONDITIONAL([HAVE_BACKTRACE], [test "$HAVE_BACKTRACE" = "yes"])
+   AC_SUBST([HAVE_BACKTRACE])])
 
 dnl Defines HAVE_PERF_EVENT if linux/perf_event.h is found.
 AC_DEFUN([OVS_CHECK_PERF_EVENT],
@@ -738,14 +741,3 @@ AC_DEFUN([OVS_CHECK_UNBOUND],
    AM_CONDITIONAL([HAVE_UNBOUND], [test "$HAVE_UNBOUND" = yes])
    AC_SUBST([HAVE_UNBOUND])])
 
-dnl Checks for libunwind.
-AC_DEFUN([OVS_CHECK_UNWIND],
-  [AC_CHECK_LIB([unwind], [unw_backtrace],
-   [AC_CHECK_HEADERS([libunwind.h], [HAVE_UNWIND=yes], [HAVE_UNWIND=no])],
-   [HAVE_UNWIND=no])
-   if test "$HAVE_UNWIND" = yes; then
-     AC_DEFINE([HAVE_UNWIND], [1], [Define to 1 if unwind is detected.])
-     LIBS="$LIBS -lunwind"
-   fi
-   AM_CONDITIONAL([HAVE_UNWIND], [test "$HAVE_UNWIND" = yes])
-   AC_SUBST([HAVE_UNWIND])])
