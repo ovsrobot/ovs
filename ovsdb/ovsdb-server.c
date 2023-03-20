@@ -85,6 +85,7 @@ static bool trim_memory = true;
 static unixctl_cb_func ovsdb_server_exit;
 static unixctl_cb_func ovsdb_server_compact;
 static unixctl_cb_func ovsdb_server_memory_trim_on_compaction;
+static unixctl_cb_func ovsdb_server_show_memory_trim_on_compaction;
 static unixctl_cb_func ovsdb_server_reconnect;
 static unixctl_cb_func ovsdb_server_perf_counters_clear;
 static unixctl_cb_func ovsdb_server_perf_counters_show;
@@ -433,6 +434,9 @@ main(int argc, char *argv[])
     unixctl_command_register("ovsdb-server/memory-trim-on-compaction",
                              "on|off", 1, 1,
                              ovsdb_server_memory_trim_on_compaction, NULL);
+    unixctl_command_register("ovsdb-server/show-memory-trim-on-compaction", "",
+                             0, 0, ovsdb_server_show_memory_trim_on_compaction,
+                             NULL);
     unixctl_command_register("ovsdb-server/reconnect", "", 0, 0,
                              ovsdb_server_reconnect, jsonrpc);
 
@@ -1623,6 +1627,30 @@ ovsdb_server_memory_trim_on_compaction(struct unixctl_conn *conn,
                   trim_memory ? "enabled" : "disabled");
     }
     unixctl_command_reply(conn, NULL);
+}
+
+/* "ovsdb-server/show-memory-trim-on-compaction": shows whether ovsdb-server
+ * memory-trim-on-compaction setting is enabled or not.  */
+static void
+ovsdb_server_show_memory_trim_on_compaction(struct unixctl_conn *conn,
+                                            int argc OVS_UNUSED,
+                                            const char *argv[] OVS_UNUSED,
+                                            void *arg OVS_UNUSED)
+{
+#if !HAVE_DECL_MALLOC_TRIM
+    unixctl_command_reply_error(conn, "memory trimming is not supported");
+    return;
+#endif
+
+    struct ds s;
+
+    ds_init(&s);
+    ds_put_format(&s, "memory trim on compaction is %s",
+                  trim_memory ? "enabled" : "disabled");
+
+    unixctl_command_reply(conn, ds_cstr(&s));
+
+    ds_destroy(&s);
 }
 
 /* "ovsdb-server/reconnect": makes ovsdb-server drop all of its JSON-RPC
