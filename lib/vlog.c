@@ -657,11 +657,18 @@ vlog_set_syslog_target(const char *target)
  */
 void
 vlog_direct_write_to_log_file_unsafe(const char *s)
-    OVS_NO_THREAD_SAFETY_ANALYSIS
+OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     if (log_fd >= 0) {
         ignore(write(log_fd, s, strlen(s)));
     }
+}
+
+int
+vlog_fd(void)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
+{
+    return log_fd;
 }
 
 /* Returns 'false' if 'facility' is not a valid string. If 'facility'

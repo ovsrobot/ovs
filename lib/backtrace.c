@@ -32,12 +32,23 @@ VLOG_DEFINE_THIS_MODULE(backtrace);
 void
 backtrace_capture(struct backtrace *b)
 {
-    void *frames[BACKTRACE_MAX_FRAMES];
-    int i;
+    b->n_frames = backtrace(b->frames, BACKTRACE_MAX_FRAMES);
+}
 
-    b->n_frames = backtrace(frames, BACKTRACE_MAX_FRAMES);
-    for (i = 0; i < b->n_frames; i++) {
-        b->frames[i] = (uintptr_t) frames[i];
+void
+backtrace_format(const struct backtrace *bt, struct ds *ds)
+{
+    if (bt->n_frames) {
+        char **symbols = backtrace_symbols(bt->frames, bt->n_frames);
+        if (!symbols) {
+            return;
+        }
+
+        for (int i = 0; i < bt->n_frames; i++) {
+            ds_put_format(ds, "%s\n", symbols[i]);
+        }
+
+        free(symbols);
     }
 }
 
@@ -47,23 +58,13 @@ backtrace_capture(struct backtrace *backtrace)
 {
     backtrace->n_frames = 0;
 }
-#endif
 
-static char *
-backtrace_format(const struct backtrace *b, struct ds *ds)
+void
+backtrace_format(const struct backtrace *bt OVS_UNUSED, struct ds *ds)
 {
-    if (b->n_frames) {
-        int i;
-
-        ds_put_cstr(ds, " (backtrace:");
-        for (i = 0; i < b->n_frames; i++) {
-            ds_put_format(ds, " 0x%08"PRIxPTR, b->frames[i]);
-        }
-        ds_put_cstr(ds, ")");
-    }
-
-    return ds_cstr(ds);
+    ds_put_cstr(ds, "backtrace() is not supported!\n");
 }
+#endif
 
 void
 log_backtrace_at(const char *msg, const char *where)
@@ -77,41 +78,69 @@ log_backtrace_at(const char *msg, const char *where)
     }
 
     ds_put_cstr(&ds, where);
-    VLOG_ERR("%s", backtrace_format(&b, &ds));
+    ds_put_cstr(&ds, " backtrace:\n");
+    backtrace_format(&b, &ds);
+    VLOG_ERR("%s", ds_cstr_ro(&ds));
 
     ds_destroy(&ds);
+}
+
+static bool
+read_received_backtrace(int fd, void *dest, size_t len)
+{
+    VLOG_ERR("%s fd %d", __func__, fd);
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+    memset(dest, 0, len);
+
+    int byte_read = read(fd, dest, len);
+    if (byte_read < 0) {
+        VLOG_ERR("Read fd %d failed: %s", fd, ovs_strerror(errno));
+        return false;
+    }
+    return true;
 }
 
 #ifdef HAVE_UNWIND
 void
 log_received_backtrace(int fd) {
-    int byte_read;
     struct unw_backtrace backtrace[UNW_MAX_DEPTH];
 
-    VLOG_WARN("%s fd %d", __func__, fd);
-    fcntl(fd, F_SETFL, O_NONBLOCK);
-    memset(backtrace, 0, UNW_MAX_BUF);
+    if (read_received_backtrace(fd, backtrace, UNW_MAX_BUF)) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        ds_put_cstr(&ds, BACKTRACE_DUMP_MSG);
 
-    byte_read = read(fd, backtrace, UNW_MAX_BUF);
-    if (byte_read < 0) {
-        VLOG_ERR("Read fd %d failed: %s", fd,
-                 ovs_strerror(errno));
-    } else if (byte_read > 0) {
-        VLOG_WARN("SIGSEGV detected, backtrace:");
         for (int i = 0; i < UNW_MAX_DEPTH; i++) {
             if (backtrace[i].func[0] == 0) {
                 break;
             }
-            VLOG_WARN("0x%016"PRIxPTR" <%s+0x%"PRIxPTR">\n",
-                      backtrace[i].ip,
-                      backtrace[i].func,
-                      backtrace[i].offset);
+            ds_put_format(&ds, "0x%016"PRIxPTR" <%s+0x%"PRIxPTR">\n",
+                          backtrace[i].ip,
+                          backtrace[i].func,
+                          backtrace[i].offset);
         }
+
+        VLOG_ERR("%s", ds_cstr_ro(&ds));
+
+        ds_destroy(&ds);
     }
 }
-#else /* !HAVE_UNWIND */
+#elif HAVE_BACKTRACE
+void
+log_received_backtrace(int fd) {
+    struct backtrace bt;
+
+    if (read_received_backtrace(fd, &bt, sizeof bt)) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        ds_put_cstr(&ds, BACKTRACE_DUMP_MSG);
+        backtrace_format(&bt, &ds);
+        VLOG_ERR("%s", ds_cstr_ro(&ds));
+
+        ds_destroy(&ds);
+    }
+}
+#else
 void
 log_received_backtrace(int daemonize_fd OVS_UNUSED) {
-    VLOG_WARN("Backtrace using libunwind not supported.");
+    VLOG_ERR("Backtrace using libunwind or backtrace() is not supported.");
 }
-#endif /* HAVE_UNWIND */
+#endif

@@ -234,3 +234,74 @@ OVS_WAIT_UNTIL([sc query ovsdb-server | grep STATE | grep STOPPED > /dev/null 2>
 AT_CHECK([sc delete ovsdb-server], [0], [[[SC]] DeleteService SUCCESS
 ])
 AT_CLEANUP
+
+
+AT_SETUP([backtrace --detach])
+AT_SKIP_IF([test "$HAVE_BACKTRACE" = "no" && test "$HAVE_UNWIND" = "no"])
+
+# This test intentionally causes SIGSEGV, so make Address Sanitizer ignore it.
+ASAN_OPTIONS=$ASAN_OPTIONS:handle_segv=0; export ASAN_OPTIONS
+
+# Skip it if UB Sanitizer is being used.  There's no way to disable the
+# SEGV check at runtime.
+AT_SKIP_IF([test $TESTS_WITH_UBSAN = yes])
+
+# Start the daemon and make sure that the pidfile exists immediately.
+# We don't wait for the pidfile to get created because the daemon is
+# supposed to do so before the parent exits.
+AT_CHECK([ovsdb-server --detach --no-chdir --pidfile --no-db --log-file=`pwd`/ovsdb-server.log --verbose=DBG], [0], [ignore], [ignore])
+
+AT_CHECK([test -s ovsdb-server.pid])
+child=$(cat ovsdb-server.pid)
+
+OVS_WAIT_WHILE([kill -SEGV $child])
+OVS_WAIT_UNTIL([grep -q "^SIGSEGV detected, backtrace:" ovsdb-server.log])
+AT_CHECK([grep -q "fatal_signal|DBG|Load needed libraries by capturing dummy backtrace" ovsdb-server.log])
+
+AT_CLEANUP
+
+AT_SETUP([backtrace --detach --monitor])
+AT_SKIP_IF([test "$HAVE_BACKTRACE" = "no" && test "$HAVE_UNWIND" = "no"])
+
+# This test intentionally causes SIGSEGV, so make Address Sanitizer ignore it.
+ASAN_OPTIONS=$ASAN_OPTIONS:handle_segv=0; export ASAN_OPTIONS
+
+# Skip it if UB Sanitizer is being used.  There's no way to disable the
+# SEGV check at runtime.
+AT_SKIP_IF([test $TESTS_WITH_UBSAN = yes])
+
+on_exit 'kill $(cat *.pid)'
+
+# Start the daemon and make sure that the pidfile exists immediately.
+# We don't wait for the pidfile to get created because the daemon is
+# supposed to do so before the parent exits.
+AT_CHECK([ovsdb-server --detach --monitor --no-chdir --pidfile --no-db --log-file=`pwd`/ovsdb-server.log --verbose=DBG], [0], [ignore], [ignore])
+AT_CHECK([test -s ovsdb-server.pid])
+child=$(cat ovsdb-server.pid)
+
+# Check process naming and ancestry.
+monitor=$(parent_pid $child)
+check_process_name $child ovsdb-server
+check_ancestors $child $monitor 1
+
+# Kill the daemon process, making it look like a segfault,
+# and wait for a new daemon process to get spawned.
+AT_CHECK([kill -SEGV $child], [0])
+OVS_WAIT_WHILE([kill -0 $child])
+OVS_WAIT_UNTIL([test -s ovsdb-server.pid && test `cat ovsdb-server.pid` != $child])
+child2=$(cat ovsdb-server.pid)
+
+# Check process naming and ancestry.
+check_process_name $child2 ovsdb-server
+check_ancestors $child2 $monitor 1
+
+# Kill the daemon process with SIGTERM, and wait for the daemon
+# and the monitor processes to go away and the pidfile to get deleted.
+AT_CHECK([kill $child2])
+OVS_WAIT_WHILE([kill -0 $monitor || kill -0 $child2 || test -e ovsdb-server.pid])
+
+AT_CHECK([grep -q "fatal_signal|DBG|Load needed libraries by capturing dummy backtrace" ovsdb-server.log])
+AT_CHECK([grep -q "backtrace(monitor)|ERR|SIGSEGV detected, backtrace:" ovsdb-server.log])
+AT_CHECK([grep -q "daemon_unix(monitor)|ERR|1 crashes: pid .* died, killed (Segmentation fault), core dumped, restarting" ovsdb-server.log])
+
+AT_CLEANUP
