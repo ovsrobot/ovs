@@ -1283,7 +1283,7 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
         }
 
         if (flower.act_cookie.len) {
-            *ufid = *((ovs_u128 *) flower.act_cookie.data);
+            memcpy(ufid, flower.act_cookie.data, sizeof(ovs_u128));
         } else if (!find_ufid(netdev, &id, ufid)) {
             continue;
         }
