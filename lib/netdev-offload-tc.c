@@ -41,6 +41,7 @@
 #include "unaligned.h"
 #include "util.h"
 #include "dpif-provider.h"
+#include "cmap.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_offload_tc);
 
@@ -102,6 +103,107 @@ static void parse_tc_flower_to_stats(struct tc_flower *flower,
 
 static int get_ufid_adjust_stats(const ovs_u128 *ufid,
                                  struct dpif_flow_stats *stats);
+
+/* When offloading sample action to TC, userspace creates a unique ID
+ * to map sample action and tunnel info and passes this ID to kernel
+ * instead of the sample info. Kernel will send this ID and sampled
+ * packet to userspace. Using the ID, userspace can recover the sample
+ * info and send sampled packet to the right sample monitoring host. */
+struct offload_sample {
+    uint16_t type;           /* enum user_action_cookie_type. */
+    struct nlattr *action;   /* Sample action. Used in flow_get. */
+    struct nlattr *userdata; /* Struct user_action_cookie. */
+    struct nlattr *actions;  /* All actions to get output tunnel. */
+    struct flow_tnl *tunnel; /* Input tunnel. */
+};
+
+/* This maps a sample group ID to struct offload_sample. */
+struct sgid_node {
+    struct cmap_node id_node;
+    uint32_t id;
+    struct offload_sample sample;
+};
+
+static struct ovs_mutex sgid_lock = OVS_MUTEX_INITIALIZER;
+static struct cmap sgid_map = CMAP_INITIALIZER;
+static struct id_pool *sample_group_ids OVS_GUARDED_BY(sgid_lock);
+
+static void
+sgid_node_free(struct sgid_node *node)
+{
+    if (node) {
+        free(node->sample.tunnel);
+        free(node->sample.action);
+        free(node->sample.actions);
+        free(node->sample.userdata);
+        free(node);
+    }
+}
+
+static struct sgid_node *
+sgid_find(uint32_t id)
+{
+    const struct cmap_node *node = cmap_find(&sgid_map, id);
+
+    return node ? CONTAINER_OF(node, struct sgid_node, id_node) : NULL;
+}
+
+static void
+offload_sample_clone(struct offload_sample *new,
+                     const struct offload_sample *old)
+{
+    new->type = old->type;
+    new->action = xmemdup(old->action, old->action->nla_len);
+    new->actions = old->actions
+                   ? xmemdup(old->actions, old->actions->nla_len)
+                   : NULL;
+    new->userdata = xmemdup(old->userdata, old->userdata->nla_len);
+    new->tunnel = old->tunnel
+                  ? xmemdup(old->tunnel, sizeof *old->tunnel)
+                  : NULL;
+}
+
+/* Allocate a unique group id for the given set of flow metadata. The id
+ * space is 2^^32 - 1. 0 is reserved. */
+static uint32_t
+sgid_alloc(const struct offload_sample *sample)
+{
+    struct sgid_node *node = xzalloc(sizeof *node);
+
+    offload_sample_clone(&node->sample, sample);
+    ovs_mutex_lock(&sgid_lock);
+    if (!id_pool_alloc_id(sample_group_ids, &node->id)) {
+        VLOG_ERR("Can't find a free sample group ID");
+        sgid_node_free(node);
+        ovs_mutex_unlock(&sgid_lock);
+        return 0;
+    }
+    cmap_insert(&sgid_map, &node->id_node, node->id);
+    ovs_mutex_unlock(&sgid_lock);
+
+    return node ? node->id : 0;
+}
+
+static void
+sgid_free(uint32_t id)
+{
+    struct sgid_node *node;
+
+    if (!id) {
+        return;
+    }
+
+    ovs_mutex_lock(&sgid_lock);
+    node = sgid_find(id);
+    if (node) {
+        id_pool_free_id(sample_group_ids, node->id);
+        cmap_remove(&sgid_map, &node->id_node, node->id);
+        ovsrcu_postpone(sgid_node_free, node);
+    } else {
+        VLOG_ERR("Freeing nonexistent sample group ID: %"PRIu32, id);
+    }
+    ovs_mutex_unlock(&sgid_lock);
+}
 
 static bool
 is_internal_port(const char *type)
@@ -192,12 +294,17 @@ static struct netlink_field set_flower_map[][4] = {
 
 static struct ovs_mutex ufid_lock = OVS_MUTEX_INITIALIZER;
 
+#define MAX_TC_SAMPLES_PER_FLOW 1
+
 /**
  * struct ufid_tc_data - data entry for ufid-tc hashmaps.
  * @ufid_to_tc_node: Element in @ufid_to_tc hash table by ufid key.
  * @tc_to_ufid_node: Element in @tc_to_ufid hash table by tcf_id key.
  * @ufid: ufid assigned to the flow
  * @id: tc filter id (tcf_id)
+ * @sample_group_id: mapping id for sample actions. Currently only support
+                     sFlow. Use array to support other sample types in the
+                     future.
  * @netdev: netdev associated with the tc rule
  * @adjust_stats: When flow gets updated with new actions, we need to adjust
  *                the reported stats to include previous values as the hardware
@@ -208,6 +315,7 @@ struct ufid_tc_data {
     struct hmap_node tc_to_ufid_node;
     ovs_u128 ufid;
     struct tcf_id id;
+    uint32_t sample_group_id[MAX_TC_SAMPLES_PER_FLOW];
     struct netdev *netdev;
     struct dpif_flow_stats adjust_stats;
 };
@@ -231,6 +339,8 @@ del_ufid_tc_mapping_unlocked(const ovs_u128 *ufid)
     hmap_remove(&ufid_to_tc, &data->ufid_to_tc_node);
     hmap_remove(&tc_to_ufid, &data->tc_to_ufid_node);
     netdev_close(data->netdev);
+    sgid_free(data->sample_group_id[0]);
+    data->sample_group_id[0] = 0;
     free(data);
 }
 
@@ -2128,6 +2238,11 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
             if (err) {
                 return err;
             }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SAMPLE) {
+            struct offload_sample sample;
+
+            memset(&sample, 0, sizeof sample);
+            sgid_alloc(&sample);
         } else {
             VLOG_DBG_RL(&rl, "unsupported put action type: %d",
                         nl_attr_type(nla));
@@ -2871,6 +2986,9 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         tc_cleanup_policer_actions(meter_police_ids, METER_POLICE_IDS_BASE,
                                    METER_POLICE_IDS_MAX);
         ovs_mutex_unlock(&meter_police_ids_mutex);
+        ovs_mutex_lock(&sgid_lock);
+        sample_group_ids = id_pool_create(1, UINT32_MAX - 1);
+        ovs_mutex_unlock(&sgid_lock);
 
         ovsthread_once_done(&once);
     }
