@@ -28,6 +28,8 @@
 extern "C" {
 #endif
 
+struct dpif_upcall;
+
 struct netdev_flow_api {
     char *type;
     /* Flush all offloaded flows from a netdev.
@@ -120,6 +122,21 @@ struct netdev_flow_api {
      * function for additional details on the 'stats' usage. */
     int (*meter_del)(ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *stats);
+
+    /* Polls for sample offload packets for an upcall handler. If successful,
+     * stores the upcall into '*upcall', using 'buf' for storage.
+     *
+     * Return 0 if successful, otherwise returns a positive errno value.
+     *
+     * This function must not block. If no upcall is pending when it is
+     * called, it should return EAGAIN without blocking. */
+    int (*recv)(struct dpif_upcall *upcall, struct ofpbuf *buf,
+                uint32_t handler_id);
+
+    /* Arranges for the poll loop for an upcall handler to wake up when
+     * sample socket has a message queued to be received with the recv
+     * member functions. */
+    void (*recv_wait)(uint32_t handler_id);
 
     /* Initializies the netdev flow api.
      * Return 0 if successful, otherwise returns a positive errno value. */
