@@ -425,6 +425,7 @@ AT_CHECK([RUN_OVS_VSCTL_ONELINE(
   [add-port a a1],
   [add-bond a bond0 a2 a3],
   [br-set-external-id a key0 value0],
+  [add Bridge a external_ids key0=value1],
   [set port a1 external-ids:key1=value1],
   [set interface a2 external-ids:key2=value2],
   [set interface a2 external-ids:key3=value3],
@@ -439,6 +440,7 @@ AT_CHECK([RUN_OVS_VSCTL_ONELINE(
   [get port a1 external-ids],
   [get interface a2 external-ids],
   [get interface a3 external-ids])], [0], [
+
 
 
 
