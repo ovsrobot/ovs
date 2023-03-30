@@ -17,6 +17,7 @@
 #include <config.h>
 #include "openvswitch/shash.h"
 #include "hash.h"
+#include "util.h"
 
 static struct shash_node *shash_find__(const struct shash *,
                                        const char *name, size_t name_len,
@@ -194,7 +195,9 @@ shash_replace_nocopy(struct shash *sh, char *name, const void *data)
 void
 shash_delete(struct shash *sh, struct shash_node *node)
 {
-    free(shash_steal(sh, node));
+    if (node) {
+        free(shash_steal(sh, node));
+    }
 }
 
 /* Deletes 'node' from 'sh'.  Neither the node's name nor its data is freed;

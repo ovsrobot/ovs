@@ -26,6 +26,7 @@
 #include "netlink-notifier.h"
 #include "openvswitch/ofpbuf.h"
 #include "packets.h"
+#include "util.h"
 
 #if IFLA_INFO_MAX < 5
 #define IFLA_INFO_SLAVE_KIND 4
@@ -131,6 +132,8 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
                 change->irrelevant = true;
             }
 
+            ovs_assert(ifinfo != NULL);
+
             change->nlmsg_type     = nlmsg->nlmsg_type;
             change->if_index       = ifinfo->ifi_index;
             change->ifname         = nl_attr_get_string(attrs[IFLA_IFNAME]);
@@ -176,6 +179,8 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
             const struct ifaddrmsg *ifaddr;
 
             ifaddr = ofpbuf_at(buf, NLMSG_HDRLEN, sizeof *ifaddr);
+
+            ovs_assert(ifaddr != NULL);
 
             change->nlmsg_type     = nlmsg->nlmsg_type;
             change->if_index       = ifaddr->ifa_index;

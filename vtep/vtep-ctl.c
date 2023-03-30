@@ -250,6 +250,7 @@ parse_options(int argc, char *argv[], struct shash *local_options)
             exit(EXIT_SUCCESS);
 
         case 't':
+            ovs_assert(optarg != NULL);
             if (!str_to_uint(optarg, 10, &timeout) || !timeout) {
                 ctl_fatal("value %s on -t or --timeout is invalid", optarg);
             }
@@ -1065,6 +1066,7 @@ vtep_ctl_context_populate_cache(struct ctl_context *ctx)
             continue;
         }
         ps = shash_find_data(&vtepctl_ctx->pswitches, ps_cfg->name);
+        ovs_assert(ps != NULL);
         for (j = 0; j < ps_cfg->n_ports; j++) {
             struct vteprec_physical_port *port_cfg = ps_cfg->ports[j];
             struct vtep_ctl_port *port;
@@ -1087,7 +1089,7 @@ vtep_ctl_context_populate_cache(struct ctl_context *ctx)
             }
 
             port = add_port_to_cache(vtepctl_ctx, ps, port_cfg);
-
+            ovs_assert(port != NULL);
             for (k = 0; k < port_cfg->n_vlan_bindings; k++) {
                 struct vtep_ctl_lswitch *ls;
                 char *vlan;
@@ -1892,8 +1894,10 @@ del_mcast_entry(struct ctl_context *ctx,
             vteprec_mcast_macs_remote_delete(mcast_mac->remote_cfg);
         }
 
-        free(node->data);
-        shash_delete(mcast_shash, node);
+        if (node) {
+            free(node->data);
+            shash_delete(mcast_shash, node);
+        }
     } else {
         if (local) {
             vteprec_mcast_macs_local_set_locator_set(mcast_mac->local_cfg,

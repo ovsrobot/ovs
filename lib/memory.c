@@ -24,6 +24,7 @@
 #include "simap.h"
 #include "timeval.h"
 #include "unixctl.h"
+#include "util.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(memory);
@@ -116,13 +117,14 @@ compose_report(const struct simap *usage, struct ds *s)
     size_t n = simap_count(usage);
     size_t i;
 
-    for (i = 0; i < n; i++) {
-        const struct simap_node *node = nodes[i];
-
-        ds_put_format(s, "%s:%u ", node->name, node->data);
+    if (nodes) {
+        for (i = 0; i < n; i++) {
+            const struct simap_node *node = nodes[i];
+            ds_put_format(s, "%s:%u ", node->name, node->data);
+        }
+        free(nodes);
     }
     ds_chomp(s, ' ');
-    free(nodes);
 }
 
 /* Logs the contents of 'usage', as a collection of name-count pairs.

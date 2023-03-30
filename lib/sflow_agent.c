@@ -153,6 +153,8 @@ void sfl_agent_tick(SFLAgent *agent, time_t now)
 SFLReceiver *sfl_agent_addReceiver(SFLAgent *agent)
 {
     SFLReceiver *rcv = (SFLReceiver *)sflAlloc(agent, sizeof(SFLReceiver));
+    ovs_assert(rcv != NULL);
+    memset(rcv, 0, sizeof(*rcv));
     sfl_receiver_init(rcv, agent);
     /* add to end of list - to preserve the receiver index numbers for existing receivers */
     {
@@ -203,6 +205,8 @@ SFLSampler *sfl_agent_addSampler(SFLAgent *agent, SFLDataSource_instance *pdsi)
 
     {
 	SFLSampler *newsm = (SFLSampler *)sflAlloc(agent, sizeof(SFLSampler));
+    ovs_assert(newsm != NULL);
+    memset(newsm, 0, sizeof(*newsm));
 	sfl_sampler_init(newsm, agent, pdsi);
 	if(prev) prev->nxt = newsm;
 	else agent->samplers = newsm;
@@ -242,6 +246,8 @@ SFLPoller *sfl_agent_addPoller(SFLAgent *agent,
     /* either we found the insert point, or reached the end of the list... */
     {
 	SFLPoller *newpl = (SFLPoller *)sflAlloc(agent, sizeof(SFLPoller));
+    ovs_assert(newpl != NULL);
+    memset(newpl, 0, sizeof(*newpl));
 	sfl_poller_init(newpl, agent, pdsi, magic, getCountersFn);
 	if(prev) prev->nxt = newpl;
 	else agent->pollers = newpl;

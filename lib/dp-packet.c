@@ -171,6 +171,7 @@ dp_packet_new_with_headroom(size_t size, size_t headroom)
 struct dp_packet *
 dp_packet_clone(const struct dp_packet *buffer)
 {
+    ovs_assert(buffer != NULL);
     return dp_packet_clone_with_headroom(buffer, 0);
 }
 
@@ -183,9 +184,12 @@ dp_packet_clone_with_headroom(const struct dp_packet *buffer, size_t headroom)
     struct dp_packet *new_buffer;
     uint32_t mark;
 
-    new_buffer = dp_packet_clone_data_with_headroom(dp_packet_data(buffer),
-                                                 dp_packet_size(buffer),
-                                                 headroom);
+    const void *data_dp = dp_packet_data(buffer);
+    ovs_assert(data_dp != NULL);
+
+    new_buffer = dp_packet_clone_data_with_headroom(data_dp,
+                                                    dp_packet_size(buffer),
+                                                    headroom);
     /* Copy the following fields into the returned buffer: l2_pad_size,
      * l2_5_ofs, l3_ofs, l4_ofs, cutlen, packet_type and md. */
     memcpy(&new_buffer->l2_pad_size, &buffer->l2_pad_size,
@@ -323,7 +327,9 @@ dp_packet_shift(struct dp_packet *b, int delta)
 
     if (delta != 0) {
         char *dst = (char *) dp_packet_data(b) + delta;
-        memmove(dst, dp_packet_data(b), dp_packet_size(b));
+        const void *data_dp = dp_packet_data(b);
+        ovs_assert(data_dp != NULL);
+        memmove(dst, data_dp, dp_packet_size(b));
         dp_packet_set_data(b, dst);
     }
 }
@@ -348,7 +354,7 @@ void *
 dp_packet_put_zeros(struct dp_packet *b, size_t size)
 {
     void *dst = dp_packet_put_uninit(b, size);
-    memset(dst, 0, size);
+    nullable_memset(dst, 0, size);
     return dst;
 }
 
@@ -359,7 +365,7 @@ void *
 dp_packet_put(struct dp_packet *b, const void *p, size_t size)
 {
     void *dst = dp_packet_put_uninit(b, size);
-    memcpy(dst, p, size);
+    nullable_memcpy(dst, p, size);
     return dst;
 }
 
@@ -431,7 +437,7 @@ void *
 dp_packet_push_zeros(struct dp_packet *b, size_t size)
 {
     void *dst = dp_packet_push_uninit(b, size);
-    memset(dst, 0, size);
+    nullable_memset(dst, 0, size);
     return dst;
 }
 
@@ -442,7 +448,7 @@ void *
 dp_packet_push(struct dp_packet *b, const void *p, size_t size)
 {
     void *dst = dp_packet_push_uninit(b, size);
-    memcpy(dst, p, size);
+    nullable_memcpy(dst, p, size);
     return dst;
 }
 

@@ -39,6 +39,7 @@
 #include "transaction.h"
 #include "transaction-forward.h"
 #include "trigger.h"
+#include "util.h"
 
 #include "openvswitch/vlog.h"
 VLOG_DEFINE_THIS_MODULE(ovsdb);
@@ -195,7 +196,7 @@ root_set_size(const struct ovsdb_schema *schema)
 struct ovsdb_error *
 ovsdb_schema_from_json(const struct json *json, struct ovsdb_schema **schemap)
 {
-    struct ovsdb_schema *schema;
+    struct ovsdb_schema *schema = NULL;
     const struct json *name, *tables, *version_json, *cksum;
     struct ovsdb_error *error;
     struct shash_node *node;
@@ -214,6 +215,9 @@ ovsdb_schema_from_json(const struct json *json, struct ovsdb_schema **schemap)
     if (error) {
         return error;
     }
+
+    ovs_assert(name != NULL);
+    ovs_assert(tables != NULL);
 
     if (version_json) {
         version = json_string(version_json);
@@ -247,6 +251,8 @@ ovsdb_schema_from_json(const struct json *json, struct ovsdb_schema **schemap)
 
         shash_add(&schema->tables, table->name, table);
     }
+
+    ovs_assert(schema != NULL);
 
     /* "isRoot" was not part of the original schema definition.  Before it was
      * added, there was no support for garbage collection.  So, for backward

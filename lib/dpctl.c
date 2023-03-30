@@ -336,6 +336,8 @@ dpctl_add_if(int argc OVS_UNUSED, const char *argv[],
                 value = "";
             }
 
+            ovs_assert(key != NULL);
+
             if (!strcmp(key, "type")) {
                 type = value;
             } else if (!strcmp(key, "port_no")) {
@@ -453,6 +455,8 @@ dpctl_set_if(int argc, const char *argv[], struct dpctl_params *dpctl_p)
             if (!value) {
                 value = "";
             }
+
+            ovs_assert(key != NULL);
 
             if (!strcmp(key, "type")) {
                 if (strcmp(value, type)) {
@@ -693,12 +697,14 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
                 error = netdev_get_config(netdev, &config);
                 if (!error) {
                     const struct smap_node **nodes = smap_sort(&config);
-                    for (size_t j = 0; j < smap_count(&config); j++) {
-                        const struct smap_node *node = nodes[j];
-                        dpctl_print(dpctl_p, "%c %s=%s", j ? ',' : ':',
-                                    node->key, node->value);
+                    if (nodes) {
+                        for (size_t j = 0; j < smap_count(&config); j++) {
+                            const struct smap_node *node = nodes[j];
+                            dpctl_print(dpctl_p, "%c %s=%s", j ? ',' : ':',
+                                        node->key, node->value);
+                        }
+                        free(nodes);
                     }
-                    free(nodes);
                 } else {
                     dpctl_print(dpctl_p, ", could not retrieve configuration "
                                          "(%s)",  ovs_strerror(error));

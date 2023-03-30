@@ -522,8 +522,15 @@ ovsdb_file_txn_add_row(struct ovsdb_file_txn *ftxn,
     }
 
     if (row) {
-        struct ovsdb_table *table = new ? new->table : old->table;
+        struct ovsdb_table *table = NULL;
+        if (new) {
+            table = new->table;
+        } else if (old) {
+            table = old->table;
+        }
         char uuid[UUID_LEN + 1];
+
+        ovs_assert(table != NULL);
 
         if (table != ftxn->table) {
             /* Create JSON object for transaction overall. */
@@ -538,9 +545,15 @@ ovsdb_file_txn_add_row(struct ovsdb_file_txn *ftxn,
         }
 
         /* Add row to transaction for this table. */
-        snprintf(uuid, sizeof uuid,
-                 UUID_FMT, UUID_ARGS(ovsdb_row_get_uuid(new ? new : old)));
-        json_object_put(ftxn->table_json, uuid, row);
+        if (new) {
+            snprintf(uuid, sizeof uuid,
+                     UUID_FMT, UUID_ARGS(ovsdb_row_get_uuid(new)));
+            json_object_put(ftxn->table_json, uuid, row);
+        } else if (old) {
+            snprintf(uuid, sizeof uuid,
+                     UUID_FMT, UUID_ARGS(ovsdb_row_get_uuid(old)));
+            json_object_put(ftxn->table_json, uuid, row);
+        }
     }
 }
 
