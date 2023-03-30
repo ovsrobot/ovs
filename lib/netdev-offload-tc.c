@@ -2892,7 +2892,8 @@ meter_free_police_index(uint32_t police_index)
 }
 
 static int
-meter_tc_set_policer(ofproto_meter_id meter_id,
+meter_tc_set_policer(struct netdev *netdev OVS_UNUSED,
+                     ofproto_meter_id meter_id,
                      struct ofputil_meter_config *config)
 {
     uint32_t police_index;
@@ -2946,7 +2947,8 @@ meter_tc_set_policer(ofproto_meter_id meter_id,
 }
 
 static int
-meter_tc_get_policer(ofproto_meter_id meter_id,
+meter_tc_get_policer(struct netdev *netdev OVS_UNUSED,
+                     ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *stats)
 {
     uint32_t police_index;
@@ -2965,7 +2967,8 @@ meter_tc_get_policer(ofproto_meter_id meter_id,
 }
 
 static int
-meter_tc_del_policer(ofproto_meter_id meter_id,
+meter_tc_del_policer(struct netdev *netdev OVS_UNUSED,
+                     ofproto_meter_id meter_id,
                      struct ofputil_meter_stats *stats)
 {
     uint32_t police_index;

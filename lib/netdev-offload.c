@@ -206,7 +206,7 @@ meter_offload_set(ofproto_meter_id meter_id,
 
     CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
         if (rfa->flow_api->meter_set) {
-            int ret = rfa->flow_api->meter_set(meter_id, config);
+            int ret = rfa->flow_api->meter_set(NULL, meter_id, config);
             if (ret) {
                 VLOG_DBG_RL(&rl, "Failed setting meter %u for flow api %s, "
                             "error %d", meter_id.uint32, rfa->flow_api->type,
@@ -225,7 +225,7 @@ meter_offload_get(ofproto_meter_id meter_id, struct ofputil_meter_stats *stats)
 
     CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
         if (rfa->flow_api->meter_get) {
-            int ret = rfa->flow_api->meter_get(meter_id, stats);
+            int ret = rfa->flow_api->meter_get(NULL, meter_id, stats);
             if (ret) {
                 VLOG_DBG_RL(&rl, "Failed getting meter %u for flow api %s, "
                             "error %d", meter_id.uint32, rfa->flow_api->type,
@@ -244,7 +244,7 @@ meter_offload_del(ofproto_meter_id meter_id, struct ofputil_meter_stats *stats)
 
     CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
         if (rfa->flow_api->meter_del) {
-            int ret = rfa->flow_api->meter_del(meter_id, stats);
+            int ret = rfa->flow_api->meter_del(NULL, meter_id, stats);
             if (ret) {
                 VLOG_DBG_RL(&rl, "Failed deleting meter %u for flow api %s, "
                             "error %d", meter_id.uint32, rfa->flow_api->type,
@@ -894,4 +894,133 @@ netdev_set_flow_api_enabled(const struct smap *ovs_other_config)
             ovsthread_once_done(&once);
         }
     }
+}
+struct dpdk_meter_aux {
+    struct ofputil_meter_config *config;
+    struct ofputil_meter_stats *stats;
+    ofproto_meter_id meter_id;
+    odp_port_t odp_port;
+};
+
+static bool
+dpdk_meter_set_cb(struct netdev *netdev,
+               odp_port_t odp_port,
+               void *aux_)
+{
+    struct netdev_registered_flow_api *rfa;
+    struct dpdk_meter_aux *aux = aux_;
+    ofproto_meter_id meter_id;
+    int ret;
+
+    meter_id = aux->meter_id;
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->meter_set) {
+            ret = rfa->flow_api->meter_set(netdev, meter_id, aux->config);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed setting meter %u for flow api %s with"
+                            " port number %u, error %d", meter_id.uint32,
+                            rfa->flow_api->type, odp_port, ret);
+            }
+        }
+    }
+
+    return 0;
+}
+
+void
+dpdk_meter_offload_set(const char *dpif_type,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_config *config)
+{
+    struct dpdk_meter_aux aux = {
+        .meter_id = meter_id,
+        .config = config,
+    };
+    netdev_ports_traverse(dpif_type, dpdk_meter_set_cb, &aux);
+}
+
+static bool
+dpdk_meter_get_cb(struct netdev *netdev,
+               odp_port_t odp_port,
+               void *aux_)
+{
+    struct ofputil_meter_stats *stats, offload_stats;
+    struct netdev_registered_flow_api *rfa;
+    struct dpdk_meter_aux *aux = aux_;
+    ofproto_meter_id meter_id;
+    int ret;
+
+    memset(&offload_stats, 0, sizeof(struct ofputil_meter_stats));
+    meter_id = aux->meter_id;
+    stats = aux->stats;
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->meter_get) {
+            ret = rfa->flow_api->meter_get(netdev, meter_id, &offload_stats);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed getting meter %u for flow api %s with"
+                            " port number %u, error %d", meter_id.uint32,
+                            rfa->flow_api->type, odp_port, ret);
+            }
+        }
+    }
+
+    if (!offload_stats.byte_in_count && !offload_stats.packet_in_count) {
+           return 0;
+    }
+    stats->byte_in_count += offload_stats.byte_in_count;
+    stats->packet_in_count += offload_stats.packet_in_count;
+
+    return 0;
+}
+
+void
+dpdk_meter_offload_get(const char *dpif_type,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_stats *stats)
+{
+    struct dpdk_meter_aux aux = {
+        .meter_id = meter_id,
+        .stats = stats,
+    };
+    netdev_ports_traverse(dpif_type, dpdk_meter_get_cb, &aux);
+}
+
+static bool
+dpdk_meter_del_cb(struct netdev *netdev,
+               odp_port_t odp_port,
+               void *aux_)
+{
+    struct netdev_registered_flow_api *rfa;
+    struct ofputil_meter_stats *stats;
+    struct dpdk_meter_aux *aux = aux_;
+    ofproto_meter_id meter_id;
+    int ret;
+
+    meter_id = aux->meter_id;
+    stats = aux->stats;
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->meter_del) {
+            ret = rfa->flow_api->meter_del(netdev, meter_id, stats);
+            if (ret) {
+                VLOG_DBG_RL(&rl, "Failed deleting meter %u for flow api %s"
+                            " with port number %u, error %d", meter_id.uint32,
+                            rfa->flow_api->type, odp_port, ret);
+            }
+        }
+    }
+
+    return 0;
+}
+
+void
+dpdk_meter_offload_del(const char *dpif_type,
+                       ofproto_meter_id meter_id,
+                       struct ofputil_meter_stats *stats)
+{
+    struct dpdk_meter_aux aux = {
+        .meter_id = meter_id,
+        .stats = stats,
+    };
+
+    netdev_ports_traverse(dpif_type, dpdk_meter_del_cb, &aux);
 }
