@@ -524,7 +524,7 @@ process_packet_in(struct lswitch *sw, const struct ofp_header *oh)
     uint64_t ofpacts_stub[64 / 8];
     struct ofpbuf ofpacts;
 
-    struct ofputil_packet_out po;
+    struct ofputil_packet_out po = {0};
     enum ofperr error;
 
     struct dp_packet pkt;
