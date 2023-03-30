@@ -37,6 +37,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_meter.h>
+#include <rte_mtr.h>
 #include <rte_pci.h>
 #include <rte_version.h>
 #include <rte_vhost.h>
@@ -5330,7 +5331,208 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
     return ret;
 }
 
+static int OVS_UNUSED
+netdev_dpdk_meter_profile_init(struct rte_mtr_meter_profile *profile,
+                               struct rte_mtr_capabilities *cap,
+                               const uint64_t rate,
+                               const uint64_t burst,
+                               const int flag)
+{
+    if (!cap->meter_srtcm_rfc2697_n_max) {
+        return EOPNOTSUPP;
+    }
+
+    profile->alg = RTE_MTR_SRTCM_RFC2697;
+    profile->packet_mode = flag;
+    profile->srtcm_rfc2697.cir = rate;
+    profile->srtcm_rfc2697.cbs = burst;
+    profile->srtcm_rfc2697.ebs = burst;
+
+    return 0;
+}
+
 #ifdef ALLOW_EXPERIMENTAL_API
+
+static int
+netdev_dpdk_rte_mtr_meter_add(struct rte_mtr_meter_profile *profile,
+                              struct netdev *netdev,
+                              uint32_t meter_id,
+                              const uint32_t rate,
+                              const uint32_t burst,
+                              const int flag,
+                              struct rte_mtr_error *error)
+{
+    struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    uint32_t meter_profile_id = meter_id;
+    uint32_t meter_policy_id = meter_id;
+    struct rte_mtr_capabilities cap;
+    struct rte_mtr_stats mtr_stats;
+    struct rte_mtr_params params;
+    uint64_t stats_mask = 0;
+    int prox_port_id;
+    int clear = 0;
+    int mod;
+    int ret;
+
+    memset(&mtr_stats, 0, sizeof(struct rte_mtr_stats));
+    memset(&cap, 0, sizeof(cap));
+
+    ovs_mutex_lock(&dev->mutex);
+
+    prox_port_id = dev->flow_transfer_proxy_port_id;
+    ret = rte_mtr_capabilities_get(prox_port_id, &cap, error);
+    if (ret) {
+        goto out;
+    }
+
+    ret = netdev_dpdk_meter_profile_init(profile, &cap, rate, burst, flag);
+    if (ret) {
+        goto out;
+    }
+
+    /* If can get the meter stats, the meter is offload in the HW.
+     * So the operate is mod, just update the meter_profile.
+     *
+     * If can't get the meter stats, the meter is not offload in the HW.
+     * So the operate is add, need create the profile, policy, mtr. */
+    mod = rte_mtr_stats_read(prox_port_id, meter_id, &mtr_stats, &stats_mask,
+                             clear, error);
+    ret = rte_mtr_meter_profile_add(prox_port_id, meter_profile_id, profile,
+                                    error);
+    if (!mod || ret) {
+        goto out;
+    }
+
+    rte_mtr_policy_drop_red(policy);
+    ret = rte_mtr_meter_policy_add(prox_port_id, meter_policy_id, &policy,
+                                   error);
+
+    if (ret) {
+        goto out;
+    }
+
+    memset(&params, 0 , sizeof(struct rte_mtr_params));
+    params.meter_profile_id = meter_profile_id;
+    params.meter_policy_id = meter_policy_id;
+    params.stats_mask = cap.stats_mask;
+    params.meter_enable = 1;
+
+    ret = rte_mtr_create(prox_port_id, meter_id, &params, 1, error);
+out:
+    ovs_mutex_unlock(&dev->mutex);
+    return ret;
+}
+
+int
+netdev_dpdk_meter_create(struct netdev *netdev,
+                         const uint32_t meter_profile_id,
+                         const uint64_t rate,
+                         const uint64_t burst,
+                         const int flag)
+{
+    struct rte_mtr_meter_profile profile;
+    struct rte_mtr_error error;
+    int ret;
+
+    memset(&profile, 0 , sizeof(struct rte_mtr_meter_profile));
+    memset(&error, 0 , sizeof(struct rte_mtr_error));
+
+    ret = netdev_dpdk_rte_mtr_meter_add(&profile, netdev, meter_profile_id,
+                                        rate, burst, flag, &error);
+    if (!ret) {
+        if (!VLOG_DROP_DBG(&rl)) {
+            VLOG_DBG("%s: rte_meter_id %d  port_id %d mtr create ",
+                     netdev_get_name(netdev), meter_profile_id,
+                     netdev_dpdk_get_prox_port_id(netdev));
+        }
+    } else {
+        VLOG_DBG("%s: rte_mtr creation failed: %d (%s).",
+                 netdev_get_name(netdev), error.type, error.message);
+    }
+    return ret;
+}
+
+int
+netdev_dpdk_meter_del(struct netdev *netdev,
+                      const uint32_t meter_id,
+                      const uint32_t meter_profile_id,
+                      const uint32_t meter_policy_id)
+{
+    struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    struct rte_mtr_stats mtr_stats;
+    struct rte_mtr_error error;
+    uint64_t stats_mask = 0;
+    int proxy_port_id;
+    int clear = 0;
+    int ret = 0 ;
+
+    memset(&mtr_stats, 0, sizeof(struct rte_mtr_stats));
+    memset(&error, 0 , sizeof(struct rte_mtr_error));
+    ovs_mutex_lock(&dev->mutex);
+
+    proxy_port_id = dev->flow_transfer_proxy_port_id;
+    ret = rte_mtr_stats_read(proxy_port_id, meter_id, &mtr_stats, &stats_mask,
+                             clear, &error);
+    if (ret) {
+        goto out;
+    }
+
+    ret = rte_mtr_destroy(proxy_port_id, meter_id, &error);
+    if (!ret) {
+        ret = rte_mtr_meter_policy_delete(proxy_port_id, meter_policy_id,
+                                          &error);
+        if (!ret) {
+            ret = rte_mtr_meter_profile_delete(proxy_port_id, meter_profile_id,
+                                               &error);
+        }
+
+        if (!VLOG_DROP_DBG(&rl)) {
+            VLOG_DBG("%s: rte_meter_id %d port_id %d mtr delete",
+                     netdev_get_name(netdev), meter_id,
+                     netdev_dpdk_get_prox_port_id(netdev));
+        }
+    } else {
+        VLOG_DBG("%s: rte_mtr delete mtr_id %d failed: %d (%s).",
+                 netdev_get_name(netdev), meter_id, error.type, error.message);
+    }
+
+out:
+    ovs_mutex_unlock(&dev->mutex);
+    return ret;
+}
+
+int
+netdev_dpdk_meter_get(struct netdev *netdev,
+                      const uint32_t meter_id,
+                      uint64_t *byte_in_count,
+                      uint64_t *packet_in_count)
+{
+    struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    struct rte_mtr_stats mtr_stats;
+    struct rte_mtr_error error;
+    uint64_t stats_mask = 0;
+    int clear = 0;
+    int ret = 0 ;
+
+    memset(&mtr_stats, 0, sizeof(struct rte_mtr_stats));
+    memset(&error, 0, sizeof(struct rte_mtr_error));
+
+    ret = rte_mtr_stats_read(dev->flow_transfer_proxy_port_id, meter_id,
+                             &mtr_stats, &stats_mask, clear, &error);
+    if (!ret) {
+        *byte_in_count = mtr_stats.n_bytes[RTE_COLOR_GREEN];
+        *packet_in_count = mtr_stats.n_pkts[RTE_COLOR_GREEN];
+        if (!VLOG_DROP_DBG(&rl)) {
+            VLOG_DBG("%s: rte_meter_id %d  port_id %d mtr get stats success ",
+                     netdev_get_name(netdev),meter_id,
+                     netdev_dpdk_get_prox_port_id(netdev));
+        }
+    } else {
+        VLOG_DBG("%s: rte_mtr get mtr_id %d stats failed: %d (%s).",
+                 netdev_get_name(netdev), meter_id, error.type, error.message);
+    }
+    return ret;
+}
 
 int
 netdev_dpdk_rte_flow_tunnel_decap_set(struct netdev *netdev,
