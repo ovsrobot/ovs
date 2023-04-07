@@ -645,6 +645,12 @@ set_subprogram_name(const char *subprogram_name)
     free(subprogram_name_set(pname));
 
 #if HAVE_GLIBC_PTHREAD_SETNAME_NP
+    /* The maximum thead name including '\0' supported is 16.
+     * add '>' at 14th position to highlight that the name was truncated. */
+    if (strlen(pname) > 15) {
+        pname[15] = '\0';
+        pname[14] = '>';
+    }
     pthread_setname_np(pthread_self(), pname);
 #elif HAVE_NETBSD_PTHREAD_SETNAME_NP
     pthread_setname_np(pthread_self(), "%s", pname);
