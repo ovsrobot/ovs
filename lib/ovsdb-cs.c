@@ -632,7 +632,7 @@ ovsdb_cs_run(struct ovsdb_cs *cs, struct ovs_list *events)
 
         ovsdb_cs_db_add_event(&cs->data, OVSDB_CS_EVENT_TYPE_RECONNECT);
 
-        if (cs->data.lock_name) {
+        if (cs->data.lock_name && ovsdb_cs_is_connected(cs)) {
             jsonrpc_session_send(
                 cs->session,
                 ovsdb_cs_db_compose_lock_request(&cs->data));
