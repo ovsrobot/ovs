@@ -17,6 +17,7 @@
 #include <config.h>
 #include "openvswitch/shash.h"
 #include "hash.h"
+#include "util.h"
 
 static struct shash_node *shash_find__(const struct shash *,
                                        const char *name, size_t name_len,
@@ -271,7 +272,7 @@ void *
 shash_find_and_delete_assert(struct shash *sh, const char *name)
 {
     void *data = shash_find_and_delete(sh, name);
-    ovs_assert(data != NULL);
+    ovs_assert(data);
     return data;
 }
 
