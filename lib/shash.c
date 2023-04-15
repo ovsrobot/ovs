@@ -100,6 +100,10 @@ shash_is_empty(const struct shash *shash)
 size_t
 shash_count(const struct shash *shash)
 {
+    if (!shash || shash_is_empty(shash)) {
+        return 0;
+    }
+
     return hmap_count(&shash->map);
 }
 

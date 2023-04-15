@@ -84,6 +84,10 @@ simap_is_empty(const struct simap *simap)
 size_t
 simap_count(const struct simap *simap)
 {
+    if (!simap || simap_is_empty(simap)) {
+        return 0;
+    }
+
     return hmap_count(&simap->map);
 }
 

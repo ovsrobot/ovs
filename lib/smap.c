@@ -300,6 +300,10 @@ smap_is_empty(const struct smap *smap)
 size_t
 smap_count(const struct smap *smap)
 {
+    if (!smap || smap_is_empty(smap)) {
+        return 0;
+    }
+
     return hmap_count(&smap->map);
 }
 
