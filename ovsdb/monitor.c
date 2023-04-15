@@ -1330,8 +1330,23 @@ ovsdb_monitor_changes_update(const struct ovsdb_row *old,
                              const struct ovsdb_monitor_table *mt,
                              struct ovsdb_monitor_change_set_for_table *mcst)
 {
-    const struct uuid *uuid = ovsdb_row_get_uuid(new ? new : old);
-    struct ovsdb_monitor_row *change;
+    const struct uuid *uuid = NULL;
+
+    if (!new && !old) {
+        return;
+    } else {
+        if (new) {
+            uuid = ovsdb_row_get_uuid(new);
+        } else if (old) {
+            uuid = ovsdb_row_get_uuid(old);
+        }
+    }
+
+    if (!uuid) {
+        return;
+    }
+
+    struct ovsdb_monitor_row *change = NULL;
 
     change = ovsdb_monitor_changes_row_find(mcst, uuid);
     if (!change) {
