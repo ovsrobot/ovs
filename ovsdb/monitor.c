@@ -781,7 +781,8 @@ ovsdb_monitor_table_condition_update(
                             const struct json *cond_json)
 {
     if (!condition) {
-        return NULL;
+        return ovsdb_syntax_error(cond_json, NULL,
+                                  "Parse error, condition empty.");
     }
 
     struct ovsdb_monitor_table_condition *mtc =

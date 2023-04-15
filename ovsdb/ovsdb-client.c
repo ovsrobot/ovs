@@ -1232,8 +1232,14 @@ parse_monitor_columns(char *arg, const char *server, const char *database,
         }
         free(nodes);
 
-        add_column(server, ovsdb_table_schema_get_column(table, "_version"),
-                   columns, columns_json);
+        const struct ovsdb_column *version_column =
+                            ovsdb_table_schema_get_column(table, "_version");
+
+        if (version_column) {
+            add_column(server, version_column, columns, columns_json);
+        } else {
+            VLOG_ERR("Table does not contain _version column.");
+        }
     }
 
     if (!initial || !insert || !delete || !modify) {
