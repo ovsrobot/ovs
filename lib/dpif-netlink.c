@@ -428,6 +428,7 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
         error = open_dpif(&dp, dpifp);
         dpif_netlink_set_features(*dpifp, OVS_DP_F_TC_RECIRC_SHARING);
     } else {
+        ofpbuf_delete(buf);
         VLOG_INFO("Kernel does not correctly support feature negotiation. "
                   "Using standard features.");
         dp_request.cmd = OVS_DP_CMD_SET;
