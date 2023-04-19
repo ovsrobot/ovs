@@ -1007,14 +1007,19 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
             }
 
             nat_packet(pkt, nc, false, ctx->icmp_related);
-            memcpy(&nat_conn->key, &nc->rev_key, sizeof nat_conn->key);
-            memcpy(&nat_conn->rev_key, &nc->key, sizeof nat_conn->rev_key);
-            nat_conn->conn_type = CT_CONN_TYPE_UN_NAT;
-            nat_conn->nat_action = 0;
-            nat_conn->alg = NULL;
-            nat_conn->nat_conn = NULL;
-            uint32_t nat_hash = conn_key_hash(&nat_conn->key, ct->hash_basis);
-            cmap_insert(&ct->conns, &nat_conn->cm_node, nat_hash);
+            uint32_t nat_hash = conn_key_hash(&nc->rev_key, ct->hash_basis);
+            if (nat_hash != ctx->hash) {
+                memcpy(&nat_conn->key, &nc->rev_key, sizeof nat_conn->key);
+                memcpy(&nat_conn->rev_key, &nc->key, sizeof nat_conn->rev_key);
+                nat_conn->conn_type = CT_CONN_TYPE_UN_NAT;
+                nat_conn->nat_action = 0;
+                nat_conn->alg = NULL;
+                nat_conn->nat_conn = NULL;
+                cmap_insert(&ct->conns, &nat_conn->cm_node, nat_hash);
+            } else {
+                free(nat_conn);
+                nat_conn = NULL;
+            }
         }
 
         nc->nat_conn = nat_conn;
