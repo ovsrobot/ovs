@@ -211,6 +211,13 @@ AC_DEFUN([OVS_CHECK_LINUX_TC], [
     ])],
     [AC_DEFINE([HAVE_TCA_STATS_PKT64], [1],
                [Define to 1 if TCA_STATS_PKT64 is available.])])
+
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#include <linux/pkt_sched.h>], [
+        int x = TCA_HTB_RATE64;
+    ])],
+    [AC_DEFINE([HAVE_TCA_HTB_RATE64], [1],
+               [Define to 1 if TCA_HTB_RATE64 is available.])])
 ])
 
 dnl OVS_CHECK_LINUX_SCTP_CT
