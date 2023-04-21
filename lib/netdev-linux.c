@@ -494,7 +494,7 @@ static struct tcmsg *netdev_linux_tc_make_request(const struct netdev *,
                                                   unsigned int flags,
                                                   struct ofpbuf *);
 
-static int tc_add_policer(struct netdev *, uint32_t kbits_rate,
+static int tc_add_policer(struct netdev *, uint64_t kbits_rate,
                           uint32_t kbits_burst, uint32_t kpkts_rate,
                           uint32_t kpkts_burst);
 
@@ -2661,6 +2661,7 @@ nl_msg_put_act_police(struct ofpbuf *request, uint32_t index,
     struct tc_police police;
     size_t offset, act_offset;
     uint32_t prio = 0;
+    uint64_t bytes_rate = kbits_rate / 8 * 1000;
 
     if (!kbits_rate && !pkts_rate) {
         return;
@@ -2672,7 +2673,10 @@ nl_msg_put_act_police(struct ofpbuf *request, uint32_t index,
     nl_msg_act_police_start_nest(request, ++prio, &offset, &act_offset,
                                  single_action);
     if (police.rate.rate) {
-        tc_put_rtab(request, TCA_POLICE_RATE, &police.rate, 0);
+        tc_put_rtab(request, TCA_POLICE_RATE, &police.rate, bytes_rate);
+    }
+    if (bytes_rate > UINT32_MAX) {
+        nl_msg_put_u64(request, TCA_POLICE_RATE64, bytes_rate);
     }
     if (pkts_rate) {
         uint64_t pkt_burst_ticks;
@@ -2687,7 +2691,7 @@ nl_msg_put_act_police(struct ofpbuf *request, uint32_t index,
 }
 
 static int
-tc_add_matchall_policer(struct netdev *netdev, uint32_t kbits_rate,
+tc_add_matchall_policer(struct netdev *netdev, uint64_t kbits_rate,
                         uint32_t kbits_burst, uint32_t kpkts_rate,
                         uint32_t kpkts_burst)
 {
@@ -5703,9 +5707,8 @@ tc_policer_init(struct tc_police *tc_police, uint64_t kbits_rate,
  * Returns 0 if successful, otherwise a positive errno value.
  */
 static int
-tc_add_policer(struct netdev *netdev, uint32_t kbits_rate,
-               uint32_t kbits_burst, uint32_t kpkts_rate,
-               uint32_t kpkts_burst)
+tc_add_policer(struct netdev *netdev, uint64_t kbits_rate,
+               uint32_t kbits_burst, uint32_t kpkts_rate, uint32_t kpkts_burst)
 {
     size_t basic_offset, police_offset;
     struct ofpbuf request;
@@ -5739,7 +5742,7 @@ tc_add_policer(struct netdev *netdev, uint32_t kbits_rate,
 }
 
 int
-tc_add_policer_action(uint32_t index, uint32_t kbits_rate,
+tc_add_policer_action(uint32_t index, uint64_t kbits_rate,
                       uint32_t kbits_burst, uint32_t pkts_rate,
                       uint32_t pkts_burst, bool update)
 {
