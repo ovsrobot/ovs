@@ -199,6 +199,11 @@ The following options are less important:
   Sets the ``nice(1)`` level used for each daemon.  All of them
   default to ``-10``.
 
+* ``--ovsdb-server-affinity=<corelist>`` or
+  ``--ovs-vswitchd-affinity=<corelist>``
+
+  Sets the ``taskset(1)`` affinity for each daemon process.
+
 * ``--ovsdb-server-wrapper=<wrapper>`` or
   ``--ovs-vswitchd-wrapper=<wrapper>``
 

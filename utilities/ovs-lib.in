@@ -168,6 +168,7 @@ start_daemon () {
     priority=$1 && shift
     wrapper=$1 && shift
     umask=$1 && shift
+    affinity=$1 && shift
     daemon=$1
     strace=""
 
@@ -221,6 +222,11 @@ start_daemon () {
     # priority
     if test X"$priority" != X; then
         set nice -n "$priority" "$@"
+    fi
+
+    # affinity
+    if test X"$affinity" != X; then
+        set taskset -c "$affinity" "$@"
     fi
 
     # Set requested umask if any and turn previous value back.

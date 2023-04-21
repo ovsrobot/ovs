@@ -157,7 +157,7 @@ do_start_ovsdb () {
         [ "$OVSDB_SERVER_OPTIONS" != "" ] && set "$@" $OVSDB_SERVER_OPTIONS
 
         start_daemon "$OVSDB_SERVER_PRIORITY" "$OVSDB_SERVER_WRAPPER" \
-            "$OVSDB_SERVER_UMASK" "$@" || return 1
+            "$OVSDB_SERVER_UMASK" "$OVSDB_SERVER_AFFINITY" "$@" || return 1
 
         # Initialize database settings.
         ovs_vsctl -- init -- set Open_vSwitch . db-version="$schemaver" \
@@ -227,7 +227,7 @@ do_start_forwarding () {
         [ "$OVS_VSWITCHD_OPTIONS" != "" ] &&set "$@" $OVS_VSWITCHD_OPTIONS
 
         start_daemon "$OVS_VSWITCHD_PRIORITY" "$OVS_VSWITCHD_WRAPPER" \
-            "$OVS_VSWITCHD_UMASK" "$@" || return 1
+            "$OVS_VSWITCHD_UMASK" "$OVS_VSWITCHD_AFFINITY" "$@" || return 1
     fi
 }
 
@@ -344,6 +344,8 @@ set_defaults () {
     OVS_VSWITCHD=yes
     OVSDB_SERVER_PRIORITY=-10
     OVS_VSWITCHD_PRIORITY=-10
+    OVSDB_SERVER_AFFINITY=
+    OVS_VSWITCHD_AFFINITY=
     OVSDB_SERVER_WRAPPER=
     OVS_VSWITCHD_WRAPPER=
     OVSDB_SERVER_OPTIONS=
@@ -436,8 +438,10 @@ Less important options for "start", "restart" and "force-reload-kmod":
   --dump-hugepages               include hugepages in core dumps
   --no-mlockall                  do not lock all of ovs-vswitchd into memory
   --ovsdb-server-priority=NICE   set ovsdb-server's niceness (default: $OVSDB_SERVER_PRIORITY)
+  --ovsdb-server-affinity=CORE   set ovsdb-server's affinity (default: $OVSDB_SERVER_AFFINITY)
   --ovsdb-server-options=OPTIONS additional options for ovsdb-server (example: '-vconsole:dbg -vfile:dbg')
   --ovs-vswitchd-priority=NICE   set ovs-vswitchd's niceness (default: $OVS_VSWITCHD_PRIORITY)
+  --ovs-vswitchd-affinity=CORE   set ovs-vswitchd's affinity (default: $OVS_VSWITCHD_AFFINITY)
   --ovs-vswitchd-options=OPTIONS additional options for ovs-vswitchd (example: '-vconsole:dbg -vfile:dbg')
   --no-full-hostname             set short hostname instead of full hostname
   --no-record-hostname           do not attempt to determine/record system
