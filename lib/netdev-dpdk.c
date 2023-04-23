@@ -2830,6 +2830,7 @@ netdev_dpdk_set_etheraddr__(struct netdev_dpdk *dev, const struct eth_addr mac)
     }
     if (!err) {
         dev->hwaddr = mac;
+        dev->requested_hwaddr = mac;
     } else {
         VLOG_WARN("%s: Failed to set requested mac("ETH_ADDR_FMT"): %s",
                   netdev_get_name(&dev->up), ETH_ADDR_ARGS(mac),
