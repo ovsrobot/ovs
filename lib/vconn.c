@@ -926,23 +926,28 @@ vconn_transact_noreply(struct vconn *vconn, struct ofpbuf *request,
 /* vconn_transact_noreply() for a list of "struct ofpbuf"s, sent one by one.
  * All of the requests on 'requests' are always destroyed, regardless of the
  * return value. */
-int
-vconn_transact_multiple_noreply(struct vconn *vconn, struct ovs_list *requests,
-                                struct ofpbuf **replyp)
-{
+int vconn_transact_multiple_noreply(struct vconn *vconn,
+                                    struct ovs_list *requests,
+                                    struct ovs_list *replies) {
     struct ofpbuf *request;
+    int error = 0;
 
     LIST_FOR_EACH_POP (request, list_node, requests) {
-        int error;
+        struct ofpbuf *reply;
 
-        error = vconn_transact_noreply(vconn, request, replyp);
-        if (error || *replyp) {
-            ofpbuf_list_delete(requests);
+        error = vconn_transact_noreply(vconn, request, &reply);
+
+        if (error && !reply) {
             return error;
+        }
+        if (reply) {
+            ovs_list_push_back(replies, &reply->list_node);
         }
     }
 
-    *replyp = NULL;
+    if (!ovs_list_is_empty(replies)) {
+        return error;
+    }
     return 0;
 }
 
