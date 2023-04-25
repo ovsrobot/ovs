@@ -1,7 +1,7 @@
 #ifndef __LINUX_PKT_CLS_WRAPPER_H
 #define __LINUX_PKT_CLS_WRAPPER_H 1
 
-#if defined(__KERNEL__) || defined(HAVE_TCA_ACT_FLAGS_SKIP_HW)
+#if defined(__KERNEL__) || defined(HAVE_TCA_FLOWER_KEY_ENC_OPTS_VXLAN)
 #include_next <linux/pkt_cls.h>
 #else
 
@@ -273,6 +273,10 @@ enum {
 					 * TCA_TUNNEL_KEY_ENC_OPTS_GENEVE
 					 * attributes
 					 */
+	TCA_FLOWER_KEY_ENC_OPTS_VXLAN,  /* Nested
+					 * TCA_TUNNEL_KEY_ENC_OPTS_VXLAN
+					 * attributes
+					 */
 	__TCA_FLOWER_KEY_ENC_OPTS_MAX,
 };
 
@@ -291,6 +295,15 @@ enum {
 		(__TCA_FLOWER_KEY_ENC_OPT_GENEVE_MAX - 1)
 
 enum {
+	TCA_FLOWER_KEY_ENC_OPT_VXLAN_UNSPEC,
+	TCA_FLOWER_KEY_ENC_OPT_VXLAN_GBP,               /* u32 */
+	__TCA_FLOWER_KEY_ENC_OPT_VXLAN_MAX,
+};
+
+#define TCA_FLOWER_KEY_ENC_OPT_VXLAN_MAX \
+		(__TCA_FLOWER_KEY_ENC_OPT_VXLAN_MAX - 1)
+
+enum {
 	TCA_FLOWER_KEY_FLAGS_IS_FRAGMENT = (1 << 0),
 	TCA_FLOWER_KEY_FLAGS_FRAG_IS_FIRST = (1 << 1),
 };
@@ -307,6 +320,6 @@ enum {
 
 #define TCA_MATCHALL_MAX (__TCA_MATCHALL_MAX - 1)
 
-#endif /* __KERNEL__ || !HAVE_TCA_FLOWER_KEY_FLAGS_FRAG_IS_FIRST */
+#endif /* __KERNEL__ || HAVE_TCA_FLOWER_KEY_ENC_OPTS_VXLAN */
 
 #endif /* __LINUX_PKT_CLS_WRAPPER_H */
