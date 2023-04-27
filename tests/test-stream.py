@@ -19,6 +19,12 @@ import ovs.stream
 
 def main(argv):
     remote = argv[1]
+
+    if remote.startswith("ssl"):
+        ovs.stream.SSLStream.ssl_set_ca_cert_file(argv[4])
+        ovs.stream.SSLStream.ssl_set_certificate_file(argv[3])
+        ovs.stream.SSLStream.ssl_set_private_key_file(argv[2])
+
     err, stream = ovs.stream.Stream.open_block(
             ovs.stream.Stream.open(remote), 10000)
 
