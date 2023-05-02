@@ -522,7 +522,9 @@ ovsdb_file_txn_add_row(struct ovsdb_file_txn *ftxn,
     }
 
     if (row) {
+        ovs_assert(new || old);
         struct ovsdb_table *table = new ? new->table : old->table;
+        ovs_assert(table);
         char uuid[UUID_LEN + 1];
 
         if (table != ftxn->table) {
