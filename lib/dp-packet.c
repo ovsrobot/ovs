@@ -353,7 +353,7 @@ void *
 dp_packet_put_zeros(struct dp_packet *b, size_t size)
 {
     void *dst = dp_packet_put_uninit(b, size);
-    memset(dst, 0, size);
+    nullable_memset(dst, 0, size);
     return dst;
 }
 
@@ -364,7 +364,7 @@ void *
 dp_packet_put(struct dp_packet *b, const void *p, size_t size)
 {
     void *dst = dp_packet_put_uninit(b, size);
-    memcpy(dst, p, size);
+    nullable_memcpy(dst, p, size);
     return dst;
 }
 
@@ -436,7 +436,7 @@ void *
 dp_packet_push_zeros(struct dp_packet *b, size_t size)
 {
     void *dst = dp_packet_push_uninit(b, size);
-    memset(dst, 0, size);
+    nullable_memset(dst, 0, size);
     return dst;
 }
 
@@ -447,7 +447,7 @@ void *
 dp_packet_push(struct dp_packet *b, const void *p, size_t size)
 {
     void *dst = dp_packet_push_uninit(b, size);
-    memcpy(dst, p, size);
+    nullable_memcpy(dst, p, size);
     return dst;
 }
 
