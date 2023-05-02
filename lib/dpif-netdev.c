@@ -246,6 +246,17 @@ enum sched_assignment_type {
     SCHED_GROUP
 };
 
+enum txq_req_mode {
+    TXQ_REQ_MODE_THREAD,
+    TXQ_REQ_MODE_HASH,
+};
+
+enum txq_mode {
+    TXQ_MODE_STATIC,
+    TXQ_MODE_XPS,
+    TXQ_MODE_XPS_HASH,
+};
+
 /* Datapath based on the network device interface from netdev.h.
  *
  *
@@ -334,6 +345,8 @@ struct dp_netdev {
     /* Bonds. */
     struct ovs_mutex bond_mutex; /* Protects updates of 'tx_bonds'. */
     struct cmap tx_bonds; /* Contains 'struct tx_bond'. */
+
+    enum txq_req_mode vhost_txq_requested_mode_default;
 };
 
 static struct dp_netdev_port *dp_netdev_lookup_port(const struct dp_netdev *dp,
@@ -449,17 +462,6 @@ struct dp_netdev_rxq {
     /* We store PMD_INTERVAL_MAX intervals of data for an rxq and then
        sum them to yield the cycles used for an rxq. */
     atomic_ullong cycles_intrvl[PMD_INTERVAL_MAX];
-};
-
-enum txq_req_mode {
-    TXQ_REQ_MODE_THREAD,
-    TXQ_REQ_MODE_HASH,
-};
-
-enum txq_mode {
-    TXQ_MODE_STATIC,
-    TXQ_MODE_XPS,
-    TXQ_MODE_XPS_HASH,
 };
 
 /* A port in a netdev-based datapath. */
@@ -4993,6 +4995,14 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
     }
 
     first_set_config  = false;
+
+    const char *vhost_tx_steering_default =
+        smap_get_def(other_config, "vhost-tx-steering-default", "thread");
+    if (nullable_string_is_equal(vhost_tx_steering_default, "hash")) {
+        dp->vhost_txq_requested_mode_default = TXQ_REQ_MODE_HASH;
+    } else {
+        dp->vhost_txq_requested_mode_default = TXQ_REQ_MODE_THREAD;
+    }
     return 0;
 }
 
@@ -5143,10 +5153,17 @@ dpif_netdev_port_set_config(struct dpif *dpif, odp_port_t port_no,
         dp_netdev_request_reconfigure(dp);
     }
 
-    if (nullable_string_is_equal(tx_steering_mode, "hash")) {
+    if (!strncmp(port->type, "dpdkvhost", 9)
+        && dp->vhost_txq_requested_mode_default == TXQ_REQ_MODE_HASH) {
         txq_mode = TXQ_REQ_MODE_HASH;
     } else {
-        txq_mode = TXQ_REQ_MODE_THREAD;
+    	txq_mode = TXQ_REQ_MODE_THREAD;
+    }
+
+    if (nullable_string_is_equal(tx_steering_mode, "hash")) {
+        txq_mode = TXQ_REQ_MODE_HASH;
+    } else if (nullable_string_is_equal(tx_steering_mode, "thread")) {
+    	txq_mode = TXQ_REQ_MODE_THREAD;
     }
 
     if (txq_mode != port->txq_requested_mode) {

@@ -3513,6 +3513,18 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="other_config" key="vhost-tx-steering-default"
+              type='{"type": "string",
+                     "enum": ["set", ["thread", "hash"]]}'>
+        <p>
+          Specifies the default Tx steering mode for dpdkvhost interfaces.
+        </p>
+        <p>
+          Defaults to <code>thread</code>, and is overriden per
+          Interface by the <code>tx-steering</code> option.
+        </p>
+      </column>
+
     </group>
 
     <group title="EMC (Exact Match Cache) Configuration">
