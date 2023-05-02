@@ -671,6 +671,7 @@ add_port_to_cache(struct vsctl_context *vsctl_ctx, struct vsctl_bridge *parent,
         }
     }
 
+    ovs_assert(parent);
     ovs_list_push_back(&parent->ports, &port->ports_node);
     ovs_list_init(&port->ifaces);
     port->port_cfg = port_cfg;
@@ -817,6 +818,7 @@ vsctl_context_populate_cache(struct ctl_context *ctx)
             continue;
         }
         br = shash_find_data(&vsctl_ctx->bridges, br_cfg->name);
+        ovs_assert(br);
         for (j = 0; j < br_cfg->n_ports; j++) {
             struct ovsrec_port *port_cfg = br_cfg->ports[j];
             struct vsctl_port *port;
@@ -843,6 +845,7 @@ vsctl_context_populate_cache(struct ctl_context *ctx)
             }
 
             port = add_port_to_cache(vsctl_ctx, br, port_cfg);
+            ovs_assert(port);
             for (k = 0; k < port_cfg->n_interfaces; k++) {
                 struct ovsrec_interface *iface_cfg = port_cfg->interfaces[k];
                 struct vsctl_iface *iface;

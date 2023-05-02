@@ -20,6 +20,7 @@
 
 #include "openvswitch/dynamic-string.h"
 #include "hash.h"
+#include "util.h"
 
 static uint32_t
 hash_name__(const char *name, size_t length)
@@ -261,6 +262,7 @@ char *
 sset_pop(struct sset *set)
 {
     const char *name = SSET_FIRST(set);
+    ovs_assert(name);
     char *copy = xstrdup(name);
     sset_delete(set, SSET_NODE_FROM_NAME(name));
     return copy;
