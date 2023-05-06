@@ -38,6 +38,16 @@ struct dp_packet;
 extern "C" {
 #endif
 
+/* manipulate higher bits in verbosity for other usage */
+#define OFP_ONELINE_BIT 7
+#define OFP_ONELINE_MASK (1 << OFP_ONELINE_BIT)
+#define OFP_VERBOSITY_MASK (~OFP_ONELINE_MASK)
+
+#define OFP_VERBOSITY(verbosity) (verbosity & OFP_VERBOSITY_MASK)
+
+#define OFP_ONELINE_SET(verbosity) (verbosity | OFP_ONELINE_MASK)
+#define OFP_ONELINE_GET(verbosity) (verbosity & OFP_ONELINE_MASK)
+
 void ofp_print(FILE *, const void *, size_t, const struct ofputil_port_map *,
                const struct ofputil_table_map *, int verbosity);
 void ofp_print_packet(FILE *stream, const void *data,

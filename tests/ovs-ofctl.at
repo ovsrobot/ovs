@@ -3309,3 +3309,73 @@ AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: <all>" ovs-vswitchd.log])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+
+dnl This checks basic add_meter --oneline operations.
+AT_SETUP([ofproto - add meters and dump meters with oneline option (OpenFlow 1.3)])
+OVS_VSWITCHD_START
+AT_DATA([meters.txt], [dnl
+meter=12 pktps burst stats bands=type=drop rate=1 burst_size=1
+meter=34 pktps burst stats bands=type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+meter=56 kbps burst stats bands=type=drop rate=1 burst_size=1
+meter=78 kbps burst stats bands=type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+])
+AT_CHECK([ovs-ofctl -O openflow13 -vwarn add-meters br0 meters.txt])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-meters br0 --oneline], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sort -f], [0], [dnl
+meter=12 pktps burst stats bands= type=drop rate=1 burst_size=1
+meter=34 pktps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+meter=56 kbps burst stats bands= type=drop rate=1 burst_size=1
+meter=78 kbps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+OFPST_METER_CONFIG reply (OF1.3):
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn del-meters br0 meter=12])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-meters br0 --oneline], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sort -f], [0], [dnl
+meter=34 pktps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+meter=56 kbps burst stats bands= type=drop rate=1 burst_size=1
+meter=78 kbps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+OFPST_METER_CONFIG reply (OF1.3):
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn del-meters br0 meter=34])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-meters br0 --oneline], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sort -f], [0], [dnl
+meter=56 kbps burst stats bands= type=drop rate=1 burst_size=1
+meter=78 kbps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+OFPST_METER_CONFIG reply (OF1.3):
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn del-meters br0], [0])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-meters br0 --oneline], [0], [stdout])
+AT_CHECK([strip_xids < stdout], [0], [dnl
+OFPST_METER_CONFIG reply (OF1.3):
+])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+dnl This checks basic meter operations in file.
+AT_SETUP([ofproto - add modify and delete meter in files (OpenFlow 1.3)])
+OVS_VSWITCHD_START
+AT_DATA([meters.txt], [dnl
+add meter=12 pktps burst stats bands=type=drop rate=1 burst_size=1
+add meter=34 pktps burst stats bands=type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+add meter=56 pktps burst stats bands=type=drop rate=2 burst_size=2 type=drop rate=10 burst_size=10
+modify meter=12 kbps burst stats bands=type=drop rate=1 burst_size=1
+modify meter=34 kbps burst stats bands=type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+delete meter=56
+])
+AT_CHECK([ovs-ofctl -O openflow13 -vwarn add-meters br0 meters.txt])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-meters br0 --oneline], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sort -f], [0], [dnl
+meter=12 kbps burst stats bands= type=drop rate=1 burst_size=1
+meter=34 kbps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+OFPST_METER_CONFIG reply (OF1.3):
+])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn mod-meter br0 "meter=12 pktps burst stats bands=type=drop rate=2 burst_size=2"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 -vwarn dump-meters br0 --oneline], [0], [stdout])
+AT_CHECK([strip_xids < stdout | sort -f], [0], [dnl
+meter=12 pktps burst stats bands= type=drop rate=2 burst_size=2
+meter=34 kbps burst stats bands= type=drop rate=1 burst_size=1 type=drop rate=10 burst_size=10
+OFPST_METER_CONFIG reply (OF1.3):
+])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
