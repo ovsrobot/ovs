@@ -57,7 +57,7 @@ int vconn_recv_xid(struct vconn *, ovs_be32 xid, struct ofpbuf **);
 int vconn_transact(struct vconn *, struct ofpbuf *, struct ofpbuf **);
 int vconn_transact_noreply(struct vconn *, struct ofpbuf *, struct ofpbuf **);
 int vconn_transact_multiple_noreply(struct vconn *, struct ovs_list *requests,
-                                    struct ofpbuf **replyp);
+                                    struct ovs_list *replies);
 int vconn_transact_multipart(struct vconn *, struct ovs_list *request,
                              struct ovs_list *replies);
 

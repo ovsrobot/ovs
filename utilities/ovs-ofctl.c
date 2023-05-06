@@ -715,18 +715,25 @@ dump_trivial_transaction(const char *vconn_name, enum ofpraw ofpraw)
 static void
 transact_multiple_noreply(struct vconn *vconn, struct ovs_list *requests)
 {
+    struct ovs_list replies;
     struct ofpbuf *reply;
 
-    run(vconn_transact_multiple_noreply(vconn, requests, &reply),
+    ovs_list_init(&replies);
+
+    run(vconn_transact_multiple_noreply(vconn, requests, &replies),
         "talking to %s", vconn_get_name(vconn));
-    if (reply) {
+    if (ovs_list_is_empty(&replies)) {
+        return;
+    }
+
+    LIST_FOR_EACH_POP (reply, list_node, &replies) {
         ofp_print(stderr, reply->data, reply->size,
                   ports_to_show(vconn_get_name(vconn)),
                   tables_to_show(vconn_get_name(vconn)),
                   verbosity + 2);
-        exit(1);
+        ofpbuf_delete(reply);
     }
-    ofpbuf_delete(reply);
+    exit(1);
 }
 
 /* Frees the error messages as they are printed. */
