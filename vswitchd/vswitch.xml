@@ -3287,6 +3287,35 @@
            <ref column="options" key="remote_ip"/>.
         </p>
       </column>
+      <column name="options" key="srv6_flowlabel"
+              type='{"type": "string",
+                     "enum": ["set", ["zero", "copy", "compute"]]}'>
+        <p>
+          Optional.
+          This option controls how flowlabel in outer IPv6 header is
+          configured. This would give you the benefit of IPv6 flow label
+          based load balancing, which is supported by some popular vendor
+          appliances. You can choose from the following three types, as
+          in net.ipv6.seg6_flowlabel syscall.
+        </p>
+        <ul>
+          <li>
+            By default, or if this option is <code>copy</code>, copy the
+            flowlabel of inner IPv6 header to the flowlabel of outer IPv6
+            header. If inner header is not IPv6, it is set to 0.
+          </li>
+          <li>
+            If this option is <code>zero</code>, simply set flowlabel to 0.
+          </li>
+          <li>
+            If this option is <code>compute</code>, calculate a hash for
+            some fields in inner header and set the result to flowlabel.
+            If inner packet is IPv6, src_ip, dst_ip, L4 proto, and
+            flowlabel are the targets of hash calculation. If it is IPv4,
+            src_ip, dst_ip, L4 proto, src_port, and dst_port are the targets.
+          </li>
+        </ul>
+      </column>
     </group>
 
     <group title="Patch Options">

@@ -856,6 +856,7 @@ netdev_srv6_build_header(const struct netdev *netdev,
     struct netdev_tunnel_config *tnl_cfg;
     const struct in6_addr *segs;
     struct srv6_base_hdr *srh;
+    uint32_t ipv6_label = 0;
     struct in6_addr *s;
     ovs_be16 dl_type;
     int err = 0;
@@ -882,7 +883,26 @@ netdev_srv6_build_header(const struct netdev *netdev,
         goto out;
     }
 
-    srh = netdev_tnl_ip_build_header(data, params, IPPROTO_ROUTING, 0);
+    switch (tnl_cfg->srv6_flowlabel) {
+    case SRV6_FLOWLABEL_COPY:
+        ipv6_label = ntohl(params->flow->ipv6_label);
+        break;
+
+    case SRV6_FLOWLABEL_ZERO:
+        ipv6_label = 0;
+        break;
+
+    case SRV6_FLOWLABEL_COMPUTE:
+        ipv6_label = flow_hash_srv6_flowlabel(params->flow, 0);
+        break;
+
+    default:
+        err = EINVAL;
+        goto out;
+    }
+
+    srh = netdev_tnl_ip_build_header(data, params, IPPROTO_ROUTING,
+                                     ipv6_label);
     srh->rt_hdr.segments_left = nr_segs - 1;
     srh->rt_hdr.type = IPV6_SRCRT_TYPE_4;
     srh->rt_hdr.hdrlen = 2 * nr_segs;

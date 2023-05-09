@@ -2734,6 +2734,30 @@ flow_hash_in_wildcards(const struct flow *flow,
     return hash_finish(hash, 8 * FLOW_U64S);
 }
 
+uint32_t
+flow_hash_srv6_flowlabel(const struct flow *flow, uint32_t basis)
+{
+    uint32_t hash = basis;
+
+    if (flow->dl_type == htons(ETH_TYPE_IPV6)) {
+        const uint64_t *flow_u64 = (const uint64_t *) flow;
+        int ofs = offsetof(struct flow, ipv6_src) / 8;
+        int end = ofs + 2 * sizeof flow->ipv6_src / 8;
+
+        for (;ofs < end; ofs++) {
+            hash = hash_add64(hash, flow_u64[ofs]);
+        }
+
+        hash = hash_add(hash, flow->nw_proto);
+        hash = hash_add(hash, flow->ipv6_label);
+    } else if (flow->dl_type == htons(ETH_TYPE_IP)
+               || flow->dl_type == htons(ETH_TYPE_ARP)) {
+        hash = flow_hash_5tuple(flow, basis);
+    }
+
+    return hash_finish(hash, 42) & IPV6_LABEL_MASK; /* Arbitrary number. */
+}
+
 /* Sets the VLAN VID that 'flow' matches to 'vid', which is interpreted as an
  * OpenFlow 1.0 "dl_vlan" value:
  *
