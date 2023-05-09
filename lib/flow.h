@@ -258,6 +258,7 @@ bool flow_hash_fields_valid(enum nx_hash_fields);
 uint32_t flow_hash_in_wildcards(const struct flow *,
                                 const struct flow_wildcards *,
                                 uint32_t basis);
+uint32_t flow_hash_srv6_flowlabel(const struct flow *, uint32_t basis);
 
 bool flow_equal_except(const struct flow *a, const struct flow *b,
                        const struct flow_wildcards *);

@@ -97,6 +97,17 @@ enum netdev_pt_mode {
     NETDEV_PT_LEGACY_L3,
 };
 
+enum netdev_srv6_flowlabel {
+    /* Copy the flowlabel from inner packet. */
+    SRV6_FLOWLABEL_COPY,
+
+    /* Simply set flowlabel to 0. */
+    SRV6_FLOWLABEL_ZERO,
+
+    /* Calculate a hash for some fields and set the result to flowlabel. */
+    SRV6_FLOWLABEL_COMPUTE,
+};
+
 /* Configuration specific to tunnels. */
 struct netdev_tunnel_config {
     ovs_be64 in_key;
@@ -144,6 +155,7 @@ struct netdev_tunnel_config {
     uint8_t srv6_num_segs;
     #define SRV6_MAX_SEGS 6
     struct in6_addr srv6_segs[SRV6_MAX_SEGS];
+    enum netdev_srv6_flowlabel srv6_flowlabel;
 };
 
 void netdev_run(void);
