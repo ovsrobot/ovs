@@ -2505,10 +2505,11 @@ netdev_tc_flow_get(struct netdev *netdev,
 
     err = tc_get_flower(&id, &flower);
     if (err) {
-        VLOG_ERR_RL(&error_rl,
-                    "flow get failed (dev %s prio %d handle %d): %s",
-                    netdev_get_name(netdev), id.prio, id.handle,
-                    ovs_strerror(err));
+        VLOG_RL(&error_rl,
+                (err == EAGAIN) ? VLL_DBG : VLL_ERR,
+                "flow get failed (dev %s prio %d handle %d): %s",
+                netdev_get_name(netdev), id.prio, id.handle,
+                ovs_strerror(err));
         return err;
     }
 
@@ -2594,7 +2595,9 @@ probe_multi_mask_per_prio(int ifindex)
     memset(&flower.mask.dst_mac, 0xff, sizeof flower.mask.dst_mac);
 
     id1 = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
-    error = tc_replace_flower(&id1, &flower);
+    do {
+        error = tc_replace_flower(&id1, &flower);
+    } while (error == EAGAIN);
     if (error) {
         goto out;
     }
@@ -2603,7 +2606,9 @@ probe_multi_mask_per_prio(int ifindex)
     memset(&flower.mask.src_mac, 0xff, sizeof flower.mask.src_mac);
 
     id2 = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
-    error = tc_replace_flower(&id2, &flower);
+    do {
+        error = tc_replace_flower(&id2, &flower);
+    } while (error == EAGAIN);
     tc_del_flower_filter(&id1);
 
     if (error) {
@@ -2625,6 +2630,7 @@ probe_insert_ct_state_rule(int ifindex, uint16_t ct_state, struct tcf_id *id)
 {
     int prio = TC_RESERVED_PRIORITY_MAX + 1;
     struct tc_flower flower;
+    int error;
 
     memset(&flower, 0, sizeof flower);
     flower.key.ct_state = ct_state;
@@ -2634,7 +2640,10 @@ probe_insert_ct_state_rule(int ifindex, uint16_t ct_state, struct tcf_id *id)
     flower.mask.eth_type = OVS_BE16_MAX;
 
     *id = tc_make_tcf_id(ifindex, 0, prio, TC_INGRESS);
-    return tc_replace_flower(id, &flower);
+    do {
+        error = tc_replace_flower(id, &flower);
+    } while (error == EAGAIN);
+    return error;
 }
 
 static void
@@ -2657,7 +2666,9 @@ probe_ct_state_support(int ifindex)
         goto out;
     }
 
-    error = tc_get_flower(&id, &flower);
+    do {
+        error = tc_get_flower(&id, &flower);
+    } while (error == EAGAIN);
     if (error || flower.mask.ct_state != ct_state) {
         goto out_del;
     }
@@ -2732,7 +2743,9 @@ probe_tc_block_support(int ifindex)
     memset(&flower.mask.dst_mac, 0xff, sizeof flower.mask.dst_mac);
 
     id = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
-    error = tc_replace_flower(&id, &flower);
+    do {
+        error = tc_replace_flower(&id, &flower);
+    } while (error == EAGAIN);
 
     tc_add_del_qdisc(ifindex, false, block_id, TC_INGRESS);
 

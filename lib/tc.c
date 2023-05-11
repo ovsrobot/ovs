@@ -237,11 +237,29 @@ static void request_from_tcf_id(struct tcf_id *id, uint16_t eth_type,
     }
 }
 
+/* The `tc_transact` function is a wrapper around `nl_transact` with the
+ * addition of:
+ *
+ * 1. the 'request' ofpbuf buffer is freed after `nl_transact` returns,
+ *    regardless of success or failure.
+ *
+ * 2. When a 'replyp' pointer is provided; in the event of the kernel
+ *    being too busy to process the request for the response, a positive
+ *    error return will be provided with the value of EAGAIN.
+ *
+ * Please acquaint yourself with the documentation of the `nl_transact`
+ * function in the netlink-sock module before making use of this function.
+ */
 int
 tc_transact(struct ofpbuf *request, struct ofpbuf **replyp)
 {
     int error = nl_transact(NETLINK_ROUTE, request, replyp);
     ofpbuf_uninit(request);
+
+    if (!error && replyp && !(*replyp)->size) {
+        return EAGAIN;
+    }
+
     return error;
 }
 
