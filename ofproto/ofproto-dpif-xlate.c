@@ -1538,8 +1538,15 @@ xlate_lookup_ofproto_(const struct dpif_backer *backer,
 
         ofp_port_t in_port = recirc_id_node->state.metadata.in_port;
         if (in_port != OFPP_NONE && in_port != OFPP_CONTROLLER) {
-            struct uuid xport_uuid = recirc_id_node->state.xport_uuid;
-            xport = xport_lookup_by_uuid(xcfg, &xport_uuid);
+            if (uuid_is_zero(&recirc_id_node->state.xport_uuid)) {
+                const struct xbridge *bridge =
+                    xbridge_lookup_by_uuid(xcfg, &recirc_id_node->state.ofproto_uuid);
+                xport = bridge ? get_ofp_port(bridge, in_port) : NULL;
+            } else {
+                struct uuid xport_uuid = recirc_id_node->state.xport_uuid;
+                xport = xport_lookup_by_uuid(xcfg, &xport_uuid);
+            }
+
             if (xport && xport->xbridge && xport->xbridge->ofproto) {
                 goto out;
             }
