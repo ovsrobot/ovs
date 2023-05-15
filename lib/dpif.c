@@ -1751,7 +1751,7 @@ flow_message_log_level(int error)
      * Kernels that support flow wildcarding will reject these flows as
      * duplicates (EEXIST), so lower the log level to debug for these
      * types of messages. */
-    return (error && error != EEXIST) ? VLL_WARN : VLL_DBG;
+    return (error && error != EEXIST && error != EAGAIN) ? VLL_WARN : VLL_DBG;
 }
 
 static bool

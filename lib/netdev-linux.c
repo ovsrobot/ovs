@@ -5817,8 +5817,9 @@ tc_get_policer_action(uint32_t index, struct ofputil_meter_stats *stats)
 
     error = tc_transact(&request, &replyp);
     if (error) {
-        VLOG_ERR_RL(&rl, "Failed to dump police action (index: %u), err=%d",
-                    index, error);
+        VLOG_RL(&rl, error == EAGAIN ? VLL_DBG : VLL_ERR,
+                "Failed to dump police action (index: %u), err=%d",
+                index, error);
         return error;
     }
 
@@ -5849,8 +5850,9 @@ tc_del_policer_action(uint32_t index, struct ofputil_meter_stats *stats)
 
     error = tc_transact(&request, &replyp);
     if (error) {
-        VLOG_ERR_RL(&rl, "Failed to delete police action (index: %u), err=%d",
-                    index, error);
+        VLOG_RL(&rl, error == EAGAIN ? VLL_DBG : VLL_ERR,
+                "Failed to delete police action (index: %u), err=%d",
+                index, error);
         return error;
     }
 
@@ -6114,11 +6116,12 @@ tc_query_class(const struct netdev *netdev,
 
     error = tc_transact(&request, replyp);
     if (error) {
-        VLOG_WARN_RL(&rl, "query %s class %u:%u (parent %u:%u) failed (%s)",
-                     netdev_get_name(netdev),
-                     tc_get_major(handle), tc_get_minor(handle),
-                     tc_get_major(parent), tc_get_minor(parent),
-                     ovs_strerror(error));
+        VLOG_RL(&rl, error == EAGAIN ? VLL_DBG : VLL_WARN,
+                "query %s class %u:%u (parent %u:%u) failed (%s)",
+                netdev_get_name(netdev),
+                tc_get_major(handle), tc_get_minor(handle),
+                tc_get_major(parent), tc_get_minor(parent),
+                ovs_strerror(error));
     }
     return error;
 }
@@ -6140,10 +6143,11 @@ tc_delete_class(const struct netdev *netdev, unsigned int handle)
 
     error = tc_transact(&request, NULL);
     if (error) {
-        VLOG_WARN_RL(&rl, "delete %s class %u:%u failed (%s)",
-                     netdev_get_name(netdev),
-                     tc_get_major(handle), tc_get_minor(handle),
-                     ovs_strerror(error));
+        VLOG_RL(&rl, error == EAGAIN ? VLL_DBG : VLL_WARN,
+                "delete %s class %u:%u failed (%s)",
+                netdev_get_name(netdev),
+                tc_get_major(handle), tc_get_minor(handle),
+                ovs_strerror(error));
     }
     return error;
 }
@@ -6262,7 +6266,9 @@ tc_query_qdisc(const struct netdev *netdev_)
                 ops = &tc_ops_other;
             }
         }
-    } else if ((!error && !qdisc->size) || error == ENOENT) {
+    } else if ((!error && !qdisc->size) ||
+               error == ENOENT || error == EAGAIN)
+    {
         /* Either it's a built-in qdisc, or (on Linux pre-2.6.35) it's a qdisc
          * set up by some other entity that doesn't have a handle 1:0.  We will
          * assume that it's the system default qdisc. */

@@ -2505,10 +2505,10 @@ netdev_tc_flow_get(struct netdev *netdev,
 
     err = tc_get_flower(&id, &flower);
     if (err) {
-        VLOG_ERR_RL(&error_rl,
-                    "flow get failed (dev %s prio %d handle %d): %s",
-                    netdev_get_name(netdev), id.prio, id.handle,
-                    ovs_strerror(err));
+        VLOG_RL(&error_rl, err == EAGAIN ? VLL_DBG : VLL_ERR,
+                "flow get failed (dev %s prio %d handle %d): %s",
+                netdev_get_name(netdev), id.prio, id.handle,
+                ovs_strerror(err));
         return err;
     }
 
@@ -2571,11 +2571,36 @@ netdev_tc_get_n_flows(struct netdev *netdev, uint64_t *n_flows)
     return 0;
 }
 
+/* This macro is for use by one-time initialization functions, where we have
+ * one shot per thread/process to perform a pertinent initialization task that
+ * may return a temporary error (EAGAIN).
+ *
+ * With min/max values of 1/64 we would retry 7 times, spending at the
+ * most 127 * 1E6 nsec (0.127s) sleeping.
+ */
+#define NETDEV_OFFLOAD_TC_BACKOFF_MIN 1
+#define NETDEV_OFFLOAD_TC_BACKOFF_MAX 64
+#define NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(BACKOFF, ERROR, CONDITION,       \
+                                             FUNCTION, ...)                   \
+    BACKOFF = NETDEV_OFFLOAD_TC_BACKOFF_MIN;                                  \
+    do {                                                                      \
+        ERROR = (FUNCTION)(__VA_ARGS__);                                      \
+        if (CONDITION) {                                                      \
+            xnanosleep(BACKOFF * 1E6);                                        \
+            if (BACKOFF < NETDEV_OFFLOAD_TC_BACKOFF_MAX) {                    \
+                BACKOFF <<= 1;                                                \
+            } else {                                                          \
+                break;                                                        \
+            }                                                                 \
+        }                                                                     \
+    } while (CONDITION);
+
 static void
 probe_multi_mask_per_prio(int ifindex)
 {
     struct tc_flower flower;
     struct tcf_id id1, id2;
+    uint64_t backoff;
     int block_id = 0;
     int prio = 1;
     int error;
@@ -2594,8 +2619,13 @@ probe_multi_mask_per_prio(int ifindex)
     memset(&flower.mask.dst_mac, 0xff, sizeof flower.mask.dst_mac);
 
     id1 = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
-    error = tc_replace_flower(&id1, &flower);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         tc_replace_flower, &id1, &flower);
     if (error) {
+        if (error == EAGAIN) {
+            VLOG_WARN("probe tc: unable to probe for multiple mask "
+                      "support: %s", ovs_strerror(error));
+        }
         goto out;
     }
 
@@ -2603,10 +2633,15 @@ probe_multi_mask_per_prio(int ifindex)
     memset(&flower.mask.src_mac, 0xff, sizeof flower.mask.src_mac);
 
     id2 = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
-    error = tc_replace_flower(&id2, &flower);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         tc_replace_flower, &id2, &flower);
     tc_del_flower_filter(&id1);
 
     if (error) {
+        if (error == EAGAIN) {
+            VLOG_WARN("probe tc: unable to probe for multiple mask "
+                      "support: %s", ovs_strerror(error));
+        }
         goto out;
     }
 
@@ -2642,6 +2677,7 @@ probe_ct_state_support(int ifindex)
 {
     struct tc_flower flower;
     uint16_t ct_state;
+    uint64_t backoff;
     struct tcf_id id;
     int error;
 
@@ -2657,8 +2693,13 @@ probe_ct_state_support(int ifindex)
         goto out;
     }
 
-    error = tc_get_flower(&id, &flower);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         tc_get_flower, &id, &flower);
     if (error || flower.mask.ct_state != ct_state) {
+        if (error == EAGAIN) {
+            VLOG_WARN("probe tc: unable to probe ct_state support: %s",
+                      ovs_strerror(error));
+        }
         goto out_del;
     }
 
@@ -2670,9 +2711,15 @@ probe_ct_state_support(int ifindex)
 
     /* Test for reject, ct_state >= MAX */
     ct_state = ~0;
-    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         probe_insert_ct_state_rule, ifindex,
+                                         ct_state, &id);
     if (!error) {
         /* No reject, can't continue probing other flags */
+        goto out_del;
+    } else if (error == EAGAIN) {
+        VLOG_WARN("probe tc: unable to probe ct_state support: %s",
+                  ovs_strerror(error));
         goto out_del;
     }
 
@@ -2682,8 +2729,14 @@ probe_ct_state_support(int ifindex)
     memset(&flower, 0, sizeof flower);
     ct_state = TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
                TCA_FLOWER_KEY_CT_FLAGS_INVALID;
-    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         probe_insert_ct_state_rule, ifindex,
+                                         ct_state, &id);
     if (error) {
+        if (error == EAGAIN) {
+            VLOG_WARN("probe tc: unable to probe ct_state support: %s",
+                      ovs_strerror(error));
+        }
         goto out;
     }
 
@@ -2695,8 +2748,14 @@ probe_ct_state_support(int ifindex)
     ct_state = TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
                TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED |
                TCA_FLOWER_KEY_CT_FLAGS_REPLY;
-    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         probe_insert_ct_state_rule, ifindex,
+                                         ct_state, &id);
     if (error) {
+        if (error == EAGAIN) {
+            VLOG_WARN("probe tc: unable to probe ct_state support: %s",
+                      ovs_strerror(error));
+        }
         goto out;
     }
 
@@ -2714,6 +2773,7 @@ probe_tc_block_support(int ifindex)
 {
     struct tc_flower flower;
     uint32_t block_id = 1;
+    uint64_t backoff;
     struct tcf_id id;
     int prio = 0;
     int error;
@@ -2732,13 +2792,17 @@ probe_tc_block_support(int ifindex)
     memset(&flower.mask.dst_mac, 0xff, sizeof flower.mask.dst_mac);
 
     id = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
-    error = tc_replace_flower(&id, &flower);
+    NETDEV_OFFLOAD_TC_RETRY_WITH_BACKOFF(backoff, error, error == EAGAIN,
+                                         tc_replace_flower, &id, &flower);
 
     tc_add_del_qdisc(ifindex, false, block_id, TC_INGRESS);
 
     if (!error) {
         block_support = true;
         VLOG_INFO("probe tc: block offload is supported.");
+    } else if (error == EAGAIN) {
+        VLOG_WARN("probe tc: unable to probe block offload support: %s",
+                  ovs_strerror(error));
     }
 }
 
