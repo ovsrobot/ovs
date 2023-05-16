@@ -910,6 +910,7 @@ netdev_srv6_build_header(const struct netdev *netdev,
     }
 
     data->header_len += sizeof *srh + 8 * srh->rt_hdr.hdrlen;
+    data->srv6_flowlabel = tnl_cfg->srv6_flowlabel;
     data->tnl_type = OVS_VPORT_TYPE_SRV6;
 out:
     ovs_mutex_unlock(&dev->mutex);
@@ -922,10 +923,28 @@ netdev_srv6_push_header(const struct netdev *netdev OVS_UNUSED,
                         struct dp_packet *packet,
                         const struct ovs_action_push_tnl *data)
 {
+    struct ovs_16aligned_ip6_hdr *ip6 = dp_packet_l3(packet);
+    ovs_be32 ipv6_label = 0;
     int ip_tot_size;
+    uint32_t flow;
 
-    netdev_tnl_push_ip_header(packet, data->header, data->header_len,
-                              &ip_tot_size, 0);
+    switch (data->srv6_flowlabel) {
+    case SRV6_FLOWLABEL_COPY:
+        flow = ntohl(get_16aligned_be32(&ip6->ip6_flow));
+        ipv6_label = (flow >> 28) == 6 ? htonl(flow & IPV6_LABEL_MASK) : 0;
+        break;
+
+    case SRV6_FLOWLABEL_ZERO:
+        ipv6_label = 0;
+        break;
+
+    case SRV6_FLOWLABEL_COMPUTE:
+        ipv6_label = htonl(dp_packet_get_rss_hash(packet) & IPV6_LABEL_MASK);
+        break;
+    }
+
+    netdev_tnl_push_ip_header(packet, data->header,
+                              data->header_len, &ip_tot_size, ipv6_label);
 }
 
 struct dp_packet *

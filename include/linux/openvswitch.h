@@ -855,7 +855,8 @@ struct ovs_action_push_tnl {
 	odp_port_t tnl_port;
 	odp_port_t out_port;
 	uint32_t header_len;
-	uint32_t tnl_type;     /* For logging. */
+	uint32_t tnl_type;       /* For logging. */
+	uint32_t srv6_flowlabel; /* Only for SRv6. */
 	uint32_t header[TNL_PUSH_HEADER_SIZE / 4];
 };
 #endif
