@@ -2368,23 +2368,29 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
     enum reval_result result = UKEY_DELETE;
     struct dpif_flow_stats push;
 
-    ofpbuf_clear(odp_actions);
-
     push.used = stats->used;
     push.tcp_flags = stats->tcp_flags;
-    push.n_packets = (stats->n_packets > ukey->stats.n_packets
-                      ? stats->n_packets - ukey->stats.n_packets
-                      : 0);
-    push.n_bytes = (stats->n_bytes > ukey->stats.n_bytes
-                    ? stats->n_bytes - ukey->stats.n_bytes
-                    : 0);
+    push.n_packets = stats->n_packets - ukey->stats.n_packets;
+    push.n_bytes = stats->n_bytes - ukey->stats.n_bytes;
 
     if (stats->n_packets < ukey->stats.n_packets &&
         ukey->stats.n_packets < UINT64_THREE_QUARTERS) {
+        static struct vlog_rate_limit rll = VLOG_RATE_LIMIT_INIT(1, 5);
+        struct ds ds = DS_EMPTY_INITIALIZER;
+
         /* Report cases where the packet counter is lower than the previous
          * instance, but exclude the potential wrapping of an uint64_t. */
         COVERAGE_INC(ukey_invalid_stat_reset);
+
+        ds_put_cstr(&ds, ", actions:");
+        format_odp_actions(&ds, odp_actions->data, odp_actions->size, NULL);
+
+        VLOG_WARN_RL(&rll, "Unexpected jump in packet stats from %"PRIu64
+                " to %"PRIu64" when handling ukey %s",
+                stats->n_packets, ukey->stats.n_packets, ds_cstr(&ds));
     }
+
+    ofpbuf_clear(odp_actions);
 
     if (need_revalidate) {
         if (should_revalidate(udpif, ukey, push.n_packets)) {
