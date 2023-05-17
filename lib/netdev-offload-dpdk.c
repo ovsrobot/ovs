@@ -33,6 +33,7 @@
 #include "openvswitch/vlog.h"
 #include "ovs-rcu.h"
 #include "packets.h"
+#include "userspace-tso.h"
 #include "uuid.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_offload_dpdk);
@@ -2066,7 +2067,7 @@ parse_vlan_push_action(struct flow_actions *actions,
     return 0;
 }
 
-static void
+static int
 add_tunnel_push_action(struct flow_actions *actions,
                        const struct ovs_action_push_tnl *tnl_push)
 {
@@ -2074,7 +2075,11 @@ add_tunnel_push_action(struct flow_actions *actions,
 
      if (tnl_push->tnl_type == OVS_VPORT_TYPE_VXLAN &&
          !add_vxlan_encap_action(actions, tnl_push->header)) {
-         return;
+         return 0;
+     }
+
+     if (userspace_tso_enabled()) {
+         return -1;
      }
 
      raw_encap = xzalloc(sizeof *raw_encap);
@@ -2083,6 +2088,7 @@ add_tunnel_push_action(struct flow_actions *actions,
      raw_encap->size = tnl_push->header_len;
 
      add_flow_action(actions, RTE_FLOW_ACTION_TYPE_RAW_ENCAP, raw_encap);
+     return 0;
 }
 
 static int
@@ -2099,7 +2105,9 @@ parse_clone_actions(struct netdev *netdev,
 
         if (clone_type == OVS_ACTION_ATTR_TUNNEL_PUSH) {
             const struct ovs_action_push_tnl *tnl_push = nl_attr_get(ca);
-            add_tunnel_push_action(actions, tnl_push);
+            if (add_tunnel_push_action(actions, tnl_push)) {
+                return -1;
+            }
         } else if (clone_type == OVS_ACTION_ATTR_OUTPUT) {
             if (add_output_action(netdev, actions, ca)) {
                 return -1;
@@ -2205,7 +2213,9 @@ parse_flow_actions(struct netdev *netdev,
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_TUNNEL_PUSH) {
             const struct ovs_action_push_tnl *tnl_push = nl_attr_get(nla);
 
-            add_tunnel_push_action(actions, tnl_push);
+            if (add_tunnel_push_action(actions, tnl_push)) {
+                return -1;
+            }
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CLONE &&
                    left <= NLA_ALIGN(nla->nla_len)) {
             const struct nlattr *clone_actions = nl_attr_get(nla);
