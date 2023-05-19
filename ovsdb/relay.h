@@ -33,10 +33,12 @@ typedef struct ovsdb_error *(*schema_change_callback)(
 
 void ovsdb_relay_add_db(struct ovsdb *, const char *remote,
                         schema_change_callback schema_change_cb,
-                        void *schema_change_aux);
+                        void *schema_change_aux, int probe_interval);
 void ovsdb_relay_del_db(struct ovsdb *);
 void ovsdb_relay_run(void);
 void ovsdb_relay_wait(void);
+
+void ovsdb_relay_set_probe_interval(int);
 
 bool ovsdb_relay_is_connected(struct ovsdb *);
 
