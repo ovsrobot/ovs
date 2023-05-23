@@ -1749,9 +1749,15 @@ flow_message_log_level(int error)
     /* If flows arrive in a batch, userspace may push down multiple
      * unique flow definitions that overlap when wildcards are applied.
      * Kernels that support flow wildcarding will reject these flows as
-     * duplicates (EEXIST), so lower the log level to debug for these
-     * types of messages. */
-    return (error && error != EEXIST) ? VLL_WARN : VLL_DBG;
+     * duplicates (EEXIST).
+     *
+     * Some subsystems expose temporary error conditions such as EAGAIN return
+     * for operations on non-blocking sockets.  This is done to make the right
+     * decissions during processing.
+     *
+     * If they bubble up here we ought to not log those as a warning, so lower
+     * the log level to debug for these types of messages. */
+    return (error && error != EEXIST && error != EAGAIN) ? VLL_WARN : VLL_DBG;
 }
 
 static bool

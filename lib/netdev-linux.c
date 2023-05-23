@@ -6235,8 +6235,7 @@ tc_query_qdisc(const struct netdev *netdev_)
      * On Linux 2.6.35+ we use the straightforward method because it allows us
      * to handle non-builtin qdiscs without handle 1:0 (e.g. codel).  However,
      * in such a case we get no response at all from the kernel (!) if a
-     * builtin qdisc is in use (which is later caught by "!error &&
-     * !qdisc->size"). */
+     * builtin qdisc is in use (which is later caught by "error == EAGAIN" */
     tcmsg = netdev_linux_tc_make_request(netdev_, RTM_GETQDISC, NLM_F_ECHO,
                                          &request);
     if (!tcmsg) {
@@ -6247,7 +6246,7 @@ tc_query_qdisc(const struct netdev *netdev_)
 
     /* Figure out what tc class to instantiate. */
     error = tc_transact(&request, &qdisc);
-    if (!error && qdisc->size) {
+    if (!error) {
         const char *kind;
 
         error = tc_parse_qdisc(qdisc, &kind, NULL);
@@ -6262,7 +6261,7 @@ tc_query_qdisc(const struct netdev *netdev_)
                 ops = &tc_ops_other;
             }
         }
-    } else if ((!error && !qdisc->size) || error == ENOENT) {
+    } else if (error == ENOENT || error == EAGAIN) {
         /* Either it's a built-in qdisc, or (on Linux pre-2.6.35) it's a qdisc
          * set up by some other entity that doesn't have a handle 1:0.  We will
          * assume that it's the system default qdisc. */
