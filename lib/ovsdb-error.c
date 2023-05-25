@@ -139,16 +139,10 @@ ovsdb_internal_error(struct ovsdb_error *inner_error,
         va_end(args);
     }
 
+    ds_put_cstr(&ds, " (backtrace:");
     backtrace_capture(&backtrace);
-    if (backtrace.n_frames) {
-        int i;
-
-        ds_put_cstr(&ds, " (backtrace:");
-        for (i = 0; i < backtrace.n_frames; i++) {
-            ds_put_format(&ds, " 0x%08"PRIxPTR, backtrace.frames[i]);
-        }
-        ds_put_char(&ds, ')');
-    }
+    backtrace_format(&backtrace, &ds, ", ");
+    ds_put_char(&ds, ')');
 
     ds_put_format(&ds, " (%s %s)", program_name, VERSION);
 
