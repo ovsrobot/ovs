@@ -11,21 +11,7 @@ init:
 - ps: $env:PATH ="C:\Python37;"+$env:PATH
 - ps: New-Item -Type HardLink -Path "C:\Python37\python3.exe" -Value "C:\Python37\python.exe"
 - ps: >-
-    mkdir C:\ovs-build-downloads
-
     mkdir C:\openvswitch\driver
-
-    $source = "https://slproweb.com/download/Win64OpenSSL-1_0_2u.exe"
-
-    $destination = "C:\ovs-build-downloads\Win64OpenSSL-1_0_2u.exe"
-
-    Invoke-WebRequest $source -OutFile $destination
-
-    cd C:\ovs-build-downloads
-
-    .\Win64OpenSSL-1_0_2u.exe /silent /verysilent /sp- /suppressmsgboxes
-
-    Start-Sleep -s 30
 
     cd C:\openvswitch
 
