@@ -7169,12 +7169,13 @@ dpif_netdev_meter_get_features(const struct dpif * dpif OVS_UNUSED,
  * that exceed a band are dropped in-place. */
 static void
 dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
-                    uint32_t meter_id, long long int now)
+                    uint32_t meter_id)
 {
     struct dp_meter *meter;
     struct dp_meter_band *band;
     struct dp_packet *packet;
     long long int long_delta_t; /* msec */
+    long long int now;
     uint32_t delta_t; /* msec */
     const size_t cnt = dp_packet_batch_size(packets_);
     uint32_t bytes, volume;
@@ -7197,8 +7198,12 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
     memset(exceeded_rate, 0, cnt * sizeof *exceeded_rate);
 
     ovs_mutex_lock(&meter->lock);
+
+    /* Update now */
+    now = time_msec();
+
     /* All packets will hit the meter at the same time. */
-    long_delta_t = now / 1000 - meter->used / 1000; /* msec */
+    long_delta_t = now  - meter->used; /* msec */
 
     if (long_delta_t < 0) {
         /* This condition means that we have several threads fighting for a
@@ -9170,8 +9175,7 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     }
 
     case OVS_ACTION_ATTR_METER:
-        dp_netdev_run_meter(pmd->dp, packets_, nl_attr_get_u32(a),
-                            pmd->ctx.now);
+        dp_netdev_run_meter(pmd->dp, packets_, nl_attr_get_u32(a));
         break;
 
     case OVS_ACTION_ATTR_PUSH_VLAN:
