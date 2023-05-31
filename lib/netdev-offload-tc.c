@@ -1247,7 +1247,13 @@ parse_tc_flower_to_match(const struct netdev *netdev,
     }
     nl_msg_end_nested(buf, act_off);
 
-    *actions = ofpbuf_at_assert(buf, act_off, sizeof(struct nlattr));
+    struct nlattr *act = ofpbuf_at(buf, act_off, sizeof *act);
+    if (!act) {
+        VLOG_ERR_RL(&error_rl, "failed to parse flower, unexpectedly found no "
+                    "actions.");
+        return -EPROTO;
+    }
+    *actions = act;
 
     parse_tc_flower_to_stats(flower, stats);
     parse_tc_flower_to_attrs(flower, attrs);

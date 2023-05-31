@@ -237,11 +237,34 @@ static void request_from_tcf_id(struct tcf_id *id, uint16_t eth_type,
     }
 }
 
+/* The `tc_transact` function is a wrapper around `nl_transact` with the
+ * addition of:
+ *
+ * 1. the 'request' ofpbuf buffer is freed after `nl_transact` returns,
+ *    regardless of success or failure.
+ *
+ * 2. When a 'replyp' pointer is provided; in the event of the kernel
+ *    providing an empty response, a positive error return will be provided
+ *    with the value of EPROTO.
+ *
+ * Please acquaint yourself with the documentation of the `nl_transact`
+ * function in the netlink-socket module before making use of this function.
+ */
 int
 tc_transact(struct ofpbuf *request, struct ofpbuf **replyp)
 {
     int error = nl_transact(NETLINK_ROUTE, request, replyp);
     ofpbuf_uninit(request);
+
+    if (!error && replyp && *replyp && !(*replyp)->size) {
+        /* We replicate the behavior of `nl_transact` for error conditions and
+         * free any allocations before setting the 'replyp' buffer to NULL. */
+        ofpbuf_delete(*replyp);
+        *replyp = NULL;
+
+        return EPROTO;
+    }
+
     return error;
 }
 
@@ -2190,17 +2213,17 @@ int
 parse_netlink_to_tc_flower(struct ofpbuf *reply, struct tcf_id *id,
                            struct tc_flower *flower, bool terse)
 {
-    struct tcmsg *tc;
+    struct ofpbuf b = ofpbuf_const_initializer(reply->data, reply->size);
+    struct nlmsghdr *nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
+    struct tcmsg *tc = ofpbuf_try_pull(&b, sizeof *tc);
     struct nlattr *ta[ARRAY_SIZE(tca_policy)];
     const char *kind;
 
-    if (NLMSG_HDRLEN + sizeof *tc > reply->size) {
+    if (!nlmsg || !tc) {
         return EPROTO;
     }
 
     memset(flower, 0, sizeof *flower);
-
-    tc = ofpbuf_at_assert(reply, NLMSG_HDRLEN, sizeof *tc);
 
     flower->key.eth_type = (OVS_FORCE ovs_be16) tc_get_minor(tc->tcm_info);
     flower->mask.eth_type = OVS_BE16_MAX;
@@ -2215,8 +2238,7 @@ parse_netlink_to_tc_flower(struct ofpbuf *reply, struct tcf_id *id,
         return EAGAIN;
     }
 
-    if (!nl_policy_parse(reply, NLMSG_HDRLEN + sizeof *tc,
-                         tca_policy, ta, ARRAY_SIZE(ta))) {
+    if (!nl_policy_parse(&b, 0, tca_policy, ta, ARRAY_SIZE(ta))) {
         VLOG_ERR_RL(&error_rl, "failed to parse tca policy");
         return EPROTO;
     }
@@ -2237,13 +2259,16 @@ parse_netlink_to_tc_flower(struct ofpbuf *reply, struct tcf_id *id,
 int
 parse_netlink_to_tc_chain(struct ofpbuf *reply, uint32_t *chain)
 {
+    struct ofpbuf b = ofpbuf_const_initializer(reply->data, reply->size);
+    struct nlmsghdr *nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
+    struct tcmsg *tc = ofpbuf_try_pull(&b, sizeof *tc);
     struct nlattr *ta[ARRAY_SIZE(tca_chain_policy)];
-    struct tcmsg *tc;
 
-    tc = ofpbuf_at_assert(reply, NLMSG_HDRLEN, sizeof *tc);
+    if (!nlmsg || !tc) {
+        return EPROTO;
+    }
 
-    if (!nl_policy_parse(reply, NLMSG_HDRLEN + sizeof *tc,
-                         tca_chain_policy, ta, ARRAY_SIZE(ta))) {
+    if (!nl_policy_parse(&b, 0, tca_chain_policy, ta, ARRAY_SIZE(ta))) {
         VLOG_ERR_RL(&error_rl, "failed to parse tca chain policy");
         return EINVAL;
     }
@@ -2307,21 +2332,26 @@ int
 parse_netlink_to_tc_policer(struct ofpbuf *reply, uint32_t police_idx[])
 {
     static struct nl_policy actions_orders_policy[TCA_ACT_MAX_PRIO] = {};
+    struct ofpbuf b = ofpbuf_const_initializer(reply->data, reply->size);
     struct nlattr *actions_orders[ARRAY_SIZE(actions_orders_policy)];
+    struct nlmsghdr *nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
     const int max_size = ARRAY_SIZE(actions_orders_policy);
+    struct tcamsg *tca = ofpbuf_try_pull(&b, sizeof *tca);
     const struct nlattr *actions;
     struct tc_flower flower;
-    struct tcamsg *tca;
     int i, cnt = 0;
     int err;
+
+    if (!nlmsg || !tca) {
+        return EPROTO;
+    }
 
     for (i = 0; i < max_size; i++) {
         actions_orders_policy[i].type = NL_A_NESTED;
         actions_orders_policy[i].optional = true;
     }
 
-    tca = ofpbuf_at_assert(reply, NLMSG_HDRLEN, sizeof *tca);
-    actions = nl_attr_find(reply, NLMSG_HDRLEN + sizeof *tca, TCA_ACT_TAB);
+    actions = nl_attr_find(&b, 0, TCA_ACT_TAB);
     if (!actions || !nl_parse_nested(actions, actions_orders_policy,
                                      actions_orders, max_size)) {
         VLOG_ERR_RL(&error_rl,
@@ -3823,8 +3853,13 @@ tc_replace_flower(struct tcf_id *id, struct tc_flower *flower)
 
     error = tc_transact(&request, &reply);
     if (!error) {
-        struct tcmsg *tc =
-            ofpbuf_at_assert(reply, NLMSG_HDRLEN, sizeof *tc);
+        struct ofpbuf b = ofpbuf_const_initializer(reply->data, reply->size);
+        struct nlmsghdr *nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
+        struct tcmsg *tc = ofpbuf_try_pull(&b, sizeof *tc);
+
+        if (!nlmsg || !tc) {
+            return EPROTO;
+        }
 
         id->prio = tc_get_major(tc->tcm_info);
         id->handle = tc->tcm_handle;
