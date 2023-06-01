@@ -192,6 +192,7 @@ enum tc_action_type {
     TC_ACT_CT,
     TC_ACT_POLICE,
     TC_ACT_POLICE_MTU,
+    TC_ACT_SAMPLE,
 };
 
 enum nat_type {
@@ -283,6 +284,10 @@ struct tc_action {
             uint32_t result_jump;
             uint16_t mtu;
         } police;
+        struct {
+            uint32_t rate;
+            uint32_t group_id;
+        } sample;
     };
 
     enum tc_action_type type;
@@ -380,6 +385,7 @@ struct tc_flower {
     enum tc_offloaded_state offloaded_state;
     /* Used to force skip_hw when probing tc features. */
     enum tc_offload_policy tc_policy;
+    uint16_t ifindex;
 };
 
 int tc_replace_flower(struct tcf_id *id, struct tc_flower *flower);
