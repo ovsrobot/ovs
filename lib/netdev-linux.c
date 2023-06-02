@@ -484,9 +484,9 @@ static const struct tc_ops *const tcs[] = {
     NULL
 };
 
-static unsigned int tc_ticks_to_bytes(unsigned int rate, unsigned int ticks);
-static unsigned int tc_bytes_to_ticks(unsigned int rate, unsigned int size);
-static unsigned int tc_buffer_per_jiffy(unsigned int rate);
+static unsigned int tc_ticks_to_bytes(uint64_t rate, unsigned int ticks);
+static unsigned int tc_bytes_to_ticks(uint64_t rate, unsigned int size);
+static unsigned int tc_buffer_per_jiffy(uint64_t rate);
 static uint32_t tc_time_to_ticks(uint32_t time);
 
 static struct tcmsg *netdev_linux_tc_make_request(const struct netdev *,
@@ -516,7 +516,7 @@ tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate,
             uint64_t rate64);
 static int tc_calc_cell_log(unsigned int mtu);
 static void tc_fill_rate(struct tc_ratespec *rate, uint64_t bps, int mtu);
-static int tc_calc_buffer(unsigned int Bps, int mtu, uint64_t burst_bytes);
+static int tc_calc_buffer(uint64_t Bps, int mtu, uint64_t burst_bytes);
 
 
 /* This is set pretty low because we probably won't learn anything from the
@@ -4560,13 +4560,13 @@ static const struct tc_ops tc_ops_netem = {
 
 struct htb {
     struct tc tc;
-    unsigned int max_rate;      /* In bytes/s. */
+    uint64_t max_rate;          /* In bytes/s. */
 };
 
 struct htb_class {
     struct tc_queue tc_queue;
-    unsigned int min_rate;      /* In bytes/s. */
-    unsigned int max_rate;      /* In bytes/s. */
+    uint64_t min_rate;          /* In bytes/s. */
+    uint64_t max_rate;          /* In bytes/s. */
     unsigned int burst;         /* In bytes. */
     unsigned int priority;      /* Lower values are higher priorities. */
 };
@@ -4654,8 +4654,8 @@ htb_setup_class__(struct netdev *netdev, unsigned int handle,
     if ((class->min_rate / HTB_RATE2QUANTUM) < mtu) {
         opt.quantum = mtu;
     }
-    opt.buffer = tc_calc_buffer(opt.rate.rate, mtu, class->burst);
-    opt.cbuffer = tc_calc_buffer(opt.ceil.rate, mtu, class->burst);
+    opt.buffer = tc_calc_buffer(class->min_rate, mtu, class->burst);
+    opt.cbuffer = tc_calc_buffer(class->max_rate, mtu, class->burst);
     opt.prio = class->priority;
 
     tcmsg = netdev_linux_tc_make_request(netdev, RTM_NEWTCLASS, NLM_F_CREATE,
@@ -4668,15 +4668,26 @@ htb_setup_class__(struct netdev *netdev, unsigned int handle,
 
     nl_msg_put_string(&request, TCA_KIND, "htb");
     opt_offset = nl_msg_start_nested(&request, TCA_OPTIONS);
+
+#ifdef HAVE_TCA_HTB_RATE64
+    if (class->min_rate > UINT32_MAX) {
+        nl_msg_put_u64(&request, TCA_HTB_RATE64, class->min_rate);
+    }
+    if (class->max_rate > UINT32_MAX) {
+        nl_msg_put_u64(&request, TCA_HTB_CEIL64, class->max_rate);
+    }
+#endif
     nl_msg_put_unspec(&request, TCA_HTB_PARMS, &opt, sizeof opt);
-    tc_put_rtab(&request, TCA_HTB_RTAB, &opt.rate, 0);
-    tc_put_rtab(&request, TCA_HTB_CTAB, &opt.ceil, 0);
+
+    tc_put_rtab(&request, TCA_HTB_RTAB, &opt.rate, class->min_rate);
+    tc_put_rtab(&request, TCA_HTB_CTAB, &opt.ceil, class->max_rate);
     nl_msg_end_nested(&request, opt_offset);
 
     error = tc_transact(&request, NULL);
     if (error) {
         VLOG_WARN_RL(&rl, "failed to replace %s class %u:%u, parent %u:%u, "
-                     "min_rate=%u max_rate=%u burst=%u prio=%u (%s)",
+                     "min_rate=%"PRIu64" max_rate=%"PRIu64" burst=%u prio=%u "
+                     "(%s)",
                      netdev_get_name(netdev),
                      tc_get_major(handle), tc_get_minor(handle),
                      tc_get_major(parent), tc_get_minor(parent),
@@ -4696,6 +4707,10 @@ htb_parse_tca_options__(struct nlattr *nl_options, struct htb_class *class)
     static const struct nl_policy tca_htb_policy[] = {
         [TCA_HTB_PARMS] = { .type = NL_A_UNSPEC, .optional = false,
                             .min_len = sizeof(struct tc_htb_opt) },
+#ifdef HAVE_TCA_HTB_RATE64
+        [TCA_HTB_RATE64] = { .type = NL_A_U64, .optional = true },
+        [TCA_HTB_CEIL64] = { .type = NL_A_U64, .optional = true },
+#endif
     };
 
     struct nlattr *attrs[ARRAY_SIZE(tca_htb_policy)];
@@ -4710,7 +4725,15 @@ htb_parse_tca_options__(struct nlattr *nl_options, struct htb_class *class)
     htb = nl_attr_get(attrs[TCA_HTB_PARMS]);
     class->min_rate = htb->rate.rate;
     class->max_rate = htb->ceil.rate;
-    class->burst = tc_ticks_to_bytes(htb->rate.rate, htb->buffer);
+#ifdef HAVE_TCA_HTB_RATE64
+    if (attrs[TCA_HTB_RATE64]) {
+        class->min_rate = nl_attr_get_u64(attrs[TCA_HTB_RATE64]);
+    }
+    if (attrs[TCA_HTB_CEIL64]) {
+        class->max_rate = nl_attr_get_u64(attrs[TCA_HTB_CEIL64]);
+    }
+#endif
+    class->burst = tc_ticks_to_bytes(class->min_rate, htb->buffer);
     class->priority = htb->prio;
     return 0;
 }
@@ -5971,7 +5994,7 @@ exit:
 /* Returns the number of bytes that can be transmitted in 'ticks' ticks at a
  * rate of 'rate' bytes per second. */
 static unsigned int
-tc_ticks_to_bytes(unsigned int rate, unsigned int ticks)
+tc_ticks_to_bytes(uint64_t rate, unsigned int ticks)
 {
     read_psched();
     return (rate * ticks) / ticks_per_s;
@@ -5980,7 +6003,7 @@ tc_ticks_to_bytes(unsigned int rate, unsigned int ticks)
 /* Returns the number of ticks that it would take to transmit 'size' bytes at a
  * rate of 'rate' bytes per second. */
 static unsigned int
-tc_bytes_to_ticks(unsigned int rate, unsigned int size)
+tc_bytes_to_ticks(uint64_t rate, unsigned int size)
 {
     read_psched();
     return rate ? ((unsigned long long int) ticks_per_s * size) / rate : 0;
@@ -5989,7 +6012,7 @@ tc_bytes_to_ticks(unsigned int rate, unsigned int size)
 /* Returns the number of bytes that need to be reserved for qdisc buffering at
  * a transmission rate of 'rate' bytes per second. */
 static unsigned int
-tc_buffer_per_jiffy(unsigned int rate)
+tc_buffer_per_jiffy(uint64_t rate)
 {
     read_psched();
     return rate / buffer_hz;
@@ -6346,7 +6369,7 @@ tc_fill_rate(struct tc_ratespec *rate, uint64_t Bps, int mtu)
     /* rate->overhead = 0; */           /* New in 2.6.24, not yet in some */
     /* rate->cell_align = 0; */         /* distro headers. */
     rate->mpu = ETH_TOTAL_MIN;
-    rate->rate = Bps;
+    rate->rate = MIN(UINT32_MAX, Bps);
 }
 
 /* Appends to 'msg' an "rtab" table for the specified 'rate' as a Netlink
@@ -6378,7 +6401,7 @@ tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate,
  * burst size of 'burst_bytes'.  (If no value was requested, a 'burst_bytes' of
  * 0 is fine.) */
 static int
-tc_calc_buffer(unsigned int Bps, int mtu, uint64_t burst_bytes)
+tc_calc_buffer(uint64_t Bps, int mtu, uint64_t burst_bytes)
 {
     unsigned int min_burst = tc_buffer_per_jiffy(Bps) + mtu;
     return tc_bytes_to_ticks(Bps, MAX(burst_bytes, min_burst));
