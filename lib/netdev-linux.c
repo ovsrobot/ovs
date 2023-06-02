@@ -512,7 +512,8 @@ static int tc_del_qdisc(struct netdev *netdev);
 static int tc_query_qdisc(const struct netdev *netdev);
 
 void
-tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate);
+tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate,
+            uint64_t rate64);
 static int tc_calc_cell_log(unsigned int mtu);
 static void tc_fill_rate(struct tc_ratespec *rate, uint64_t bps, int mtu);
 static int tc_calc_buffer(unsigned int Bps, int mtu, uint64_t burst_bytes);
@@ -2689,7 +2690,7 @@ nl_msg_put_act_police(struct ofpbuf *request, struct tc_police *police,
     nl_msg_act_police_start_nest(request, ++prio, &offset, &act_offset,
                                  single_action);
     if (police->rate.rate) {
-        tc_put_rtab(request, TCA_POLICE_RATE, &police->rate);
+        tc_put_rtab(request, TCA_POLICE_RATE, &police->rate, 0);
     }
     if (pkts_rate) {
         uint64_t pkt_burst_ticks;
@@ -2735,6 +2736,7 @@ tc_add_matchall_policer(struct netdev *netdev, uint32_t kbits_rate,
     action_offset = nl_msg_start_nested(&request, TCA_MATCHALL_ACT);
     nl_msg_put_act_police(&request, &pol_act, kpkts_rate * 1000,
                           kpkts_burst * 1000, TC_ACT_UNSPEC, false);
+
     nl_msg_end_nested(&request, action_offset);
     nl_msg_end_nested(&request, basic_offset);
 
@@ -4667,8 +4669,8 @@ htb_setup_class__(struct netdev *netdev, unsigned int handle,
     nl_msg_put_string(&request, TCA_KIND, "htb");
     opt_offset = nl_msg_start_nested(&request, TCA_OPTIONS);
     nl_msg_put_unspec(&request, TCA_HTB_PARMS, &opt, sizeof opt);
-    tc_put_rtab(&request, TCA_HTB_RTAB, &opt.rate);
-    tc_put_rtab(&request, TCA_HTB_CTAB, &opt.ceil);
+    tc_put_rtab(&request, TCA_HTB_RTAB, &opt.rate, 0);
+    tc_put_rtab(&request, TCA_HTB_CTAB, &opt.ceil, 0);
     nl_msg_end_nested(&request, opt_offset);
 
     error = tc_transact(&request, NULL);
@@ -6350,9 +6352,13 @@ tc_fill_rate(struct tc_ratespec *rate, uint64_t Bps, int mtu)
 /* Appends to 'msg' an "rtab" table for the specified 'rate' as a Netlink
  * attribute of the specified "type".
  *
+ * A 64-bit rate can be provided via 'rate64' in bps.
+ * If zero, the rate in 'rate' will be used.
+ *
  * See tc_calc_cell_log() above for a description of "rtab"s. */
 void
-tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate)
+tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate,
+            uint64_t rate64)
 {
     uint32_t *rtab;
     unsigned int i;
@@ -6363,7 +6369,7 @@ tc_put_rtab(struct ofpbuf *msg, uint16_t type, const struct tc_ratespec *rate)
         if (packet_size < rate->mpu) {
             packet_size = rate->mpu;
         }
-        rtab[i] = tc_bytes_to_ticks(rate->rate, packet_size);
+        rtab[i] = tc_bytes_to_ticks(rate64 ? rate64 : rate->rate, packet_size);
     }
 }
 
