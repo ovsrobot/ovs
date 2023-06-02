@@ -716,3 +716,52 @@ AT_CHECK([test `ovs-vsctl get Interface p2 statistics:tx_q0_packets` -gt 0 -a dn
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([dpif-netdev - revalidators handle dp modification fail correctly])
+OVS_VSWITCHD_START(
+  [add-port br0 p1 \
+   -- set interface p1 type=dummy \
+   -- set bridge br0 datapath-type=dummy \
+   -- add-port br0 p2 \
+   -- set interface p2 type=dummy --
+   ])
+
+AT_DATA([flows.txt], [dnl
+table=0,in_port=p1,actions=p2
+])
+
+ovs-ofctl add-flows br0 flows.txt
+ovs-appctl netdev-dummy/receive p1 'ipv4(src=10.0.0.1,dst=10.0.0.2),tcp(src=1,dst=2)'
+
+AT_CHECK([ovs-appctl dpctl/dump-flows | strip_used], [0], [dnl
+flow-dump from the main thread:
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:2
+])
+
+dnl wait the dp flow enter OPERATIONAL
+ovs-appctl revalidator/wait
+
+AT_CHECK([ovs-appctl revalidator/pause])
+
+dnl delete all dp flows, so flow modify will fail.
+AT_CHECK([ovs-appctl dpctl/del-flows])
+
+dnl replace openflow rules, let revalidator work
+AT_DATA([flows2.txt], [dnl
+table=0,in_port=p1,ip actions=ct(commit)
+])
+AT_CHECK([ovs-appctl revalidator/resume])
+
+dnl trigger revalidating and wait
+AT_CHECK([ovs-ofctl --bundle replace-flows br0 flows2.txt])
+ovs-appctl revalidator/wait
+
+dnl inconsistent ukey should be deleted.
+AT_CHECK([ovs-appctl upcall/show | grep keys | grep -q -v 0], [1])
+
+dnl delete revalidator warnings log to let testsuite pass.
+sed -i 's/.*failed to put.*$//' ovs-vswitchd.log
+sed -i 's/.*failed to flow_del.*$//' ovs-vswitchd.log
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
