@@ -4746,11 +4746,10 @@ htb_parse_qdisc_details__(struct netdev *netdev_,
 
     hc->max_rate = smap_get_ullong(details, "max-rate", 0) / 8;
     if (!hc->max_rate) {
-        enum netdev_features current;
-
         netdev_linux_read_features(netdev);
-        current = !netdev->get_features_error ? netdev->current : 0;
-        hc->max_rate = netdev_features_to_bps(current, NETDEV_DEFAULT_BPS) / 8;
+        hc->max_rate = !netdev->get_features_error
+                       ? netdev->current_speed / 8 * 1000000ULL
+                       : NETDEV_DEFAULT_BPS / 8;
     }
     hc->min_rate = hc->max_rate;
     hc->burst = 0;
@@ -5218,11 +5217,10 @@ hfsc_parse_qdisc_details__(struct netdev *netdev_, const struct smap *details,
 
     uint32_t max_rate = smap_get_ullong(details, "max-rate", 0) / 8;
     if (!max_rate) {
-        enum netdev_features current;
-
         netdev_linux_read_features(netdev);
-        current = !netdev->get_features_error ? netdev->current : 0;
-        max_rate = netdev_features_to_bps(current, NETDEV_DEFAULT_BPS) / 8;
+        max_rate = !netdev->get_features_error
+                   ? netdev->current_speed / 8 * 1000000ULL
+                   : NETDEV_DEFAULT_BPS / 8;
     }
 
     class->min_rate = max_rate;
