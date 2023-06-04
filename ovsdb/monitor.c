@@ -1359,8 +1359,10 @@ ovsdb_monitor_changes_update(const struct ovsdb_row *old,
                              const struct ovsdb_monitor_table *mt,
                              struct ovsdb_monitor_change_set_for_table *mcst)
 {
+    ovs_assert(new || old);
     const struct uuid *uuid = ovsdb_row_get_uuid(new ? new : old);
-    struct ovsdb_monitor_row *change;
+    ovs_assert(uuid);
+    struct ovsdb_monitor_row *change = NULL;
 
     change = ovsdb_monitor_changes_row_find(mcst, uuid);
     if (!change) {
