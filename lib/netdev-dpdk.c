@@ -1140,6 +1140,39 @@ dpdk_eth_flow_ctrl_setup(struct netdev_dpdk *dev) OVS_REQUIRES(dev->mutex)
     }
 }
 
+static void
+dpdk_eth_dev_init_rx_metadata(struct netdev_dpdk *dev)
+{
+    uint64_t rx_metadata = 0;
+    int ret;
+
+    /* For the fallback offload (non-"transfer" rules) */
+    rx_metadata |= RTE_ETH_RX_METADATA_USER_MARK;
+    /* For the full offload ("transfer" rules) */
+    rx_metadata |= RTE_ETH_RX_METADATA_TUNNEL_ID;
+
+    ret = rte_eth_rx_metadata_negotiate(dev->port_id, &rx_metadata);
+    if (ret == 0) {
+        if (!(rx_metadata & RTE_ETH_RX_METADATA_USER_MARK)) {
+            VLOG_DBG("The NIC will not provide per-packet USER_MARK on port "
+                     DPDK_PORT_ID_FMT, dev->port_id);
+        }
+        if (!(rx_metadata & RTE_ETH_RX_METADATA_TUNNEL_ID)) {
+            VLOG_DBG("The NIC will not provide per-packet TUNNEL_ID on port "
+                     DPDK_PORT_ID_FMT, dev->port_id);
+        }
+    } else if (ret == -ENOTSUP) {
+        VLOG_DBG("Rx metadata negotiate procedure is not supported on port "
+                 DPDK_PORT_ID_FMT, dev->port_id);
+    } else if (ret == -EBUSY) {
+        /* Already configured */
+        return;
+    } else {
+        VLOG_WARN("Cannot negotiate Rx metadata on port "
+                  DPDK_PORT_ID_FMT, dev->port_id);
+    }
+}
+
 static int
 dpdk_eth_dev_init(struct netdev_dpdk *dev)
     OVS_REQUIRES(dev->mutex)
@@ -1153,6 +1186,16 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
     uint32_t rx_chksm_offload_capa = RTE_ETH_RX_OFFLOAD_UDP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
+
+    /*
+     * Full tunnel offload requires that tunnel ID metadata be
+     * delivered with "miss" packets from the hardware to the
+     * PMD. The same goes for megaflow mark metadata which is
+     * used in MARK + RSS offload scenario.
+     *
+     * Request delivery of such metadata.
+     */
+    dpdk_eth_dev_init_rx_metadata(dev);
 
     rte_eth_dev_info_get(dev->port_id, &info);
 
