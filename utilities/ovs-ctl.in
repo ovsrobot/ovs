@@ -338,6 +338,7 @@ set_defaults () {
     DUMP_HUGEPAGES=no
     MLOCKALL=yes
     SELF_CONFINEMENT=yes
+    DETACH=yes
     MONITOR=yes
     OVS_USER=
     OVSDB_SERVER=yes
@@ -442,6 +443,10 @@ Less important options for "start", "restart" and "force-reload-kmod":
   --no-full-hostname             set short hostname instead of full hostname
   --no-record-hostname           do not attempt to determine/record system
                                  hostname as part of start command
+  --detach=yes|no                Run process in background (default: $DETACH).
+                                 If "no", replace current process with "exec".
+                                 Note, that with "no" database settings initialization is not done.
+                                 db-version, system-ids are not set and transient ports are not deleted.
 
 Debugging options for "start", "restart" and "force-reload-kmod":
   --ovsdb-server-wrapper=WRAPPER

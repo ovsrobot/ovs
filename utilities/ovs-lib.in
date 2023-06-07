@@ -183,7 +183,13 @@ start_daemon () {
     # pidfile and monitoring
     install_dir "$rundir"
     set "$@" --pidfile="$rundir/$daemon.pid"
-    set "$@" --detach
+
+    if test X"$DETACH" != Xno; then
+        set "$@" --detach
+    else
+        set exec "$@"
+    fi
+
     test X"$MONITOR" = Xno || set "$@" --monitor
 
     # wrapper
