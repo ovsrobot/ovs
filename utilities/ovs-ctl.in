@@ -150,9 +150,11 @@ do_start_ovsdb () {
         fi
         set "$@" -vconsole:emer -vsyslog:err -vfile:info
         set "$@" --remote=punix:"$DB_SOCK"
-        set "$@" --private-key=db:Open_vSwitch,SSL,private_key
-        set "$@" --certificate=db:Open_vSwitch,SSL,certificate
-        set "$@" --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert
+        if test X"$IN_DB_SSL" = Xyes; then
+            set "$@" --private-key=db:Open_vSwitch,SSL,private_key
+            set "$@" --certificate=db:Open_vSwitch,SSL,certificate
+            set "$@" --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert
+        fi
         [ "$OVS_USER" != "" ] && set "$@" --user "$OVS_USER"
         [ "$OVSDB_SERVER_OPTIONS" != "" ] && set "$@" $OVSDB_SERVER_OPTIONS
 
@@ -356,6 +358,7 @@ set_defaults () {
     DB_SOCK=$rundir/db.sock
     DB_SCHEMA=$datadir/vswitch.ovsschema
     EXTRA_DBS=
+    IN_DB_SSL=yes
 
     PROTOCOL=gre
     DPORT=
@@ -457,6 +460,8 @@ File location options:
   --db-file=FILE     database file name (default: $DB_FILE)
   --db-sock=SOCKET   JSON-RPC socket name (default: $DB_SOCK)
   --db-schema=FILE   database schema file name (default: $DB_SCHEMA)
+  --in-db-ssl=yes|no use ssl key, cert and cacert file paths from Open_vSwitch
+                     database (default: $IN_DB_SSL)
 
 Options for "enable-protocol":
   --protocol=PROTOCOL  protocol to enable with iptables (default: gre)
