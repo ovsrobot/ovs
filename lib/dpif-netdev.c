@@ -4198,36 +4198,43 @@ flow_put_on_pmd(struct dp_netdev_pmd_thread *pmd,
         memset(stats, 0, sizeof *stats);
     }
 
-    ovs_mutex_lock(&pmd->flow_mutex);
-    netdev_flow = dp_netdev_pmd_lookup_flow(pmd, key, NULL);
-    if (!netdev_flow) {
-        if (put->flags & DPIF_FP_CREATE) {
+    if (put->flags & DPIF_FP_CREATE) {
+        ovs_mutex_lock(&pmd->flow_mutex);
+        netdev_flow = dp_netdev_pmd_lookup_flow(pmd, key, NULL);
+        if (!netdev_flow) {
             dp_netdev_flow_add(pmd, match, ufid, put->actions,
                                put->actions_len, ODPP_NONE);
         } else {
-            error = ENOENT;
+            error = EEXIST;
         }
+        ovs_mutex_unlock(&pmd->flow_mutex);
     } else {
+        netdev_flow = dp_netdev_pmd_find_flow(pmd, ufid,
+                                              put->key, put->key_len);
+
         if (put->flags & DPIF_FP_MODIFY) {
-            struct dp_netdev_actions *new_actions;
-            struct dp_netdev_actions *old_actions;
+            if (!netdev_flow) {
+                error = ENOENT;
+            } else {
+                struct dp_netdev_actions *new_actions;
+                struct dp_netdev_actions *old_actions;
 
-            new_actions = dp_netdev_actions_create(put->actions,
-                                                   put->actions_len);
+                new_actions = dp_netdev_actions_create(put->actions,
+                                                       put->actions_len);
 
-            old_actions = dp_netdev_flow_get_actions(netdev_flow);
-            ovsrcu_set(&netdev_flow->actions, new_actions);
+                old_actions = dp_netdev_flow_get_actions(netdev_flow);
+                ovsrcu_set(&netdev_flow->actions, new_actions);
 
-            queue_netdev_flow_put(pmd, netdev_flow, match,
-                                  put->actions, put->actions_len,
-                                  DP_NETDEV_FLOW_OFFLOAD_OP_MOD);
-            log_netdev_flow_change(netdev_flow, match, old_actions,
-                                   put->actions, put->actions_len);
+                queue_netdev_flow_put(pmd, netdev_flow, match,
+                                      put->actions, put->actions_len,
+                                      DP_NETDEV_FLOW_OFFLOAD_OP_MOD);
+                log_netdev_flow_change(netdev_flow, match, old_actions,
+                                       put->actions, put->actions_len);
 
-            if (stats) {
-                get_dpif_flow_status(pmd->dp, netdev_flow, stats, NULL);
-            }
-            if (put->flags & DPIF_FP_ZERO_STATS) {
+                if (stats) {
+                    get_dpif_flow_status(pmd->dp, netdev_flow, stats, NULL);
+                }
+                if (put->flags & DPIF_FP_ZERO_STATS) {
                 /* XXX: The userspace datapath uses thread local statistics
                  * (for flows), which should be updated only by the owning
                  * thread.  Since we cannot write on stats memory here,
@@ -4237,18 +4244,17 @@ flow_put_on_pmd(struct dp_netdev_pmd_thread *pmd,
                  * - Should the need arise, this operation can be implemented
                  *   by keeping a base value (to be update here) for each
                  *   counter, and subtracting it before outputting the stats */
-                error = EOPNOTSUPP;
+                    error = EOPNOTSUPP;
+                }
+                ovsrcu_postpone(dp_netdev_actions_free, old_actions);
             }
-
-            ovsrcu_postpone(dp_netdev_actions_free, old_actions);
-        } else if (put->flags & DPIF_FP_CREATE) {
-            error = EEXIST;
         } else {
-            /* Overlapping flow. */
-            error = EINVAL;
+            if (netdev_flow) {
+                /* Overlapping flow. */
+                error = EINVAL;
+            }
         }
     }
-    ovs_mutex_unlock(&pmd->flow_mutex);
     return error;
 }
 
