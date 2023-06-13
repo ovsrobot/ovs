@@ -336,6 +336,8 @@ dpctl_add_if(int argc OVS_UNUSED, const char *argv[],
                 value = "";
             }
 
+            ovs_assert(key);
+
             if (!strcmp(key, "type")) {
                 type = value;
             } else if (!strcmp(key, "port_no")) {
@@ -453,6 +455,8 @@ dpctl_set_if(int argc, const char *argv[], struct dpctl_params *dpctl_p)
             if (!value) {
                 value = "";
             }
+
+            ovs_assert(key);
 
             if (!strcmp(key, "type")) {
                 if (strcmp(value, type)) {

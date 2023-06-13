@@ -1065,6 +1065,7 @@ vtep_ctl_context_populate_cache(struct ctl_context *ctx)
             continue;
         }
         ps = shash_find_data(&vtepctl_ctx->pswitches, ps_cfg->name);
+        ovs_assert(ps);
         for (j = 0; j < ps_cfg->n_ports; j++) {
             struct vteprec_physical_port *port_cfg = ps_cfg->ports[j];
             struct vtep_ctl_port *port;
@@ -1087,7 +1088,7 @@ vtep_ctl_context_populate_cache(struct ctl_context *ctx)
             }
 
             port = add_port_to_cache(vtepctl_ctx, ps, port_cfg);
-
+            ovs_assert(port);
             for (k = 0; k < port_cfg->n_vlan_bindings; k++) {
                 struct vtep_ctl_lswitch *ls;
                 char *vlan;
@@ -1883,6 +1884,8 @@ del_mcast_entry(struct ctl_context *ctx,
     del_ploc_from_mcast_mac(mcast_mac, ploc_cfg);
     if (ovs_list_is_empty(&mcast_mac->locators)) {
         struct shash_node *node = shash_find(mcast_shash, mac);
+
+        ovs_assert(node);
 
         vteprec_physical_locator_set_delete(ploc_set_cfg);
 
