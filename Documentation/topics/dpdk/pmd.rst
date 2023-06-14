@@ -334,7 +334,7 @@ when there is no load or very-low load on all the Rx queues they poll.
 This can be enabled by setting the max requested sleep time (in microseconds)
 for a PMD thread::
 
-    $ ovs-vsctl set open_vswitch . other_config:pmd-maxsleep=50
+    $ ovs-vsctl set open_vswitch . other_config:pmd-sleep-max=50
 
 With a non-zero max value a PMD may request to sleep by an incrementing amount
 of time up to the maximum time. If at any point the threshold of at least half
