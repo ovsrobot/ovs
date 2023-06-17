@@ -56,6 +56,9 @@
 
 VLOG_DEFINE_THIS_MODULE(vsctl);
 
+/* Post OVSDB reload error reported. */
+#define EXIT_POSTDB_ERROR 3
+
 struct vsctl_context;
 
 /* --db: The database server to contact. */
@@ -115,7 +118,7 @@ static void parse_options(int argc, char *argv[], struct shash *local_options);
 static void run_prerequisites(struct ctl_command[], size_t n_commands,
                               struct ovsdb_idl *);
 static bool do_vsctl(const char *args, struct ctl_command *, size_t n,
-                     struct ovsdb_idl *);
+                     struct ovsdb_idl *, bool *);
 
 /* post_db_reload_check frame work is to allow ovs-vsctl to do additional
  * checks after OVSDB transactions are successfully recorded and reload by
@@ -134,11 +137,13 @@ static bool do_vsctl(const char *args, struct ctl_command *, size_t n,
  * Current implementation only check for Post OVSDB reload failures on new
  * interface additions with 'add-br' and 'add-port' commands.
  *
+ * post_db_reload_check returns 'true' if a failure is reported.
+ *
  * post_db_reload_expect_iface()
  *
  * keep track of interfaces to be checked post OVSDB reload. */
 static void post_db_reload_check_init(void);
-static void post_db_reload_do_checks(const struct vsctl_context *);
+static bool post_db_reload_do_checks(const struct vsctl_context *);
 static void post_db_reload_expect_iface(const struct ovsrec_interface *);
 
 static struct uuid *neoteric_ifaces;
@@ -200,9 +205,15 @@ main(int argc, char *argv[])
         }
 
         if (seqno != ovsdb_idl_get_seqno(idl)) {
+            bool postdb_err;
+
             seqno = ovsdb_idl_get_seqno(idl);
-            if (do_vsctl(args, commands, n_commands, idl)) {
+            if (do_vsctl(args, commands, n_commands, idl, &postdb_err)) {
                 free(args);
+                if (postdb_err) {
+                    exit(EXIT_POSTDB_ERROR);
+                }
+
                 exit(EXIT_SUCCESS);
             }
         }
@@ -2674,7 +2685,7 @@ post_db_reload_expect_iface(const struct ovsrec_interface *iface)
     neoteric_ifaces[n_neoteric_ifaces++] = iface->header_.uuid;
 }
 
-static void
+static bool
 post_db_reload_do_checks(const struct vsctl_context *vsctl_ctx)
 {
     bool print_error = false;
@@ -2707,6 +2718,8 @@ post_db_reload_do_checks(const struct vsctl_context *vsctl_ctx)
     if (print_error) {
         ovs_error(0, "The default log directory is \"%s\".", ovs_logdir());
     }
+
+    return print_error;
 }
 
 
@@ -2815,7 +2828,7 @@ vsctl_parent_process_info(void)
 
 static bool
 do_vsctl(const char *args, struct ctl_command *commands, size_t n_commands,
-         struct ovsdb_idl *idl)
+         struct ovsdb_idl *idl, bool *postdb_err)
 {
     struct ovsdb_idl_txn *txn;
     const struct ovsrec_open_vswitch *ovs;
@@ -2827,6 +2840,8 @@ do_vsctl(const char *args, struct ctl_command *commands, size_t n_commands,
     int64_t next_cfg = 0;
     char *ppid_info = NULL;
 
+    ovs_assert(postdb_err);
+    *postdb_err = false;
     txn = the_idl_txn = ovsdb_idl_txn_create(idl);
     if (dry_run) {
         ovsdb_idl_txn_set_dry_run(txn);
@@ -2989,7 +3004,9 @@ do_vsctl(const char *args, struct ctl_command *commands, size_t n_commands,
             ovsdb_idl_run(idl);
             OVSREC_OPEN_VSWITCH_FOR_EACH (ovs, idl) {
                 if (ovs->cur_cfg >= next_cfg) {
-                    post_db_reload_do_checks(&vsctl_ctx);
+                    if (post_db_reload_do_checks(&vsctl_ctx)) {
+                        *postdb_err = true;
+                    }
                     goto done;
                 }
             }

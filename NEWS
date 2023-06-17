@@ -28,6 +28,9 @@ Post-v3.1.0
      * Added new options --[ovsdb-server|ovs-vswitchd]-umask=MODE to set umask
        value when starting OVS daemons.  E.g., use --ovsdb-server-umask=0002
        in order to create OVSDB sockets with access mode of 0770.
+   - ovs-vsctl:
+     * Exit with error code 3 if errors were reported while checking if OVSDB
+       transactions are successfully recorded and reload by ovs-vswitchd.
    - QoS:
      * Added new configuration option 'jitter' for a linux-netem QoS type.
    - DPDK:
