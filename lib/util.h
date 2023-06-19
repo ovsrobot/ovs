@@ -167,6 +167,7 @@ void *xcalloc(size_t, size_t) MALLOC_LIKE;
 void *xzalloc(size_t) MALLOC_LIKE;
 void *xrealloc(void *, size_t);
 void *xmemdup(const void *, size_t) MALLOC_LIKE;
+void *nullable_xmemdup(const void *p_, size_t size) MALLOC_LIKE;
 char *xmemdup0(const char *, size_t) MALLOC_LIKE;
 char *xstrdup(const char *) MALLOC_LIKE;
 char *nullable_xstrdup(const char *) MALLOC_LIKE;
