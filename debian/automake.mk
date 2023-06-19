@@ -61,10 +61,16 @@ EXTRA_DIST += \
 	debian/rules \
 	debian/source/format \
 	debian/source/lintian-overrides \
+	debian/tests/afxdp \
+	debian/tests/afxdp-skip-tests.txt \
 	debian/tests/control \
 	debian/tests/dpdk \
-	debian/tests/openflow.py \
-	debian/tests/vanilla \
+	debian/tests/kernel \
+	debian/tests/offloads \
+	debian/tests/offloads-skip-tests.txt \
+	debian/tests/run-tests.sh \
+	debian/tests/system-userspace \
+	debian/tests/testlist.py \
 	debian/watch
 
 check-debian-changelog-version:
@@ -113,7 +119,6 @@ CLEANFILES += debian/control
 debian: debian/copyright debian/control
 .PHONY: debian
 
-
 debian-deb: debian
 	@if test X"$(srcdir)" != X"$(top_builddir)"; then			\
 		echo "Debian packages should be built from $(abs_srcdir)/";	\
@@ -130,3 +135,18 @@ else
 	$(AM_V_GEN) DEB_BUILD_OPTIONS="nocheck parallel=`nproc` nodpdk" \
 		fakeroot debian/rules binary
 endif
+
+debian-source: debian
+	@if test X"$(srcdir)" != X"$(top_builddir)"; then			\
+		echo "Debian packages should be built from $(abs_srcdir)/";	\
+		exit 1;								\
+	fi
+	$(MAKE) distclean
+	$(update_deb_copyright)
+	$(update_deb_control)
+	$(AM_V_GEN) fakeroot debian/rules clean
+	tar -cvzf ../openvswitch_$(PACKAGE_VERSION).orig.tar.gz \
+		--exclude .git \
+		--transform 's,^\.,openvswitch-$(PACKAGE_VERSION),' \
+		.
+	dpkg-source -b .
