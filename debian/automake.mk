@@ -95,17 +95,29 @@ CLEANFILES += debian/copyright
 
 
 if DPDK_NETDEV
-update_deb_control = \
-	$(AM_V_GEN) sed -e 's/^\# DPDK_NETDEV //' \
-		< $(srcdir)/debian/control.in > debian/control
+update_deb_control_dpdk = \
+	$(AM_V_GEN) sed -i 's/^\# DPDK_NETDEV //' \
+		$(srcdir)/debian/control
 else
-update_deb_control = \
-	$(AM_V_GEN) grep -v '^\# DPDK_NETDEV' \
-		< $(srcdir)/debian/control.in > debian/control
+update_deb_control_dpdk = \
+	$(AM_V_GEN) sed -i '/^\# DPDK_NETDEV /d' \
+		$(srcdir)/debian/control
+endif
+
+if HAVE_AF_XDP
+update_deb_control_afxdp = \
+	$(AM_V_GEN) sed -i 's/^\# HAVE_AF_XDP //' \
+		$(srcdir)/debian/control
+else
+update_deb_control_afxdp = \
+	$(AM_V_GEN) sed -i '/^\# HAVE_AF_XDP /d' \
+		$(srcdir)/debian/control
 endif
 
 debian/control: $(srcdir)/debian/control.in Makefile
-	$(update_deb_control)
+	cp $(srcdir)/debian/control.in $(srcdir)/debian/control
+	$(update_deb_control_afxdp)
+	$(update_deb_control_dpdk)
 
 CLEANFILES += debian/control
 
@@ -120,8 +132,10 @@ debian-deb: debian
 		exit 1;								\
 	fi
 	$(MAKE) distclean
+	cp $(srcdir)/debian/control.in $(srcdir)/debian/control
 	$(update_deb_copyright)
-	$(update_deb_control)
+	$(update_deb_control_afxdp)
+	$(update_deb_control_dpdk)
 	$(AM_V_GEN) fakeroot debian/rules clean
 if DPDK_NETDEV
 	$(AM_V_GEN) DEB_BUILD_OPTIONS="nocheck parallel=`nproc`" \

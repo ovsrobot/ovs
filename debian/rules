@@ -19,13 +19,19 @@ endif
 PYTHON3S:=$(shell py3versions -vr)
 DEB_HOST_ARCH?=$(shell dpkg-architecture -qDEB_HOST_ARCH)
 
+ifneq (,$(filter afxdp, $(DEB_BUILD_OPTIONS)))
+AFXDP:=--enable-afxdp
+else
+AFXDP:=--disable-afxdp
+endif
+
 override_dh_auto_configure:
 	test -d _debian || mkdir _debian
 	cd _debian && ( \
 		test -e Makefile || \
 		../configure --prefix=/usr --localstatedir=/var \
 					--enable-ssl \
-					--disable-afxdp \
+					$(AFXDP) \
 					--sysconfdir=/etc \
 					$(DATAPATH_CONFIGURE_OPTS) \
 					$(EXTRA_CONFIGURE_OPTS) \
