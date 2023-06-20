@@ -68,7 +68,7 @@ as follows.
 connection is established, `TSO` is thus advertised to the guest as an
 available feature:
 
-QEMU Command Line Parameter::
+1. QEMU Command Line Parameter::
 
     $ sudo $QEMU_DIR/x86_64-softmmu/qemu-system-x86_64 \
     ...
@@ -82,6 +82,34 @@ used to enable same::
     $ ethtool -K eth0 sg on     # scatter-gather is a prerequisite for TSO
     $ ethtool -K eth0 tso on
     $ ethtool -k eth0
+
+**Note:** Enabling this feature impacts the virtio features exposed by the DPDK
+vHost User backend to a guest. If a guest was already connected to OvS before
+enabling TSO and restarting OvS, this guest ports won't have TSO available::
+
+    $ ovs-vsctl get interface vhost0 status | grep -o '[^ ]*_offload=[^ ]*"'
+    tx_ip_csum_offload="true"
+    tx_sctp_csum_offload="true"
+    tx_tcp_csum_offload="true"
+    tx_tcp_seg_offload="false"
+    tx_udp_csum_offload="true"
+
+To help diagnose the issue, those ports have some additional information in
+their status field in ovsdb::
+
+    $ ovs-vsctl get interface vhost0 status | grep -o 'disabled_tso=[^ ]*"'
+    disabled_tso="true"
+
+To restore TSO for this guest ports, this guest QEMU process must be stopped,
+then started again. OvS will then report::
+
+    $ ovs-vsctl get interface vhost0 status | grep -o '[^ ]*_offload=[^ ]*"'
+    tx_ip_csum_offload="true"
+    tx_sctp_csum_offload="true"
+    tx_tcp_csum_offload="true"
+    tx_tcp_seg_offload="true"
+    tx_udp_csum_offload="true"
+    $ ovs-vsctl get interface vhost0 status | grep -o 'disabled_tso=[^ ]*"'
 
 ~~~~~~~~~~~
 Limitations

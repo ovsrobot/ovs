@@ -473,6 +473,15 @@ struct netdev_dpdk {
         /* True if vHost device is 'up' and has been reconfigured at least once */
         bool vhost_reconfigured;
 
+        /* Set on driver start (which means after a vHost connection is
+         * accepted), and cleared when the vHost device gets configured. */
+        bool vhost_initial_config;
+
+        /* Set on disconnection if an initial configuration did not finish.
+         * This triggers a workaround for Virtio features negotiation, that
+         * makes TSO unavailable. */
+        bool vhost_workaround_enable_ecn;
+
         atomic_uint8_t vhost_tx_retries_max;
         /* 2 pad bytes here. */
     );
@@ -1359,6 +1368,7 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->requested_lsc_interrupt_mode = 0;
     ovsrcu_index_init(&dev->vid, -1);
     dev->vhost_reconfigured = false;
+    dev->vhost_initial_config = false;
     dev->attached = false;
     dev->started = false;
     dev->reset_needed = false;
@@ -3883,6 +3893,10 @@ netdev_dpdk_vhost_user_get_status(const struct netdev *netdev,
                         xasprintf("%d", vring.size));
     }
 
+    if (dev->vhost_workaround_enable_ecn) {
+        smap_add_format(args, "disabled_tso", "true");
+    }
+
     ovs_mutex_unlock(&dev->mutex);
     return 0;
 }
@@ -4214,6 +4228,12 @@ netdev_dpdk_remap_txqs(struct netdev_dpdk *dev)
     free(enabled_queues);
 }
 
+static bool
+netdev_dpdk_vhost_tso_enabled(struct netdev_dpdk *dev)
+{
+    return userspace_tso_enabled() && !dev->vhost_workaround_enable_ecn;
+}
+
 /*
  * A new virtio-net device is added to a vhost port.
  */
@@ -4256,6 +4276,7 @@ new_device(int vid)
             } else {
                 /* Reconfiguration not required. */
                 dev->vhost_reconfigured = true;
+                dev->vhost_initial_config = false;
             }
 
             if (rte_vhost_get_negotiated_features(vid, &features)) {
@@ -4268,7 +4289,7 @@ new_device(int vid)
                     dev->hw_ol_features |= NETDEV_TX_SCTP_CKSUM_OFFLOAD;
                 }
 
-                if (userspace_tso_enabled()) {
+                if (netdev_dpdk_vhost_tso_enabled(dev)) {
                     if (features & (1ULL << VIRTIO_NET_F_GUEST_TSO4)
                         && features & (1ULL << VIRTIO_NET_F_GUEST_TSO6)) {
 
@@ -4497,6 +4518,21 @@ vring_state_changed(int vid, uint16_t queue_id, int enable)
     return 0;
 }
 
+/* Requires that the 'path' socket had been registered before. */
+static bool
+dpdk_vhost_has_ecn_feature(const char *path)
+{
+    /* In the past we had this feature enabled, report it by default. */
+    bool has_ecn_feature = true;
+    uint64_t driver_features;
+
+    if (rte_vhost_driver_get_features(path, &driver_features) == 0) {
+        has_ecn_feature = driver_features & (1ULL << VIRTIO_NET_F_HOST_ECN);
+    }
+
+    return has_ecn_feature;
+}
+
 static void
 destroy_connection(int vid)
 {
@@ -4511,6 +4547,7 @@ destroy_connection(int vid)
         ovs_mutex_lock(&dev->mutex);
         if (nullable_string_is_equal(ifname, dev->vhost_id)) {
             uint32_t qp_num = NR_QUEUE;
+            bool failed_without_ecn;
 
             if (netdev_dpdk_get_vid(dev) >= 0) {
                 VLOG_ERR("Connection on socket '%s' destroyed while vhost "
@@ -4524,6 +4561,26 @@ destroy_connection(int vid)
                 dev->requested_n_txq = qp_num;
                 netdev_request_reconfigure(&dev->up);
             }
+
+            if (dev->vhost_initial_config) {
+                VLOG_WARN_RL(&rl, "Connection on socket '%s' closed during "
+                             "initialization.", dev->vhost_id);
+            }
+
+            failed_without_ecn = dev->vhost_initial_config
+                && !dpdk_vhost_has_ecn_feature(dev->vhost_id);
+            if (failed_without_ecn != dev->vhost_workaround_enable_ecn) {
+                /* Either an early disconnection was detected (and we can try
+                 * to re-enable ECN for a next connection) or the disconnection
+                 * does not seem incorrect (and we can try to disable ECN for a
+                 * next connection).
+                 *
+                 * In both cases, this vhost socket must be reconfigured
+                 * (see netdev_dpdk_vhost_client_reconfigure()). */
+                dev->vhost_workaround_enable_ecn = failed_without_ecn;
+                netdev_request_reconfigure(&dev->up);
+            }
+
             ovs_mutex_unlock(&dev->mutex);
             exists = true;
             break;
@@ -5427,6 +5484,7 @@ dpdk_vhost_reconfigure_helper(struct netdev_dpdk *dev)
 
         if (dev->vhost_reconfigured == false) {
             dev->vhost_reconfigured = true;
+            dev->vhost_initial_config = false;
             /* Carrier status may need updating. */
             netdev_change_seq_changed(&dev->up);
         }
@@ -5454,7 +5512,27 @@ static int
 netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+    bool unregister = false;
+    bool enable_tso;
+    char *vhost_id;
     int err;
+
+    ovs_mutex_lock(&dev->mutex);
+
+    enable_tso = netdev_dpdk_vhost_tso_enabled(dev);
+    if (dev->vhost_driver_flags & RTE_VHOST_USER_CLIENT && dev->vhost_id
+        && enable_tso != !dpdk_vhost_has_ecn_feature(dev->vhost_id)) {
+
+        dev->vhost_driver_flags &= ~RTE_VHOST_USER_CLIENT;
+        vhost_id = dev->vhost_id;
+        unregister = true;
+    }
+
+    ovs_mutex_unlock(&dev->mutex);
+
+    if (unregister) {
+        dpdk_vhost_driver_unregister(dev, vhost_id);
+    }
 
     ovs_mutex_lock(&dev->mutex);
 
@@ -5487,7 +5565,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
         }
 
         /* Enable External Buffers if TCP Segmentation Offload is enabled. */
-        if (userspace_tso_enabled()) {
+        if (enable_tso) {
             vhost_flags |= RTE_VHOST_USER_EXTBUF_SUPPORT;
         }
 
@@ -5512,7 +5590,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
             goto unlock;
         }
 
-        if (userspace_tso_enabled()) {
+        if (enable_tso) {
             virtio_unsup_features = 1ULL << VIRTIO_NET_F_HOST_ECN
                                     | 1ULL << VIRTIO_NET_F_HOST_UFO;
             VLOG_DBG("%s: TSO enabled on vhost port",
@@ -5535,6 +5613,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
             goto unlock;
         }
 
+        dev->vhost_initial_config = true;
         err = rte_vhost_driver_start(dev->vhost_id);
         if (err) {
             VLOG_ERR("rte_vhost_driver_start failed for vhost user "
