@@ -61,10 +61,13 @@ EXTRA_DIST += \
 	debian/rules \
 	debian/source/format \
 	debian/source/lintian-overrides \
+	debian/tests/afxdp \
 	debian/tests/control \
 	debian/tests/dpdk \
-	debian/tests/openflow.py \
-	debian/tests/vanilla \
+	debian/tests/kernel \
+	debian/tests/offloads \
+	debian/tests/run-tests.sh \
+	debian/tests/system-userspace \
 	debian/watch
 
 check-debian-changelog-version:
@@ -125,7 +128,6 @@ CLEANFILES += debian/control
 debian: debian/copyright debian/control
 .PHONY: debian
 
-
 debian-deb: debian
 	@if test X"$(srcdir)" != X"$(top_builddir)"; then			\
 		echo "Debian packages should be built from $(abs_srcdir)/";	\
@@ -144,3 +146,26 @@ else
 	$(AM_V_GEN) DEB_BUILD_OPTIONS="nocheck parallel=`nproc` nodpdk" \
 		fakeroot debian/rules binary
 endif
+
+debian-source: debian
+	@if test X"$(srcdir)" != X"$(top_builddir)"; then			\
+		echo "Debian packages should be built from $(abs_srcdir)/";	\
+		exit 1;								\
+	fi
+	cp $(srcdir)/debian/control.in $(srcdir)/debian/control
+	$(update_deb_copyright)
+	$(update_deb_control_afxdp)
+	$(update_deb_control_dpdk)
+	$(AM_V_GEN) $(MAKE) distdir
+	cp $(srcdir)/debian/control $(srcdir)/debian/copyright \
+		$(distdir)/debian/
+	$(AM_V_GEN) tardir=$(distdir) && $(am__tar) | \
+		eval GZIP= gzip $(GZIP_ENV) \
+		-c >$(PACKAGE_NAME)_$(PACKAGE_VERSION).orig.tar.gz
+	cd $(distdir); \
+		$(AM_V_GEN) dpkg-source --compression=gzip -b .
+	$(am__post_remove_distdir)
+
+DISTCLEANFILES += $(PACKAGE_NAME)_$(PACKAGE_VERSION)-1.debian.tar.gz \
+	$(PACKAGE_NAME)_$(PACKAGE_VERSION).orig.tar.gz \
+	$(PACKAGE_NAME)_$(PACKAGE_VERSION)-1.dsc

@@ -1,8 +1,32 @@
-Tests: vanilla dpdk
+Tests: afxdp, kernel, offloads, system-userspace
 Depends:
- iperf,
- mininet (>= 2.2.0~),
- openvswitch-switch,
- openvswitch-switch-dpdk [amd64 i386],
- openvswitch-testcontroller,
-Restrictions: needs-root rw-build-tree isolation-machine
+ @,
+ @builddeps@,
+ conntrack,
+ net-tools,
+ netcat-openbsd,
+ tcpdump,
+ python3-pyftpdlib,
+Restrictions:
+ allow-stderr,
+ isolation-machine,
+ needs-root,
+ rw-build-tree,
+
+# The dpdk tests are marked `skippable`, because they have environment specific
+# requirements which may or may not be available at runtime (hugepages setup).
+Tests: dpdk
+Depends:
+ @,
+ @builddeps@,
+ conntrack,
+ dpdk-dev [amd64 i386 ppc64el arm64 riscv64],
+ net-tools,
+ netcat-openbsd,
+ tcpdump,
+ python3-pyftpdlib,
+Restrictions:
+ allow-stderr,
+ isolation-machine,
+ needs-root,
+ skippable,
