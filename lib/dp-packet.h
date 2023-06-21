@@ -86,6 +86,10 @@ enum dp_packet_offload_mask {
     DEF_OL_FLAG(DP_PACKET_OL_TX_SCTP_CKSUM, RTE_MBUF_F_TX_SCTP_CKSUM, 0x800),
     /* Offload IP checksum. */
     DEF_OL_FLAG(DP_PACKET_OL_TX_IP_CKSUM, RTE_MBUF_F_TX_IP_CKSUM, 0x1000),
+    /* External Buffer attached. */
+    DEF_OL_FLAG(DP_PACKET_OL_EXTERNAL, RTE_MBUF_F_EXTERNAL, 0x4000),
+    /* Indirect Buffer attached. */
+    DEF_OL_FLAG(DP_PACKET_OL_INDIRECT, RTE_MBUF_F_INDIRECT, 0x8000),
     /* Adding new field requires adding to DP_PACKET_OL_SUPPORTED_MASK. */
 };
 
@@ -101,7 +105,9 @@ enum dp_packet_offload_mask {
                                      DP_PACKET_OL_TX_TCP_CKSUM     | \
                                      DP_PACKET_OL_TX_UDP_CKSUM     | \
                                      DP_PACKET_OL_TX_SCTP_CKSUM    | \
-                                     DP_PACKET_OL_TX_IP_CKSUM)
+                                     DP_PACKET_OL_TX_IP_CKSUM      | \
+                                     DP_PACKET_OL_EXTERNAL         | \
+                                     DP_PACKET_OL_INDIRECT)
 
 #define DP_PACKET_OL_TX_L4_MASK (DP_PACKET_OL_TX_TCP_CKSUM | \
                                  DP_PACKET_OL_TX_UDP_CKSUM | \
@@ -1129,6 +1135,13 @@ static inline void
 dp_packet_hwol_set_tcp_seg(struct dp_packet *b)
 {
     *dp_packet_ol_flags_ptr(b) |= DP_PACKET_OL_TX_TCP_SEG;
+}
+
+/* Resets TCP Segmentation flag in packet 'p'. */
+static inline void
+dp_packet_hwol_reset_tcp_seg(struct dp_packet *p)
+{
+    *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_TX_TCP_SEG;
 }
 
 /* Returns 'true' if the IP header has good integrity and the
