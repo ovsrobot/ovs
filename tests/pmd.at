@@ -65,8 +65,8 @@ dnl
 dnl Checks correct pmd load based sleep is set for the datapath.
 dnl Checking starts from line number 'line' in ovs-vswithd.log .
 m4_define([CHECK_DP_SLEEP_MAX], [
-    SLEEP_TIME="PMD max sleep request is $1 usecs."
-    SLEEP_STATE="PMD load based sleeps are $2."
+    SLEEP_TIME="PMD max sleep request is $1 usecs by default."
+    SLEEP_STATE="PMD load based sleeps are $2 by default."
     line_st=$3
     if [[ -z "$line_st" ]]
     then
@@ -1278,8 +1278,8 @@ dnl Check default
 CHECK_DP_SLEEP_MAX([0], [disabled], [])
 
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 0 usecs.
-PMD load based sleeps are disabled.
+PMD max sleep request is 0 usecs by default.
+PMD load based sleeps are disabled by default.
 ])
 
 dnl Check low value max sleep
@@ -1287,8 +1287,8 @@ get_log_next_line_num
 AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-sleep-max="1"])
 CHECK_DP_SLEEP_MAX([1], [enabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 1 usecs.
-PMD load based sleeps are enabled.
+PMD max sleep request is 1 usecs by default.
+PMD load based sleeps are enabled by default.
 ])
 
 dnl Check high value max sleep
@@ -1296,8 +1296,8 @@ get_log_next_line_num
 AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-sleep-max="10000"])
 CHECK_DP_SLEEP_MAX([10000], [enabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 10000 usecs.
-PMD load based sleeps are enabled.
+PMD max sleep request is 10000 usecs by default.
+PMD load based sleeps are enabled by default.
 ])
 
 dnl Check setting max sleep to zero
@@ -1305,8 +1305,8 @@ get_log_next_line_num
 AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-sleep-max="0"])
 CHECK_DP_SLEEP_MAX([0], [disabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 0 usecs.
-PMD load based sleeps are disabled.
+PMD max sleep request is 0 usecs by default.
+PMD load based sleeps are disabled by default.
 ])
 
 dnl Check above high value max sleep
@@ -1314,8 +1314,8 @@ get_log_next_line_num
 AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-sleep-max="10001"])
 CHECK_DP_SLEEP_MAX([10000], [enabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 10000 usecs.
-PMD load based sleeps are enabled.
+PMD max sleep request is 10000 usecs by default.
+PMD load based sleeps are enabled by default.
 ])
 
 dnl Check rounding
@@ -1323,8 +1323,8 @@ get_log_next_line_num
 AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-sleep-max="490"])
 CHECK_DP_SLEEP_MAX([490], [enabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 490 usecs.
-PMD load based sleeps are enabled.
+PMD max sleep request is 490 usecs by default.
+PMD load based sleeps are enabled by default.
 ])
 
 dnl Check rounding
@@ -1332,8 +1332,8 @@ get_log_next_line_num
 AT_CHECK([ovs-vsctl set open_vswitch . other_config:pmd-sleep-max="499"])
 CHECK_DP_SLEEP_MAX([499], [enabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
-PMD max sleep request is 499 usecs.
-PMD load based sleeps are enabled.
+PMD max sleep request is 499 usecs by default.
+PMD load based sleeps are enabled by default.
 ])
 
 OVS_VSWITCHD_STOP

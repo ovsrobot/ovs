@@ -179,6 +179,11 @@ static struct odp_support dp_netdev_support = {
 /* Time in uS to increment a pmd thread sleep time. */
 #define PMD_SLEEP_INC_US 1
 
+struct pmd_sleep {
+    unsigned core_id;
+    uint64_t max_sleep;
+};
+
 struct dpcls {
     struct cmap_node node;      /* Within dp_netdev_pmd_thread.classifiers */
     odp_port_t in_port;
@@ -289,6 +294,8 @@ struct dp_netdev {
     atomic_bool pmd_perf_metrics;
     /* Max load based sleep request. */
     atomic_uint64_t pmd_max_sleep;
+    /* Max load based sleep request user string. */
+    char *max_sleep_list;
     /* Enable the SMC cache from ovsdb config */
     atomic_bool smc_enable_db;
 
@@ -1012,11 +1019,17 @@ pmd_max_sleep_show(struct ds *reply, struct dp_netdev_pmd_thread *pmd,
                    uint64_t default_max_sleep)
 {
     if (pmd->core_id != NON_PMD_CORE_ID) {
+        uint64_t pmd_max_sleep;
+
+        atomic_read_relaxed(&pmd->max_sleep, &pmd_max_sleep);
         ds_put_format(reply,
                       "PMD thread core %3u NUMA %2d: "
                       "Max sleep request set to",
                       pmd->core_id, pmd->numa_id);
-        ds_put_format(reply, " %4"PRIu64" usecs.", default_max_sleep);
+        ds_put_format(reply, " %4"PRIu64" usecs.",
+                      pmd_max_sleep == UINT64_MAX
+                      ? default_max_sleep
+                      : pmd_max_sleep);
         ds_put_cstr(reply, "\n");
     }
 }
@@ -1527,9 +1540,10 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
             if (first_pmd) {
                 atomic_read_relaxed(&dp->pmd_max_sleep, &default_max_sleep);
                 ds_put_format(&reply, "PMD max sleep request is %"PRIu64" "
-                              "usecs.", default_max_sleep);
+                              "usecs by default.", default_max_sleep);
                 ds_put_cstr(&reply, "\n");
-                ds_put_format(&reply, "PMD load based sleeps are %s.",
+                ds_put_format(&reply, "PMD load based sleeps are %s "
+                              "by default.",
                               default_max_sleep ? "enabled" : "disabled");
                 ds_put_cstr(&reply, "\n");
                 first_pmd = false;
@@ -1923,6 +1937,8 @@ create_dp_netdev(const char *name, const struct dpif_class *class,
         return error;
     }
 
+    dp->max_sleep_list = NULL;
+
     dp->last_tnl_conf_seq = seq_read(tnl_conf_seq);
     *dpp = dp;
     return 0;
@@ -2032,6 +2048,7 @@ dp_netdev_free(struct dp_netdev *dp)
 
     dp_netdev_meter_destroy(dp);
 
+    free(dp->max_sleep_list);
     free(dp->pmd_cmask);
     free(CONST_CAST(char *, dp->name));
     free(dp);
@@ -4846,6 +4863,10 @@ set_pmd_auto_lb(struct dp_netdev *dp, bool state, bool always_log)
     }
 }
 
+static void
+set_all_pmd_max_sleeps(struct dp_netdev *dp, const struct smap *config,
+                       bool always_log);
+
 /* Applies datapath configuration from the database. Some of the changes are
  * actually applied in dpif_netdev_run(). */
 static int
@@ -4863,7 +4884,6 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
     uint64_t rebalance_intvl;
     uint8_t cur_rebalance_load;
     uint32_t rebalance_load, rebalance_improve;
-    uint64_t  pmd_max_sleep, cur_pmd_max_sleep;
     bool log_autolb = false;
     enum sched_assignment_type pmd_rxq_assign_type;
     static bool first_set_config = true;
@@ -5014,17 +5034,9 @@ dpif_netdev_set_config(struct dpif *dpif, const struct smap *other_config)
 
     set_pmd_auto_lb(dp, autolb_state, log_autolb);
 
-    pmd_max_sleep = smap_get_ullong(other_config, "pmd-sleep-max", 0);
-    pmd_max_sleep = MIN(PMD_RCU_QUIESCE_INTERVAL, pmd_max_sleep);
-    atomic_read_relaxed(&dp->pmd_max_sleep, &cur_pmd_max_sleep);
-    if (first_set_config || pmd_max_sleep != cur_pmd_max_sleep) {
-        atomic_store_relaxed(&dp->pmd_max_sleep, pmd_max_sleep);
-        VLOG_INFO("PMD max sleep request is %"PRIu64" usecs.", pmd_max_sleep);
-        VLOG_INFO("PMD load based sleeps are %s.",
-                  pmd_max_sleep ? "enabled" : "disabled" );
-    }
+    set_all_pmd_max_sleeps(dp, other_config, first_set_config);
 
-    first_set_config  = false;
+    first_set_config = false;
     return 0;
 }
 
@@ -5062,6 +5074,184 @@ parse_affinity_list(const char *affinity_list, unsigned *core_ids, int n_rxq)
 
     free(copy);
     return error;
+}
+
+static int
+parse_pmd_sleep_list(const char *max_sleep_list,
+                     struct pmd_sleep **pmd_sleeps)
+{
+    char *list, *copy, *key, *value;
+    int num_vals = 0;
+
+    if (!max_sleep_list) {
+        return num_vals;
+    }
+
+    list = copy = xstrdup(max_sleep_list);
+
+    while (ofputil_parse_key_value(&list, &key, &value)) {
+        char *error = NULL;
+        unsigned core;
+        uint64_t temp, pmd_max_sleep;
+        int i;
+
+        error = str_to_u64(key, &temp);
+        if (error) {
+            free(error);
+            continue;
+        }
+
+        error = str_to_u64(value, &pmd_max_sleep);
+        if (error) {
+            /* No value specified. key is dp default. */
+            core = UINT_MAX;
+            pmd_max_sleep = temp;
+            free(error);
+        } else {
+            /* Value specified. key is  pmd core id.*/
+            if (temp >= UINT_MAX) {
+                continue;
+            }
+            core = (unsigned) temp;
+        }
+
+        /* Detect duplicate max sleep values for default or a specific core. */
+        for (i = 0; i < num_vals; i++) {
+            if ((*pmd_sleeps)[i].core_id == core) {
+                break;
+            }
+        }
+        if (i == num_vals) {
+            /* Not duplicate, add a new entry. */
+            *pmd_sleeps = xrealloc(*pmd_sleeps,
+                                   (num_vals + 1) * sizeof **pmd_sleeps);
+            num_vals++;
+        }
+
+        pmd_max_sleep = MIN(PMD_RCU_QUIESCE_INTERVAL, pmd_max_sleep);
+
+        (*pmd_sleeps)[i].core_id = core;
+        (*pmd_sleeps)[i].max_sleep = pmd_max_sleep;
+    }
+
+    free(copy);
+    return num_vals;
+}
+
+static void log_pmd_sleep(unsigned core_id, int numa_id,
+                          uint64_t pmd_max_sleep, uint64_t default_max_sleep)
+{
+    VLOG_INFO("PMD thread core %3u NUMA %2d: Max sleep request set to "
+              "%4"PRIu64" usecs.", core_id, numa_id,
+              pmd_max_sleep == UINT64_MAX
+                  ? default_max_sleep
+                  : pmd_max_sleep);
+}
+
+static void
+set_pmd_max_sleep(struct dp_netdev *dp, struct dp_netdev_pmd_thread *pmd)
+{
+    struct pmd_sleep *pmd_sleeps = NULL;
+    uint64_t max_sleep = UINT64_MAX;
+    int num_vals;
+
+    num_vals = parse_pmd_sleep_list(dp->max_sleep_list, &pmd_sleeps);
+
+    /* Check if the user has set a specific value for this pmd. */
+    for (int i = 0; i < num_vals; i++) {
+        if (pmd_sleeps[i].core_id == pmd->core_id) {
+            max_sleep = pmd_sleeps[i].max_sleep;
+            break;
+        }
+    }
+    atomic_init(&pmd->max_sleep, max_sleep);
+    log_pmd_sleep(pmd->core_id, pmd->numa_id, max_sleep, dp->pmd_max_sleep);
+    free(pmd_sleeps);
+}
+
+static void
+set_all_pmd_max_sleeps(struct dp_netdev *dp, const struct smap *config,
+                       bool always_log)
+{
+    const char *max_sleep_list = smap_get(config, "pmd-sleep-max");
+    struct pmd_sleep *pmd_sleeps = NULL;
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
+    struct dp_netdev_pmd_thread *pmd;
+    int num_vals = 0;
+    uint64_t default_max_sleep = 0;
+    uint64_t cur_default_max_sleep;
+    size_t n;
+
+    if (nullable_string_is_equal(max_sleep_list, dp->max_sleep_list)
+                                 && !always_log) {
+        return;
+    }
+
+    /* Free existing string and copy new one. */
+    free(dp->max_sleep_list);
+    dp->max_sleep_list = nullable_xstrdup(max_sleep_list);
+
+    num_vals = parse_pmd_sleep_list(max_sleep_list, &pmd_sleeps);
+
+    /* Check if the user has set a dp default. */
+    for (int i = 0; i < num_vals; i++) {
+        if (pmd_sleeps[i].core_id == UINT_MAX) {
+            default_max_sleep = pmd_sleeps[i].max_sleep;
+            break;
+        }
+    }
+    atomic_read_relaxed(&dp->pmd_max_sleep, &cur_default_max_sleep);
+    if (default_max_sleep != cur_default_max_sleep) {
+        atomic_store_relaxed(&dp->pmd_max_sleep, default_max_sleep);
+        always_log = true;
+    }
+
+    CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
+        uint64_t new_max_sleep, cur_pmd_max_sleep;
+
+        if (pmd->core_id == NON_PMD_CORE_ID) {
+            continue;
+        }
+
+        /* Default to dp value. */
+        new_max_sleep = UINT64_MAX;
+
+        /* Check for pmd specific value. */
+        for (int i = 0;  i < num_vals; i++) {
+            if (pmd->core_id == pmd_sleeps[i].core_id) {
+                new_max_sleep = pmd_sleeps[i].max_sleep;
+                break;
+            }
+        }
+        atomic_read_relaxed(&pmd->max_sleep, &cur_pmd_max_sleep);
+        if (new_max_sleep != cur_pmd_max_sleep) {
+            atomic_store_relaxed(&pmd->max_sleep, new_max_sleep);
+            always_log = true;
+        }
+    }
+
+    if (always_log) {
+        VLOG_INFO("PMD max sleep request is %"PRIu64" "
+                  "usecs by default.", default_max_sleep);
+        VLOG_INFO("PMD load based sleeps are %s by default.",
+                   default_max_sleep ? "enabled" : "disabled" );
+
+        sorted_poll_thread_list(dp, &pmd_list, &n);
+
+        for (size_t i = 0; i < n; i++) {
+            uint64_t cur_pmd_max_sleep;
+
+            pmd = pmd_list[i];
+            if (pmd->core_id == NON_PMD_CORE_ID) {
+                continue;
+            }
+            atomic_read_relaxed(&pmd->max_sleep, &cur_pmd_max_sleep);
+            log_pmd_sleep(pmd->core_id, pmd->numa_id, cur_pmd_max_sleep,
+                          default_max_sleep);
+        }
+        free(pmd_list);
+    }
+    free(pmd_sleeps);
 }
 
 /* Parses 'affinity_list' and applies configuration if it is valid. */
@@ -7053,7 +7243,10 @@ reload:
         pmd_perf_start_iteration(s);
 
         atomic_read_relaxed(&pmd->dp->smc_enable_db, &pmd->ctx.smc_enable_db);
-        atomic_read_relaxed(&pmd->dp->pmd_max_sleep, &max_sleep);
+        atomic_read_relaxed(&pmd->max_sleep, &max_sleep);
+        if (max_sleep == UINT64_MAX) {
+            atomic_read_relaxed(&pmd->dp->pmd_max_sleep, &max_sleep);
+        }
 
         for (i = 0; i < poll_cnt; i++) {
 
@@ -7614,6 +7807,8 @@ dp_netdev_configure_pmd(struct dp_netdev_pmd_thread *pmd, struct dp_netdev *dp,
     hmap_init(&pmd->tnl_port_cache);
     hmap_init(&pmd->send_port_cache);
     cmap_init(&pmd->tx_bonds);
+
+    set_pmd_max_sleep(dp, pmd);
 
     /* Initialize DPIF function pointer to the default configured version. */
     atomic_init(&pmd->netdev_input_func, dp_netdev_impl_get_default());
