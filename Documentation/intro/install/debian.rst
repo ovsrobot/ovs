@@ -63,6 +63,14 @@ You do not need to be the superuser to build the Debian packages.
 
 4. Prepare the package source.
 
+   In order to support building the package across a diverse set of
+   Debian/Ubuntu versions, parts of the package source needs to be generated
+   before a package can be built.
+
+   This process is influenced by the OVS build
+   system, guided by the available dependencies on the system and arguments
+   to the configure script.
+
    If you want to build the package with DPDK support execute the following
    command::
 
@@ -71,6 +79,11 @@ You do not need to be the superuser to build the Debian packages.
    If not::
 
        $ ./boot.sh && ./configure && make debian
+
+   If you want to build the package without AF_XDP support execute the
+   following command::
+
+       $ ./boot.sh && ./configure --disable-afxdp && make debian
 
 Check your work by running ``dpkg-checkbuilddeps`` in the top level of your OVS
 directory. If you've installed all the dependencies properly,

@@ -94,18 +94,36 @@ debian/copyright: AUTHORS.rst debian/copyright.in
 CLEANFILES += debian/copyright
 
 
+DEB_BUILD_OPTIONS = nocheck parallel=`nproc`
+
 if DPDK_NETDEV
-update_deb_control = \
-	$(AM_V_GEN) sed -e 's/^\# DPDK_NETDEV //' \
-		< $(srcdir)/debian/control.in > debian/control
+update_deb_control_dpdk = \
+	$(AM_V_GEN) sed -i 's/^\# DPDK_NETDEV //' \
+		$(srcdir)/debian/control
 else
-update_deb_control = \
-	$(AM_V_GEN) grep -v '^\# DPDK_NETDEV' \
-		< $(srcdir)/debian/control.in > debian/control
+update_deb_control_dpdk = \
+	$(AM_V_GEN) sed -i '/^\# DPDK_NETDEV /d' \
+		$(srcdir)/debian/control
+DEB_BUILD_OPTIONS += nodpdk
+endif
+
+if HAVE_AF_XDP
+update_deb_control_afxdp = \
+	$(AM_V_GEN) sed -i 's/^\# HAVE_AF_XDP //' \
+		$(srcdir)/debian/control
+else
+update_deb_control_afxdp = \
+	$(AM_V_GEN) sed -i '/^\# HAVE_AF_XDP /d' \
+		$(srcdir)/debian/control
+DEB_BUILD_OPTIONS += noafxdp
 endif
 
 debian/control: $(srcdir)/debian/control.in Makefile
-	$(update_deb_control)
+	cp $(srcdir)/debian/control.in $(srcdir)/debian/control
+	## Order is significant here as we are modifying the file in-place and
+	## a DPDK enabled binary may support both DPDK and AFXDP.
+	$(update_deb_control_dpdk)
+	$(update_deb_control_afxdp)
 
 CLEANFILES += debian/control
 
@@ -120,13 +138,12 @@ debian-deb: debian
 		exit 1;								\
 	fi
 	$(MAKE) distclean
+	cp $(srcdir)/debian/control.in $(srcdir)/debian/control
 	$(update_deb_copyright)
-	$(update_deb_control)
+	## Order is significant here as we are modifying the file in-place and
+	## a DPDK enabled binary may support both DPDK and AFXDP.
+	$(update_deb_control_dpdk)
+	$(update_deb_control_afxdp)
 	$(AM_V_GEN) fakeroot debian/rules clean
-if DPDK_NETDEV
-	$(AM_V_GEN) DEB_BUILD_OPTIONS="nocheck parallel=`nproc`" \
+	$(AM_V_GEN) DEB_BUILD_OPTIONS="$(DEB_BUILD_OPTIONS)" \
 		fakeroot debian/rules binary
-else
-	$(AM_V_GEN) DEB_BUILD_OPTIONS="nocheck parallel=`nproc` nodpdk" \
-		fakeroot debian/rules binary
-endif
