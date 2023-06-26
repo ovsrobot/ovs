@@ -95,6 +95,11 @@ endif
 
 execute_before_dh_auto_clean:
 	find . -name "*.pyc" -delete
+	test -f debian/control && cp debian/control debian/control.save.$(PPID)
+
+execute_after_dh_auto_clean:
+	test -f debian/control.save.$(PPID) && \
+		mv debian/control.save.$(PPID) debian/control
 
 override_dh_auto_install:
 	dh_auto_install --sourcedirectory=_debian

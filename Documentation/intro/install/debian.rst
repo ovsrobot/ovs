@@ -85,17 +85,34 @@ You do not need to be the superuser to build the Debian packages.
 
        $ ./boot.sh && ./configure --disable-afxdp && make debian
 
+   If you want to build a source package you need to set path arguments that
+   match the package recipe::
+
+       $ ./boot.sh && \
+            ./configure \
+                --prefix=/usr \
+                --localstatedir=/var \
+                --sysconfdir=/etc &&\
+            make debian-source
+
 Check your work by running ``dpkg-checkbuilddeps`` in the top level of your OVS
 directory. If you've installed all the dependencies properly,
 ``dpkg-checkbuilddeps`` will exit without printing anything. If you forgot to
 install some dependencies, it will tell you which ones.
 
-5. Build the package::
+5. Build the package.
+
+   If you want binary packages execute the following command::
 
        $ make debian-deb
 
-5. The generated .deb files will be in the parent directory of the Open vSwitch
-   source distribution.
+   If you want a source package execute the following command::
+
+      $ make debian-source
+
+6. The generated binary .deb files will be in the parent directory of the
+   Open vSwitch source distribution.  If you built a source package it will
+   be located in the top level Open vSwitch source directory.
 
 Installing .deb Packages
 ------------------------
