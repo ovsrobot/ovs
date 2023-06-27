@@ -32,3 +32,105 @@ freebsd_build_task:
   check_script:
     - gmake -j8 check TESTSUITEFLAGS=-j8 RECHECK=yes
                 || { cat ./tests/testsuite.log; exit 1; }
+
+# This tests both the upstream OVS Debian packaging recipe and executes all the
+# system testsuites on Ubuntu.
+ubuntu_autopkgtest_latest_task:
+
+  compute_engine_instance:
+    image_project: ubuntu-os-cloud
+    image: family/ubuntu-2304-amd64
+    platform: linux
+    cpu: 4
+    memory: 4G
+
+  env:
+    DEPENDENCIES: |
+      build-essential fakeroot dpkg-dev devscripts equivs autopkgtest autodep8
+      libbpf-dev libxdp-dev
+    DPDK: shared
+    matrix:
+      TEST_NAME: afxdp
+      TEST_NAME: dpdk
+      TEST_NAME: kmod
+      # Pending resolution of https://launchpad.net/bugs/2020677
+      # TEST_NAME: offloads
+      TEST_NAME: userspace
+
+  prepare_script: |
+    apt-get update
+    if [ "${DPDK}" = no ]; then
+        echo "Skipping DPDK dependency."
+    else
+        apt-get -y install libdpdk-dev
+    fi
+    apt-get --yes install linux-headers-$(uname -r) ${DEPENDENCIES}
+
+  configure_script: |
+    ./boot.sh
+    ./configure \
+        --prefix=/usr \
+        --localstatedir=/var \
+        --sysconfdir=/etc \
+        --with-dpdk=${DPDK}
+
+  build_script:
+    - make debian-source
+
+  check_script: |
+    if [ "${DPDK}" = "no" ]; then
+        deb_dpdk_build_opt="nodpdk"
+    else
+        deb_dpdk_build_opt=""
+    fi
+    autopkgtest \
+        --env DEB_BUILD_OPTIONS="nocheck parallel=8 ${deb_dpdk_build_opt}" \
+        --test-name $TEST_NAME \
+        *.dsc \
+        -- null
+
+ubuntu_autopkgtest_lts_task:
+
+  compute_engine_instance:
+    image_project: ubuntu-os-cloud
+    image: family/ubuntu-2204-lts
+    platform: linux
+    cpu: 4
+    memory: 4G
+
+  env:
+    DEPENDENCIES: |
+      build-essential fakeroot dpkg-dev devscripts equivs autopkgtest autodep8
+    DPDK: no
+    matrix:
+      TEST_NAME: kmod
+      # Pending resolution of https://launchpad.net/bugs/2020677
+      # TEST_NAME: offloads
+      TEST_NAME: userspace
+
+  prepare_script: |
+    apt-get update
+    apt-get --yes install linux-headers-$(uname -r) ${DEPENDENCIES}
+
+  configure_script: |
+    ./boot.sh
+    ./configure \
+        --prefix=/usr \
+        --localstatedir=/var \
+        --sysconfdir=/etc \
+        --with-dpdk=${DPDK}
+
+  build_script:
+    - make debian-source
+
+  check_script: |
+    if [ "${DPDK}" = "no" ]; then
+        deb_dpdk_build_opt="nodpdk"
+    else
+        deb_dpdk_build_opt=""
+    fi
+    autopkgtest \
+        --env DEB_BUILD_OPTIONS="nocheck parallel=8 ${deb_dpdk_build_opt}" \
+        --test-name $TEST_NAME \
+        *.dsc \
+        -- null

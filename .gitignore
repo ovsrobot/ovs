@@ -75,6 +75,7 @@ OvsDpInterface.h
 testsuite.tmp.orig
 /rpm/
 /openvswitch*.tar.gz
+/openvswitch*.dsc
 /tests/lcov/
 /Documentation/_build
 /.venv
