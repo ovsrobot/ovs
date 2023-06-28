@@ -1024,6 +1024,10 @@ def ovs_checkpatch_file(filename):
     result = ovs_checkpatch_parse(part.get_payload(decode=False), filename,
                                   mail.get('Author', mail['From']),
                                   mail['Commit'])
+    if spellcheck:
+        if check_spelling(mail["Subject"], False):
+            print("Subject: %s" % mail["Subject"])
+
     ovs_checkpatch_print_result()
     return result
 
