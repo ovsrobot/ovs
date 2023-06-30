@@ -892,6 +892,8 @@ Usage, syntax, or configuration file error.
 .IP "2"
 The \fIbridge\fR argument to \fBbr\-exists\fR specified the name of a
 bridge that does not exist.
+.IP "65"
+An error has been reported post OVSDB reload.
 .SH "SEE ALSO"
 .
 .BR ovsdb\-server (1),
