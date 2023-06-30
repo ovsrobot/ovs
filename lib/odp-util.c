@@ -146,6 +146,7 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_DROP: return sizeof(uint32_t);
 
     case OVS_ACTION_ATTR_UNSPEC:
+    case OVS_ACTION_ATTR_DEC_TTL:
     case __OVS_ACTION_ATTR_MAX:
         return ATTR_LEN_INVALID;
     }
@@ -1287,6 +1288,7 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
         ds_put_cstr(ds, "drop");
         break;
     case OVS_ACTION_ATTR_UNSPEC:
+    case OVS_ACTION_ATTR_DEC_TTL:
     case __OVS_ACTION_ATTR_MAX:
     default:
         format_generic_odp_action(ds, a);

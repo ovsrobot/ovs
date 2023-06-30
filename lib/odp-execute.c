@@ -837,6 +837,7 @@ requires_datapath_assistance(const struct nlattr *a)
         return false;
 
     case OVS_ACTION_ATTR_UNSPEC:
+    case OVS_ACTION_ATTR_DEC_TTL:
     case __OVS_ACTION_ATTR_MAX:
         OVS_NOT_REACHED();
     }
@@ -1223,6 +1224,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_RECIRC:
         case OVS_ACTION_ATTR_CT:
         case OVS_ACTION_ATTR_UNSPEC:
+        case OVS_ACTION_ATTR_DEC_TTL:
         case __OVS_ACTION_ATTR_MAX:
         /* The following actions are handled by the scalar implementation. */
         case OVS_ACTION_ATTR_POP_VLAN:
