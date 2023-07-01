@@ -36,13 +36,20 @@ QoS (Egress Policing)
 Single Queue Policer
 ~~~~~~~~~~~~~~~~~~~~
 
-Assuming you have a :doc:`vhost-user port <vhost-user>` transmitting traffic
-consisting of packets of size 64 bytes, the following command would limit the
-egress transmission rate of the port to ~1,000,000 packets per second::
+Assuming you have a :doc:`vhost-user port <vhost-user>` transmitting traffic,
+the following command would limit the egress transmission rate of the port to
+~1,000,000 bytes per second:
 
     $ ovs-vsctl set port vhost-user0 qos=@newqos -- \
-        --id=@newqos create qos type=egress-policer other-config:cir=46000000 \
+        --id=@newqos create qos type=egress-policer other-config:cir=1000000 \
         other-config:cbs=2048`
+
+or, the following command would limit the egress transmission rate of the port
+to ~1,000,000 packets per second:
+
+       ovs-vsctl set port vhost-user0 qos=@newqos -- \
+          --id=@newqos create qos type=egress-policer \
+          other-config:kpkts_rate=1000 other-config:kpkts_burst=1000
 
 To examine the QoS configuration of the port, run::
 
