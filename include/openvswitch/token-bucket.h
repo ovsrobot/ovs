@@ -40,7 +40,8 @@ void token_bucket_init(struct token_bucket *,
                        unsigned int rate, unsigned int burst);
 void token_bucket_set(struct token_bucket *,
                        unsigned int rate, unsigned int burst);
-bool token_bucket_withdraw(struct token_bucket *, unsigned int n);
+bool token_bucket_withdraw(struct token_bucket *tb, unsigned int n,
+                           long long int now);
 void token_bucket_wait_at(struct token_bucket *, unsigned int n,
                           const char *where);
 #define token_bucket_wait(bucket, n)                    \

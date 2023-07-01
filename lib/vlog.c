@@ -1321,7 +1321,8 @@ vlog_should_drop(const struct vlog_module *module, enum vlog_level level,
     }
 
     ovs_mutex_lock(&rl->mutex);
-    if (!token_bucket_withdraw(&rl->token_bucket, VLOG_MSG_TOKENS)) {
+    if (!token_bucket_withdraw(&rl->token_bucket, VLOG_MSG_TOKENS,
+                               time_msec())) {
         time_t now = time_now();
         if (!rl->n_dropped) {
             rl->first_dropped = now;
