@@ -2399,8 +2399,7 @@ netdev_dpdk_srtcm_policer_pkt_handle(struct rte_meter_srtcm *meter,
 static int
 srtcm_policer_run_single_packet(struct rte_meter_srtcm *meter,
                                 struct rte_meter_srtcm_profile *profile,
-                                struct rte_mbuf **pkts, int pkt_cnt,
-                                bool should_steal)
+                                struct rte_mbuf **pkts, int pkt_cnt)
 {
     int i = 0;
     int cnt = 0;
@@ -2410,16 +2409,9 @@ srtcm_policer_run_single_packet(struct rte_meter_srtcm *meter,
     for (i = 0; i < pkt_cnt; i++) {
         pkt = pkts[i];
         /* Handle current packet */
-        if (netdev_dpdk_srtcm_policer_pkt_handle(meter, profile,
-                                                 pkt, current_time)) {
-            if (cnt != i) {
-                pkts[cnt] = pkt;
-            }
+        if (!netdev_dpdk_srtcm_policer_pkt_handle(meter, profile,
+                                                  pkt, current_time)) {
             cnt++;
-        } else {
-            if (should_steal) {
-                rte_pktmbuf_free(pkt);
-            }
         }
     }
 
@@ -2435,10 +2427,14 @@ ingress_policer_run(struct ingress_policer *policer, struct rte_mbuf **pkts,
     rte_spinlock_lock(&policer->policer_lock);
     cnt = srtcm_policer_run_single_packet(&policer->in_policer,
                                           &policer->in_prof,
-                                          pkts, pkt_cnt, should_steal);
+                                          pkts, pkt_cnt);
     rte_spinlock_unlock(&policer->policer_lock);
 
-    return cnt;
+    if (should_steal && cnt) {
+        rte_pktmbuf_free_bulk(&pkts[pkt_cnt - cnt], cnt);
+    }
+
+    return pkt_cnt - cnt;
 }
 
 static bool
@@ -4976,9 +4972,13 @@ egress_policer_run(struct qos_conf *conf, struct rte_mbuf **pkts, int pkt_cnt,
 
     cnt = srtcm_policer_run_single_packet(&policer->egress_meter,
                                           &policer->egress_prof, pkts,
-                                          pkt_cnt, should_steal);
+                                          pkt_cnt);
 
-    return cnt;
+    if (should_steal && cnt) {
+        rte_pktmbuf_free_bulk(&pkts[pkt_cnt - cnt], cnt);
+    }
+
+    return pkt_cnt - cnt;
 }
 
 static const struct dpdk_qos_ops egress_policer_ops = {
