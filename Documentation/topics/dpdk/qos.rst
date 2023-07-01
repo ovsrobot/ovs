@@ -106,12 +106,18 @@ Refer to ``vswitch.xml`` for more details on egress policer.
 Rate Limiting (Ingress Policing)
 --------------------------------
 
-Assuming you have a :doc:`vhost-user port <vhost-user>` receiving traffic
-consisting of packets of size 64 bytes, the following command would limit the
-reception rate of the port to ~1,000,000 packets per second::
+Assuming you have a :doc:`vhost-user port <vhost-user>` receiving traffic,
+the following command would limit the reception rate of the port to
+~1,000,000 bits per second::
 
-    $ ovs-vsctl set interface vhost-user0 ingress_policing_rate=368000 \
+    $ ovs-vsctl set interface vhost-user0 ingress_policing_rate=1000 \
         ingress_policing_burst=1000`
+
+or, the following command would limit the reception rate of the port to
+~1,000,000 packets per second::
+
+    $ ovs-vsctl set interface dpdk0 ingress_policing_kpkts_rate=1000 \
+        ingress_policing_kpkts_burst=1000`
 
 To examine the ingress policer configuration of the port::
 
