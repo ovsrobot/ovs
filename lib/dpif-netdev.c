@@ -5260,6 +5260,28 @@ pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd OVS_UNUSED)
 #endif
 
 static int
+dp_netdev_pmd_flush_txqs_on_port(struct dp_netdev_pmd_thread *pmd,
+                                   struct tx_port *p)
+{
+    int i;
+    int output_cnt = 0;
+
+    int n_txq = netdev_n_txq(p->port->netdev);
+
+    for (i = 0; i < n_txq; i++) {
+        if (dp_packet_batch_is_empty(&p->txq_pkts[i])) {
+            continue;
+        }
+        output_cnt += dp_packet_batch_size(&p->txq_pkts[i]);
+        netdev_send(p->port->netdev, i, &p->txq_pkts[i], true);
+        dp_packet_batch_init(&p->txq_pkts[i]);
+    }
+
+    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SENT_PKTS, output_cnt);
+    return output_cnt;
+}
+
+static int
 dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
                                    struct tx_port *p)
 {
@@ -7799,13 +7821,11 @@ dp_netdev_add_port_tx_to_pmd(struct dp_netdev_pmd_thread *pmd,
     tx->flush_time = 0LL;
     dp_packet_batch_init(&tx->output_pkts);
 
-    if (tx->port->txq_mode == TXQ_MODE_XPS_HASH) {
-        int i, n_txq = netdev_n_txq(tx->port->netdev);
+    int i, n_txq = netdev_n_txq(tx->port->netdev);
 
-        tx->txq_pkts = xzalloc(n_txq * sizeof *tx->txq_pkts);
-        for (i = 0; i < n_txq; i++) {
-            dp_packet_batch_init(&tx->txq_pkts[i]);
-        }
+    tx->txq_pkts = xzalloc(n_txq * sizeof *tx->txq_pkts);
+    for (i = 0; i < n_txq; i++) {
+        dp_packet_batch_init(&tx->txq_pkts[i]);
     }
 
     hmap_insert(&pmd->tx_ports, &tx->node, hash_port_no(tx->port->port_no));
@@ -8832,6 +8852,7 @@ dp_execute_output_action(struct dp_netdev_pmd_thread *pmd,
     }
     dp_packet_batch_apply_cutlen(packets_);
 #ifdef DPDK_NETDEV
+    dp_netdev_pmd_flush_txqs_on_port(pmd, p);
     if (OVS_UNLIKELY(!dp_packet_batch_is_empty(&p->output_pkts)
                      && packets_->packets[0]->source
                         != p->output_pkts.packets[0]->source)) {
@@ -8851,9 +8872,16 @@ dp_execute_output_action(struct dp_netdev_pmd_thread *pmd,
     }
 
     struct dp_packet *packet;
+    int n_txq = netdev_n_txq(p->port->netdev);
     DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
         p->output_pkts_rxqs[dp_packet_batch_size(&p->output_pkts)] =
             pmd->ctx.last_rxq;
+        if (packet->md.skb_priority) {
+            dp_packet_batch_add(
+                &p->txq_pkts[packet->md.skb_priority % n_txq - 1],
+                packet);
+            continue;
+        }
         dp_packet_batch_add(&p->output_pkts, packet);
     }
     return true;
