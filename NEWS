@@ -45,6 +45,8 @@ Post-v3.1.0
        interfaces that support it.  See the 'status' column in the 'interface'
        table to check the status.
      * Rename 'pmd-maxsleep' other_config to 'pmd-sleep-max'.
+     * Add 'ovs-appctl dpif-netdev/pmd-sleep-show' command to get the
+       max sleep request setting of PMD thread cores.
    - Linux TC offload:
      * Add support for offloading VXLAN tunnels with the GBP extensions.
 
