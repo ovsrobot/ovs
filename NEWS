@@ -44,6 +44,7 @@ Post-v3.1.0
      * IP and L4 checksum offload support is now enabled by default for
        interfaces that support it.  See the 'status' column in the 'interface'
        table to check the status.
+     * Rename 'pmd-maxsleep' other_config to 'pmd-sleep-max'.
    - Linux TC offload:
      * Add support for offloading VXLAN tunnels with the GBP extensions.
 
