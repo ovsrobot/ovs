@@ -374,5 +374,28 @@ system configuration (e.g. enabling processor C-states) and workloads.
     extra latency before the PMD thread returns to processing packets at full
     rate.
 
+Max sleep request values can be set for individual PMDs using key:value pairs.
+Any PMD that has been assigned a specified value will use that. Any PMD that
+does not have a specified value will use the current global default.
+
+Specified values for individual PMDs can be added or removed at any time.
+
+For example, to set PMD threads on cores 8 and 9 to never request a load based
+sleep and all others PMD threads to be able to request a max sleep of 50 usecs::
+
+    $ ovs-vsctl set open_vswitch . other_config:pmd-sleep-max=50,8:0,9:0
+
+The max sleep request for each PMD can be checked in the logs or with::
+
+    $ ovs-appctl dpif-netdev/pmd-sleep-show
+    PMD max sleep request is 50 usecs by default.
+    PMD load based sleeps are enabled by default.
+    PMD thread core   8 NUMA  0: Max sleep request set to    0 usecs.
+    PMD thread core   9 NUMA  1: Max sleep request set to    0 usecs.
+    PMD thread core  10 NUMA  0: Max sleep request set to   50 usecs.
+    PMD thread core  11 NUMA  1: Max sleep request set to   50 usecs.
+    PMD thread core  12 NUMA  0: Max sleep request set to   50 usecs.
+    PMD thread core  13 NUMA  1: Max sleep request set to   50 usecs.
+
 .. _ovs-vswitchd(8):
     http://openvswitch.org/support/dist-docs/ovs-vswitchd.8.html
