@@ -76,6 +76,20 @@ m4_define([CHECK_DP_SLEEP_MAX], [
     OVS_WAIT_UNTIL([tail -n $line_st ovs-vswitchd.log | grep "$SLEEP_STATE"])
 ])
 
+dnl CHECK_PMD_SLEEP_MAX([core_id], [numa_id], [max_sleep], [+line])
+dnl
+dnl Checks max sleep time of each pmd with core_id.
+dnl Checking starts from line number 'line' in ovs-vswithd.log .
+m4_define([CHECK_PMD_SLEEP_MAX], [
+    PATTERN="PMD thread core   *[$1] NUMA  *[$2]: Max sleep request set to  *[$3] usecs."
+    line_st=$4
+    if [[ -z "$line_st" ]]
+    then
+        line_st="+0"
+    fi
+    OVS_WAIT_UNTIL([tail -n $line_st ovs-vswitchd.log | grep "$PATTERN"])
+])
+
 m4_define([SED_NUMA_CORE_PATTERN], ["s/\(numa_id \)[[0-9]]*\( core_id \)[[0-9]]*:/\1<cleared>\2<cleared>:/"])
 m4_define([DUMMY_NUMA], [--dummy-numa="0,0,0,0"])
 
@@ -1334,6 +1348,144 @@ CHECK_DP_SLEEP_MAX([499], [enabled], [+$LINENUM])
 AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
 PMD max sleep request is 499 usecs by default.
 PMD load based sleeps are enabled by default.
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([PMD - per pmd sleep])
+OVS_VSWITCHD_START([add-port br0 p0 -- set Interface p0 type=dummy-pmd options:n_rxq=8 options:numa_id=1], [], [], [--dummy-numa 0,0,0,1,1,8,8])
+
+dnl Check system default
+CHECK_DP_SLEEP_MAX([0], [disabled], [])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 0 usecs by default.
+PMD load based sleeps are disabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to    0 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to    0 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to    0 usecs.
+])
+
+dnl only a dp default
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-sleep-max=200])
+CHECK_DP_SLEEP_MAX([200], [enabled], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([0], [0], [200], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([3], [1], [200], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([5], [8], [200], [+$LINENUM])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 200 usecs by default.
+PMD load based sleeps are enabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to  200 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  200 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to  200 usecs.
+])
+
+dnl only per pmd
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-sleep-max=3:300,0:100,5:400])
+CHECK_DP_SLEEP_MAX([0], [disabled], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([0], [0], [100], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([3], [1], [300], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([5], [8], [400], [+$LINENUM])
+
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 0 usecs by default.
+PMD load based sleeps are disabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to  100 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  300 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to  400 usecs.
+])
+
+dnl mix of not used default and per-pmd
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-sleep-max=50,3:300,0:100,5:200])
+CHECK_DP_SLEEP_MAX([50], [enabled], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([0], [0], [100], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([3], [1], [300], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([5], [8], [200], [+$LINENUM])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 50 usecs by default.
+PMD load based sleeps are enabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to  100 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  300 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to  200 usecs.
+])
+
+dnl remove a per-pmd entry and use default
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-sleep-max=50,3:300])
+CHECK_DP_SLEEP_MAX([50], [enabled], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([0], [0], [50], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([3], [1], [300], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([5], [8], [50], [+$LINENUM])
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 50 usecs by default.
+PMD load based sleeps are enabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to   50 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  300 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to   50 usecs.
+])
+
+dnl mix and change values
+
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-sleep-max=3:400,200])
+CHECK_DP_SLEEP_MAX([200], [enabled], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([0], [0], [200], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([3], [1], [400], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([5], [8], [200], [+$LINENUM])
+
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 200 usecs by default.
+PMD load based sleeps are enabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to  200 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  400 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to  200 usecs.
+])
+
+
+dnl add values for pmds that don't exist yet
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-sleep-max=2:600,50,3:300,0:100,6:400,5:200])
+CHECK_DP_SLEEP_MAX([50], [enabled], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([0], [0], [100], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([3], [1], [300], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([5], [8], [200], [+$LINENUM])
+
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 50 usecs by default.
+PMD load based sleeps are enabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to  100 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  300 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to  200 usecs.
+])
+
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask=7f])
+CHECK_PMD_SLEEP_MAX([1], [0], [50], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([2], [0], [600], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([4], [1], [50], [+$LINENUM])
+CHECK_PMD_SLEEP_MAX([6], [8], [400], [+$LINENUM])
+
+
+AT_CHECK([ovs-appctl dpif-netdev/pmd-sleep-show], [0], [dnl
+PMD max sleep request is 50 usecs by default.
+PMD load based sleeps are enabled by default.
+PMD thread core   0 NUMA  0: Max sleep request set to  100 usecs.
+PMD thread core   1 NUMA  0: Max sleep request set to   50 usecs.
+PMD thread core   2 NUMA  0: Max sleep request set to  600 usecs.
+PMD thread core   3 NUMA  1: Max sleep request set to  300 usecs.
+PMD thread core   4 NUMA  1: Max sleep request set to   50 usecs.
+PMD thread core   5 NUMA  8: Max sleep request set to  200 usecs.
+PMD thread core   6 NUMA  8: Max sleep request set to  400 usecs.
 ])
 
 OVS_VSWITCHD_STOP
