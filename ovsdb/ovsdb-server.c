@@ -797,7 +797,8 @@ open_db(struct server_config *config, const char *filename)
     add_db(config, db);
 
     if (is_relay) {
-        ovsdb_relay_add_db(db->db, relay_remotes, update_schema, config);
+        ovsdb_relay_add_db(db->db, relay_remotes, update_schema, config,
+                           *config->replication_probe_interval);
     }
     return NULL;
 }
@@ -1473,6 +1474,7 @@ ovsdb_server_set_active_ovsdb_server_probe_interval(struct unixctl_conn *conn,
         if (*config->is_backup) {
             replication_set_probe_interval(probe_interval);
         }
+        ovsdb_relay_set_probe_interval(probe_interval);
         unixctl_command_reply(conn, NULL);
     } else {
         unixctl_command_reply(
