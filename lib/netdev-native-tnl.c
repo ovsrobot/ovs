@@ -184,6 +184,15 @@ netdev_tnl_push_ip_header(struct dp_packet *packet, const void *header,
         dp_packet_ol_reset_ip_csum_good(packet);
         *ip_tot_size -= IP_HEADER_LEN;
         packet->l4_ofs = dp_packet_size(packet) - *ip_tot_size;
+
+        if (packet->mbuf.ol_flags &
+            (RTE_MBUF_F_TX_TUNNEL_GENEVE | RTE_MBUF_F_TX_TUNNEL_VXLAN)) {
+            packet->mbuf.ol_flags |= RTE_MBUF_F_TX_OUTER_IPV4;
+            packet->mbuf.ol_flags |= RTE_MBUF_F_TX_OUTER_IP_CKSUM;
+        } else {
+            ip->ip_csum = recalc_csum16(ip->ip_csum, 0, ip->ip_tot_len);
+        }
+
         return ip + 1;
     }
 }
@@ -232,6 +241,45 @@ netdev_tnl_push_udp_header(const struct netdev *netdev OVS_UNUSED,
 {
     struct udp_header *udp;
     int ip_tot_size;
+    uint8_t opt_len = 0;
+    struct eth_header *eth;
+    struct ip_header *ip;
+    struct genevehdr *gnh;
+
+    if (dp_packet_hwol_l4_mask(packet)) {
+        struct ip_header *ip = dp_packet_l3(packet);
+
+        if (ip->ip_proto == IPPROTO_TCP) {
+            struct tcp_header *th = dp_packet_l4(packet);
+
+            packet->mbuf.l4_len = TCP_OFFSET(th->tcp_ctl) * 4;
+        } else if (ip->ip_proto == IPPROTO_UDP)
+            packet->mbuf.l4_len = UDP_HEADER_LEN;
+
+        packet->mbuf.l3_len = (char *) dp_packet_l4(packet) -
+                              (char *) dp_packet_l3(packet);
+
+        if ((packet->mbuf.ol_flags & RTE_MBUF_F_TX_TCP_CKSUM) &&
+                !(packet->mbuf.ol_flags & RTE_MBUF_F_TX_IPV6))
+            packet->mbuf.ol_flags |= RTE_MBUF_F_TX_IP_CKSUM;
+
+        if (!strcmp(netdev_get_type(netdev), "geneve")) {
+            eth = (data->header);
+            ip = eth + 1;
+            udp = ip + 1;
+            gnh = udp + 1;
+            opt_len = gnh->opt_len * 4;
+            packet->mbuf.ol_flags |= RTE_MBUF_F_TX_TUNNEL_GENEVE;
+            packet->mbuf.l2_len = (char *) dp_packet_l3(packet) -
+                                  (char *) dp_packet_eth(packet) +
+                                  GENEVE_BASE_HLEN + opt_len;
+        } else if (!strcmp(netdev_get_type(netdev), "vxlan")) {
+            packet->mbuf.ol_flags |= RTE_MBUF_F_TX_TUNNEL_VXLAN;
+            packet->mbuf.l2_len = (char *) dp_packet_l3(packet) -
+                                  (char *) dp_packet_eth(packet) +
+                                  VXLAN_HLEN;
+        }
+    }
 
     udp = netdev_tnl_push_ip_header(packet, data->header, data->header_len,
                                     &ip_tot_size, 0);

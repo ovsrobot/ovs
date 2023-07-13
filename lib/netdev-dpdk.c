@@ -2378,29 +2378,54 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
         return true;
     }
 
-    mbuf->l2_len = (char *) dp_packet_l3(pkt) - (char *) dp_packet_eth(pkt);
-    mbuf->l3_len = (char *) dp_packet_l4(pkt) - (char *) dp_packet_l3(pkt);
-    mbuf->l4_len = 0;
-    mbuf->outer_l2_len = 0;
-    mbuf->outer_l3_len = 0;
+    if (mbuf->ol_flags & RTE_MBUF_F_TX_L4_MASK) {
+        if (mbuf->ol_flags &
+            (RTE_MBUF_F_TX_TUNNEL_GENEVE | RTE_MBUF_F_TX_TUNNEL_VXLAN)) {
+            mbuf->outer_l2_len = (char *) dp_packet_l3(pkt) -
+                     (char *) dp_packet_eth(pkt);
+            mbuf->outer_l3_len = (char *) dp_packet_l4(pkt) -
+                     (char *) dp_packet_l3(pkt);
+        } else {
+            mbuf->l2_len = (char *) dp_packet_l3(pkt) -
+                   (char *) dp_packet_eth(pkt);
+            mbuf->l3_len = (char *) dp_packet_l4(pkt) -
+                   (char *) dp_packet_l3(pkt);
+            mbuf->outer_l2_len = 0;
+            mbuf->outer_l3_len = 0;
+        }
+    }
 
     if (mbuf->ol_flags & RTE_MBUF_F_TX_TCP_SEG) {
         struct tcp_header *th = dp_packet_l4(pkt);
 
         if (!th) {
-            VLOG_WARN_RL(&rl, "%s: TCP Segmentation without L4 header"
-                         " pkt len: %"PRIu32"", dev->up.name, mbuf->pkt_len);
+            VLOG_WARN_RL(&rl,
+            "%s: TCP Segmentation without L4 header,pkt len: %"PRIu32"",
+                dev->up.name, mbuf->pkt_len);
             return false;
         }
 
-        mbuf->l4_len = TCP_OFFSET(th->tcp_ctl) * 4;
-        mbuf->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
-        mbuf->tso_segsz = dev->mtu - mbuf->l3_len - mbuf->l4_len;
+        if (mbuf->ol_flags & (RTE_MBUF_F_TX_TUNNEL_GENEVE |
+            RTE_MBUF_F_TX_TUNNEL_VXLAN)) {
+            mbuf->tso_segsz  = dev->mtu - mbuf->l2_len - mbuf->l3_len -
+            mbuf->l4_len - mbuf->outer_l3_len;
+        } else {
+            mbuf->l4_len = TCP_OFFSET(th->tcp_ctl) * 4;
+            mbuf->tso_segsz = dev->mtu - mbuf->l3_len - mbuf->l4_len;
+        }
+
+        mbuf->ol_flags &= (~RTE_MBUF_F_TX_TCP_CKSUM);
 
         if (mbuf->ol_flags & RTE_MBUF_F_TX_IPV4) {
             mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM;
         }
     }
+
+    /* when tcp checksum offload, ip checksum is set to 0 */
+    if ((mbuf->ol_flags & (RTE_MBUF_F_TX_TCP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM))
+        && !(mbuf->ol_flags & RTE_MBUF_F_TX_IPV6))
+    mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM;
+
     return true;
 }
 

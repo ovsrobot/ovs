@@ -953,13 +953,16 @@ netdev_push_header(const struct netdev *netdev,
     size_t i, size = dp_packet_batch_size(batch);
 
     DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
-        if (OVS_UNLIKELY(dp_packet_hwol_is_tso(packet))) {
-            COVERAGE_INC(netdev_push_header_drops);
-            dp_packet_delete(packet);
-            VLOG_WARN_RL(&rl, "%s: Tunneling packets with TSO is "
-                         "not supported: packet dropped",
-                         netdev_get_name(netdev));
-        } else {
+    if (OVS_UNLIKELY(strcmp(netdev_get_type(netdev), "vxlan") &&
+        strcmp(netdev_get_type(netdev), "geneve") &&
+        (dp_packet_hwol_l4_mask(packet) || dp_packet_hwol_is_tso(packet)))) {
+        COVERAGE_INC(netdev_push_header_drops);
+        dp_packet_delete(packet);
+        VLOG_WARN_RL(&rl,
+                     "%s: Tunneling packets with csum or tso HW offload flags"
+                     "is not supported: packet dropped",
+        netdev_get_name(netdev));
+    } else {
             /* The packet is going to be encapsulated and there is
              * no support yet for inner network header csum offloading. */
             dp_packet_ol_send_prepare(packet, 0);
