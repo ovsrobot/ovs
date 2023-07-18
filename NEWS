@@ -1,5 +1,7 @@
 Post-v3.2.0
 --------------------
+   - ovs-tcpdump:
+     * Added new --filter parameter to apply pre-selection on mirrored flows.
 
 
 v3.2.0 - xx xxx xxxx

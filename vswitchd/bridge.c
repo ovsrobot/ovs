@@ -5166,6 +5166,13 @@ mirror_configure(struct mirror *m)
     /* Get VLAN selection. */
     s.src_vlans = vlan_bitmap_from_array(cfg->select_vlan, cfg->n_select_vlan);
 
+    /* Set filter, this value is not retained after mirror_set() is called. */
+    if (cfg->filter && strlen(cfg->filter)) {
+        s.filter = xstrdup(cfg->filter);
+    } else {
+        s.filter = NULL;
+    }
+
     /* Configure. */
     ofproto_mirror_register(m->bridge->ofproto, m, &s);
 
@@ -5175,6 +5182,7 @@ mirror_configure(struct mirror *m)
     }
     free(s.srcs);
     free(s.src_vlans);
+    free(s.filter);
 
     return true;
 }
