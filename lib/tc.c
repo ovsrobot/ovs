@@ -2967,22 +2967,19 @@ csum_update_flag(struct tc_flower *flower,
     case TCA_PEDIT_KEY_EX_HDR_TYPE_IP6:
     case TCA_PEDIT_KEY_EX_HDR_TYPE_TCP:
     case TCA_PEDIT_KEY_EX_HDR_TYPE_UDP:
+        flower->needs_full_ip_proto_mask = true;
         if (flower->key.ip_proto == IPPROTO_TCP) {
-            flower->needs_full_ip_proto_mask = true;
             flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_TCP;
         } else if (flower->key.ip_proto == IPPROTO_UDP) {
-            flower->needs_full_ip_proto_mask = true;
             flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_UDP;
-        } else if (flower->key.ip_proto == IPPROTO_ICMP) {
-            flower->needs_full_ip_proto_mask = true;
         } else if (flower->key.ip_proto == IPPROTO_ICMPV6) {
-            flower->needs_full_ip_proto_mask = true;
             flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_ICMP;
-        } else {
-            VLOG_WARN_RL(&error_rl,
-                         "can't offload rewrite of IP/IPV6 with ip_proto: %d",
-                         flower->key.ip_proto);
-            break;
+        } else if (flower->key.ip_proto == IPPROTO_IGMP) {
+            flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_IGMP;
+        } else if (flower->key.ip_proto == IPPROTO_UDPLITE) {
+            flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_UDPLITE;
+        } else if (flower->key.ip_proto == IPPROTO_SCTP) {
+            flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_SCTP;
         }
         /* Fall through. */
     case TCA_PEDIT_KEY_EX_HDR_TYPE_ETH:
