@@ -5701,7 +5701,7 @@ xlate_learn_action(struct xlate_ctx *ctx, const struct ofpact_learn *learn)
             bool success = true;
             if (ctx->xin->allow_side_effects) {
                 error = ofproto_flow_mod_learn(ofm, ctx->xin->xcache != NULL,
-                                               learn->limit, &success);
+                                               learn->limit, &success, true);
             } else if (learn->limit) {
                 if (!ofm->temp_rule
                     || ofm->temp_rule->state != RULE_INSERTED) {

@@ -5472,7 +5472,7 @@ ofproto_flow_mod_init_for_learn(struct ofproto *ofproto,
 }
 
 enum ofperr
-ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm)
+ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm, bool recreate)
 {
     enum ofperr error = 0;
 
@@ -5492,6 +5492,11 @@ ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm)
      * after we have read the 'rule->state' below.  In this case the next time
      * this function is executed the rule will be reinstated. */
     if (rule->state == RULE_REMOVED) {
+        if (!recreate) {
+            /* If the rule is marked as removed and the caller doesn't want it
+             * recreated, just return an error here as if there was no rule. */
+            return OFPERR_OFPFMFC_UNKNOWN;
+        }
         struct cls_rule cr;
 
         cls_rule_clone(&cr, &rule->cr);
@@ -5565,10 +5570,12 @@ ofproto_flow_mod_learn_finish(struct ofproto_flow_mod *ofm,
 
 /* Refresh 'ofm->temp_rule', for which the caller holds a reference, if already
  * in the classifier, insert it otherwise.  If the rule has already been
- * removed from the classifier, a new rule is created using 'ofm->temp_rule' as
- * a template and the reference to the old 'ofm->temp_rule' is freed.  If
- * 'keep_ref' is true, then a reference to the current rule is held, otherwise
- * it is released and 'ofm->temp_rule' is set to NULL.
+ * removed from the classifier and 'recreate' is true, a new rule is created
+ * using 'ofm->temp_rule' as a template and the reference to the old
+ * 'ofm->temp_rule' is freed.  If recreate is false and the rule has been
+ * removed, do not reinsert a new copy of that rule. If 'keep_ref' is true,
+ * then a reference to the current rule is held, otherwise it is released and
+ * 'ofm->temp_rule' is set to NULL.
  *
  * If 'limit' != 0, insertion will fail if there are more than 'limit' rules
  * in the same table with the same cookie.  If insertion succeeds,
@@ -5579,10 +5586,10 @@ ofproto_flow_mod_learn_finish(struct ofproto_flow_mod *ofm,
  * during the call. */
 enum ofperr
 ofproto_flow_mod_learn(struct ofproto_flow_mod *ofm, bool keep_ref,
-                       unsigned limit, bool *below_limitp)
+                       unsigned limit, bool *below_limitp, bool recreate)
     OVS_EXCLUDED(ofproto_mutex)
 {
-    enum ofperr error = ofproto_flow_mod_learn_refresh(ofm);
+    enum ofperr error = ofproto_flow_mod_learn_refresh(ofm, recreate);
     struct rule *rule = ofm->temp_rule;
     bool below_limit = true;
 
