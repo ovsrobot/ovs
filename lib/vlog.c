@@ -1321,12 +1321,13 @@ vlog_should_drop(const struct vlog_module *module, enum vlog_level level,
     }
 
     ovs_mutex_lock(&rl->mutex);
-    if (!token_bucket_withdraw(&rl->token_bucket, VLOG_MSG_TOKENS)) {
-        time_t now = time_now();
+    long long int now = time_msec();
+    time_t now_sec = now / 1000;
+    if (!token_bucket_withdraw(&rl->token_bucket, VLOG_MSG_TOKENS, now)) {
         if (!rl->n_dropped) {
-            rl->first_dropped = now;
+            rl->first_dropped = now_sec;
         }
-        rl->last_dropped = now;
+        rl->last_dropped = now_sec;
         rl->n_dropped++;
         ovs_mutex_unlock(&rl->mutex);
         return true;
@@ -1335,10 +1336,9 @@ vlog_should_drop(const struct vlog_module *module, enum vlog_level level,
     if (!rl->n_dropped) {
         ovs_mutex_unlock(&rl->mutex);
     } else {
-        time_t now = time_now();
         unsigned int n_dropped = rl->n_dropped;
-        unsigned int first_dropped_elapsed = now - rl->first_dropped;
-        unsigned int last_dropped_elapsed = now - rl->last_dropped;
+        unsigned int first_dropped_elapsed = now_sec - rl->first_dropped;
+        unsigned int last_dropped_elapsed = now_sec - rl->last_dropped;
         rl->n_dropped = 0;
         ovs_mutex_unlock(&rl->mutex);
 

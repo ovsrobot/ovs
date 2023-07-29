@@ -184,7 +184,7 @@ get_tx_packet(struct pinsched *ps)
 static bool
 get_token(struct pinsched *ps)
 {
-    return token_bucket_withdraw(&ps->token_bucket, 1000);
+    return token_bucket_withdraw(&ps->token_bucket, 1000, time_msec());
 }
 
 void
