@@ -104,7 +104,7 @@ python-sdist: $(srcdir)/python/ovs/version.py $(ovs_pyfiles) python/ovs/dirs.py
 	(cd python/ && $(PYTHON3) setup.py sdist)
 
 pypi-upload: $(srcdir)/python/ovs/version.py $(ovs_pyfiles) python/ovs/dirs.py
-	(cd python/ && $(PYTHON3) setup.py sdist upload)
+	(cd python/ && $(PYTHON3) setup.py sdist && twine upload dist/ovs-$(VERSION).tar.gz)
 install-data-local: ovs-install-data-local
 
 UNINSTALL_LOCAL += ovs-uninstall-local
