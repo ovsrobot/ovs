@@ -2978,6 +2978,15 @@ csum_update_flag(struct tc_flower *flower,
         } else if (flower->key.ip_proto == IPPROTO_ICMPV6) {
             flower->needs_full_ip_proto_mask = true;
             flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_ICMP;
+        } else if (flower->key.ip_proto == IPPROTO_IGMP) {
+            flower->needs_full_ip_proto_mask = true;
+            flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_IGMP;
+        } else if (flower->key.ip_proto == IPPROTO_UDPLITE) {
+            flower->needs_full_ip_proto_mask = true;
+            flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_UDPLITE;
+        } else if (flower->key.ip_proto == IPPROTO_SCTP) {
+            flower->needs_full_ip_proto_mask = true;
+            flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_SCTP;
         } else {
             VLOG_WARN_RL(&error_rl,
                          "can't offload rewrite of IP/IPV6 with ip_proto: %d",
