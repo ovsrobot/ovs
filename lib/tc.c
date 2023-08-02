@@ -2973,7 +2973,9 @@ csum_update_flag(struct tc_flower *flower,
         } else if (flower->key.ip_proto == IPPROTO_UDP) {
             flower->needs_full_ip_proto_mask = true;
             flower->csum_update_flags |= TCA_CSUM_UPDATE_FLAG_UDP;
-        } else if (flower->key.ip_proto == IPPROTO_ICMP) {
+        } else if (flower->key.ip_proto == IPPROTO_ICMP ||
+                   flower->key.ip_proto == IPPROTO_IPIP ||
+                   flower->key.ip_proto == IPPROTO_GRE) {
             flower->needs_full_ip_proto_mask = true;
         } else if (flower->key.ip_proto == IPPROTO_ICMPV6) {
             flower->needs_full_ip_proto_mask = true;
