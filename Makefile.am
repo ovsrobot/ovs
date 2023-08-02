@@ -58,7 +58,7 @@ endif
 # foo/__init__.py into an (older) version with plain foo.py, since
 # foo/__init__.pyc will cause Python to ignore foo.py.
 run_python = \
-	PYTHONPATH=$(top_srcdir)/python$(psep)$$PYTHONPATH \
+	PYTHONPATH=$(top_srcdir)/python$(psep)$(top_srcdir)/build-aux$(psep)$$PYTHONPATH \
 	PYTHONDONTWRITEBYTECODE=yes $(PYTHON3)
 
 ALL_LOCAL =
@@ -151,7 +151,7 @@ ro_shell = printf '\043 Generated automatically -- do not modify!    -*- buffer-
 
 SUFFIXES += .in
 .in:
-	$(AM_V_GEN)PYTHONPATH=$$PYTHONPATH$(psep)$(srcdir)/python $(PYTHON3) $(srcdir)/build-aux/soexpand.py -I$(srcdir) < $< | \
+	$(AM_V_GEN)$(PYTHON3) $(srcdir)/build-aux/soexpand.py -I$(srcdir) < $< | \
 	  $(PYTHON3) $(srcdir)/build-aux/dpdkstrip.py $(DPDKSTRIP_FLAGS) | \
 	  sed \
 	    -e 's,[@]PKIDIR[@],$(PKIDIR),g' \
@@ -416,7 +416,7 @@ CLEANFILES += flake8-check
 
 -include manpages.mk
 manpages.mk: $(MAN_ROOTS) build-aux/sodepends.py python/build/soutil.py
-	@PYTHONPATH=$$PYTHONPATH$(psep)$(srcdir)/python $(PYTHON3) $(srcdir)/build-aux/sodepends.py -I. -I$(srcdir) $(MAN_ROOTS) >$(@F).tmp
+	@$(PYTHON3) $(srcdir)/build-aux/sodepends.py -I. -I$(srcdir) $(MAN_ROOTS) >$(@F).tmp
 	@if cmp -s $(@F).tmp $@; then \
 	  touch $@; \
 	  rm -f $(@F).tmp; \

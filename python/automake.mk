@@ -63,14 +63,6 @@ ovs_pytests = \
 	python/ovs/tests/test_odp.py \
 	python/ovs/tests/test_ofp.py
 
-# These python files are used at build time but not runtime,
-# so they are not installed.
-EXTRA_DIST += \
-	python/build/__init__.py \
-	python/build/extract_ofp_fields.py \
-	python/build/nroff.py \
-	python/build/soutil.py
-
 # PyPI support.
 EXTRA_DIST += \
 	python/ovs/compat/sortedcontainers/LICENSE \
@@ -88,10 +80,6 @@ PYCOV_CLEAN_FILES += $(PYFILES:.py=.py,cover)
 
 FLAKE8_PYFILES += \
 	$(filter-out python/ovs/compat/% python/ovs/dirs.py,$(PYFILES)) \
-	python/build/__init__.py \
-	python/build/extract_ofp_fields.py \
-	python/build/nroff.py \
-	python/build/soutil.py \
 	python/ovs/dirs.py.template \
 	python/setup.py
 

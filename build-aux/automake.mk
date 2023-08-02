@@ -1,4 +1,8 @@
 EXTRA_DIST += \
+	build-aux/build/__init__.py \
+	build-aux/build/extract_ofp_fields.py \
+	build-aux/build/nroff.py \
+	build-aux/build/soutil.py \
 	build-aux/calculate-schema-cksum \
 	build-aux/cccl \
 	build-aux/cksum-schema-check \
@@ -13,6 +17,10 @@ EXTRA_DIST += \
 	build-aux/xml2nroff
 
 FLAKE8_PYFILES += \
+    build-aux/build/__init__.py \
+    build-aux/build/extract_ofp_fields.py \
+    build-aux/build/nroff.py \
+    build-aux/build/soutil.py \
     build-aux/dpdkstrip.py \
     build-aux/gen_ofp_field_decoders \
     build-aux/sodepends.py \
