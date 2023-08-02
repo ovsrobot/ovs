@@ -143,6 +143,8 @@ struct member {
     uint32_t count_link_expired;    /* Num of times link expired */
     uint32_t count_link_defaulted;  /* Num of times link defaulted */
     uint32_t count_carrier_changed; /* Num of times link status changed */
+    long long int last_tx;
+    long long int last_rx;
 };
 
 static struct ovs_mutex mutex;
@@ -387,6 +389,13 @@ lacp_process_packet(struct lacp *lacp, const void *member_,
         goto out;
     }
 
+    if (member->last_rx && member->status != LACP_CURRENT) {
+        long long int delay = time_msec() - member->last_rx;
+        VLOG_DBG("%s: %s recieved PDU after expiry, delayed by %lldms "
+                 "seconds.", lacp->name, member->name, delay);
+    }
+
+    member->last_rx = time_msec();
     member->status = LACP_CURRENT;
     tx_rate = lacp->fast ? LACP_FAST_TIME_TX : LACP_SLOW_TIME_TX;
     timer_set_duration(&member->rx, LACP_RX_MULTIPLIER * tx_rate);
@@ -524,6 +533,11 @@ lacp_member_carrier_changed(const struct lacp *lacp, const void *member_,
 
     if (member->status == LACP_CURRENT || member->lacp->active) {
         member_set_expired(member);
+        VLOG_DBG("%s: Expiring LACP due to %s carrier change.",
+                 lacp->name, member->name);
+        /* Do not warn about long LACP RX/TX interval if interface was down */
+        member->last_rx = 0;
+        member->last_tx = 0;
     }
 
     if (member->carrier_up != carrier_up) {
@@ -603,6 +617,8 @@ lacp_run(struct lacp *lacp, lacp_send_pdu *send_pdu) OVS_EXCLUDED(mutex)
 
             if (member->status == LACP_CURRENT) {
                 member_set_expired(member);
+                VLOG_DBG("%s: Expired member %s because LACP PDU was not "
+                         "received on time.", lacp->name, member->name);
                 member->count_link_expired++;
             } else if (member->status == LACP_EXPIRED) {
                 member_set_defaulted(member);
@@ -642,6 +658,13 @@ lacp_run(struct lacp *lacp, lacp_send_pdu *send_pdu) OVS_EXCLUDED(mutex)
                         ? LACP_FAST_TIME_TX
                         : LACP_SLOW_TIME_TX);
 
+            /* Log if we exceed the tx timer by double the tx rate. */
+            if (member->last_tx &&
+                (time_msec() - member->last_tx) > (duration * 2)) {
+                VLOG_INFO("%s: Member %s failed to send LACP PCU on time.",
+                          lacp->name, member->name);
+            }
+            member->last_tx = time_msec();
             timer_set_duration(&member->tx, duration);
             seq_change(connectivity_seq_get());
         }
@@ -800,6 +823,7 @@ member_set_expired(struct member *member) OVS_REQUIRES(mutex)
     member->partner.state &= ~LACP_STATE_SYNC;
 
     timer_set_duration(&member->rx, LACP_RX_MULTIPLIER * LACP_FAST_TIME_TX);
+    member->last_tx = 0;
 }
 
 static void
