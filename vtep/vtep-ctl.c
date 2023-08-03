@@ -1884,6 +1884,11 @@ del_mcast_entry(struct ctl_context *ctx,
     if (ovs_list_is_empty(&mcast_mac->locators)) {
         struct shash_node *node = shash_find(mcast_shash, mac);
 
+        if (!node) {
+            VLOG_WARN("node is NULL");
+            return;
+        }
+
         vteprec_physical_locator_set_delete(ploc_set_cfg);
 
         if (local) {
