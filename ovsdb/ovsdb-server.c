@@ -2258,6 +2258,8 @@ save_config(struct server_config *config)
 static void
 sset_from_json(struct sset *sset, const struct json *array)
 {
+    ovs_assert(array);
+
     size_t i;
 
     sset_clear(sset);
