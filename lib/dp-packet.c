@@ -187,9 +187,12 @@ dp_packet_clone_with_headroom(const struct dp_packet *buffer, size_t headroom)
     struct dp_packet *new_buffer;
     uint32_t mark;
 
-    new_buffer = dp_packet_clone_data_with_headroom(dp_packet_data(buffer),
-                                                 dp_packet_size(buffer),
-                                                 headroom);
+    const void *data_dp = dp_packet_data(buffer);
+    ovs_assert(data_dp);
+
+    new_buffer = dp_packet_clone_data_with_headroom(data_dp,
+                                                    dp_packet_size(buffer),
+                                                    headroom);
     /* Copy the following fields into the returned buffer: l2_pad_size,
      * l2_5_ofs, l3_ofs, l4_ofs, cutlen, packet_type and md. */
     memcpy(&new_buffer->l2_pad_size, &buffer->l2_pad_size,
@@ -326,8 +329,10 @@ dp_packet_shift(struct dp_packet *b, int delta)
                : true);
 
     if (delta != 0) {
-        char *dst = (char *) dp_packet_data(b) + delta;
-        memmove(dst, dp_packet_data(b), dp_packet_size(b));
+        const void *data_dp = dp_packet_data(b);
+        ovs_assert(data_dp);
+        char *dst = (char *) data_dp + delta;
+        memmove(dst, data_dp, dp_packet_size(b));
         dp_packet_set_data(b, dst);
     }
 }
