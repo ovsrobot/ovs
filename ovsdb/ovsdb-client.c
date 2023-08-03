@@ -1873,6 +1873,10 @@ do_dump(struct jsonrpc *rpc, const char *database,
         n_tables = shash_count(&schema->tables);
     }
 
+    if (!tables) {
+        goto end;
+    }
+
     /* Construct transaction to retrieve entire database. */
     transaction = json_array_create_1(json_string_create(database));
     for (i = 0; i < n_tables; i++) {
@@ -1932,8 +1936,9 @@ do_dump(struct jsonrpc *rpc, const char *database,
     }
 
     jsonrpc_msg_destroy(reply);
-    shash_destroy(&custom_columns);
     free(tables);
+end:
+    shash_destroy(&custom_columns);
     ovsdb_schema_destroy(schema);
 }
 
