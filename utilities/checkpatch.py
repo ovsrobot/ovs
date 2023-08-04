@@ -1036,8 +1036,11 @@ def ovs_checkpatch_file(filename):
             else:
                 mail.add_header('Subject', sys.argv[-1])
 
+            with open(filename, 'w') as new_email:
+                new_email.write(mail.as_string())
+
             print("Subject missing! Your provisional subject is",
-                  mail['Subject'])
+                  sys.argv[-1])
 
         if check_spelling(mail['Subject'], False):
             print("Subject: %s" % mail['Subject'])
