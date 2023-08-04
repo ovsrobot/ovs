@@ -323,7 +323,7 @@ def group_xml_to_nroff(group_node, fields):
         ".TS\n",
         "tab(;);\n",
         "l l l l l l l.\n",
-        "Name;Bytes;Mask;RW?;Prereqs;NXM/OXM Support\n",
+        "Name;Bytes;Mask;RW?;Prereqs;NXM/OXM?\n",
         "\_;\_;\_;\_;\_;\_\n",
     ]
     content += summary
