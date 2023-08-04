@@ -19,6 +19,7 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -59,6 +60,7 @@
 #include "openvswitch/ofp-parse.h"
 #include "openvswitch/ofp-print.h"
 #include "openvswitch/shash.h"
+#include "openvswitch/token-bucket.h"
 #include "openvswitch/vlog.h"
 #include "ovs-numa.h"
 #include "ovs-rcu.h"
@@ -90,6 +92,8 @@ static bool per_port_memory = false; /* Status of per port memory support */
 
 #define OVS_CACHE_LINE_SIZE CACHE_LINE_SIZE
 #define OVS_VPORT_DPDK "ovs_dpdk"
+
+#define MAX_KPKTS_PARAMETER 4294967U  /* UINT32_MAX / 1000 */
 
 /*
  * need to reserve tons of extra space in the mbufs so we can align the
@@ -346,6 +350,7 @@ struct dpdk_qos_ops {
 /* dpdk_qos_ops for each type of user space QoS implementation. */
 static const struct dpdk_qos_ops egress_policer_ops;
 static const struct dpdk_qos_ops trtcm_policer_ops;
+static const struct dpdk_qos_ops kpkts_policer_ops;
 
 /*
  * Array of dpdk_qos_ops, contains pointer to all supported QoS
@@ -354,6 +359,7 @@ static const struct dpdk_qos_ops trtcm_policer_ops;
 static const struct dpdk_qos_ops *const qos_confs[] = {
     &egress_policer_ops,
     &trtcm_policer_ops,
+    &kpkts_policer_ops,
     NULL
 };
 
@@ -5570,6 +5576,160 @@ static const struct dpdk_qos_ops trtcm_policer_ops = {
     .qos_queue_get = trtcm_policer_qos_queue_get,
     .qos_queue_get_stats = trtcm_policer_qos_queue_get_stats,
     .qos_queue_dump_state_init = trtcm_policer_qos_queue_dump_state_init
+};
+
+/* kpkts-policer details */
+struct kpkts_policer {
+    struct qos_conf qos_conf;
+    struct token_bucket tb;
+    uint32_t kpkts_rate;
+    uint32_t kpkts_burst;
+};
+
+static int
+kpkts_policer_run_single_packet(struct token_bucket *tb, struct rte_mbuf **pkts,
+                                int pkt_cnt, bool should_steal)
+{
+    struct rte_mbuf *batch[NETDEV_MAX_BURST] = {0};
+    long long int now = time_msec();
+    struct rte_mbuf *pkt = NULL;
+    int i = 0, n = 0;
+    int cnt = 0;
+
+    for (i = 0; i < pkt_cnt; i++) {
+        pkt = pkts[i];
+        /* Handle current packet. */
+        if (token_bucket_withdraw(tb, 1, now)) {
+            /* Count passed packets. */
+            if (cnt != i) {
+                pkts[cnt] = pkt;
+            }
+            cnt++;
+        } else {
+            /* Count dropped packets. */
+            batch[n++] = pkt;
+        }
+    }
+
+    if (should_steal && n) {
+        rte_pktmbuf_free_bulk(batch, n);
+    }
+
+    return cnt;
+}
+
+static int
+kpkts_policer_profile_config(struct token_bucket *tb,
+                             uint32_t kpkts_rate, uint32_t kpkts_burst)
+{
+    if (kpkts_rate > MAX_KPKTS_PARAMETER ||
+        kpkts_burst > MAX_KPKTS_PARAMETER) {
+        return EINVAL;
+    }
+
+   /* Rate in kilo-packets/second, bucket 1000 packets.
+    * msec * kilo-packets/sec = 1 packets. */
+    if (kpkts_rate) {
+        /* Parameters between (1 ~ MAX_KPKTS_PARAMETER). */
+        token_bucket_init(tb, kpkts_rate, kpkts_burst * 1000);
+    } else {
+        /* Zero means not to police the traffic. */
+        return EINVAL;
+    }
+
+    return 0;
+}
+
+static int
+kpkts_policer_qos_construct(const struct smap *details, struct qos_conf **conf)
+{
+    uint32_t kpkts_rate, kpkts_burst;
+    struct kpkts_policer *policer;
+    int err;
+
+    policer = xzalloc(sizeof *policer);
+    kpkts_rate  = smap_get_uint(details, "kpkts_rate", 0);
+    kpkts_burst = smap_get_uint(details, "kpkts_burst", 0);
+
+    /*
+     * Force to 0 if no rate specified,
+     * default to rate if burst is 0,
+     * else stick with user-specified value.
+     */
+    kpkts_burst = (!kpkts_rate ? 0 : !kpkts_burst ? kpkts_rate : kpkts_burst);
+
+    qos_conf_init(&policer->qos_conf, &kpkts_policer_ops);
+    err = kpkts_policer_profile_config(&policer->tb, kpkts_rate, kpkts_burst);
+    if (!err) {
+        policer->kpkts_rate = kpkts_rate;
+        policer->kpkts_burst = kpkts_burst;
+
+        *conf = &policer->qos_conf;
+    } else {
+        VLOG_DBG("Could not create token bucket for egress policer");
+        free(policer);
+        *conf = NULL;
+    }
+
+    return err;
+}
+
+static void
+kpkts_policer_qos_destruct(struct qos_conf *conf)
+{
+    struct kpkts_policer *policer = CONTAINER_OF(conf, struct kpkts_policer,
+                                                 qos_conf);
+
+    free(policer);
+}
+
+static int
+kpkts_policer_qos_get(const struct qos_conf *conf, struct smap *details)
+{
+    struct kpkts_policer *policer = CONTAINER_OF(conf, struct kpkts_policer,
+                                                 qos_conf);
+
+    smap_add_format(details, "kpkts_rate", "%"PRIu32, policer->kpkts_rate);
+    smap_add_format(details, "kpkts_burst", "%"PRIu32, policer->kpkts_burst);
+
+    return 0;
+}
+
+static bool
+kpkts_pkts_policer_qos_is_equal(const struct qos_conf *conf,
+                                const struct smap *details)
+{
+    uint32_t rate, burst;
+    struct kpkts_policer *policer = CONTAINER_OF(conf, struct kpkts_policer,
+                                                 qos_conf);
+
+    rate  = smap_get_uint(details, "pkts_rate", 0);
+    burst = smap_get_uint(details, "pkts_burst", 0);
+
+    return (policer->tb.rate == rate && policer->tb.burst == burst);
+}
+
+static int
+kpkts_policer_run(struct qos_conf *conf, struct rte_mbuf **pkts, int pkt_cnt,
+                  bool should_steal)
+{
+    int cnt;
+    struct kpkts_policer *policer = CONTAINER_OF(conf, struct kpkts_policer,
+                                                 qos_conf);
+
+    cnt = kpkts_policer_run_single_packet(&policer->tb, pkts, pkt_cnt,
+                                          should_steal);
+
+    return cnt;
+}
+
+static const struct dpdk_qos_ops kpkts_policer_ops = {
+    .qos_name = "kpkts-policer",
+    .qos_construct = kpkts_policer_qos_construct,
+    .qos_destruct = kpkts_policer_qos_destruct,
+    .qos_get = kpkts_policer_qos_get,
+    .qos_is_equal = kpkts_pkts_policer_qos_is_equal,
+    .qos_run = kpkts_policer_run
 };
 
 static int
