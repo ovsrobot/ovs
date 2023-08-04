@@ -1111,30 +1111,9 @@ if __name__ == '__main__':
         colors = True
 
     if n_patches:
-        status = 0
-
-        git_log = 'git log --no-color --no-merges --pretty=format:"%H %s" '
-        with os.popen(git_log + '-%d' % n_patches, 'r') as f:
-            commits = f.read().split("\n")
-
-        for i in reversed(range(0, n_patches)):
-            revision, name = commits[i].split(" ", 1)
-            f = os.popen('''git format-patch -1 --stdout --pretty=format:"\
-Author: %an <%ae>
-Commit: %cn <%ce>
-Subject: %s
-
-%b" ''' + revision, 'r')
-            patch = f.read()
-            f.close()
-
-            if not quiet:
-                print('== Checking %s ("%s") ==' % (revision[0:12], name))
-            result = ovs_checkpatch_parse(patch, revision)
-            ovs_checkpatch_print_result()
-            if result:
-                status = EXIT_FAILURE
-        sys.exit(status)
+        patch_name = os.popen('git format-patch -' + str(n_patches))
+        args = patch_name.read().strip().split('\n')
+        patch_name.close()
 
     if not args:
         if sys.stdin.isatty():
