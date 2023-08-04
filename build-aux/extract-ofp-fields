@@ -189,12 +189,14 @@ def field_to_xml(field_node, f, body, summary):
         ovs_version = [int(x) for x in ovs_version_s.split(".")]
         if min_ovs_version is None or ovs_version < min_ovs_version:
             min_ovs_version = ovs_version
-    summary += ["\\fB%s\\fR" % f["name"]]
+    summary += ["T{\n.ad l\n\\fB%s\\fR" % f["name"]]
     if f["extra_name"]:
         summary += [" aka \\fB%s\\fR" % f["extra_name"]]
-    summary += [";%d" % f["n_bytes"]]
+    summary += ["\nT}"]
+    summary += [";T{\n.ad l\n%d" % f["n_bytes"]]
     if f["n_bits"] != 8 * f["n_bytes"]:
         summary += [" (low %d bits)" % f["n_bits"]]
+    summary += ["\nT}"]
     summary += [";%s;" % {"MFM_NONE": "no", "MFM_FULLY": "yes"}[f["mask"]]]
     summary += ["%s;" % {True: "yes", False: "no"}[f["writable"]]]
     summary += ["%s;" % f["prereqs"]]
@@ -203,7 +205,7 @@ def field_to_xml(field_node, f, body, summary):
         support += ["OF %s+" % VERSION_REVERSE[min_of_version]]
     if min_ovs_version is not None:
         support += ["OVS %s+" % ".".join([str(x) for x in min_ovs_version])]
-    summary += " and ".join(support)
+    summary += ["T{\n.ad l\n", " and ".join(support), "\nT}"]
     summary += ["\n"]
 
     # Full description.
@@ -230,8 +232,10 @@ l lx.
     body += ["Width:;"]
     if f["n_bits"] != 8 * f["n_bytes"]:
         body += [
+            "T{\n",
             "%d bits (only the least-significant %d bits "
-            "may be nonzero)" % (f["n_bytes"] * 8, f["n_bits"])
+            "may be nonzero)" % (f["n_bytes"] * 8, f["n_bits"]),
+            "\nT}",
         ]
     elif f["n_bits"] <= 128:
         body += ["%d bits" % f["n_bits"]]
