@@ -59,10 +59,10 @@ token_bucket_set(struct token_bucket *tb,
  * if 'tb' contained fewer than 'n' tokens (and thus 'n' tokens could not be
  * removed) . */
 bool
-token_bucket_withdraw(struct token_bucket *tb, unsigned int n)
+token_bucket_withdraw(struct token_bucket *tb, unsigned int n,
+                      long long int now)
 {
     if (tb->tokens < n) {
-        long long int now = time_msec();
         if (now > tb->last_fill) {
             unsigned long long int elapsed_ull
                 = (unsigned long long int) now - tb->last_fill;
