@@ -406,10 +406,17 @@ struct dpdk_tx_queue {
     );
 };
 
+enum policer_type {
+    POLICER_BPS   = 1 << 0,   /* Rate value in bytes/sec. */
+    POLICER_PKTPS = 1 << 1,   /* Rate value in packet/sec. */
+};
+
 struct ingress_policer {
     struct rte_meter_srtcm_params app_srtcm_params;
     struct rte_meter_srtcm in_policer;
     struct rte_meter_srtcm_profile in_prof;
+    struct token_bucket tb;
+    enum policer_type type;
     rte_spinlock_t policer_lock;
 };
 
@@ -516,6 +523,9 @@ struct netdev_dpdk {
         uint32_t policer_rate;
         uint32_t policer_burst;
 
+        uint32_t policer_kpkts_rate;
+        uint32_t policer_kpkts_burst;
+
         /* Array of vhost rxq states, see vring_state_changed. */
         bool *vhost_rxq_enabled;
 
@@ -614,6 +624,14 @@ is_dpdk_class(const struct netdev_class *class)
     return class->destruct == netdev_dpdk_destruct
            || class->destruct == netdev_dpdk_vhost_destruct;
 }
+
+static int
+kpkts_policer_run_single_packet(struct token_bucket *tb, struct rte_mbuf **pkts,
+                                int pkt_cnt, bool should_steal);
+
+static int
+kpkts_policer_profile_config(struct token_bucket *tb,
+                             uint32_t kpkts_rate, uint32_t kpkts_burst);
 
 /* DPDK NIC drivers allocate RX buffers at a particular granularity, typically
  * aligned at 1k or less. If a declared mbuf size is not a multiple of this
@@ -1462,6 +1480,8 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     ovsrcu_init(&dev->ingress_policer, NULL);
     dev->policer_rate = 0;
     dev->policer_burst = 0;
+    dev->policer_kpkts_rate = 0;
+    dev->policer_kpkts_burst = 0;
 
     netdev->n_rxq = 0;
     netdev->n_txq = 0;
@@ -2582,9 +2602,17 @@ ingress_policer_run(struct ingress_policer *policer, struct rte_mbuf **pkts,
     int cnt = 0;
 
     rte_spinlock_lock(&policer->policer_lock);
-    cnt = srtcm_policer_run_single_packet(&policer->in_policer,
-                                          &policer->in_prof,
-                                          pkts, pkt_cnt, should_steal);
+    if (policer->type & POLICER_BPS) {
+        cnt = srtcm_policer_run_single_packet(&policer->in_policer,
+                                              &policer->in_prof,
+                                              pkts, pkt_cnt, should_steal);
+    }
+
+    /* bps nd pps rate limits not allowed to configure at the same time. */
+    if (policer->type & POLICER_PKTPS) {
+        cnt = kpkts_policer_run_single_packet(&policer->tb, pkts, pkt_cnt,
+                                              should_steal);
+    }
     rte_spinlock_unlock(&policer->policer_lock);
 
     return cnt;
@@ -3810,7 +3838,7 @@ netdev_dpdk_policer_construct(uint32_t rate, uint32_t burst)
     uint64_t burst_bytes;
     int err = 0;
 
-    policer = xmalloc(sizeof *policer);
+    policer = xzalloc(sizeof *policer);
     rte_spinlock_init(&policer->policer_lock);
 
     /* rte_meter requires bytes so convert kbits rate and burst to bytes. */
@@ -3832,17 +3860,47 @@ netdev_dpdk_policer_construct(uint32_t rate, uint32_t burst)
         return NULL;
     }
 
+    policer->type |= POLICER_BPS;
+
+    return policer;
+}
+
+static struct ingress_policer *
+netdev_dpdk_kpkts_policer_construct(uint32_t kpkts_rate, uint32_t kpkts_burst)
+{
+    struct ingress_policer *policer;
+    int err;
+
+    policer = xzalloc(sizeof *policer);
+    rte_spinlock_init(&policer->policer_lock);
+
+    err = kpkts_policer_profile_config(&policer->tb, kpkts_rate, kpkts_burst);
+    if (err) {
+        VLOG_ERR("Could not create token bucket for ingress policer");
+        free(policer);
+        return NULL;
+    }
+
+    policer->type |= POLICER_PKTPS;
+
     return policer;
 }
 
 static int
 netdev_dpdk_set_policing(struct netdev* netdev, uint32_t policer_rate,
                          uint32_t policer_burst,
-                         uint32_t policer_kpkts_rate OVS_UNUSED,
-                         uint32_t policer_kpkts_burst OVS_UNUSED)
+                         uint32_t policer_kpkts_rate,
+                         uint32_t policer_kpkts_burst)
 {
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     struct ingress_policer *policer;
+
+    if (policer_rate && policer_kpkts_rate) {
+        VLOG_WARN("packet-per-second and byte-per-second rate limits not"
+                  " allowed to configure at the same time.");
+
+        return -EINVAL;
+    }
 
     /* Force to 0 if no rate specified,
      * default to 8000 kbits if burst is 0,
@@ -3852,13 +3910,24 @@ netdev_dpdk_set_policing(struct netdev* netdev, uint32_t policer_rate,
                      : !policer_burst ? 8000
                      : policer_burst);
 
+    /*
+     * Force to 0 if no rate specified,
+     * default to rate value if burst is 0,
+     * else stick with user-specified value.
+     */
+    policer_kpkts_burst = (!policer_kpkts_rate ? 0
+                           : !policer_kpkts_burst ? policer_kpkts_rate
+                           : policer_kpkts_burst);
+
     ovs_mutex_lock(&dev->mutex);
 
     policer = ovsrcu_get_protected(struct ingress_policer *,
-                                    &dev->ingress_policer);
+                                   &dev->ingress_policer);
 
     if (dev->policer_rate == policer_rate &&
-        dev->policer_burst == policer_burst) {
+        dev->policer_burst == policer_burst &&
+        dev->policer_kpkts_rate == policer_kpkts_rate &&
+        dev->policer_kpkts_burst == policer_kpkts_burst) {
         /* Assume that settings haven't changed since we last set them. */
         ovs_mutex_unlock(&dev->mutex);
         return 0;
@@ -3871,12 +3940,18 @@ netdev_dpdk_set_policing(struct netdev* netdev, uint32_t policer_rate,
 
     if (policer_rate != 0) {
         policer = netdev_dpdk_policer_construct(policer_rate, policer_burst);
+    } else if (policer_kpkts_rate != 0) {
+        policer = netdev_dpdk_kpkts_policer_construct(policer_kpkts_rate,
+                                                      policer_kpkts_burst);
     } else {
         policer = NULL;
     }
+
     ovsrcu_set(&dev->ingress_policer, policer);
     dev->policer_rate = policer_rate;
     dev->policer_burst = policer_burst;
+    dev->policer_kpkts_rate = policer_kpkts_rate;
+    dev->policer_kpkts_burst = policer_kpkts_burst;
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
