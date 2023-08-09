@@ -75,7 +75,6 @@ EXTRA_DIST += \
 EXTRA_DIST += \
 	python/ovs/compat/sortedcontainers/LICENSE \
 	python/README.rst \
-	python/setup.py \
 	python/test_requirements.txt
 
 # C extension support.
@@ -93,7 +92,7 @@ FLAKE8_PYFILES += \
 	python/build/nroff.py \
 	python/build/soutil.py \
 	python/ovs/dirs.py.template \
-	python/setup.py
+	python/setup.py.template
 
 nobase_pkgdata_DATA = $(ovs_pyfiles) $(ovstest_pyfiles)
 ovs-install-data-local:
@@ -112,10 +111,10 @@ ovs-install-data-local:
 	$(INSTALL_DATA) python/ovs/dirs.py.tmp $(DESTDIR)$(pkgdatadir)/python/ovs/dirs.py
 	rm python/ovs/dirs.py.tmp
 
-python-sdist: $(srcdir)/python/ovs/version.py $(ovs_pyfiles) python/ovs/dirs.py
+python-sdist: $(srcdir)/python/setup.py $(srcdir)/python/ovs/version.py $(ovs_pyfiles) python/ovs/dirs.py
 	(cd python/ && $(PYTHON3) setup.py sdist)
 
-pypi-upload: $(srcdir)/python/ovs/version.py $(ovs_pyfiles) python/ovs/dirs.py
+pypi-upload: $(srcdir)/python/setup.py $(srcdir)/python/ovs/version.py $(ovs_pyfiles) python/ovs/dirs.py
 	(cd python/ && $(PYTHON3) setup.py sdist upload)
 install-data-local: ovs-install-data-local
 
@@ -126,7 +125,7 @@ ovs-uninstall-local:
 ALL_LOCAL += $(srcdir)/python/ovs/version.py
 $(srcdir)/python/ovs/version.py: config.status
 	$(AM_V_GEN)$(ro_shell) > $(@F).tmp && \
-	echo 'VERSION = "$(VERSION)"' >> $(@F).tmp && \
+	echo 'VERSION = "$(VERSION)$(VERSION_SUFFIX)"' >> $(@F).tmp && \
 	if cmp -s $(@F).tmp $@; then touch $@; rm $(@F).tmp; else mv $(@F).tmp $@; fi
 
 ALL_LOCAL += $(srcdir)/python/ovs/dirs.py
@@ -143,6 +142,15 @@ $(srcdir)/python/ovs/dirs.py: python/ovs/dirs.py.template
 	mv $@.tmp $@
 EXTRA_DIST += python/ovs/dirs.py.template
 CLEANFILES += python/ovs/dirs.py
+
+ALL_LOCAL += $(srcdir)/python/setup.py
+$(srcdir)/python/setup.py: python/setup.py.template
+	$(AM_V_GEN)sed \
+		-e 's,[@]VERSION[@],$(VERSION),g' \
+		< $? > $@.tmp && \
+	mv $@.tmp $@
+EXTRA_DIST += python/setup.py.template
+CLEANFILES += python/setup.py
 
 EXTRA_DIST += python/TODO.rst
 
