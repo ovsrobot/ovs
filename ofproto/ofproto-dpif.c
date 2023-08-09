@@ -72,6 +72,8 @@
 #include "util.h"
 #include "uuid.h"
 #include "vlan-bitmap.h"
+#include "dpif-netdev.h"
+#include "netdev-offload.h"
 
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif);
 
@@ -1375,6 +1377,42 @@ check_ct_timeout_policy(struct dpif_backer *backer)
     return !error;
 }
 
+/* Tests whether backer's datapath supports the OVS_ACTION_ATTR_DROP action. */
+static bool
+check_drop_action(struct dpif_backer *backer)
+{
+    struct odputil_keybuf keybuf;
+    uint8_t actbuf[NL_A_U32_SIZE];
+    struct ofpbuf actions;
+    struct ofpbuf key;
+    struct flow flow;
+    bool supported;
+
+    struct odp_flow_key_parms odp_parms = {
+        .flow = &flow,
+        .probe = true,
+    };
+
+    /* TC does not support offloading this action. */
+    if (netdev_is_flow_api_enabled() && !dpif_is_netdev(backer->dpif)) {
+        return false;
+    }
+
+    memset(&flow, 0, sizeof flow);
+    ofpbuf_use_stack(&key, &keybuf, sizeof keybuf);
+    odp_flow_key_from_flow(&odp_parms, &key);
+
+    ofpbuf_use_stack(&actions, &actbuf, sizeof actbuf);
+    nl_msg_put_u32(&actions, OVS_ACTION_ATTR_DROP, XLATE_OK);
+
+    supported = dpif_probe_feature(backer->dpif, "drop", &key, &actions, NULL);
+
+    VLOG_INFO("%s: Datapath %s drop action",
+              dpif_name(backer->dpif), (supported) ? "supports"
+                                                   : "does not support");
+    return supported;
+}
+
 /* Tests whether 'backer''s datapath supports the all-zero SNAT case. */
 static bool
 dpif_supports_ct_zero_snat(struct dpif_backer *backer)
@@ -1627,8 +1665,7 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.max_hash_alg = check_max_dp_hash_alg(backer);
     backer->rt_support.check_pkt_len = check_check_pkt_len(backer);
     backer->rt_support.ct_timeout = check_ct_timeout_policy(backer);
-    backer->rt_support.explicit_drop_action =
-        dpif_supports_explicit_drop_action(backer->dpif);
+    backer->rt_support.explicit_drop_action = check_drop_action(backer);
     backer->rt_support.lb_output_action =
         dpif_supports_lb_output_action(backer->dpif);
     backer->rt_support.ct_zero_snat = dpif_supports_ct_zero_snat(backer);
