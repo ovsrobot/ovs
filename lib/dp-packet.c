@@ -541,7 +541,12 @@ void
 dp_packet_ol_send_prepare(struct dp_packet *p, uint64_t flags)
 {
     if (dp_packet_hwol_tx_ip_csum(p)) {
-        if (dp_packet_ip_checksum_good(p)) {
+        /* if tso is on and netdev support ipv4 csum offload, ipv4 csum
+         * should be recalculated. if tso is on and netdev do not support
+         * ipv4 csum offload, updates the packet with the software fall
+         * back, and the packet may be droped in output port becasue of
+         * packet len exceding mtu.*/
+        if (!dp_packet_hwol_is_tso(p) && dp_packet_ip_checksum_good(p)) {
             dp_packet_hwol_reset_tx_ip_csum(p);
         } else if (!(flags & NETDEV_TX_OFFLOAD_IPV4_CKSUM)) {
             dp_packet_ip_set_header_csum(p);
