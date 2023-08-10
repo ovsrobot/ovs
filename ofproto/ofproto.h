@@ -384,6 +384,9 @@ void ofproto_ct_set_zone_timeout_policy(const char *datapath_type,
                                         struct simap *timeout_policy);
 void ofproto_ct_del_zone_timeout_policy(const char *datapath_type,
                                         uint16_t zone);
+void ofproto_ct_zone_limit_queue_update(const char *datapath_type,
+                                        uint16_t zone_id, uint32_t limit);
+void ofproto_ct_zone_limits_commit(const char *datapath_type);
 void ofproto_get_datapath_cap(const char *datapath_type,
                               struct smap *dp_cap);
 

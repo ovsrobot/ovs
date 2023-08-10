@@ -1921,6 +1921,14 @@ struct ofproto_class {
     /* Deletes the timeout policy associated with 'zone' in datapath type
      * 'dp_type'. */
     void (*ct_del_zone_timeout_policy)(const char *dp_type, uint16_t zone);
+
+    /* Queues the CT zone limit update. In order for this change to take
+     * effect it needs to be commited. */
+    void (*ct_zone_limit_queue_update)(const char *dp_type, uint16_t zone,
+                                       uint32_t limit);
+
+    /* Commits the queued CT zone limit updates to datapath. */
+    void (*ct_zone_limits_commit)(const char *dp_type);
 };
 
 extern const struct ofproto_class ofproto_dpif_class;

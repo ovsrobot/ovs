@@ -5522,6 +5522,8 @@ ct_zone_config_init(struct dpif_backer *backer)
     cmap_init(&backer->ct_zones);
     hmap_init(&backer->ct_tps);
     ovs_list_init(&backer->ct_tp_kill_list);
+    ovs_list_init(&backer->ct_zone_limits_to_add);
+    ovs_list_init(&backer->ct_zone_limits_to_del);
     clear_existing_ct_timeout_policies(backer);
 }
 
@@ -5545,6 +5547,8 @@ ct_zone_config_uninit(struct dpif_backer *backer)
     id_pool_destroy(backer->tp_ids);
     cmap_destroy(&backer->ct_zones);
     hmap_destroy(&backer->ct_tps);
+    ct_dpif_free_zone_limits(&backer->ct_zone_limits_to_add);
+    ct_dpif_free_zone_limits(&backer->ct_zone_limits_to_del);
 }
 
 static void
@@ -5622,6 +5626,42 @@ ct_del_zone_timeout_policy(const char *datapath_type, uint16_t zone_id)
         ct_timeout_policy_unref(backer, ct_zone->ct_tp);
         ct_zone_remove_and_destroy(backer, ct_zone);
         backer->need_revalidate = REV_RECONFIGURE;
+    }
+}
+
+static void
+ct_zone_limit_queue_update(const char *datapath_type, uint16_t zone_id,
+                           uint32_t limit)
+{
+    struct dpif_backer *backer = shash_find_data(&all_dpif_backers,
+                                                 datapath_type);
+    if (!backer) {
+        return;
+    }
+
+    struct ovs_list *queue = limit ?
+            &backer->ct_zone_limits_to_add : &backer->ct_zone_limits_to_del;
+
+    ct_dpif_push_zone_limit(queue, zone_id, limit, 0);
+}
+
+static void
+ct_zone_limits_commit(const char *datapath_type)
+{
+    struct dpif_backer *backer = shash_find_data(&all_dpif_backers,
+                                                 datapath_type);
+    if (!backer) {
+        return;
+    }
+
+    if (!ovs_list_is_empty(&backer->ct_zone_limits_to_add)) {
+        ct_dpif_set_limits(backer->dpif, NULL, &backer->ct_zone_limits_to_add);
+        ct_dpif_free_zone_limits(&backer->ct_zone_limits_to_add);
+    }
+
+    if (!ovs_list_is_empty(&backer->ct_zone_limits_to_del)) {
+        ct_dpif_del_limits(backer->dpif, &backer->ct_zone_limits_to_del);
+        ct_dpif_free_zone_limits(&backer->ct_zone_limits_to_del);
     }
 }
 
@@ -6914,4 +6954,6 @@ const struct ofproto_class ofproto_dpif_class = {
     ct_flush,                   /* ct_flush */
     ct_set_zone_timeout_policy,
     ct_del_zone_timeout_policy,
+    ct_zone_limit_queue_update,
+    ct_zone_limits_commit
 };

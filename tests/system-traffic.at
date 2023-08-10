@@ -5177,9 +5177,58 @@ udp,orig=(src=10.1.1.3,dst=10.1.1.4,sport=1,dport=3),reply=(src=10.1.1.4,dst=10.
 udp,orig=(src=10.1.1.3,dst=10.1.1.4,sport=1,dport=4),reply=(src=10.1.1.4,dst=10.1.1.3,sport=4,dport=1),zone=3
 ])
 
+dnl Test limit set via database
+VSCTL_ADD_DATAPATH_TABLE()
+
+AT_CHECK([ovs-appctl dpctl/flush-conntrack zone=0])
+AT_CHECK([ovs-appctl dpctl/flush-conntrack zone=3])
+
+AT_CHECK([ovs-appctl dpctl/ct-del-limits zone=0,3])
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+])
+
+dp_uuid=$(ovs-vsctl get open . datapaths:$DP_TYPE)
+ovs-vsctl --id=@m create ct_zone limit=3 -- set datapath $dp_uuid ct_zones:"0"=@m
+ovs-vsctl --id=@m create ct_zone limit=3 -- set datapath $dp_uuid ct_zones:"3"=@m
+
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=3,count=0
+zone=3,limit=3,count=0
+])
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=2 packet=50540000000a50540000000908004500001c000000000011a4c90a0101030a0101040001000200080000 actions=resubmit(,0)"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=2 packet=50540000000a50540000000908004500001c000000000011a4c90a0101030a0101040001000300080000 actions=resubmit(,0)"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=2 packet=50540000000a50540000000908004500001c000000000011a4c90a0101030a0101040001000400080000 actions=resubmit(,0)"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=2 packet=50540000000a50540000000908004500001c000000000011a4c90a0101030a0101040001000500080000 actions=resubmit(,0)"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 "in_port=2 packet=50540000000a50540000000908004500001c000000000011a4c90a0101030a0101040001000600080000 actions=resubmit(,0)"])
+
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "orig=.src=10\.1\.1\.3," | sort ], [0], [dnl
+udp,orig=(src=10.1.1.3,dst=10.1.1.4,sport=1,dport=2),reply=(src=10.1.1.4,dst=10.1.1.3,sport=2,dport=1),zone=3
+udp,orig=(src=10.1.1.3,dst=10.1.1.4,sport=1,dport=3),reply=(src=10.1.1.4,dst=10.1.1.3,sport=3,dport=1),zone=3
+udp,orig=(src=10.1.1.3,dst=10.1.1.4,sport=1,dport=4),reply=(src=10.1.1.4,dst=10.1.1.3,sport=4,dport=1),zone=3
+])
+
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=3,count=0
+zone=3,limit=3,count=3
+])
+
+# Overwrite the zone limit via command
+AT_CHECK([ovs-appctl dpctl/ct-set-limits zone=0,limit=5])
+
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=5,count=0
+zone=3,limit=3,count=3
+])
+
 OVS_TRAFFIC_VSWITCHD_STOP(["dnl
 /could not create datapath/d
-/(Cannot allocate memory) on packet/d"])
+/(Cannot allocate memory) on packet/d
+/failed to .* timeout policy/d"])
 AT_CLEANUP
 
 AT_SETUP([FTP - no conntrack])

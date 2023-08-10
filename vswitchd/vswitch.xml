@@ -6428,6 +6428,11 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
   <table name="CT_Zone">
     Connection tracking zone configuration
 
+    <column name="limit">
+      Connection tracking limit for this zone. If a limit is zero, it
+      defaults to the limit in the system.
+    </column>
+
     <column name="timeout_policy">
       Connection tracking timeout policy for this zone. If a timeout policy
       is not specified, it defaults to the timeout policy in the system.
