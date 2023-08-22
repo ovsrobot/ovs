@@ -59,8 +59,11 @@ struct netdev {
      * opening this device, and therefore got assigned to the "system" class */
     bool auto_classified;
 
-    /* This bitmask of the offloading features enabled by the netdev. */
+    /* Bitmask of the offloading features supported by the netdev. */
     uint64_t ol_flags;
+
+    /* Bitmask of the offloading features disabled by the user. */
+    uint64_t disabled_ol_flags;
 
     /* If this is 'true', the user explicitly specified an MTU for this
      * netdev.  Otherwise, Open vSwitch is allowed to override it. */

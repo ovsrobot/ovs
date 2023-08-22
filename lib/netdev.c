@@ -490,6 +490,59 @@ netdev_ref(const struct netdev *netdev_)
     return netdev;
 }
 
+#define NETDEV_OL_FLAGS \
+    NETDEV_OL_FLAG("ip_csum", NETDEV_TX_OFFLOAD_IPV4_CKSUM); \
+    NETDEV_OL_FLAG("tcp_csum", NETDEV_TX_OFFLOAD_TCP_CKSUM); \
+    NETDEV_OL_FLAG("udp_csum", NETDEV_TX_OFFLOAD_UDP_CKSUM); \
+    NETDEV_OL_FLAG("sctp_csum", NETDEV_TX_OFFLOAD_SCTP_CKSUM); \
+    NETDEV_OL_FLAG("tcp_seg", NETDEV_TX_OFFLOAD_TCP_TSO);
+
+static int
+netdev_parse_disabled_ol_flags(struct netdev *netdev, const struct smap *args)
+{
+    const char *ol_flags = NULL;
+    int err = 0;
+
+    netdev->disabled_ol_flags = 0;
+
+    if (args) {
+        ol_flags = smap_get(args, "disabled_ol_flags");
+    }
+    if (ol_flags && ol_flags[0] != '\0') {
+        char *list = xstrdup(ol_flags);
+        char *ptr = list;
+
+        while (ptr) {
+            char *end = strchr(ptr, ',');
+            bool known_ol_flag = false;
+
+            if (end) {
+                end[0] = '\0';
+            }
+#define NETDEV_OL_FLAG(name, bit) \
+            if (!strcmp(ptr, name)) { \
+                netdev->disabled_ol_flags |= bit; \
+                VLOG_DBG("Disabling %s on %s", name, \
+                         netdev_get_name(netdev)); \
+                known_ol_flag = true; \
+            }
+            NETDEV_OL_FLAGS
+#undef NETDEV_OL_FLAG
+            if (!known_ol_flag) {
+                VLOG_WARN("unknown offload type '%s'", ptr);
+            }
+            if (end) {
+                ptr = end + 1;
+            } else {
+                ptr = NULL;
+            }
+        }
+        free(list);
+    }
+
+    return err;
+}
+
 /* Reconfigures the device 'netdev' with 'args'.  'args' may be empty
  * or NULL if none are needed. */
 int
@@ -501,6 +554,7 @@ netdev_set_config(struct netdev *netdev, const struct smap *args, char **errp)
         char *verbose_error = NULL;
         int error;
 
+        netdev_parse_disabled_ol_flags(netdev, args);
         error = netdev->netdev_class->set_config(netdev,
                                                  args ? args : &no_args,
                                                  &verbose_error);
@@ -834,9 +888,10 @@ netdev_send_prepare_batch(const struct netdev *netdev,
     size_t i, size = dp_packet_batch_size(batch);
 
     DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
+        uint64_t ol_flags = netdev->ol_flags & ~netdev->disabled_ol_flags;
         char *errormsg = NULL;
 
-        if (netdev_send_prepare_packet(netdev->ol_flags, packet, &errormsg)) {
+        if (netdev_send_prepare_packet(ol_flags, packet, &errormsg)) {
             dp_packet_batch_refill(batch, packet, i);
         } else {
             dp_packet_delete(packet);
@@ -1400,16 +1455,13 @@ netdev_get_status(const struct netdev *netdev, struct smap *smap)
     if (netdev_get_dpif_type(netdev) &&
         strcmp(netdev_get_dpif_type(netdev), "system")) {
 
-#define OL_ADD_STAT(name, bit) \
+#define NETDEV_OL_FLAG(name, bit) \
         smap_add(smap, "tx_" name "_offload", \
-                 netdev->ol_flags & bit ? "true" : "false");
-
-        OL_ADD_STAT("ip_csum", NETDEV_TX_OFFLOAD_IPV4_CKSUM);
-        OL_ADD_STAT("tcp_csum", NETDEV_TX_OFFLOAD_TCP_CKSUM);
-        OL_ADD_STAT("udp_csum", NETDEV_TX_OFFLOAD_UDP_CKSUM);
-        OL_ADD_STAT("sctp_csum", NETDEV_TX_OFFLOAD_SCTP_CKSUM);
-        OL_ADD_STAT("tcp_seg", NETDEV_TX_OFFLOAD_TCP_TSO);
-#undef OL_ADD_STAT
+                 netdev->ol_flags & bit \
+                 ?  (netdev->disabled_ol_flags & bit ? "disabled" : "true") \
+                 : "false");
+        NETDEV_OL_FLAGS
+#undef NETDEV_OL_FLAG
 
         err = 0;
     }

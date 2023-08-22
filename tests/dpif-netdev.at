@@ -665,6 +665,16 @@ AT_CHECK([ovs-vsctl get interface br0 status | sed -n 's/^{\(.*\).*}$/\1/p'], [0
 tx_ip_csum_offload="false", tx_sctp_csum_offload="false", tx_tcp_csum_offload="false", tx_tcp_seg_offload="false", tx_udp_csum_offload="false"
 ], [])
 
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_ip_csum=true])
+AT_CHECK([ovs-vsctl get interface p1 status | sed -n 's/^{\(.*\).*}$/\1/p'], [0], [dnl
+tx_ip_csum_offload="true", tx_sctp_csum_offload="false", tx_tcp_csum_offload="false", tx_tcp_seg_offload="false", tx_udp_csum_offload="false"
+], [])
+
+AT_CHECK([ovs-vsctl set Interface p1 options:disabled_ol_flags="ip_csum"])
+AT_CHECK([ovs-vsctl get interface p1 status | sed -n 's/^{\(.*\).*}$/\1/p'], [0], [dnl
+tx_ip_csum_offload=disabled, tx_sctp_csum_offload="false", tx_tcp_csum_offload="false", tx_tcp_seg_offload="false", tx_udp_csum_offload="false"
+], [])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
