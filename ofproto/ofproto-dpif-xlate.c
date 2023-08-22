@@ -5700,8 +5700,14 @@ xlate_learn_action(struct xlate_ctx *ctx, const struct ofpact_learn *learn)
         if (!error) {
             bool success = true;
             if (ctx->xin->allow_side_effects) {
+                long long int stats_used = 0;
+
+                if (ctx->xin->resubmit_stats) {
+                    stats_used = ctx->xin->resubmit_stats->used;
+                }
                 error = ofproto_flow_mod_learn(ofm, ctx->xin->xcache != NULL,
-                                               learn->limit, &success);
+                                               learn->limit, &success,
+                                               stats_used);
             } else if (learn->limit) {
                 if (!ofm->temp_rule
                     || ofm->temp_rule->state != RULE_INSERTED) {

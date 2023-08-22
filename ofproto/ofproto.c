@@ -5472,7 +5472,8 @@ ofproto_flow_mod_init_for_learn(struct ofproto *ofproto,
 }
 
 enum ofperr
-ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm)
+ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm,
+                               long long int stats_used)
 {
     enum ofperr error = 0;
 
@@ -5494,8 +5495,36 @@ ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm)
     if (rule->state == RULE_REMOVED) {
         struct cls_rule cr;
 
-        cls_rule_clone(&cr, &rule->cr);
         ovs_mutex_lock(&rule->mutex);
+        if (stats_used) {
+            /* If the caller hasn't explicitly requested rule recreation and
+             * the rule is removed and not visible, and the classifier has a
+             * newer version of this rule, then don't reinsert it. */
+            struct oftable *table = &rule->ofproto->tables[rule->table_id];
+            ovs_version_t tables_version = rule->ofproto->tables_version;
+
+            if (!cls_rule_visible_in_version(&rule->cr, tables_version)) {
+                const struct cls_rule *curr_cls_rule;
+
+                curr_cls_rule = classifier_find_rule_exactly(&table->cls,
+                                                             &rule->cr,
+                                                             tables_version);
+                if (curr_cls_rule) {
+                    struct rule *curr_rule = rule_from_cls_rule(curr_cls_rule);
+
+                    ovs_mutex_lock(&curr_rule->mutex);
+                    if (curr_rule->modified > stats_used) {
+                        ovs_mutex_unlock(&curr_rule->mutex);
+                        ovs_mutex_unlock(&rule->mutex);
+
+                        return OFPERR_OFPFMFC_UNKNOWN;
+                    }
+                    ovs_mutex_unlock(&curr_rule->mutex);
+                }
+            }
+        }
+
+        cls_rule_clone(&cr, &rule->cr);
         error = ofproto_rule_create(rule->ofproto, &cr, rule->table_id,
                                     rule->flow_cookie,
                                     rule->idle_timeout,
@@ -5506,6 +5535,9 @@ ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm)
                                     rule->match_tlv_bitmap,
                                     rule->ofpacts_tlv_bitmap,
                                     &ofm->temp_rule);
+        if (stats_used) {
+            ofm->temp_rule->modified = stats_used;
+        }
         ovs_mutex_unlock(&rule->mutex);
         if (!error) {
             ofproto_rule_unref(rule);   /* Release old reference. */
@@ -5513,7 +5545,11 @@ ofproto_flow_mod_learn_refresh(struct ofproto_flow_mod *ofm)
     } else {
         /* Refresh the existing rule. */
         ovs_mutex_lock(&rule->mutex);
-        rule->modified = time_msec();
+        if (stats_used) {
+            rule->modified = stats_used;
+        } else {
+            rule->modified = time_msec();
+        }
         ovs_mutex_unlock(&rule->mutex);
     }
     return error;
@@ -5565,10 +5601,13 @@ ofproto_flow_mod_learn_finish(struct ofproto_flow_mod *ofm,
 
 /* Refresh 'ofm->temp_rule', for which the caller holds a reference, if already
  * in the classifier, insert it otherwise.  If the rule has already been
- * removed from the classifier, a new rule is created using 'ofm->temp_rule' as
- * a template and the reference to the old 'ofm->temp_rule' is freed.  If
- * 'keep_ref' is true, then a reference to the current rule is held, otherwise
- * it is released and 'ofm->temp_rule' is set to NULL.
+ * removed from the classifier and replaced by another rule, the stats_used
+ * parameter can be used to determine whether the newer rule is replaced or
+ * kept. If stats_used is set and greater than the current rule's last modified
+ * time then a new rule is created using 'ofm->temp_rule' as a template and the
+ * reference to the old 'ofm->temp_rule' is freed. If 'keep_ref' is true,
+ * then a reference to the current rule is held, otherwise it is released and
+ * 'ofm->temp_rule' is set to NULL.
  *
  * If 'limit' != 0, insertion will fail if there are more than 'limit' rules
  * in the same table with the same cookie.  If insertion succeeds,
@@ -5579,10 +5618,11 @@ ofproto_flow_mod_learn_finish(struct ofproto_flow_mod *ofm,
  * during the call. */
 enum ofperr
 ofproto_flow_mod_learn(struct ofproto_flow_mod *ofm, bool keep_ref,
-                       unsigned limit, bool *below_limitp)
+                       unsigned limit, bool *below_limitp,
+                       long long int stats_used)
     OVS_EXCLUDED(ofproto_mutex)
 {
-    enum ofperr error = ofproto_flow_mod_learn_refresh(ofm);
+    enum ofperr error = ofproto_flow_mod_learn_refresh(ofm, stats_used);
     struct rule *rule = ofm->temp_rule;
     bool below_limit = true;
 
@@ -5615,6 +5655,13 @@ ofproto_flow_mod_learn(struct ofproto_flow_mod *ofm, bool keep_ref,
 
             error = ofproto_flow_mod_learn_start(ofm);
             if (!error) {
+                if (stats_used) {
+                    /* ofproto_flow_mod_learn_start may have overwritten
+                     * modified with current time. */
+                    ovs_mutex_lock(&ofm->temp_rule->mutex);
+                    ofm->temp_rule->modified = stats_used;
+                    ovs_mutex_unlock(&ofm->temp_rule->mutex);
+                }
                 error = ofproto_flow_mod_learn_finish(ofm, NULL);
             }
         } else {
