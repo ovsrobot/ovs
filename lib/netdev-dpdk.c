@@ -1312,6 +1312,14 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         dev->hw_ol_features &= ~NETDEV_RX_HW_SCATTER;
     }
 
+    if (!strcmp(info.driver_name, "net_tap")) {
+        VLOG_WARN("%s: disabled Tx L4 checksum offloads for a net/tap port.",
+                  netdev_get_name(&dev->up));
+        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_TCP_TSO;
+    }
+
     if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_IPV4_CKSUM_OFFLOAD;
     } else {
