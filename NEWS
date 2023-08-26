@@ -63,6 +63,7 @@ v3.2.0 - 17 Aug 2023
      * 'ovs-appctl dpif-netdev/pmd-sleep-show' command was added to get the
        max sleep configuration of PMD thread cores.
      * Removed experimental tag from PMD load based sleeping.
+     * Added new Qos type 'pkts-policer' to support kilo packet-per-second policing.
    - Linux TC offload:
      * Add support for offloading VXLAN tunnels with the GBP extensions.
    - Python

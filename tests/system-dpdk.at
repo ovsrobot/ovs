@@ -570,6 +570,261 @@ dnl --------------------------------------------------------------------------
 
 
 
+dnl --------------------------------------------------------------------------
+dnl QoS (kpkts) create delete vport port
+AT_SETUP([OVS-DPDK - QoS (kpkts) create delete vport port])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START()
+
+dnl Add userspace bridge and attach it to OVS and add egress policer
+AT_CHECK([ovs-appctl vlog/set netdev_dpdk:dbg])
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface dpdkvhostuserclient0 type=dpdkvhostuserclient options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [], [stdout], [stderr])
+OVS_WAIT_UNTIL([ovs-vsctl set port dpdkvhostuserclient0 qos=@newqos -- --id=@newqos create qos type=kpkts-policer other-config:kpkts_rate=123 other-config:kpkts_burst=456])
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+sleep 2
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Remove egress policer
+AT_CHECK([ovs-vsctl destroy QoS dpdkvhostuserclient0 -- clear Port dpdkvhostuserclient0 qos])
+
+dnl Check egress policer was removed correctly
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+AT_CHECK([grep -E 'QoS not configured on dpdkvhostuserclient0' stdout], [], [stdout])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) failed to connect: No such file or directory@d
+\@Failed to set QoS type kpkts-policer on port dpdkvhostuserclient0: Invalid argument@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+
+
+dnl --------------------------------------------------------------------------
+dnl QoS (kpkts) no rate
+AT_SETUP([OVS-DPDK - QoS (kpkts) no rate])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START()
+
+dnl Add userspace bridge and attach it to OVS and add egress policer
+AT_CHECK([ovs-appctl vlog/set netdev_dpdk:dbg])
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface dpdkvhostuserclient0 type=dpdkvhostuserclient options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [], [stdout], [stderr])
+OVS_WAIT_UNTIL([ovs-vsctl set port dpdkvhostuserclient0 qos=@newqos -- --id=@newqos create qos type=kpkts-policer other-config:kpkts_burst=123])
+sleep 2
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Check egress policer was not created
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+AT_CHECK([grep -E 'QoS not configured on dpdkvhostuserclient0' stdout], [], [stdout])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) failed to connect: No such file or directory@d
+\@Failed to set QoS type kpkts-policer on port dpdkvhostuserclient0: Invalid argument@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+
+
+dnl --------------------------------------------------------------------------
+dnl QoS (kpkts) no burst
+AT_SETUP([OVS-DPDK - QoS (kpkts) no burst])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START()
+
+dnl Add userspace bridge and attach it to OVS and add egress policer
+AT_CHECK([ovs-appctl vlog/set netdev_dpdk:dbg])
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface dpdkvhostuserclient0 type=dpdkvhostuserclient options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [], [stdout], [stderr])
+OVS_WAIT_UNTIL([ovs-vsctl set port dpdkvhostuserclient0 qos=@newqos -- --id=@newqos create qos type=kpkts-policer other-config:kpkts_rate=123])
+sleep 2
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Check egress policer was created
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+AT_CHECK([grep -E 'kpkts_rate: 123' stdout], [], [stdout])
+
+dnl Check egress policer was deleted
+QOS_UUID=`ovs-vsctl get port dpdkvhostuserclient0 qos`
+AT_CHECK([ovs-vsctl set qos $QOS_UUID other_config:kpkts_rate=0])
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+AT_CHECK([grep -E 'QoS not configured on dpdkvhostuserclient0' stdout], [], [stdout])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) failed to connect: No such file or directory@d
+\@Failed to set QoS type kpkts-policer on port dpdkvhostuserclient0: Invalid argument@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+
+
+dnl --------------------------------------------------------------------------
+dnl QoS (kpkts) max rate
+AT_SETUP([OVS-DPDK - QoS (kpkts) max rate])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START()
+
+dnl Add userspace bridge and attach it to OVS and add egress policer
+AT_CHECK([ovs-appctl vlog/set netdev_dpdk:dbg])
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface dpdkvhostuserclient0 type=dpdkvhostuserclient options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [], [stdout], [stderr])
+OVS_WAIT_UNTIL([ovs-vsctl set port dpdkvhostuserclient0 qos=@newqos -- --id=@newqos create qos type=kpkts-policer other-config:kpkts_rate=42949671])
+sleep 2
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Check egress policer was not created
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+AT_CHECK([grep -E 'QoS not configured on dpdkvhostuserclient0' stdout], [], [stdout])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) failed to connect: No such file or directory@d
+\@Failed to set QoS type kpkts-policer on port dpdkvhostuserclient0: Invalid argument@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+
+dnl --------------------------------------------------------------------------
+dnl QoS (kpkts) max burst
+AT_SETUP([OVS-DPDK - QoS (kpkts) max burst])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START()
+
+dnl Add userspace bridge and attach it to OVS and add egress policer
+AT_CHECK([ovs-appctl vlog/set netdev_dpdk:dbg])
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuserclient0 -- set Interface dpdkvhostuserclient0 type=dpdkvhostuserclient options:vhost-server-path=$OVS_RUNDIR/dpdkvhostclient0], [], [stdout], [stderr])
+OVS_WAIT_UNTIL([ovs-vsctl set port dpdkvhostuserclient0 qos=@newqos -- --id=@newqos create qos type=kpkts-policer other-config:kpkts_burst=42949671])
+sleep 2
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) vhost-user client: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "vHost User device 'dpdkvhostuserclient0' created in 'client' mode, using client socket" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) reconnecting..." ovs-vswitchd.log], [], [stdout])
+
+dnl Check egress policer was not created
+AT_CHECK([ovs-appctl -t ovs-vswitchd qos/show dpdkvhostuserclient0], [], [stdout])
+AT_CHECK([grep -E 'QoS not configured on dpdkvhostuserclient0' stdout], [], [stdout])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br10 dpdkvhostuserclient0], [], [stdout], [stderr])
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostclient0) failed to connect: No such file or directory@d
+\@Failed to set QoS type kpkts-policer on port dpdkvhostuserclient0: Invalid argument@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+
+dnl --------------------------------------------------------------------------
+dnl QoS (kpkts) testpmd flowgen test
+AT_SETUP([OVS-DPDK - QoS (kpkts) police])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+AT_SKIP_IF([! which dpdk-testpmd >/dev/null 2>/dev/null])
+OVS_DPDK_START([--no-pci])
+
+dnl Find number of sockets
+AT_CHECK([lscpu], [], [stdout])
+AT_CHECK([cat stdout | grep "NUMA node(s)" | awk '{c=1; while (c++<$(3)) {printf "512,"}; print "512"}' > NUMA_NODE])
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br10 -- set bridge br10 datapath_type=netdev])
+
+dnl Parse log file
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuser0 -- set Interface dpdkvhostuser0 type=dpdkvhostuser], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl add-port br10 dpdkvhostuser1 -- set Interface dpdkvhostuser1 type=dpdkvhostuser], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostuser0) vhost-user server: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "Socket $OVS_RUNDIR/dpdkvhostuser0 created for vhost-user port dpdkvhostuser0" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostuser0) binding succeeded" ovs-vswitchd.log], [], [stdout])
+
+dnl Parse log file
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostuser1) vhost-user server: socket created" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "Socket $OVS_RUNDIR/dpdkvhostuser1 created for vhost-user port dpdkvhostuser1" ovs-vswitchd.log], [], [stdout])
+AT_CHECK([grep "VHOST_CONFIG: ($OVS_RUNDIR/dpdkvhostuser1) binding succeeded" ovs-vswitchd.log], [], [stdout])
+
+dnl Configure the same QoS for both ports.
+AT_CHECK([ovs-vsctl set port dpdkvhostuser0 qos=@newqos -- --id=@newqos create qos type=kpkts-policer other-config:kpkts_rate=1 other-config:kpkts_burst=1], [0], [ignore])
+
+dnl add flows, only send packets from dpdkvhostuser1 to dpdkvhostuser0.
+AT_DATA([flows.txt], [dnl
+priority=100,in_port=dpdkvhostuser1,ip,actions=dpdkvhostuser0
+])
+
+AT_CHECK([ovs-ofctl del-flows br10])
+AT_CHECK([ovs-ofctl add-flows br10 flows.txt])
+
+dnl Execute testpmd in background
+on_exit "pkill -f -x -9 'tail -f /dev/null'"
+tail -f /dev/null | dpdk-testpmd --socket-mem="$(cat NUMA_NODE)" --no-pci\
+           --vdev="net_virtio_user0,path=$OVS_RUNDIR/dpdkvhostuser0" \
+           --vdev="net_virtio_user1,path=$OVS_RUNDIR/dpdkvhostuser1" \
+           --single-file-segments -- --forward-mode=flowgen -a > $OVS_RUNDIR/testpmd-dpdkvhostuser.log 2>&1 &
+
+dnl sent packet 10 second.
+AT_CHECK([sleep 10])
+
+dnl Clean up the testpmd now
+pkill -f -x -9 'tail -f /dev/null'
+
+dnl ---------------------- Forward statistics for port 0  ----------------------
+dnl RX-packets: 9911           RX-dropped: 0             RX-total: 9911
+dnl TX-packets: 15937632       TX-dropped: 226661984     TX-total: 242599616
+dnl ----------------------------------------------------------------------------
+port0_rx_packets=`cat testpmd-dpdkvhostuser.log | grep "Forward statistics for port 0" -A 1 | grep "RX-packets:" | awk '{print $2}'`
+echo "port0_rx_packets=$port0_rx_packets"
+
+AT_CHECK([test $port0_rx_packets -lt 10500])
+AT_CHECK([test $port0_rx_packets -gt 9500])
+
+OVS_VSWITCHD_STOP("m4_join([], [SYSTEM_DPDK_ALLOWED_LOGS], [
+\@dpdkvhostuser ports are considered deprecated;  please migrate to dpdkvhostuserclient ports.@d
+])")
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+
 
 dnl --------------------------------------------------------------------------
 dnl MTU increase phy port
