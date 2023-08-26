@@ -2542,13 +2542,13 @@ srtcm_policer_run_single_packet(struct rte_meter_srtcm *meter,
                                 struct rte_mbuf **pkts, int pkt_cnt,
                                 bool should_steal)
 {
-    int i = 0;
-    int cnt = 0;
-    struct rte_mbuf *pkt = NULL;
+    struct rte_mbuf *should_steal_batch[NETDEV_MAX_BURST];
     uint64_t current_time = rte_rdtsc();
+    int i = 0, n = 0;
+    int cnt = 0;
 
     for (i = 0; i < pkt_cnt; i++) {
-        pkt = pkts[i];
+        struct rte_mbuf *pkt = pkts[i];
         /* Handle current packet */
         if (netdev_dpdk_srtcm_policer_pkt_handle(meter, profile,
                                                  pkt, current_time)) {
@@ -2556,11 +2556,13 @@ srtcm_policer_run_single_packet(struct rte_meter_srtcm *meter,
                 pkts[cnt] = pkt;
             }
             cnt++;
-        } else {
-            if (should_steal) {
-                rte_pktmbuf_free(pkt);
-            }
+        } else if (should_steal) {
+            should_steal_batch[n++] = pkt;
         }
+    }
+
+    if (n) {
+        rte_pktmbuf_free_bulk(should_steal_batch, n);
     }
 
     return cnt;
