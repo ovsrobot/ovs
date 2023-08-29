@@ -856,7 +856,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([datapath - slow_action on geneve6 tunnel])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_CHECK_TUNNEL_TSO()
 OVS_CHECK_GENEVE_UDP6ZEROCSUM()
 
@@ -2114,7 +2114,7 @@ AT_CLEANUP
 AT_BANNER([MPLS])
 
 AT_SETUP([mpls - encap header dp-support])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_TRAFFIC_VSWITCHD_START()
 
 AT_SKIP_IF([! ovs-appctl dpif/show-dp-features br0 2>&1 | grep "MPLS Label add: Yes" >/dev/null])
@@ -2147,7 +2147,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([mpls - encap header slow-path])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_TRAFFIC_VSWITCHD_START()
 
 AT_CHECK(ovs-appctl dpif/set-dp-features br0 add_mpls false)
@@ -2179,7 +2179,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([mpls_mc - encap header dp-support])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_TRAFFIC_VSWITCHD_START()
 
 AT_SKIP_IF([! ovs-appctl dpif/show-dp-features br0 2>&1 | grep "MPLS Label add: Yes" >/dev/null])
@@ -2212,7 +2212,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([mpls_mc - encap header slow-path])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_TRAFFIC_VSWITCHD_START()
 
 AT_CHECK(ovs-appctl dpif/set-dp-features br0 add_mpls false)
@@ -2244,7 +2244,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([mpls - decap header dp-support])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_TRAFFIC_VSWITCHD_START()
 
 AT_SKIP_IF([! ovs-appctl dpif/show-dp-features br0 2>&1 | grep "MPLS Label add: Yes" >/dev/null])
@@ -2282,7 +2282,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([mpls - decap header slow-path])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 OVS_TRAFFIC_VSWITCHD_START()
 
 AT_CHECK(ovs-appctl dpif/set-dp-features br0 add_mpls false)
@@ -2321,7 +2321,7 @@ AT_CLEANUP
 AT_BANNER([QoS])
 
 AT_SETUP([QoS - basic configuration])
-AT_SKIP_IF([test $HAVE_TC = no])
+OVS_CHECK_TC_QDISC()
 OVS_TRAFFIC_VSWITCHD_START()
 
 ADD_NAMESPACES(at_ns0, at_ns1)
@@ -2355,7 +2355,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([QoS - 64bit])
-AT_SKIP_IF([test $HAVE_TC = no])
+OVS_CHECK_TC_QDISC()
 AT_SKIP_IF([test $HAVE_TCA_HTB_RATE64 = no])
 OVS_TRAFFIC_VSWITCHD_START()
 
@@ -2383,7 +2383,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([Ingress Policing - 64-bit])
-AT_SKIP_IF([test $HAVE_TC = no])
+OVS_CHECK_TC_QDISC()
 AT_SKIP_IF([test $HAVE_TCA_POLICE_PKTRATE64 = no])
 OVS_TRAFFIC_VSWITCHD_START()
 ADD_NAMESPACES(ns0)
@@ -3777,7 +3777,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([conntrack - ICMP related NAT with single port])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 CHECK_CONNTRACK()
 CHECK_CONNTRACK_NAT()
 OVS_TRAFFIC_VSWITCHD_START()
@@ -4565,7 +4565,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([conntrack - IPv4 Fragmentation + NAT])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 CHECK_CONNTRACK()
 
 OVS_TRAFFIC_VSWITCHD_START(
@@ -6103,7 +6103,7 @@ AT_CLEANUP
 
 AT_SETUP([conntrack - ICMP related with NAT])
 AT_SKIP_IF([test $HAVE_NC = no])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 CHECK_CONNTRACK()
 CHECK_CONNTRACK_NAT()
 OVS_TRAFFIC_VSWITCHD_START()
@@ -6871,7 +6871,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([conntrack - IPv6 ICMP6 Related with SNAT])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 AT_SKIP_IF([test $HAVE_NC = no])
 CHECK_CONNTRACK()
 CHECK_CONNTRACK_NAT()
@@ -6925,7 +6925,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([conntrack - ICMPv6 related NAT with single port])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 CHECK_CONNTRACK()
 CHECK_CONNTRACK_NAT()
 OVS_TRAFFIC_VSWITCHD_START()
@@ -7610,7 +7610,7 @@ AT_CLEANUP
 
 AT_SETUP([conntrack - ICMP from different source related with NAT])
 AT_SKIP_IF([test $HAVE_NC = no])
-AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_CHECK_TCPDUMP()
 CHECK_CONNTRACK()
 CHECK_CONNTRACK_NAT()
 OVS_TRAFFIC_VSWITCHD_START()
