@@ -92,7 +92,7 @@ m4_define([OVS_DPDK_CHECK_TESTPMD],
 # Start dpdk-testpmd in background.
 #
 m4_define([OVS_DPDK_START_TESTPMD],
-  [eal_options="--in-memory --single-file-segments --no-pci"
+  [eal_options="$DPDK_EAL_OPTIONS --in-memory --single-file-segments --no-pci"
    options="$1"
    [ "$options" != "${options%% -- *}" ] || options="$options -- "
    eal_options="$eal_options ${options%% -- *}"
