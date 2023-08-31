@@ -18,6 +18,7 @@
 #define DPDK_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef DPDK_NETDEV
 
@@ -41,5 +42,9 @@ void dpdk_detach_thread(void);
 bool dpdk_available(void);
 void print_dpdk_version(void);
 void dpdk_status(const struct ovsrec_open_vswitch *);
+
+typedef void (dpdk_core_usage_cb_t)(unsigned cpu, uint64_t *busy_cycles,
+                                    uint64_t *total_cycles);
+void dpdk_register_core_usage_callback(dpdk_core_usage_cb_t *cb);
 
 #endif /* dpdk.h */

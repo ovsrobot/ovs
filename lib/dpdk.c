@@ -23,6 +23,7 @@
 
 #include <rte_cpuflags.h>
 #include <rte_errno.h>
+#include <rte_lcore.h>
 #include <rte_log.h>
 #include <rte_malloc.h>
 #include <rte_memzone.h>
@@ -310,6 +311,10 @@ malloc_dump_stats_wrapper(FILE *stream)
     rte_malloc_dump_stats(stream, NULL);
 }
 
+#ifdef ALLOW_EXPERIMENTAL_API
+static int dpdk_get_lcore_cycles(unsigned int, struct rte_lcore_usage *);
+#endif
+
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
 {
@@ -440,6 +445,10 @@ dpdk_init__(const struct smap *ovs_other_config)
     /* We are called from the main thread here */
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
 
+#ifdef ALLOW_EXPERIMENTAL_API
+    rte_lcore_register_usage_cb(dpdk_get_lcore_cycles);
+#endif
+
     /* Finally, register the dpdk classes */
     netdev_dpdk_register(ovs_other_config);
     netdev_register_flow_api_provider(&netdev_offload_dpdk);
@@ -490,9 +499,52 @@ dpdk_available(void)
     return initialized;
 }
 
+struct lcore_id_map {
+    unsigned int lcore_id;
+    unsigned int pmd_core_id;
+};
+
+/* Protects against changes to 'lcore_id_maps'. */
+struct ovs_mutex lcore_id_maps_mutex = OVS_MUTEX_INITIALIZER;
+
+/* Contains all 'struct lcore_id_map's. */
+static struct shash lcore_id_maps OVS_GUARDED_BY(lcore_id_maps_mutex)
+    = SHASH_INITIALIZER(&lcore_id_maps);
+
+static void
+lcore_id_to_str(char *buf, size_t len, unsigned int lcore_id)
+{
+    int n;
+
+    n = snprintf(buf, len, "%u", lcore_id);
+    if (n < 0) {
+        VLOG_WARN("Failed to format lcore_id: %s", ovs_strerror(errno));
+        n = 0;
+    }
+    buf[n] = '\0';
+}
+
+static void
+lcore_id_map_update(unsigned int lcore_id, unsigned int cpu, bool add)
+{
+    char buf[128];
+
+    lcore_id_to_str(buf, sizeof buf, lcore_id);
+
+    ovs_mutex_lock(&lcore_id_maps_mutex);
+    if (add) {
+        shash_replace(&lcore_id_maps, buf, (void *) (uintptr_t) cpu);
+    } else {
+        shash_find_and_delete(&lcore_id_maps, buf);
+    }
+    ovs_mutex_unlock(&lcore_id_maps_mutex);
+}
+
 bool
 dpdk_attach_thread(unsigned cpu)
 {
+    unsigned int lcore_id;
+
     /* NON_PMD_CORE_ID is reserved for use by non pmd threads. */
     ovs_assert(cpu != NON_PMD_CORE_ID);
 
@@ -506,7 +558,9 @@ dpdk_attach_thread(unsigned cpu)
         return false;
     }
 
-    VLOG_INFO("PMD thread uses DPDK lcore %u.", rte_lcore_id());
+    lcore_id = rte_lcore_id();
+    lcore_id_map_update(lcore_id, cpu, true);
+    VLOG_INFO("PMD thread uses DPDK lcore %u.", lcore_id);
     return true;
 }
 
@@ -516,9 +570,48 @@ dpdk_detach_thread(void)
     unsigned int lcore_id;
 
     lcore_id = rte_lcore_id();
+    lcore_id_map_update(lcore_id, 0, false);
+
     rte_thread_unregister();
     VLOG_INFO("PMD thread released DPDK lcore %u.", lcore_id);
 }
+
+static dpdk_core_usage_cb_t *core_usage_cb;
+
+void
+dpdk_register_core_usage_callback(dpdk_core_usage_cb_t *cb)
+{
+    core_usage_cb = cb;
+}
+
+#ifdef ALLOW_EXPERIMENTAL_API
+static int
+dpdk_get_lcore_cycles(unsigned int lcore_id, struct rte_lcore_usage *usage)
+{
+    struct shash_node *node;
+    unsigned int core_id;
+    char buf[128];
+
+    if (!core_usage_cb) {
+        return -1;
+    }
+
+    lcore_id_to_str(buf, sizeof buf, lcore_id);
+
+    ovs_mutex_lock(&lcore_id_maps_mutex);
+    node = shash_find(&lcore_id_maps, buf);
+    ovs_mutex_unlock(&lcore_id_maps_mutex);
+
+    if (!node) {
+        return -1;
+    }
+
+    core_id = (unsigned int) (uintptr_t) node->data;
+    core_usage_cb(core_id, &usage->busy_cycles, &usage->total_cycles);
+
+    return 0;
+}
+#endif
 
 void
 print_dpdk_version(void)

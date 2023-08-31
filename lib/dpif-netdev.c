@@ -1429,6 +1429,41 @@ dpif_netdev_pmd_rebalance(struct unixctl_conn *conn, int argc,
 }
 
 static void
+dpif_netdev_get_pmd_cycles(unsigned int core_id,
+    uint64_t *busy_cycles, uint64_t *total_cycles)
+{
+    struct dp_netdev_pmd_thread **pmd_list = NULL;
+    uint64_t stats[PMD_N_STATS];
+    struct dp_netdev *dp;
+    size_t num_pmds;
+
+    ovs_mutex_lock(&dp_netdev_mutex);
+
+    if (shash_count(&dp_netdevs) != 1) {
+        goto out;
+    }
+
+    dp = shash_first(&dp_netdevs)->data;
+    sorted_poll_thread_list(dp, &pmd_list, &num_pmds);
+
+    for (size_t i = 0; i < num_pmds; i++) {
+        struct dp_netdev_pmd_thread *pmd = pmd_list[i];
+
+        if (pmd->core_id == core_id) {
+            continue;
+        }
+        pmd_perf_read_counters(&pmd->perf_stats, stats);
+        *busy_cycles = stats[PMD_CYCLES_ITER_BUSY];
+        *total_cycles = *busy_cycles + stats[PMD_CYCLES_ITER_IDLE];
+        break;
+    }
+
+out:
+    free(pmd_list);
+    ovs_mutex_unlock(&dp_netdev_mutex);
+}
+
+static void
 dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
                      void *aux)
 {
@@ -1676,6 +1711,9 @@ dpif_netdev_init(void)
     unixctl_command_register("dpif-netdev/miniflow-parser-get", "",
                              0, 0, dpif_miniflow_extract_impl_get,
                              NULL);
+
+    dpdk_register_core_usage_callback(dpif_netdev_get_pmd_cycles);
+
     return 0;
 }
 

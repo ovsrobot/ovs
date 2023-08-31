@@ -49,6 +49,11 @@ dpdk_detach_thread(void)
 {
 }
 
+void
+dpdk_register_core_usage_callback(dpdk_core_usage_cb *cb OVS_UNUSED)
+{
+}
+
 bool
 dpdk_available(void)
 {
