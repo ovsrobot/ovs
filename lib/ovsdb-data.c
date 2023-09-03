@@ -2244,8 +2244,8 @@ ovsdb_symbol_table_insert(struct ovsdb_symbol_table *symtab,
 void
 ovsdb_datum_added_removed(struct ovsdb_datum *added,
                           struct ovsdb_datum *removed,
-                          const struct ovsdb_datum *old,
-                          const struct ovsdb_datum *new,
+                          const struct ovsdb_datum *old_datum,
+                          const struct ovsdb_datum *new_datum,
                           const struct ovsdb_type *type)
 {
     size_t oi, ni;
@@ -2253,40 +2253,42 @@ ovsdb_datum_added_removed(struct ovsdb_datum *added,
     ovsdb_datum_init_empty(added);
     ovsdb_datum_init_empty(removed);
     if (!ovsdb_type_is_composite(type)) {
-        ovsdb_datum_clone(removed, old);
-        ovsdb_datum_clone(added, new);
+        ovsdb_datum_clone(removed, old_datum);
+        ovsdb_datum_clone(added, new_datum);
         return;
     }
 
     /* Generate the diff in O(n) time. */
-    for (oi = ni = 0; oi < old->n && ni < new->n;) {
-        int c = ovsdb_atom_compare_3way(&old->keys[oi], &new->keys[ni],
+    for (oi = ni = 0; oi < old_datum->n && ni < new_datum->n;) {
+        int c = ovsdb_atom_compare_3way(&old_datum->keys[oi],
+                                        &new_datum->keys[ni],
                                         type->key.type);
         if (c < 0) {
-            ovsdb_datum_add_from_index_unsafe(removed, old, oi, type);
+            ovsdb_datum_add_from_index_unsafe(removed, old_datum, oi, type);
             oi++;
         } else if (c > 0) {
-            ovsdb_datum_add_from_index_unsafe(added, new, ni, type);
+            ovsdb_datum_add_from_index_unsafe(added, new_datum, ni, type);
             ni++;
         } else {
             if (type->value.type != OVSDB_TYPE_VOID &&
-                ovsdb_atom_compare_3way(&old->values[oi], &new->values[ni],
+                ovsdb_atom_compare_3way(&old_datum->values[oi],
+                                        &new_datum->values[ni],
                                         type->value.type)) {
-                ovsdb_datum_add_unsafe(removed, &old->keys[oi],
-                                       &old->values[oi], type, NULL);
-                ovsdb_datum_add_unsafe(added, &new->keys[ni], &new->values[ni],
-                                       type, NULL);
+                ovsdb_datum_add_unsafe(removed, &old_datum->keys[oi],
+                                       &old_datum->values[oi], type, NULL);
+                ovsdb_datum_add_unsafe(added, &new_datum->keys[ni],
+                                       &new_datum->values[ni], type, NULL);
             }
             oi++; ni++;
         }
     }
 
-    for (; oi < old->n; oi++) {
-        ovsdb_datum_add_from_index_unsafe(removed, old, oi, type);
+    for (; oi < old_datum->n; oi++) {
+        ovsdb_datum_add_from_index_unsafe(removed, old_datum, oi, type);
     }
 
-    for (; ni < new->n; ni++) {
-        ovsdb_datum_add_from_index_unsafe(added, new, ni, type);
+    for (; ni < new_datum->n; ni++) {
+        ovsdb_datum_add_from_index_unsafe(added, new_datum, ni, type);
     }
 }
 
