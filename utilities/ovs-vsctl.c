@@ -662,7 +662,7 @@ static struct vsctl_port *
 add_port_to_cache(struct vsctl_context *vsctl_ctx, struct vsctl_bridge *parent,
                   struct ovsrec_port *port_cfg)
 {
-    struct vsctl_port *port = xzalloc(sizeof *port);
+    struct vsctl_port *port;
 
     if (port_cfg->tag
         && *port_cfg->tag >= 0 && *port_cfg->tag <= 4095) {
@@ -674,6 +674,7 @@ add_port_to_cache(struct vsctl_context *vsctl_ctx, struct vsctl_bridge *parent,
         }
     }
 
+    port = xzalloc(sizeof *port);
     ovs_list_push_back(&parent->ports, &port->ports_node);
     ovs_list_init(&port->ifaces);
     port->port_cfg = port_cfg;
