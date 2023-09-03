@@ -1869,8 +1869,10 @@ do_dump(struct jsonrpc *rpc, const char *database,
             shash_add(&custom_columns, argv[i], node->data);
         }
     } else {
-        tables = shash_sort(&schema->tables);
         n_tables = shash_count(&schema->tables);
+        if (n_tables) {
+            tables = shash_sort(&schema->tables);
+        }
     }
 
     /* Construct transaction to retrieve entire database. */
