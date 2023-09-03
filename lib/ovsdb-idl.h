@@ -378,7 +378,7 @@ const struct ovsdb_idl_row *ovsdb_idl_txn_insert(
     struct ovsdb_idl_txn *, const struct ovsdb_idl_table_class *,
     const struct uuid *);
 const struct ovsdb_idl_row *ovsdb_idl_txn_insert_persist_uuid(
-    struct ovsdb_idl_txn *txn, const struct ovsdb_idl_table_class *class,
+    struct ovsdb_idl_txn *txn, const struct ovsdb_idl_table_class *table_class,
     const struct uuid *uuid);
 
 struct ovsdb_idl *ovsdb_idl_txn_get_idl (struct ovsdb_idl_txn *);
