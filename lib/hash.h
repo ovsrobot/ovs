@@ -200,7 +200,7 @@ hash_finish32(uint64_t hash, uint32_t final, uint32_t semifinal)
 static inline uint32_t
 hash_words_32aligned(const uint32_t *p_, size_t n_words, uint32_t basis)
 {
-    const uint32_t *p = (const void *) p_;
+    const uint32_t *p = (const uint32_t *) p_;
     uint32_t hash1 = basis;
     uint32_t hash2 = 0;
     uint32_t hash3 = n_words;
@@ -254,7 +254,7 @@ hash_words_32aligned(const uint32_t *p_, size_t n_words, uint32_t basis)
 static inline uint32_t
 hash_words_inline(const uint32_t *p_, size_t n_words, uint32_t basis)
 {
-    const uint64_t *p = (const void *)p_;
+    const uint64_t *p = (const uint64_t *) p_;
     uint64_t hash1 = basis;
     uint64_t hash2 = 0;
     uint64_t hash3 = n_words;
