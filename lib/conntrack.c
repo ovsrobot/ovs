@@ -1249,6 +1249,10 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
         conn = NULL;
     }
 
+    if (conn && helper == NULL) {
+        helper = conn->alg;
+    }
+
     enum ct_alg_ctl_type ct_alg_ctl = get_alg_ctl_type(pkt, tp_src, tp_dst,
                                                        helper);
 
