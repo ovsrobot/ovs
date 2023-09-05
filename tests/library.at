@@ -88,6 +88,11 @@ AT_KEYWORDS([byte order])
 AT_CHECK([ovstest test-byte-order])
 AT_CLEANUP
 
+AT_SETUP([test byteq])
+AT_CHECK([ovstest test-byteq], [0], [....
+])
+AT_CLEANUP
+
 AT_SETUP([random number generator])
 AT_CHECK([ovstest test-random], [0], [dnl
 average=7fa2014f
