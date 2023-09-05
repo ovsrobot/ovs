@@ -792,6 +792,33 @@ def run_file_checks(text):
             check['check'](text)
 
 
+def run_subject_checks(subject, spellcheck=False):
+    print_subject = False
+
+    if spellcheck and check_spelling(subject, False):
+        print_subject = True
+
+    summary = subject[subject.rindex(': ') + 2:]
+    summary_len = len(summary)
+    if summary_len > 50:
+        print_warning("The subject summary is over 50 characters, i.e., %u." %
+                      summary_len)
+        print_subject = True
+
+    if summary[0].isalpha() and summary[0].islower():
+        print_warning(
+            "The subject summary should start with a capital.")
+        print_subject = True
+
+    if subject[-1] not in [".", "?", "!"]:
+        print_warning(
+            "The subject summary should end with a dot.")
+        print_subject = True
+
+    if print_subject:
+        print(subject)
+
+
 def ovs_checkpatch_parse(text, filename, author=None, committer=None):
     global print_file_name, total_line, checking_file, \
         empty_return_check_state
@@ -812,6 +839,7 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
         r'^@@ ([0-9-+]+),([0-9-+]+) ([0-9-+]+),([0-9-+]+) @@')
     is_author = re.compile(r'^(Author|From): (.*)$', re.I | re.M | re.S)
     is_committer = re.compile(r'^(Commit: )(.*)$', re.I | re.M | re.S)
+    is_subject = re.compile(r'^(Subject: )(.*)$', re.I | re.M | re.S)
     is_signature = re.compile(r'^(Signed-off-by: )(.*)$',
                               re.I | re.M | re.S)
     is_co_author = re.compile(r'^(Co-authored-by: )(.*)$',
@@ -911,6 +939,8 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
                 committer = is_committer.match(line).group(2)
             elif is_author.match(line):
                 author = is_author.match(line).group(2)
+            elif is_subject.match(line):
+                run_subject_checks(line, spellcheck)
             elif is_signature.match(line):
                 m = is_signature.match(line)
                 signatures.append(m.group(2))
