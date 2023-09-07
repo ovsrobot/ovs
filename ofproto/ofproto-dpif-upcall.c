@@ -1385,14 +1385,22 @@ upcall_cb(const struct dp_packet *packet, const struct flow *flow, ovs_u128 *ufi
 {
     struct udpif *udpif = aux;
     struct upcall upcall;
+    char *errorp = NULL;
     bool megaflow;
     int error;
 
     atomic_read_relaxed(&enable_megaflows, &megaflow);
 
     error = upcall_receive(&upcall, udpif->backer, packet, type, userdata,
-                           flow, 0, ufid, pmd_id, NULL);
+                           flow, 0, ufid, pmd_id, &errorp);
     if (error) {
+        if (error == ENODEV) {
+            VLOG_WARN_RL(&rl, "received packet on unassociated datapath "
+                         "port %"PRIu32"%s%s%s", flow->in_port.odp_port,
+                         errorp ? " (" : "", errorp ? errorp : "",
+                         errorp ? ")" : "");
+        }
+        free(errorp);
         return error;
     }
 
