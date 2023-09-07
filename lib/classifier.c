@@ -169,6 +169,7 @@ cls_rule_init__(struct cls_rule *rule, unsigned int priority)
     rculist_init(&rule->node);
     *CONST_CAST(int *, &rule->priority) = priority;
     ovsrcu_init(&rule->cls_match, NULL);
+    ovs_list_init(CONST_CAST(struct ovs_list *, &rule->conj_flows));
 }
 
 /* Initializes 'rule' to match packets specified by 'match' at the given
@@ -218,6 +219,36 @@ cls_rule_move(struct cls_rule *dst, struct cls_rule *src)
                    CONST_CAST(struct minimatch *, &src->match));
 }
 
+static void
+cls_rule_free_conj_flows(const struct cls_rule *rule)
+{
+    struct miniflow *flow;
+
+    LIST_FOR_EACH_POP (flow, list_node,
+                       CONST_CAST(struct ovs_list *, &rule->conj_flows)) {
+        free(flow);
+    }
+}
+
+static void
+cls_rule_append_conj_flows(const struct cls_rule *rule,
+                           struct cls_conjunction_set **soft, size_t n_soft)
+{
+    const struct miniflow *src;
+    struct miniflow *dst;
+    size_t data_size;
+    int i;
+
+    for (i = 0; i < n_soft; i++) {
+        src = &soft[i]->match->flow;
+        data_size = miniflow_alloc(&dst, 1, src);
+        miniflow_clone(dst, src, data_size / sizeof(uint64_t));
+
+        ovs_list_push_back(CONST_CAST(struct ovs_list *, &rule->conj_flows),
+                           &dst->list_node);
+    }
+}
+
 /* Frees memory referenced by 'rule'.  Doesn't free 'rule' itself (it's
  * normally embedded into a larger structure).
  *
@@ -226,6 +257,8 @@ void
 cls_rule_destroy(struct cls_rule *rule)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
+    cls_rule_free_conj_flows(rule);
+
     /* Must not be in a classifier. */
     ovs_assert(!get_cls_match_protected(rule));
 
@@ -1101,6 +1134,8 @@ classifier_lookup__(const struct classifier *cls, ovs_version_t version,
                 flow->conj_id = saved_conj_id;
 
                 if (rule) {
+                    cls_rule_free_conj_flows(rule);
+                    cls_rule_append_conj_flows(rule, soft, n_soft);
                     free_conjunctive_matches(&matches,
                                              cm_stubs, ARRAY_SIZE(cm_stubs));
                     if (soft != soft_stub) {

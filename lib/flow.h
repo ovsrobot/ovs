@@ -517,6 +517,7 @@ flowmap_next_index(struct flowmap_aux *aux, size_t *idx)
  * A miniflow is always dynamically allocated so that the maps are followed by
  * at least as many elements as there are 1-bits in maps. */
 struct miniflow {
+    struct ovs_list list_node;
     struct flowmap map;
     /* Followed by:
      *     uint64_t values[n];

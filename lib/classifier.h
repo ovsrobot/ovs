@@ -299,6 +299,7 @@
  * parallel to the rule's removal. */
 
 #include "cmap.h"
+#include "openvswitch/list.h"
 #include "openvswitch/match.h"
 #include "openvswitch/meta-flow.h"
 #include "pvector.h"
@@ -357,6 +358,7 @@ struct cls_rule {
     OVSRCU_TYPE(struct cls_match *) cls_match;  /* NULL if not in a
                                                  * classifier. */
     const struct minimatch match; /* Matching rule. */
+    const struct ovs_list conj_flows;
 };
 
 /* Constructor/destructor.  Must run single-threaded. */

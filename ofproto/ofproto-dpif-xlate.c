@@ -866,6 +866,35 @@ xlate_report_action_set(const struct xlate_ctx *ctx, const char *verb)
     }
 }
 
+static void
+xlate_report_conj_matches(const struct xlate_ctx *ctx,
+                          const struct cls_rule *rule)
+{
+    struct miniflow *conj_flow;
+    struct match match;
+    struct flow f;
+    int count;
+    int i = 0;
+
+    count = ovs_list_size(&rule->conj_flows);
+
+    LIST_FOR_EACH (conj_flow, list_node, &rule->conj_flows) {
+        miniflow_expand(conj_flow, &f);
+
+        match_init(&match, &f, ctx->xin->wc);
+        match.wc.masks.conj_id = 0;
+        match.wc.masks.recirc_id = 0;
+        match.wc.masks.in_port.ofp_port = 0;
+
+        struct ds s = DS_EMPTY_INITIALIZER;
+
+        match_format(&match, NULL, &s, OFP_DEFAULT_PRIORITY);
+        xlate_report_debug(ctx, OFT_DETAIL, "conj(%d/%d). %s",
+                           ++i, count, ds_cstr(&s));
+
+        ds_destroy(&s);
+    }
+}
 
 /* If tracing is enabled in 'ctx', appends a node representing 'rule' (in
  * OpenFlow table 'table_id') to the trace and makes this node the parent for
@@ -918,6 +947,8 @@ xlate_report_table(const struct xlate_ctx *ctx, struct rule_dpif *rule,
     ctx->xin->trace = &oftrace_report(ctx->xin->trace, OFT_TABLE,
                                       ds_cstr(&s))->subs;
     ds_destroy(&s);
+
+    xlate_report_conj_matches(ctx, &rule->up.cr);
 }
 
 /* If tracing is enabled in 'ctx', adds an OFT_DETAIL trace node to 'ctx'
