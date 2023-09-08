@@ -1986,6 +1986,27 @@ port_is_bond_fake_iface(const struct port *port)
     return port->cfg->bond_fake_iface && !ovs_list_is_short(&port->ifaces);
 }
 
+static bool
+flow_api_status_changed(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    static bool current_status = false;
+    bool new_status;
+
+    new_status = netdev_is_flow_api_enabled();
+
+    if (ovsthread_once_start(&once)) {
+        current_status = new_status;
+        ovsthread_once_done(&once);
+    }
+
+    if (current_status != new_status) {
+        current_status = new_status;
+        return true;
+    }
+    return false;
+}
+
 static void
 add_del_bridges(const struct ovsrec_open_vswitch *cfg)
 {
@@ -2020,6 +2041,22 @@ add_del_bridges(const struct ovsrec_open_vswitch *cfg)
         if (!br->cfg || strcmp(br->type, ofproto_normalize_type(
                                    br->cfg->datapath_type))) {
             bridge_destroy(br, true);
+        }
+    }
+
+    if (flow_api_status_changed()) {
+        /* Destroy all the remaining bridges if Flow API status changed
+         * as we need to re-probe supported features.  Do not delete
+         * bridge resources to avoid datapath disruption. */
+        HMAP_FOR_EACH_SAFE (br, node, &all_bridges) {
+            /* FIXME: This has to be called with 'false' in order to not
+             * destroy the datapath, but it requires re-working the
+             * 'iface_hints' mechanism by supplying hints every time
+             * ofproto is created, not only when the type is initialized.
+             * Oterwise, ports will be destroyed anyway.  For userspace
+             * datapath that will also mean complete removal of a bridge
+             * port without re-creation that we obviously do not want. */
+            bridge_destroy(br, true /* false! */);
         }
     }
 
