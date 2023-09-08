@@ -2252,17 +2252,19 @@ mirror_packet(struct xlate_ctx *ctx, struct xbundle *xbundle,
         struct ofbundle *out;
         int out_vlan;
         int snaplen;
+        struct miniflow *filter_flow;
+        struct minimask *filter_mask;
 
         /* Get the details of the mirror represented by the rightmost 1-bit. */
         if (OVS_UNLIKELY(!mirror_get(xbridge->mbridge, raw_ctz(mirrors),
                                      &vlans, &dup_mirrors,
-                                     &out, &snaplen, &out_vlan))) {
-            /* The mirror got reconfigured before we got to read it's
+                                     &out, &snaplen, &out_vlan,
+                                     &filter_flow, &filter_mask))) {
+            /* The mirror doesn't currently exist, we cannot retrieve it's
              * configuration. */
             mirrors = zero_rightmost_1bit(mirrors);
             continue;
         }
-
 
         /* If this mirror selects on the basis of VLAN, and it does not select
          * 'vlan', then discard this mirror and go on to the next one. */
@@ -2272,6 +2274,18 @@ mirror_packet(struct xlate_ctx *ctx, struct xbundle *xbundle,
         if (vlans && !bitmap_is_set(vlans, xvlan.v[0].vid)) {
             mirrors = zero_rightmost_1bit(mirrors);
             continue;
+        }
+
+        /* After the VLAN check, apply a flow mask if a filter is specified */
+        if (ctx->wc && filter_flow) {
+            if (OVS_UNLIKELY(
+                miniflow_equal_flow_in_minimask(filter_flow, &ctx->xin->flow,
+                                                filter_mask))) {
+                flow_wildcards_union_with_minimask(ctx->wc, filter_mask);
+            } else {
+                mirrors = zero_rightmost_1bit(mirrors);
+                continue;
+            }
         }
 
         /* We sent a packet to this mirror. */

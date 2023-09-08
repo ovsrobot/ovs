@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "lib/flow.h"
 #include "util.h"
 
 #define MAX_MIRRORS 32
@@ -24,6 +25,9 @@ typedef uint32_t mirror_mask_t;
 
 struct ofproto_dpif;
 struct ofbundle;
+struct ofproto;
+struct flow;
+struct flow_wildcards;
 
 /* The following functions are used by handler threads without any locking,
  * assuming RCU protection. */
@@ -40,7 +44,8 @@ void mirror_update_stats(struct mbridge*, mirror_mask_t, uint64_t packets,
                          uint64_t bytes);
 bool mirror_get(struct mbridge *, int index, const unsigned long **vlans,
                 mirror_mask_t *dup_mirrors, struct ofbundle **out,
-                int *snaplen, int *out_vlan);
+                int *snaplen, int *out_vlan, struct miniflow **filter_flow,
+                struct minimask **filter_mask);
 
 /* The remaining functions are assumed to be called by the main thread only. */
 
@@ -54,7 +59,8 @@ int mirror_set(struct mbridge *, void *aux, const char *name,
                struct ofbundle **srcs, size_t n_srcs,
                struct ofbundle **dsts, size_t n_dsts,
                unsigned long *src_vlans, struct ofbundle *out_bundle,
-               uint16_t snaplen, uint16_t out_vlan);
+               uint16_t snaplen, uint16_t out_vlan, const char *filter,
+               const struct ofproto *ofproto);
 void mirror_destroy(struct mbridge *, void *aux);
 int mirror_get_stats(struct mbridge *, void *aux, uint64_t *packets,
                      uint64_t *bytes);

@@ -3666,7 +3666,7 @@ mirror_set__(struct ofproto *ofproto_, void *aux,
     error = mirror_set(ofproto->mbridge, aux, s->name, srcs, s->n_srcs, dsts,
                        s->n_dsts, s->src_vlans,
                        bundle_lookup(ofproto, s->out_bundle),
-                       s->snaplen, s->out_vlan);
+                       s->snaplen, s->out_vlan, s->filter, ofproto_);
     free(srcs);
     free(dsts);
     return error;
