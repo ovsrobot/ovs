@@ -19,6 +19,7 @@
 #include "openflow/nicira-ext.h"
 #include "openvswitch/packets.h"
 #include "openvswitch/util.h"
+#include "openvswitch/list.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,7 +28,7 @@ extern "C" {
 /* This sequence number should be incremented whenever anything involving flows
  * or the wildcarding of flows changes.  This will cause build assertion
  * failures in places which likely need to be updated. */
-#define FLOW_WC_SEQ 42
+#define FLOW_WC_SEQ 43
 
 /* Number of Open vSwitch extension 32-bit registers. */
 #define FLOW_N_REGS 16
@@ -116,6 +117,7 @@ struct flow {
     ovs_u128 ct_label;          /* Connection label. */
     uint32_t conj_id;           /* Conjunction ID. */
     ofp_port_t actset_output;   /* Output port in action set. */
+    struct ovs_list list_node;  /* In struct xlate_out's "conj_flows" list. */
 
     /* L2, Order the same as in the Ethernet header! (64-bit aligned) */
     struct eth_addr dl_dst;     /* Ethernet destination address. */
@@ -166,8 +168,9 @@ BUILD_ASSERT_DECL(sizeof(struct ovs_key_nsh) % sizeof(uint64_t) == 0);
 
 /* Remember to update FLOW_WC_SEQ when changing 'struct flow'. */
 BUILD_ASSERT_DECL(offsetof(struct flow, igmp_group_ip4) + sizeof(uint32_t)
-                  == sizeof(struct flow_tnl) + sizeof(struct ovs_key_nsh) + 300
-                  && FLOW_WC_SEQ == 42);
+                  == sizeof(struct flow_tnl) + sizeof(struct ovs_key_nsh) +
+                     sizeof(struct ovs_list) + 300
+                  && FLOW_WC_SEQ == 43);
 
 /* Incremental points at which flow classification may be performed in
  * segments.
