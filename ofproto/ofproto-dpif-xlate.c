@@ -866,6 +866,33 @@ xlate_report_action_set(const struct xlate_ctx *ctx, const char *verb)
     }
 }
 
+static void
+xlate_report_conj_matches(const struct xlate_ctx *ctx)
+{
+    struct match match;
+    struct flow *f;
+    int count;
+    int i = 0;
+
+    count = ovs_list_size(&ctx->xout->conj_flows);
+
+    LIST_FOR_EACH (f, list_node, &ctx->xout->conj_flows) {
+        match_init(&match, f, ctx->xin->wc);
+
+        /* Hide unnecessary fields. */
+        match.wc.masks.conj_id = 0;
+        match.wc.masks.recirc_id = 0;
+        match.wc.masks.in_port.ofp_port = 0;
+
+        struct ds s = DS_EMPTY_INITIALIZER;
+
+        match_format(&match, NULL, &s, OFP_DEFAULT_PRIORITY);
+        xlate_report_debug(ctx, OFT_DETAIL, "conj(%d/%d). %s",
+                           ++i, count, ds_cstr(&s));
+
+        ds_destroy(&s);
+    }
+}
 
 /* If tracing is enabled in 'ctx', appends a node representing 'rule' (in
  * OpenFlow table 'table_id') to the trace and makes this node the parent for
@@ -918,6 +945,8 @@ xlate_report_table(const struct xlate_ctx *ctx, struct rule_dpif *rule,
     ctx->xin->trace = &oftrace_report(ctx->xin->trace, OFT_TABLE,
                                       ds_cstr(&s))->subs;
     ds_destroy(&s);
+
+    xlate_report_conj_matches(ctx);
 }
 
 /* If tracing is enabled in 'ctx', adds an OFT_DETAIL trace node to 'ctx'
@@ -4653,7 +4682,8 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
                                            ctx->xin->resubmit_stats,
                                            &ctx->table_id, in_port,
                                            may_packet_in, honor_table_miss,
-                                           ctx->xin->xcache);
+                                           ctx->xin->xcache,
+                                           &ctx->xout->conj_flows);
         /* Swap back. */
         if (with_ct_orig) {
             tuple_swap(&ctx->xin->flow, ctx->wc);
@@ -7967,10 +7997,9 @@ xlate_optimize_odp_actions(struct xlate_in *xin)
 enum xlate_error
 xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
 {
-    *xout = (struct xlate_out) {
-        .slow = 0,
-        .recircs = RECIRC_REFS_EMPTY_INITIALIZER,
-    };
+    xout->slow = 0;
+    xout->recircs = RECIRC_REFS_EMPTY_INITIALIZER;
+    ovs_list_init(&xout->conj_flows);
 
     struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);
     struct xbridge *xbridge = xbridge_lookup(xcfg, xin->ofproto);
@@ -8181,7 +8210,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         ctx.rule = rule_dpif_lookup_from_table(
             ctx.xbridge->ofproto, ctx.xin->tables_version, flow, ctx.wc,
             ctx.xin->resubmit_stats, &ctx.table_id,
-            flow->in_port.ofp_port, true, true, ctx.xin->xcache);
+            flow->in_port.ofp_port, true, true, ctx.xin->xcache,
+            &ctx.xout->conj_flows);
         if (ctx.xin->resubmit_stats) {
             rule_dpif_credit_stats(ctx.rule, ctx.xin->resubmit_stats, false);
         }
@@ -8374,6 +8404,11 @@ exit:
     ofpbuf_uninit(&ctx.frozen_actions);
     ofpbuf_uninit(&scratch_actions);
     ofpbuf_delete(ctx.encap_data);
+
+    /* Clean up 'conj_flows' as it is no longer needed. */
+    LIST_FOR_EACH_POP (flow, list_node, &xout->conj_flows) {
+        free(flow);
+    }
 
     /* Make sure we return a "drop flow" in case of an error. */
     if (ctx.error) {

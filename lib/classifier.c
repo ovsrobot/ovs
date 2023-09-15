@@ -853,6 +853,20 @@ trie_ctx_init(struct trie_ctx *ctx, const struct cls_trie *trie)
     ctx->lookup_done = false;
 }
 
+static void
+append_conj_flows(struct ovs_list *conj_flows,
+                  struct cls_conjunction_set **soft, size_t n_soft)
+{
+    struct flow *f;
+    int i;
+
+    for (i = 0; i < n_soft; i++) {
+        f = xmalloc(sizeof *f);
+        miniflow_expand(&soft[i]->match->flow, f);
+        ovs_list_push_back(conj_flows, &f->list_node);
+    }
+}
+
 struct conjunctive_match {
     struct hmap_node hmap_node;
     uint32_t id;
@@ -933,11 +947,15 @@ free_conjunctive_matches(struct hmap *matches,
  * recursion within this function itself.
  *
  * 'flow' is non-const to allow for temporary modifications during the lookup.
- * Any changes are restored before returning. */
+ * Any changes are restored before returning.
+ *
+ * 'conj_flows' is an optional parameter. If it is non-null, the matching
+ * conjunctive flows are appended to the list. */
 static const struct cls_rule *
 classifier_lookup__(const struct classifier *cls, ovs_version_t version,
                     struct flow *flow, struct flow_wildcards *wc,
-                    bool allow_conjunctive_matches)
+                    bool allow_conjunctive_matches,
+                    struct ovs_list *conj_flows)
 {
     struct trie_ctx trie_ctx[CLS_MAX_TRIES];
     const struct cls_match *match;
@@ -1097,10 +1115,14 @@ classifier_lookup__(const struct classifier *cls, ovs_version_t version,
                 const struct cls_rule *rule;
 
                 flow->conj_id = id;
-                rule = classifier_lookup__(cls, version, flow, wc, false);
+                rule = classifier_lookup__(cls, version, flow, wc, false,
+                                           conj_flows);
                 flow->conj_id = saved_conj_id;
 
                 if (rule) {
+                    if (conj_flows) {
+                        append_conj_flows(conj_flows, soft, n_soft);
+                    }
                     free_conjunctive_matches(&matches,
                                              cm_stubs, ARRAY_SIZE(cm_stubs));
                     if (soft != soft_stub) {
@@ -1161,12 +1183,16 @@ classifier_lookup__(const struct classifier *cls, ovs_version_t version,
  * flow_wildcards_init_catchall()).
  *
  * 'flow' is non-const to allow for temporary modifications during the lookup.
- * Any changes are restored before returning. */
+ * Any changes are restored before returning.
+ *
+ * 'conj_flows' is an optional parameter. If it is non-null, the matching
+ * conjunctive flows are appended to the list. */
 const struct cls_rule *
 classifier_lookup(const struct classifier *cls, ovs_version_t version,
-                  struct flow *flow, struct flow_wildcards *wc)
+                  struct flow *flow, struct flow_wildcards *wc,
+                  struct ovs_list *conj_flows)
 {
-    return classifier_lookup__(cls, version, flow, wc, true);
+    return classifier_lookup__(cls, version, flow, wc, true, conj_flows);
 }
 
 /* Finds and returns a rule in 'cls' with exactly the same priority and
