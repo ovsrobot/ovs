@@ -1194,7 +1194,8 @@ ovsdb_monitor_compose_cond_change_update(
     unsigned long int *changed = xmalloc(bitmap_n_bytes(max_columns));
 
     SHASH_FOR_EACH (node, &dbmon->tables) {
-        struct ovsdb_condition *old_condition, *new_condition, *diff_condition;
+        struct ovsdb_condition *old_condition, *new_condition;
+        struct ovsdb_condition *diff_condition = NULL;
         struct ovsdb_monitor_table *mt = node->data;
         struct json *table_json = NULL;
         struct ovsdb_row *row;
@@ -1206,6 +1207,10 @@ ovsdb_monitor_compose_cond_change_update(
                                                 &diff_condition) ||
             !ovsdb_condition_cmp_3way(old_condition, new_condition)) {
             /* Nothing to update on this table */
+            if (diff_condition) {
+                ovsdb_condition_destroy(diff_condition);
+                ovsdb_condition_init(diff_condition);
+            }
             continue;
         }
 
