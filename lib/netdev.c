@@ -953,16 +953,26 @@ netdev_push_header(const struct netdev *netdev,
     size_t i, size = dp_packet_batch_size(batch);
 
     DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
-        if (OVS_UNLIKELY(dp_packet_hwol_is_tso(packet))) {
-            COVERAGE_INC(netdev_push_header_drops);
-            dp_packet_delete(packet);
-            VLOG_WARN_RL(&rl, "%s: Tunneling packets with TSO is "
-                         "not supported: packet dropped",
-                         netdev_get_name(netdev));
-        } else {
-            /* The packet is going to be encapsulated and there is
-             * no support yet for inner network header csum offloading. */
-            dp_packet_ol_send_prepare(packet, 0);
+    if (OVS_UNLIKELY(strcmp(netdev_get_type(netdev), "vxlan") &&
+        strcmp(netdev_get_type(netdev), "geneve") &&
+        dp_packet_hwol_is_tso(packet))) {
+        COVERAGE_INC(netdev_push_header_drops);
+        dp_packet_delete(packet);
+        VLOG_WARN_RL(&rl,
+                     "%s: Tunneling packets with tso HW offload flags"
+                     "is not supported: packet dropped",
+        netdev_get_name(netdev));
+    } else {
+            /* The packet is going to be encapsulated, geneve/vxlan inner
+             * network header csum offloading and tso are supported. Other
+             * tunnel inner csum and tso are not supported yet then we
+             * offer the software fallback.*/
+            if (!strcmp(netdev_get_type(netdev), "vxlan") ||
+                !strcmp(netdev_get_type(netdev), "geneve")) {
+                dp_packet_ol_send_prepare(packet, netdev->ol_flags);
+            } else {
+                dp_packet_ol_send_prepare(packet, 0);
+            }
 
             netdev->netdev_class->push_header(netdev, packet, data);
 
@@ -1409,6 +1419,10 @@ netdev_get_status(const struct netdev *netdev, struct smap *smap)
         OL_ADD_STAT("udp_csum", NETDEV_TX_OFFLOAD_UDP_CKSUM);
         OL_ADD_STAT("sctp_csum", NETDEV_TX_OFFLOAD_SCTP_CKSUM);
         OL_ADD_STAT("tcp_seg", NETDEV_TX_OFFLOAD_TCP_TSO);
+        OL_ADD_STAT("vxlan_tso", NETDEV_TX_VXLAN_TNL_TSO);
+        OL_ADD_STAT("geneve_tso", NETDEV_TX_GENEVE_TNL_TSO);
+        OL_ADD_STAT("out_ip_csum", NETDEV_TX_OFFLOAD_OUTER_IP_CKSUM);
+        OL_ADD_STAT("out_udp_csum", NETDEV_TX_OFFLOAD_OUTER_UDP_CKSUM);
 #undef OL_ADD_STAT
 
         err = 0;
