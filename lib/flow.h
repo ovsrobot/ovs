@@ -884,6 +884,13 @@ miniflow_get_recirc_id(const struct miniflow *flow)
     return MINIFLOW_GET_U32(flow, recirc_id);
 }
 
+/* Returns the conj_id in 'flow.' */
+static inline uint32_t
+miniflow_get_conj_id(const struct miniflow *flow)
+{
+    return MINIFLOW_GET_U32(flow, conj_id);
+}
+
 /* Returns the dp_hash in 'flow.' */
 static inline uint32_t
 miniflow_get_dp_hash(const struct miniflow *flow)
