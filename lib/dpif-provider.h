@@ -521,9 +521,11 @@ struct dpif_class {
     /* Sets the max connections allowed per zone according to 'zone_limits',
      * a list of 'struct ct_dpif_zone_limit' entries (the 'count' member
      * is not used when setting limits).  If 'default_limit' is not NULL,
-     * modifies the default limit to '*default_limit'. */
+     * modifies the default limit to '*default_limit'. If 'force' is set
+     * to 'true' it will overwrite current configuration, otherwise it can
+     * return 'EPERM' if the limit is already enforced for this zone. */
     int (*ct_set_limits)(struct dpif *, const uint32_t *default_limit,
-                         const struct ovs_list *zone_limits);
+                         const struct ovs_list *zone_limits, bool force);
 
     /* Looks up the default per zone limit and stores that in
      * 'default_limit'.  Look up the per zone limits for all zones in
@@ -536,8 +538,11 @@ struct dpif_class {
                          struct ovs_list *zone_limits_out);
 
     /* Deletes per zone limit of all zones specified in 'zone_limits', a
-     * list of 'struct ct_dpif_zone_limit' entries. */
-    int (*ct_del_limits)(struct dpif *, const struct ovs_list *zone_limits);
+     * list of 'struct ct_dpif_zone_limit' entries. If 'force' is set
+     * to 'true' it will remove current configuration, otherwise it
+     * returns 'EPERM' if the limit is already enforced for this zone.*/
+    int (*ct_del_limits)(struct dpif *, const struct ovs_list *zone_limits,
+                         bool force);
 
     /* Connection tracking timeout policy */
 

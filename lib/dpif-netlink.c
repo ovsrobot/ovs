@@ -250,6 +250,10 @@ static int ovs_ct_limit_family;
  * Initialized by dpif_netlink_init(). */
 static unsigned int ovs_vport_mcgroup;
 
+/* CT limit protection, must be global for all 'struct dpif_netlink'
+ * instances. */
+static unsigned long ct_limit_protection[BITMAP_N_LONGS(UINT16_MAX)] = {0};
+
 /* If true, tunnel devices are created using OVS compat/genetlink.
  * If false, tunnel devices are created with rtnetlink and using light weight
  * tunnels. If we fail to create the tunnel the rtnetlink+LWT, then we fallback
@@ -3359,12 +3363,32 @@ dpif_netlink_ct_flush(struct dpif *dpif OVS_UNUSED, const uint16_t *zone,
 }
 
 static int
+update_zone_limit_protection(const struct ovs_list *limits, bool force)
+{
+    struct ct_dpif_zone_limit *zone_limit;
+    LIST_FOR_EACH (zone_limit, node, limits) {
+        if (bitmap_is_set(ct_limit_protection, zone_limit->zone) &&
+            !force) {
+            return EPERM;
+        }
+        bitmap_set(ct_limit_protection, zone_limit->zone, force);
+    }
+
+    return 0;
+}
+
+static int
 dpif_netlink_ct_set_limits(struct dpif *dpif OVS_UNUSED,
                            const uint32_t *default_limits,
-                           const struct ovs_list *zone_limits)
+                           const struct ovs_list *zone_limits, bool force)
 {
     if (ovs_ct_limit_family < 0) {
         return EOPNOTSUPP;
+    }
+
+    int err = update_zone_limit_protection(zone_limits, force);
+    if (err) {
+        return err;
     }
 
     struct ofpbuf *request = ofpbuf_new(NL_DUMP_BUFSIZE);
@@ -3399,7 +3423,7 @@ dpif_netlink_ct_set_limits(struct dpif *dpif OVS_UNUSED,
     }
     nl_msg_end_nested(request, opt_offset);
 
-    int err = nl_transact(NETLINK_GENERIC, request, NULL);
+    err = nl_transact(NETLINK_GENERIC, request, NULL);
     ofpbuf_delete(request);
     return err;
 }
@@ -3508,10 +3532,15 @@ out:
 
 static int
 dpif_netlink_ct_del_limits(struct dpif *dpif OVS_UNUSED,
-                           const struct ovs_list *zone_limits)
+                           const struct ovs_list *zone_limits, bool force)
 {
     if (ovs_ct_limit_family < 0) {
         return EOPNOTSUPP;
+    }
+
+    int err = update_zone_limit_protection(zone_limits, force);
+    if (err) {
+        return err;
     }
 
     struct ofpbuf *request = ofpbuf_new(NL_DUMP_BUFSIZE);
@@ -3537,7 +3566,7 @@ dpif_netlink_ct_del_limits(struct dpif *dpif OVS_UNUSED,
         nl_msg_end_nested(request, opt_offset);
     }
 
-    int err = nl_transact(NETLINK_GENERIC, request, NULL);
+    err = nl_transact(NETLINK_GENERIC, request, NULL);
 
     ofpbuf_delete(request);
     return err;

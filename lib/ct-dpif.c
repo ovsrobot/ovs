@@ -399,11 +399,11 @@ ct_dpif_get_tcp_seq_chk(struct dpif *dpif, bool *enabled)
 
 int
 ct_dpif_set_limits(struct dpif *dpif, const uint32_t *default_limit,
-                   const struct ovs_list *zone_limits)
+                   const struct ovs_list *zone_limits, bool force)
 {
     return (dpif->dpif_class->ct_set_limits
             ? dpif->dpif_class->ct_set_limits(dpif, default_limit,
-                                              zone_limits)
+                                              zone_limits, force)
             : EOPNOTSUPP);
 }
 
@@ -420,10 +420,11 @@ ct_dpif_get_limits(struct dpif *dpif, uint32_t *default_limit,
 }
 
 int
-ct_dpif_del_limits(struct dpif *dpif, const struct ovs_list *zone_limits)
+ct_dpif_del_limits(struct dpif *dpif, const struct ovs_list *zone_limits,
+                   bool force)
 {
     return (dpif->dpif_class->ct_del_limits
-            ? dpif->dpif_class->ct_del_limits(dpif, zone_limits)
+            ? dpif->dpif_class->ct_del_limits(dpif, zone_limits, force)
             : EOPNOTSUPP);
 }
 

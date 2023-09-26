@@ -5653,12 +5653,14 @@ static void
 ct_zone_limits_commit(struct dpif_backer *backer)
 {
     if (!ovs_list_is_empty(&backer->ct_zone_limits_to_add)) {
-        ct_dpif_set_limits(backer->dpif, NULL, &backer->ct_zone_limits_to_add);
+        ct_dpif_set_limits(backer->dpif, NULL, &backer->ct_zone_limits_to_add,
+                           true);
         ct_dpif_free_zone_limits(&backer->ct_zone_limits_to_add);
     }
 
     if (!ovs_list_is_empty(&backer->ct_zone_limits_to_del)) {
-        ct_dpif_del_limits(backer->dpif, &backer->ct_zone_limits_to_del);
+        ct_dpif_del_limits(backer->dpif, &backer->ct_zone_limits_to_del,
+                           true);
         ct_dpif_free_zone_limits(&backer->ct_zone_limits_to_del);
     }
 }

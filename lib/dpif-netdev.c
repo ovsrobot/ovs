@@ -9447,12 +9447,14 @@ dpif_netdev_ct_get_sweep_interval(struct dpif *dpif, uint32_t *ms)
 static int
 dpif_netdev_ct_set_limits(struct dpif *dpif,
                            const uint32_t *default_limits,
-                           const struct ovs_list *zone_limits)
+                           const struct ovs_list *zone_limits,
+                           bool force)
 {
     int err = 0;
     struct dp_netdev *dp = get_dp_netdev(dpif);
     if (default_limits) {
-        err = zone_limit_update(dp->conntrack, DEFAULT_ZONE, *default_limits);
+        err = zone_limit_update(dp->conntrack, DEFAULT_ZONE, *default_limits,
+                                force);
         if (err != 0) {
             return err;
         }
@@ -9461,7 +9463,7 @@ dpif_netdev_ct_set_limits(struct dpif *dpif,
     struct ct_dpif_zone_limit *zone_limit;
     LIST_FOR_EACH (zone_limit, node, zone_limits) {
         err = zone_limit_update(dp->conntrack, zone_limit->zone,
-                                zone_limit->limit);
+                                zone_limit->limit, force);
         if (err != 0) {
             break;
         }
@@ -9512,13 +9514,13 @@ dpif_netdev_ct_get_limits(struct dpif *dpif,
 
 static int
 dpif_netdev_ct_del_limits(struct dpif *dpif,
-                           const struct ovs_list *zone_limits)
+                          const struct ovs_list *zone_limits, bool force)
 {
     int err = 0;
     struct dp_netdev *dp = get_dp_netdev(dpif);
     struct ct_dpif_zone_limit *zone_limit;
     LIST_FOR_EACH (zone_limit, node, zone_limits) {
-        err = zone_limit_delete(dp->conntrack, zone_limit->zone);
+        err = zone_limit_delete(dp->conntrack, zone_limit->zone, force);
         if (err != 0) {
             break;
         }
