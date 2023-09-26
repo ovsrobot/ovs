@@ -6,6 +6,8 @@ Post-v3.2.0
        from older version is supported but it may trigger more leader elections
        during the process, and error logs complaining unrecognized fields may
        be observed on old nodes.
+  - CT:
+    * Add support for setting CT zone limit via DB.
 
 
 v3.2.0 - 17 Aug 2023

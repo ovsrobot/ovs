@@ -1336,7 +1336,16 @@ cmd_del_zone_tp(struct ctl_context *ctx)
         ctl_fatal("zone id %"PRIu64" does not exist", zone_id);
     }
 
-    if (zone) {
+    if (!zone) {
+        return;
+    }
+
+    if (zone->limit) {
+        if (zone->timeout_policy) {
+            ovsrec_ct_timeout_policy_delete(zone->timeout_policy);
+        }
+        ovsrec_ct_zone_set_timeout_policy(zone, NULL);
+    } else {
         ovsrec_datapath_update_ct_zones_delkey(dp, zone_id);
     }
 }
@@ -1372,11 +1381,100 @@ cmd_list_zone_tp(struct ctl_context *ctx)
 }
 
 static void
+cmd_add_zone_limit(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    int64_t zone_id = -1;
+    int64_t limit = -1;
+
+    const char *dp_name = ctx->argv[1];
+    bool may_exist = shash_find(&ctx->options, "--may-exist") != NULL;
+    ovs_scan(ctx->argv[2], "zone=%"SCNi64, &zone_id);
+    ovs_scan(ctx->argv[3], "limit=%"SCNi64, &limit);
+
+    if (zone_id < 0 || zone_id > UINT16_MAX) {
+        ctl_fatal("zone_id (%"PRIi64") out of range", zone_id);
+    }
+
+    if (limit < 0 || limit > UINT32_MAX) {
+        ctl_fatal("limit (%"PRIi64") out of range", limit);
+    }
+
+    struct ovsrec_datapath *dp = find_datapath(vsctl_ctx, dp_name);
+    if (!dp) {
+        ctl_fatal("datapath %s does not exist", dp_name);
+    }
+
+    struct ovsrec_ct_zone *zone = find_ct_zone(dp, zone_id);
+    if (zone && !may_exist) {
+        ctl_fatal("zone_id %"PRIi64" already exists", zone_id);
+    }
+
+    if (!zone) {
+        zone = ovsrec_ct_zone_insert(ctx->txn);
+        ovsrec_datapath_update_ct_zones_setkey(dp, zone_id, zone);
+    }
+
+    ovsrec_ct_zone_set_limit(zone, &limit, 1);
+}
+
+static void
+cmd_del_zone_limit(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+    int64_t zone_id;
+
+    bool must_exist = !shash_find(&ctx->options, "--if-exists");
+    const char *dp_name = ctx->argv[1];
+    ovs_scan(ctx->argv[2], "zone=%"SCNi64, &zone_id);
+
+    struct ovsrec_datapath *dp = find_datapath(vsctl_ctx, dp_name);
+    if (!dp) {
+        ctl_fatal("datapath %s does not exist", dp_name);
+    }
+
+    struct ovsrec_ct_zone *zone = find_ct_zone(dp, zone_id);
+    if (must_exist && !zone) {
+        ctl_fatal("zone_id %"PRIi64" does not exist", zone_id);
+    }
+
+    if (!zone) {
+        return;
+    }
+
+    if (zone->timeout_policy) {
+        ovsrec_ct_zone_set_limit(zone, NULL, 0);
+    } else {
+        ovsrec_datapath_update_ct_zones_delkey(dp, zone_id);
+    }
+}
+
+static void
+cmd_list_zone_limit(struct ctl_context *ctx)
+{
+    struct vsctl_context *vsctl_ctx = vsctl_context_cast(ctx);
+
+    struct ovsrec_datapath *dp = find_datapath(vsctl_ctx, ctx->argv[1]);
+    if (!dp) {
+        ctl_fatal("datapath: %s record not found", ctx->argv[1]);
+    }
+
+    for (int i = 0; i < dp->n_ct_zones; i++) {
+        struct ovsrec_ct_zone *zone = dp->value_ct_zones[i];
+        if (zone->limit) {
+            ds_put_format(&ctx->output, "Zone: %"PRIu64", Limit: %"PRIu64"\n",
+                          dp->key_ct_zones[i], *zone->limit);
+        }
+    }
+}
+
+static void
 pre_get_zone(struct ctl_context *ctx)
 {
     ovsdb_idl_add_column(ctx->idl, &ovsrec_open_vswitch_col_datapaths);
     ovsdb_idl_add_column(ctx->idl, &ovsrec_datapath_col_ct_zones);
     ovsdb_idl_add_column(ctx->idl, &ovsrec_ct_zone_col_timeout_policy);
+    ovsdb_idl_add_column(ctx->idl, &ovsrec_ct_zone_col_limit);
     ovsdb_idl_add_column(ctx->idl, &ovsrec_ct_timeout_policy_col_timeouts);
 }
 
@@ -3158,6 +3256,14 @@ static const struct ctl_command_syntax vsctl_commands[] = {
 
     /* Datapath capabilities. */
     {"list-dp-cap", 1, 1, "", pre_get_dp_cap, cmd_list_dp_cap, NULL, "", RO},
+
+    /* CT zone limit. */
+    {"add-zone-limit", 3, 3, "", pre_get_zone, cmd_add_zone_limit, NULL,
+     "--may-exist", RW},
+    {"del-zone-limit", 2, 2, "", pre_get_zone, cmd_del_zone_limit, NULL,
+     "--if-exists", RW},
+    {"list-zone-limit", 1, 1, "", pre_get_zone, cmd_list_zone_limit, NULL,
+     "", RO},
 
     {NULL, 0, 0, NULL, NULL, NULL, NULL, NULL, RO},
 };
