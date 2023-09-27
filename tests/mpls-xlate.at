@@ -16,11 +16,11 @@ OVS_VSWITCHD_START(
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 2/none: (patch: peer=p2)
   br1:
-    br1 65534/101: (dummy-internal)
+    br1 65534/101: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p2 1/none: (patch: peer=p1)
 ])
 
@@ -163,13 +163,13 @@ AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg ofproto_dpif_upcall:dbg])
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 2/none: (patch: peer=p2)
   br1:
-    br1 65534/101: (dummy-internal)
+    br1 65534/101: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p2 1/none: (patch: peer=p1)
-    p3 3/3: (dummy)
+    p3 3/3: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dnl MPLS PUSH + POP.
@@ -225,13 +225,13 @@ OVS_VSWITCHD_START(
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p2 2/none: (patch: peer=p3)
   br1:
-    br1 65534/101: (dummy-internal)
+    br1 65534/101: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p3 3/none: (patch: peer=p2)
-    p4 4/4: (dummy)
+    p4 4/4: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 AT_CHECK([ovs-ofctl del-flows br0])
@@ -276,9 +276,9 @@ OVS_VSWITCHD_START([dnl
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 AT_CHECK([ovs-ofctl del-flows br0])
@@ -307,9 +307,9 @@ OVS_VSWITCHD_START([dnl
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 AT_CHECK([ovs-ofctl del-flows br0])

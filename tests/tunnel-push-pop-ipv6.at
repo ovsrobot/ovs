@@ -98,10 +98,10 @@ AT_CHECK([ovs-vsctl add-port int-br t2 -- set Interface t2 type=ip6gre \
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
   int-br:
-    int-br 65534/2: (dummy-internal)
+    int-br 65534/2: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     t2 2/6: (ip6gre: remote_ip=2001:cafe::92)
 ])
 
@@ -171,10 +171,10 @@ AT_CHECK([ovs-vsctl add-port int-br t2 -- set Interface t2 type=ip6erspan \
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
   int-br:
-    int-br 65534/2: (dummy-internal)
+    int-br 65534/2: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     t2 2/6: (ip6erspan: erspan_idx=0x3, erspan_ver=1, key=123, remote_ip=2001:cafe::92)
     t3 3/6: (ip6erspan: erspan_dir=1, erspan_hwid=0x7, erspan_ver=2, key=567, remote_ip=2001:cafe::93)
 ])
@@ -295,10 +295,10 @@ AT_CHECK([ovs-vsctl add-port int-br t2 -- set Interface t2 type=vxlan \
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
   int-br:
-    int-br 65534/2: (dummy-internal)
+    int-br 65534/2: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     t1 3/3: (gre: key=456, remote_ip=2001:cafe::92)
     t2 2/4789: (vxlan: key=123, remote_ip=2001:cafe::92)
     t3 4/4789: (vxlan: csum=true, out_key=flow, remote_ip=2001:cafe::93)
