@@ -3797,12 +3797,28 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
             Interface description string.
           </column>
 
-          <column name="status" key="pci-vendor_id">
-            Vendor ID of PCI device.
+          <column name="status" key="bus_info">
+            Bus name and bus info such as Vendor ID and Device ID of PCI
+            device.
           </column>
 
-          <column name="status" key="pci-device_id">
-            Device ID of PCI device.
+          <column name="status" key="dpdk-vf-mac">
+            Ethernet address set for this VF interface. Only reported for dpdk
+            VF representors.
+          </column>
+
+          <column name="status" key="rx_steering">
+            Hardware Rx queue steering policy in use.
+          </column>
+
+          <column name="status" key="rx_steering_queue">
+            ID of rx steering queue. Only reported if <code>rx-steering</code>
+            is supported by hardware.
+          </column>
+
+          <column name="status" key="rss_queues">
+            IDs of rss queues. Only reported if <code>rx-steering</code> is
+            supported by hardware.
           </column>
 
       </group>
