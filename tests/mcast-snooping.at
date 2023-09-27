@@ -24,9 +24,9 @@ AT_CHECK([
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 ovs-appctl time/stop

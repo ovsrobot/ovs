@@ -631,31 +631,31 @@ AT_CHECK([
 ### Verify datapath configuration
 AT_CHECK([ovs-appctl dpif/show | grep -v hit], [0], [dnl
   br-in1:
-    br-in1 65534/101: (dummy-internal)
-    n1 10/4: (dummy)
+    br-in1 65534/101: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    n1 10/4: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     vxlangpe12 1020/4789: (vxlan: packet_type=ptap, remote_ip=10.0.0.2)
     vxlangpe13 1030/4789: (vxlan: packet_type=ptap, remote_ip=10.0.0.3)
   br-in2:
-    br-in2 65534/102: (dummy-internal)
-    n2 20/5: (dummy)
+    br-in2 65534/102: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    n2 20/5: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     vxlangpe21 2010/4789: (vxlan: packet_type=ptap, remote_ip=20.0.0.1)
     vxlangpe23 2030/4789: (vxlan: packet_type=ptap, remote_ip=20.0.0.3)
   br-in3:
-    br-in3 65534/103: (dummy-internal)
-    n3 30/6: (dummy)
+    br-in3 65534/103: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    n3 30/6: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     vxlangpe31 3010/4789: (vxlan: packet_type=ptap, remote_ip=30.0.0.1)
     vxlangpe32 3020/4789: (vxlan: packet_type=ptap, remote_ip=30.0.0.2)
   br-p1:
-    br-p1 65534/1: (dummy-internal)
+    br-p1 65534/1: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1-0 2/none: (patch: peer=p0-1)
   br-p2:
-    br-p2 65534/2: (dummy-internal)
+    br-p2 65534/2: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p2-0 2/none: (patch: peer=p0-2)
   br-p3:
-    br-p3 65534/3: (dummy-internal)
+    br-p3 65534/3: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p3-0 2/none: (patch: peer=p0-3)
   br0:
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p0-1 10/none: (patch: peer=p1-0)
     p0-2 20/none: (patch: peer=p2-0)
     p0-3 30/none: (patch: peer=p3-0)

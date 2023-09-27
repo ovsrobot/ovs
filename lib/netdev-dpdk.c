@@ -1905,24 +1905,26 @@ netdev_dpdk_get_config(const struct netdev *netdev, struct smap *args)
 
     ovs_mutex_lock(&dev->mutex);
 
-    smap_add_format(args, "requested_rx_queues", "%d", dev->user_n_rxq);
-    smap_add_format(args, "configured_rx_queues", "%d", netdev->n_rxq);
-    smap_add_format(args, "requested_tx_queues", "%d", dev->requested_n_txq);
-    smap_add_format(args, "configured_tx_queues", "%d", netdev->n_txq);
-    smap_add_format(args, "mtu", "%d", dev->mtu);
+    smap_add_format(args, "dpdk-devargs", "%s", dev->devargs);
+    smap_add_format(args, "n_rxq", "%d", dev->user_n_rxq);
+    smap_add_format(args, "rx-flow-ctrl", "%s",
+        dev->fc_conf.mode == RTE_ETH_FC_TX_PAUSE ||
+        dev->fc_conf.mode == RTE_ETH_FC_FULL ? "true" : "false");
+    smap_add_format(args, "tx-flow-ctrl", "%s",
+        dev->fc_conf.mode == RTE_ETH_FC_RX_PAUSE ||
+        dev->fc_conf.mode == RTE_ETH_FC_FULL ? "true" : "false");
+    smap_add_format(args, "flow-ctrl-autoneg", "%s",
+        dev->fc_conf.autoneg ? "true" : "false");
 
     if (dev->type == DPDK_DEV_ETH) {
         smap_add_format(args, "n_rxq_desc", "%d", dev->rxq_size);
         smap_add_format(args, "n_txq_desc", "%d", dev->txq_size);
-        if (dev->hw_ol_features & NETDEV_RX_CHECKSUM_OFFLOAD) {
-            smap_add(args, "rx_csum_offload", "true");
-        } else {
-            smap_add(args, "rx_csum_offload", "false");
-        }
+
         if (dev->rx_steer_flags == DPDK_RX_STEER_LACP) {
             smap_add(args, "rx-steering", "rss+lacp");
         }
-        smap_add(args, "lsc_interrupt_mode",
+
+        smap_add(args, "dpdk-lsc-interrupt",
                  dev->lsc_interrupt_mode ? "true" : "false");
 
         if (dpdk_port_is_representor(dev)) {
@@ -1930,6 +1932,7 @@ netdev_dpdk_get_config(const struct netdev *netdev, struct smap *args)
                             ETH_ADDR_ARGS(dev->requested_hwaddr));
         }
     }
+
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
@@ -4161,6 +4164,13 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
     smap_add_format(args, "max_vfs", "%u", dev_info.max_vfs);
     smap_add_format(args, "max_vmdq_pools", "%u", dev_info.max_vmdq_pools);
 
+    smap_add_format(args, "n_rxq", "%d", netdev->n_rxq);
+    smap_add_format(args, "n_txq", "%d", netdev->n_txq);
+
+    smap_add(args, "rx_csum_offload",
+             dev->hw_ol_features & NETDEV_RX_CHECKSUM_OFFLOAD
+             ? "true" : "false");
+
     /* Querying the DPDK library for iftype may be done in future, pending
      * support; cf. RFC 3635 Section 3.2.4. */
     enum { IF_TYPE_ETHERNETCSMACD = 6 };
@@ -4186,16 +4196,15 @@ netdev_dpdk_get_status(const struct netdev *netdev, struct smap *args)
                         ETH_ADDR_ARGS(dev->hwaddr));
     }
 
-    if (rx_steer_flags) {
-        if (!rx_steer_flows_num) {
-            smap_add(args, "rx_steering", "unsupported");
+    smap_add(args, "rx-steering", dev->rx_steer_flags == DPDK_RX_STEER_LACP
+                                  ? "rss+lacp" : "unsupported");
+
+    if (rx_steer_flags && rx_steer_flows_num) {
+        smap_add_format(args, "rx_steering_queue", "%d", n_rxq - 1);
+        if (n_rxq > 2) {
+            smap_add_format(args, "rss_queues", "0-%d", n_rxq - 2);
         } else {
-            smap_add_format(args, "rx_steering_queue", "%d", n_rxq - 1);
-            if (n_rxq > 2) {
-                smap_add_format(args, "rss_queues", "0-%d", n_rxq - 2);
-            } else {
-                smap_add(args, "rss_queues", "0");
-            }
+            smap_add(args, "rss_queues", "0");
         }
     }
 

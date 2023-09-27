@@ -2991,8 +2991,8 @@ AT_CHECK([ovs-ofctl add-flow br0 "tcp,tcp_flags=+ack-ack,action="], [1], [],
 ])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +4], [0], [dnl
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dnl Outbound web traffic with bare-SYN
