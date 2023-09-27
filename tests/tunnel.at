@@ -16,7 +16,7 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: remote_ip=1.1.1.1)
     p2 2/1: (gre: local_ip=2.2.2.2, remote_ip=1.1.1.1)
     p3 3/1: (gre: remote_ip=2.2.2.2)
@@ -39,7 +39,7 @@ AT_CHECK([ovs-vsctl set Interface p2 type=gre options:local_ip=2.2.2.3 \
           options:df_default=false options:ttl=1 options:csum=true \
           -- set Interface p3 type=vxlan])
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: remote_ip=1.1.1.1)
     p2 2/1: (gre: csum=true, df_default=false, local_ip=2.2.2.3, remote_ip=1.1.1.1, ttl=1)
     p3 3/4789: (vxlan: remote_ip=2.2.2.2)
@@ -74,9 +74,9 @@ actions=2
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: remote_ip=1.1.1.1)
-    p2 2/2: (dummy)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dnl Tunnel CE and encapsulated packet CE
@@ -118,9 +118,9 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=gre \
                     ofport_request=2])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: remote_ip=1.1.1.1)
-    p2 2/2: (dummy)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 AT_CHECK([ovs-appctl dpctl/add-flow "tunnel(dst=1.1.1.1,src=3.3.3.200/255.255.255.0,tp_dst=123,tp_src=1,ttl=64),recirc_id(0),in_port(1),eth(),eth_type(0x0800),ipv4()" "2"])
@@ -138,9 +138,9 @@ OVS_VSWITCHD_START([add-port br0 p1 \
     -- add-port br0 p2 -- set Interface p2 type=dummy ofport_request=2])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: remote_ip=1.1.1.1)
-    p2 2/2: (dummy)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dst_single="dst=1.1.1.1"
@@ -175,9 +175,9 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: key=5, local_ip=2.2.2.2, remote_ip=1.1.1.1)
-    p2 2/2: (dummy)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dnl Basic
@@ -273,9 +273,9 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: remote_ip=1.1.1.1, tos=inherit, ttl=inherit)
-    p2 2/2: (dummy)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dnl Basic
@@ -316,7 +316,7 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: key=flow, remote_ip=1.1.1.1)
     p2 2/1: (gre: key=flow, remote_ip=2.2.2.2)
     p3 3/1: (gre: key=flow, remote_ip=3.3.3.3)
@@ -349,7 +349,7 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: key=1, remote_ip=1.1.1.1)
     p2 2/1: (gre: in_key=2, out_key=3, remote_ip=1.1.1.1)
     p3 3/1: (gre: out_key=5, remote_ip=1.1.1.1)
@@ -402,12 +402,12 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (gre: key=flow, remote_ip=1.1.1.1)
     p2 2/1: (gre: key=3, remote_ip=3.3.3.3)
-    p3 3/3: (dummy)
-    p4 4/4: (dummy)
-    p5 5/5: (dummy)
+    p3 3/3: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p4 4/4: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p5 5/5: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'tunnel(tun_id=0x2,src=1.1.1.1,dst=2.2.2.2,ttl=64,flags(key)),in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=6,tos=0,ttl=64,frag=no),tcp(src=8,dst=9)'], [0], [stdout])
@@ -438,7 +438,7 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=geneve \
                     options:remote_ip=1.1.1.1 ofport_request=1 options:dst_port=5000])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/5000: (geneve: dst_port=5000, remote_ip=1.1.1.1)
 ])
 
@@ -450,7 +450,7 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=vxlan \
                     options:remote_ip=1.1.1.1 ofport_request=1])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/4789: (vxlan: remote_ip=1.1.1.1)
 ])
 
@@ -472,12 +472,12 @@ AT_CHECK([ovs-vsctl add-port int-br v1 -- set Interface v1 type=vxlan \
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
   int-br:
-    int-br 65534/2: (dummy-internal)
+    int-br 65534/2: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     v1 2/4789: (vxlan: key=123, remote_ip=172.31.1.2)
-    v2 3/3: (dummy-internal)
+    v2 3/3: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 dnl First setup dummy interface IP address, then add the route
@@ -524,7 +524,7 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=lisp \
                     options:remote_ip=1.1.1.1 ofport_request=1])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/4341: (lisp: remote_ip=1.1.1.1)
 ])
 
@@ -548,7 +548,7 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=erspan \
                  ])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/1: (erspan: erspan_idx=0x0, erspan_ver=1, key=1, remote_ip=1.1.1.1)
     p2 2/1: (erspan: erspan_idx=flow, erspan_ver=1, key=flow, remote_ip=1.1.1.1)
     p3 3/1: (erspan: erspan_dir=flow, erspan_hwid=flow, erspan_ver=2, key=10, remote_ip=1.1.1.1)
@@ -579,7 +579,7 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=vxlan \
                     options:remote_ip=1.1.1.1 ofport_request=1 options:dst_port=4341])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/4341: (vxlan: dst_port=4341, remote_ip=1.1.1.1)
 ])
 
@@ -588,7 +588,7 @@ dnl change UDP port
 AT_CHECK([ovs-vsctl -- set Interface p1 options:dst_port=5000])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/5000: (vxlan: dst_port=5000, remote_ip=1.1.1.1)
 ])
 
@@ -597,7 +597,7 @@ dnl change UDP port to default
 AT_CHECK([ovs-vsctl -- set Interface p1 options:dst_port=4789])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/4789: (vxlan: remote_ip=1.1.1.1)
 ])
 OVS_VSWITCHD_STOP
@@ -658,9 +658,9 @@ ovs-vsctl -- add-port br0 p3 \
 OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p3 3/3: (erspan: erspan_idx=0x7, erspan_ver=1, key=1, remote_ip=1.1.1.1)
     p4 4/3: (erspan: erspan_dir=1, erspan_hwid=0x7, erspan_ver=2, key=2, remote_ip=1.1.1.2)
 ])
@@ -1136,7 +1136,7 @@ OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=gtpu \
                     options:key=123 ofport_request=1])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p1 1/2152: (gtpu: key=123, remote_ip=1.1.1.1)
 ])
 
@@ -1172,8 +1172,8 @@ OVS_VSWITCHD_DISABLE_TUNNEL_PUSH_POP
 
 dnl AT_CHECK([ovs-appctl dpif/show | tail -n +4], [0], [dnl
 AT_CHECK([ovs-appctl dpif/show | tail -n +4], [0], [dnl
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p3 3/2152: (gtpu: key=3, remote_ip=1.1.1.1)
     p4 4/2152: (gtpu: key=4, remote_ip=1.1.1.2)
 ])
@@ -1250,8 +1250,8 @@ in_port=2,actions=1
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl dpif/show | tail -n +3], [0], [dnl
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
     p2 2/6: (srv6: remote_ip=flow)
 ])
 

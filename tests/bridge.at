@@ -12,9 +12,9 @@ add_of_ports br0 1 2
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
-    p2 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 # Delete p1 from the datapath with "ovs-dpctl del-if"
@@ -23,8 +23,8 @@ AT_CHECK([ovs-appctl dpctl/del-if dummy@ovs-dummy p1])
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p2 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p2 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 
 # Force reconfiguration and make sure that p1 got added back.
@@ -32,8 +32,8 @@ AT_CHECK([ovs-vsctl del-port p2])
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p1 1/1: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p1 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
 ])
 OVS_APP_EXIT_AND_WAIT([ovs-vswitchd])
 OVS_APP_EXIT_AND_WAIT([ovsdb-server])

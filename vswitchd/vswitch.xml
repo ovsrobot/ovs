@@ -3386,6 +3386,29 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+
+      <column name="options" key="ol_ip_csum"
+              type='{"type": "boolean"}'>
+        <p>
+          Enable IP checksum offload for netdev-dummy device.
+        </p>
+        <p>
+            Note that this option is specific to netdev-dummy.
+            Defaults to false.
+        </p>
+      </column>
+
+      <column name="options" key="ol_ip_csum_set_good"
+              type='{"type": "boolean"}'>
+        <p>
+          Flag RX packets for netdev-dummy devices to have good checksums.
+        </p>
+        <p>
+            Note that this option is specific to netdev-dummy.
+            Defaults to false.
+        </p>
+      </column>
+
       <column name="other_config" key="pmd-rxq-affinity">
         <p>Specifies mapping of RX queues of this interface to CPU cores.</p>
         <p>Value should be set in the following form:</p>
@@ -3789,6 +3812,18 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
             Maximum number of VMDq pools.
           </column>
 
+          <column name="status" key="n_rxq">
+            Number of rx queues.
+          </column>
+
+          <column name="status" key="n_txq">
+            Number of tx queues.
+          </column>
+
+          <column name="status" key="rx_csum_offload">
+            Whether hardware has support for RX Checksum Offload or not.
+          </column>
+
           <column name="status" key="if_type">
             Interface type ID according to IANA ifTYPE MIB definitions.
           </column>
@@ -3797,12 +3832,39 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
             Interface description string.
           </column>
 
-          <column name="status" key="pci-vendor_id">
-            Vendor ID of PCI device.
+          <column name="status" key="bus_info">
+            Bus name and bus info such as Vendor ID and Device ID of PCI
+            device.
           </column>
 
-          <column name="status" key="pci-device_id">
-            Device ID of PCI device.
+          <column name="status" key="dpdk-vf-mac">
+            Ethernet address set for this VF interface. Only reported for dpdk
+            VF representors.
+          </column>
+
+          <column name="status" key="rx-steering">
+            Hardware Rx queue steering policy in use.
+          </column>
+
+          <column name="status" key="rx_steering_queue">
+            ID of rx steering queue. Only reported if <code>rx-steering</code>
+            is supported by hardware.
+          </column>
+
+          <column name="status" key="rss_queues">
+            IDs of rss queues. Only reported if <code>rx-steering</code> is
+            supported by hardware.
+          </column>
+
+      </group>
+
+      <group title="afxdp">
+        <p>
+          AF_XDP netdev specific interface status options.
+        </p>
+
+          <column name="status" key="xdp-mode">
+            XDP mode which was chosen.
           </column>
 
       </group>

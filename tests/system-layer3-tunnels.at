@@ -109,11 +109,11 @@ AT_CHECK([ovs-vsctl add-port int-br t1 -- set Interface t1 type=gre \
 AT_CHECK([ovs-appctl dpif/show], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:
-    br0 65534/100: (dummy-internal)
-    p0 1/1: (dummy)
-    vtep0 2/2: (dummy)
+    br0 65534/100: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    p0 1/1: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
+    vtep0 2/2: (dummy: ol_ip_csum=false, ol_ip_csum_set_good=false)
   int-br:
-    int-br 65534/3: (dummy-internal)
+    int-br 65534/3: (dummy-internal: ol_ip_csum=false, ol_ip_csum_set_good=false)
     t1 3/4: (gre: remote_ip=1.1.2.92)
 ])
 
