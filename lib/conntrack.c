@@ -85,6 +85,7 @@ enum ct_alg_ctl_type {
 struct zone_limit {
     struct cmap_node node;
     struct conntrack_zone_limit czl;
+    bool limit_protected;
 };
 
 static bool conn_key_extract(struct conntrack *, struct dp_packet *,
@@ -344,17 +345,13 @@ zone_limit_get(struct conntrack *ct, int32_t zone)
 }
 
 static int
-zone_limit_create(struct conntrack *ct, int32_t zone, uint32_t limit)
+zone_limit_create(struct conntrack *ct, int32_t zone, uint32_t limit,
+                  bool limit_protected)
     OVS_REQUIRES(ct->ct_lock)
 {
-    struct zone_limit *zl = zone_limit_lookup_protected(ct, zone);
-
-    if (zl) {
-        return 0;
-    }
-
     if (zone >= DEFAULT_ZONE && zone <= MAX_ZONE) {
-        zl = xzalloc(sizeof *zl);
+        struct zone_limit *zl = xzalloc(sizeof *zl);
+        zl->limit_protected = limit_protected;
         zl->czl.limit = limit;
         zl->czl.zone = zone;
         zl->czl.zone_limit_seq = ct->zone_limit_seq++;
@@ -366,18 +363,28 @@ zone_limit_create(struct conntrack *ct, int32_t zone, uint32_t limit)
     }
 }
 
+static inline bool
+can_update_zone_limit(struct zone_limit *zl, bool force)
+{
+    return !(zl && zl->limit_protected && !force);
+}
+
 int
-zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
+zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit,
+                  bool force)
 {
     int err = 0;
-    struct zone_limit *zl = zone_limit_lookup(ct, zone);
-    if (zl) {
+    ovs_mutex_lock(&ct->ct_lock);
+
+    struct zone_limit *zl = zone_limit_lookup_protected(ct, zone);
+    if (!can_update_zone_limit(zl, force)) {
+        err = EPERM;
+    } else if (zl) {
         zl->czl.limit = limit;
+        zl->limit_protected = force;
         VLOG_INFO("Changed zone limit of %u for zone %d", limit, zone);
     } else {
-        ovs_mutex_lock(&ct->ct_lock);
-        err = zone_limit_create(ct, zone, limit);
-        ovs_mutex_unlock(&ct->ct_lock);
+        err = zone_limit_create(ct, zone, limit, force);
         if (!err) {
             VLOG_INFO("Created zone limit of %u for zone %d", limit, zone);
         } else {
@@ -385,6 +392,8 @@ zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
                       zone);
         }
     }
+
+    ovs_mutex_unlock(&ct->ct_lock);
     return err;
 }
 
@@ -398,20 +407,24 @@ zone_limit_clean(struct conntrack *ct, struct zone_limit *zl)
 }
 
 int
-zone_limit_delete(struct conntrack *ct, uint16_t zone)
+zone_limit_delete(struct conntrack *ct, uint16_t zone, bool force)
 {
+    int err = 0;
     ovs_mutex_lock(&ct->ct_lock);
+
     struct zone_limit *zl = zone_limit_lookup_protected(ct, zone);
-    if (zl) {
+    if (!can_update_zone_limit(zl, force)) {
+        err = EPERM;
+    } else if (zl) {
         zone_limit_clean(ct, zl);
-        ovs_mutex_unlock(&ct->ct_lock);
         VLOG_INFO("Deleted zone limit for zone %d", zone);
     } else {
-        ovs_mutex_unlock(&ct->ct_lock);
         VLOG_INFO("Attempted delete of non-existent zone limit: zone %d",
                   zone);
     }
-    return 0;
+
+    ovs_mutex_unlock(&ct->ct_lock);
+    return err;
 }
 
 static void

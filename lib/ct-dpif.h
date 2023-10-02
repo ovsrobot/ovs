@@ -308,10 +308,11 @@ int ct_dpif_get_nconns(struct dpif *dpif, uint32_t *nconns);
 int ct_dpif_set_tcp_seq_chk(struct dpif *dpif, bool enabled);
 int ct_dpif_get_tcp_seq_chk(struct dpif *dpif, bool *enabled);
 int ct_dpif_set_limits(struct dpif *dpif, const uint32_t *default_limit,
-                       const struct ovs_list *);
+                       const struct ovs_list *, bool enforced);
 int ct_dpif_get_limits(struct dpif *dpif, uint32_t *default_limit,
                        const struct ovs_list *, struct ovs_list *);
-int ct_dpif_del_limits(struct dpif *dpif, const struct ovs_list *);
+int ct_dpif_del_limits(struct dpif *dpif, const struct ovs_list *,
+                       bool enforced);
 int ct_dpif_sweep(struct dpif *, uint32_t *ms);
 int ct_dpif_ipf_set_enabled(struct dpif *, bool v6, bool enable);
 int ct_dpif_ipf_set_min_frag(struct dpif *, bool v6, uint32_t min_frag);

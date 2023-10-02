@@ -5238,6 +5238,34 @@ OVS_WAIT_UNTIL_EQUAL([ovs-appctl dpctl/ct-get-limits], [dnl
 default limit=10
 zone=0,limit=3,count=0])
 
+dnl Try to overwrite the zone limit via dpctl command.
+AT_CHECK([ovs-appctl dpctl/ct-set-limits zone=0,limit=5], [2], [ignore], [ignore])
+
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=3,count=0
+])
+
+AT_CHECK([ovs-appctl dpctl/ct-del-limits zone=0], [2], [ignore], [ignore])
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=3,count=0
+])
+
+dnl Set limit for zone that is not in DB via dpctl command.
+AT_CHECK([ovs-appctl dpctl/ct-set-limits zone=1,limit=5])
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=3,count=0
+zone=1,limit=5,count=0
+])
+
+AT_CHECK([ovs-appctl dpctl/ct-del-limits zone=1])
+AT_CHECK([ovs-appctl dpctl/ct-get-limits], [0], [dnl
+default limit=10
+zone=0,limit=3,count=0
+])
+
 OVS_TRAFFIC_VSWITCHD_STOP(["dnl
 /could not create datapath/d
 /(Cannot allocate memory) on packet/d

@@ -153,7 +153,8 @@ bool conntrack_get_tcp_seq_chk(struct conntrack *ct);
 struct ipf *conntrack_ipf_ctx(struct conntrack *ct);
 struct conntrack_zone_limit zone_limit_get(struct conntrack *ct,
                                            int32_t zone);
-int zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit);
-int zone_limit_delete(struct conntrack *ct, uint16_t zone);
+int zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit,
+                      bool force);
+int zone_limit_delete(struct conntrack *ct, uint16_t zone, bool force);
 
 #endif /* conntrack.h */
