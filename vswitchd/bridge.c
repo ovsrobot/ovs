@@ -157,6 +157,7 @@ struct aa_mapping {
 /* Internal representation of conntrack zone configuration table in OVSDB. */
 struct ct_zone {
     uint16_t zone_id;
+    int64_t limit;             /* Limit of allowed entries. */
     struct simap tp;            /* A map from timeout policy attribute to
                                  * timeout value. */
     struct hmap_node node;      /* Node in 'struct datapath' 'ct_zones'
@@ -756,6 +757,13 @@ ct_zones_reconfigure(struct datapath *dp, struct ovsrec_datapath *dp_cfg)
             ofproto_ct_set_zone_timeout_policy(dp->type, ct_zone->zone_id,
                                                &ct_zone->tp);
         }
+
+        int64_t desired_limit = zone_cfg->limit ? *zone_cfg->limit : -1;
+        if (ct_zone->limit != desired_limit) {
+            ofproto_ct_zone_limit_update(dp->type, zone_id, zone_cfg->limit);
+        }
+
+        ct_zone->limit = desired_limit;
         ct_zone->last_used = idl_seqno;
     }
 
@@ -763,6 +771,7 @@ ct_zones_reconfigure(struct datapath *dp, struct ovsrec_datapath *dp_cfg)
     HMAP_FOR_EACH_SAFE (ct_zone, node, &dp->ct_zones) {
         if (ct_zone->last_used != idl_seqno) {
             ofproto_ct_del_zone_timeout_policy(dp->type, ct_zone->zone_id);
+            ofproto_ct_zone_limit_update(dp->type, ct_zone->zone_id, NULL);
             ct_zone_remove_and_destroy(dp, ct_zone);
         }
     }
