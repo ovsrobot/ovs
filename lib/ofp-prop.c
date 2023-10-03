@@ -250,6 +250,20 @@ ofpprop_parse_u64(const struct ofpbuf *property, uint64_t *value)
     return 0;
 }
 
+/* Attempts to parse 'property' as a property containing a 128-bit value.  If
+ * successful, stores the value into '*value' and returns 0; otherwise returns
+ * an OpenFlow error. */
+enum ofperr
+ofpprop_parse_u128(const struct ofpbuf *property, ovs_u128 *value)
+{
+    ovs_be128 *p = property->msg;
+    if (ofpbuf_msgsize(property) != sizeof *p) {
+        return OFPERR_OFPBPC_BAD_LEN;
+    }
+    *value = ntoh128(*p);
+    return 0;
+}
+
 /* Attempts to parse 'property' as a property containing a UUID.  If
  * successful, stores the value into '*uuid' and returns 0; otherwise returns
  * an OpenFlow error. */
@@ -351,6 +365,15 @@ ofpprop_put_be64(struct ofpbuf *msg, uint64_t type, ovs_be64 value)
     ofpprop_end(msg, start);
 }
 
+/* Adds a property with the given 'type' and 128-bit 'value' to 'msg'. */
+void
+ofpprop_put_be128(struct ofpbuf *msg, uint64_t type, ovs_be128 value)
+{
+    size_t start = ofpprop_start(msg, type);
+    ofpbuf_put(msg, &value, sizeof value);
+    ofpprop_end(msg, start);
+}
+
 /* Adds a property with the given 'type' and 8-bit 'value' to 'msg'. */
 void
 ofpprop_put_u8(struct ofpbuf *msg, uint64_t type, uint8_t value)
@@ -379,6 +402,13 @@ void
 ofpprop_put_u64(struct ofpbuf *msg, uint64_t type, uint64_t value)
 {
     ofpprop_put_be64(msg, type, htonll(value));
+}
+
+/* Adds a property with the given 'type' and 64-bit 'value' to 'msg'. */
+void
+ofpprop_put_u128(struct ofpbuf *msg, uint64_t type, ovs_u128 value)
+{
+    ofpprop_put_be128(msg, type, hton128(value));
 }
 
 /* Appends a property to 'msg' whose type is 'type' and whose contents is a
