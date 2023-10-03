@@ -961,7 +961,7 @@ ofp_print_nxt_ct_flush(struct ds *string, const struct ofp_header *oh)
         return error;
     }
 
-    ds_put_format(string, " zone=%"PRIu16" ", zone_id);
+    ds_put_format(string, " zone=%"PRIu16, zone_id);
     ofp_ct_match_format(string, &match);
 
     return 0;
