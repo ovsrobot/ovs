@@ -21,6 +21,7 @@
 #include "cmap.h"
 #include "hmapx.h"
 #include "ofproto.h"
+#include "ofproto-dpif-trace.h"
 #include "vlan-bitmap.h"
 #include "openvswitch/vlog.h"
 
@@ -56,6 +57,11 @@ struct mirror {
     /* Selection criteria. */
     struct hmapx srcs;          /* Contains "struct mbundle*"s. */
     struct hmapx dsts;          /* Contains "struct mbundle*"s. */
+
+    /* Filter criteria. */
+    struct miniflow *filter;
+    struct minimask *mask;
+    char *filter_str;
 
     /* This is accessed by handler threads assuming RCU protection (see
      * mirror_get()), but can be manipulated by mirror_set() without any
@@ -209,7 +215,8 @@ mirror_bundle_dst(struct mbridge *mbridge, struct ofbundle *ofbundle)
 int
 mirror_set(struct mbridge *mbridge, void *aux,
            const struct ofproto_mirror_settings *ms, struct ofbundle **srcs,
-           struct ofbundle **dsts, struct ofbundle *bundle)
+           struct ofbundle **dsts, struct ofbundle *bundle,
+           const struct ofproto *ofproto)
 
 {
     struct mbundle *mbundle, *out;
@@ -265,7 +272,8 @@ mirror_set(struct mbridge *mbridge, void *aux,
         && vlan_bitmap_equal(vlans, ms->src_vlans)
         && mirror->out == out
         && mirror->out_vlan == out_vlan
-        && mirror->snaplen == ms->snaplen)
+        && mirror->snaplen == ms->snaplen
+        && nullable_string_is_equal(mirror->filter_str, ms->filter))
     {
         hmapx_destroy(&srcs_map);
         hmapx_destroy(&dsts_map);
@@ -288,6 +296,40 @@ mirror_set(struct mbridge *mbridge, void *aux,
     mirror->out = out;
     mirror->out_vlan = out_vlan;
     mirror->snaplen = ms->snaplen;
+
+    if (mirror->filter) {
+        ovsrcu_postpone(free, mirror->filter);
+        ovsrcu_postpone(free, mirror->mask);
+        free(mirror->filter_str);
+        mirror->filter_str = NULL;
+        mirror->filter = NULL;
+        mirror->mask = NULL;
+    }
+
+    if (ms->filter && strlen(ms->filter)) {
+        struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
+        struct flow_wildcards wc;
+        struct flow flow;
+        char *err;
+
+        ofproto_append_ports_to_map(&map, ofproto->ports);
+        err = parse_ofp_exact_flow(&flow, &wc,
+                                   ofproto_get_tun_tab(ofproto),
+                                   ms->filter, &map);
+        ofputil_port_map_destroy(&map);
+        if (err) {
+            VLOG_WARN("filter is invalid: %s", err);
+            free(err);
+            mirror_destroy(mbridge, mirror->aux);
+            return EINVAL;
+        }
+
+        mirror->mask = minimask_create(&wc);
+        mirror->filter = miniflow_create(&flow);
+        mirror->filter_str = xstrdup(ms->filter);
+    }
+
+
 
     /* Update mbundles. */
     mirror_bit = MIRROR_MASK_C(1) << mirror->idx;
@@ -342,6 +384,15 @@ mirror_destroy(struct mbridge *mbridge, void *aux)
     unsigned long *vlans = ovsrcu_get(unsigned long *, &mirror->vlans);
     if (vlans) {
         ovsrcu_postpone(free, vlans);
+    }
+
+    if (mirror->filter) {
+        ovsrcu_postpone(free, mirror->filter);
+        ovsrcu_postpone(free, mirror->mask);
+        free(mirror->filter_str);
+        mirror->filter_str = NULL;
+        mirror->filter = NULL;
+        mirror->mask = NULL;
     }
 
     mbridge->mirrors[mirror->idx] = NULL;
@@ -415,7 +466,9 @@ mirror_update_stats(struct mbridge *mbridge, mirror_mask_t mirrors,
  * in which a 1-bit indicates that the mirror includes a particular VLAN,
  * 'mc->dup_mirrors' receives a bitmap of mirrors whose output duplicates
  * mirror 'index', 'mc->out' receives the output ofbundle (if any),
- * and 'mc->out_vlan' receives the output VLAN (if any).
+ * and 'mc->out_vlan' receives the output VLAN (if any). In cases where the
+ * mirror has a filter configured 'mc->flow' and 'mc->mask' receives the flow
+ * and mask thatthis mirror should collect.
  *
  * Everything returned here is assumed to be RCU protected.
  */
@@ -425,7 +478,7 @@ mirror_get(struct mbridge *mbridge, int index,
 {
     struct mirror *mirror;
 
-    if (!mc || mbridge) {
+    if (!mc || !mbridge) {
         return false;
     }
 
@@ -441,6 +494,8 @@ mirror_get(struct mbridge *mbridge, int index,
     mc->bundle = mirror->out ? mirror->out->ofbundle : NULL;
     mc->out_vlan = mirror->out_vlan;
     mc->snaplen = mirror->snaplen;
+    mc->flow = mirror->filter;
+    mc->mask = mirror->mask;
     return true;
 }
 

@@ -25,6 +25,7 @@ typedef uint32_t mirror_mask_t;
 struct ofproto_mirror_settings;
 struct ofproto_dpif;
 struct ofbundle;
+struct ofproto;
 
 struct mirror_config {
     /* A bitmap of mirrors that duplicate the current mirror */
@@ -32,6 +33,11 @@ struct mirror_config {
 
     /* VLANs of packets to select for mirroring. */
     unsigned long *vlans;       /* vlan_bitmap, NULL selects all VLANs. */
+
+    /* Filter parameters. */
+    const char *filter;         /* The filter string or NULL. */
+    struct miniflow *flow;      /* The flow if a filter is used, or NULL. */
+    struct minimask *mask;      /* The filter's flow mask, or NULL. */
 
     /* Output (mutually exclusive). */
     struct ofbundle *bundle;    /* A registered ofbundle handle or NULL. */
@@ -68,7 +74,7 @@ void mbridge_unregister_bundle(struct mbridge *, struct ofbundle *);
 int mirror_set(struct mbridge *mbridge, void *aux,
                const struct ofproto_mirror_settings *ms,
                struct ofbundle **srcs, struct ofbundle **dsts,
-               struct ofbundle *bundle);
+               struct ofbundle *bundle, const struct ofproto *ofproto);
 void mirror_destroy(struct mbridge *, void *aux);
 int mirror_get_stats(struct mbridge *, void *aux, uint64_t *packets,
                      uint64_t *bytes);

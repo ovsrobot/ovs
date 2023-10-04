@@ -3664,7 +3664,7 @@ mirror_set__(struct ofproto *ofproto_, void *aux,
     }
 
     error = mirror_set(ofproto->mbridge, aux, s, srcs, dsts,
-                       bundle_lookup(ofproto, s->out_bundle));
+                       bundle_lookup(ofproto, s->out_bundle), ofproto_);
     free(srcs);
     free(dsts);
     return error;
