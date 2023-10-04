@@ -61,6 +61,10 @@ Options
 
   If specified, mirror all ports (optional).
 
+* ``--filter <flow>``
+
+  If specified, only mirror flows that match the provided filter.
+
 See Also
 ========
 
