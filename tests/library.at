@@ -88,6 +88,19 @@ AT_KEYWORDS([byte order])
 AT_CHECK([ovstest test-byte-order])
 AT_CLEANUP
 
+AT_SETUP([byteq operations])
+AT_KEYWORDS([byteq])
+AT_CHECK([ovstest test-byteq regular], [0], [...
+])
+AT_CLEANUP
+
+AT_SETUP([byteq operations only on non-Windows platforms])
+AT_KEYWORDS([byteq])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+AT_CHECK([ovstest test-byteq non-windows], [0], [.
+])
+AT_CLEANUP
+
 AT_SETUP([random number generator])
 AT_CHECK([ovstest test-random], [0], [dnl
 average=7fa2014f
