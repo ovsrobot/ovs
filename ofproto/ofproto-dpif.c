@@ -221,13 +221,6 @@ static void ct_zone_config_init(struct dpif_backer *backer);
 static void ct_zone_config_uninit(struct dpif_backer *backer);
 static void ct_zone_timeout_policy_sweep(struct dpif_backer *backer);
 
-static inline struct ofproto_dpif *
-ofproto_dpif_cast(const struct ofproto *ofproto)
-{
-    ovs_assert(ofproto->ofproto_class == &ofproto_dpif_class);
-    return CONTAINER_OF(ofproto, struct ofproto_dpif, up);
-}
-
 /* Global variables. */
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
@@ -3663,7 +3656,7 @@ mirror_set__(struct ofproto *ofproto_, void *aux,
         dsts[i] = bundle_lookup(ofproto, s->dsts[i]);
     }
 
-    error = mirror_set(ofproto->mbridge, aux, s, srcs, dsts,
+    error = mirror_set(ofproto_, aux, s, srcs, dsts,
                        bundle_lookup(ofproto, s->out_bundle));
     free(srcs);
     free(dsts);

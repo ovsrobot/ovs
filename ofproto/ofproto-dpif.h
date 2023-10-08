@@ -357,6 +357,12 @@ struct ofproto_dpif {
 
 struct ofproto_dpif *ofproto_dpif_lookup_by_name(const char *name);
 struct ofproto_dpif *ofproto_dpif_lookup_by_uuid(const struct uuid *uuid);
+static inline struct ofproto_dpif *
+ofproto_dpif_cast(const struct ofproto *ofproto)
+{
+    ovs_assert(ofproto->ofproto_class == &ofproto_dpif_class);
+    return CONTAINER_OF(ofproto, struct ofproto_dpif, up);
+}
 
 ovs_version_t ofproto_dpif_get_tables_version(struct ofproto_dpif *);
 
