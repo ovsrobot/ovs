@@ -3663,10 +3663,8 @@ mirror_set__(struct ofproto *ofproto_, void *aux,
         dsts[i] = bundle_lookup(ofproto, s->dsts[i]);
     }
 
-    error = mirror_set(ofproto->mbridge, aux, s->name, srcs, s->n_srcs, dsts,
-                       s->n_dsts, s->src_vlans,
-                       bundle_lookup(ofproto, s->out_bundle),
-                       s->snaplen, s->out_vlan);
+    error = mirror_set(ofproto->mbridge, aux, s, srcs, dsts,
+                       bundle_lookup(ofproto, s->out_bundle));
     free(srcs);
     free(dsts);
     return error;
