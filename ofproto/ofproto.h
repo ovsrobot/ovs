@@ -53,6 +53,8 @@ struct lldp_status;
 struct aa_settings;
 struct aa_mapping_settings;
 
+#define OFPROTO_CT_DEFAULT_ZONE_ID -1
+
 /* Needed for the lock annotations. */
 extern struct ovs_mutex ofproto_mutex;
 
@@ -384,6 +386,8 @@ void ofproto_ct_set_zone_timeout_policy(const char *datapath_type,
                                         struct simap *timeout_policy);
 void ofproto_ct_del_zone_timeout_policy(const char *datapath_type,
                                         uint16_t zone);
+void ofproto_ct_zone_limit_update(const char *datapath_type, int32_t zone_id,
+                                  int64_t *limit);
 void ofproto_get_datapath_cap(const char *datapath_type,
                               struct smap *dp_cap);
 
