@@ -2234,6 +2234,11 @@ dpctl_ct_set_limits(int argc, const char *argv[],
         ct_dpif_push_zone_limit(&zone_limits, zone, limit, 0);
     }
 
+    if (ct_dpif_is_zone_limit_protected(dpif)) {
+        error = EPERM;
+        goto error;
+    }
+
     error = ct_dpif_set_limits(dpif, &zone_limits);
     if (!error) {
         ct_dpif_free_zone_limits(&zone_limits);
@@ -2307,6 +2312,11 @@ dpctl_ct_del_limits(int argc, const char *argv[],
         if (error) {
             goto error;
         }
+    }
+
+    if (ct_dpif_is_zone_limit_protected(dpif)) {
+        error = EPERM;
+        goto error;
     }
 
     error = ct_dpif_del_limits(dpif, &zone_limits);
