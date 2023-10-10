@@ -470,6 +470,73 @@ free_ct_states(struct ovs_list *ct_states)
 }
 
 static void
+ofproto_unixctl_hexify(struct unixctl_conn *conn, int argc,
+                       const char *argv[], void *aux OVS_UNUSED)
+{
+    ovs_assert(argc == 2 || argc == 3);
+
+    char *error = NULL;
+    struct dp_packet *packet = NULL;
+
+    uint8_t *l7 = NULL;
+    size_t l7_len = 0;
+
+    struct ofpbuf odp_key = { 0 };
+    struct ofpbuf odp_mask = { 0 };
+    ofpbuf_init(&odp_key, 0);
+    ofpbuf_init(&odp_mask, 0);
+
+    /* Extract additional payload, if passed */
+    if (argc == 3) {
+        struct dp_packet payload;
+        memset(&payload, 0, sizeof payload);
+        dp_packet_init(&payload, 0);
+        if (dp_packet_put_hex(&payload, argv[2], NULL)[0] != '\0') {
+            dp_packet_uninit(&payload);
+            error = xstrdup("Trailing garbage in payload data");
+            goto out;
+        }
+        l7_len = dp_packet_size(&payload);
+        l7 = dp_packet_steal_data(&payload);
+    }
+
+    /* Flow string to flow. */
+    /* `hexify` command is backer agnostic, hence port_names=NULL */
+    if (odp_flow_from_string(argv[1], NULL, &odp_key, &odp_mask, &error)) {
+        goto out;
+    }
+    struct flow flow;
+    if (odp_flow_key_to_flow(odp_key.data, odp_key.size, &flow, &error)
+        == ODP_FIT_ERROR) {
+        goto out;
+    }
+
+    /* Flow to binary. */
+    packet = dp_packet_new(0);
+    flow_compose(packet, &flow, l7, l7_len);
+
+    /* Binary to hex string. */
+    struct ds result;
+    ds_init(&result);
+    for (int i = 0; i < dp_packet_size(packet); i++) {
+        uint8_t val = ((uint8_t *) dp_packet_data(packet))[i];
+        ds_put_format(&result, "%02"PRIx8, val);
+    }
+
+    unixctl_command_reply(conn, result.string);
+    ds_destroy(&result);
+out:
+    if (error) {
+        unixctl_command_reply_error(conn, error);
+        free(error);
+    }
+    dp_packet_delete(packet);
+    free(l7);
+    ofpbuf_uninit(&odp_mask);
+    ofpbuf_uninit(&odp_key);
+}
+
+static void
 ofproto_unixctl_trace(struct unixctl_conn *conn, int argc, const char *argv[],
                       void *aux OVS_UNUSED)
 {
@@ -876,6 +943,9 @@ ofproto_dpif_trace_init(void)
         "[-consistent] {[dp_name] odp_flow | bridge br_flow} [OPTIONS...] "
         "[-generate|packet] actions",
         2, INT_MAX, ofproto_unixctl_trace_actions, NULL);
+    unixctl_command_register(
+        "ofproto/hexify", "odp_flow [payload]",
+        1, 2, ofproto_unixctl_hexify, NULL);
 }
 
 void

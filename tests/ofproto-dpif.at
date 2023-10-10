@@ -12041,3 +12041,48 @@ AT_CHECK([test 1 = `ovs-ofctl parse-pcap p2-tx.pcap | wc -l`])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([ofproto-dpif - ofproto/hexify])
+OVS_VSWITCHD_START
+
+# check that invalid syntax generates an error: ethernet() instead of eth()
+flow_s="\
+ethernet(src=50:54:00:00:00:05,dst=50:54:00:00:01:00),eth_type(0x0800),\
+ipv4(src=10.0.0.2,dst=10.0.0.1,proto=6,tos=0,ttl=64,frag=no),\
+tcp(src=8,dst=9),tcp_flags(ack)"
+AT_CHECK([ovs-appctl ofproto/hexify ${flow_s}], [2], [stdout], [stderr])
+AT_CHECK_UNQUOTED([tail -2 stderr], [0], [syntax error at ${flow_s}
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+
+# check that a simpler flow string is successfully hexified
+flow_s="eth(src=50:54:00:00:00:05,dst=50:54:00:00:01:00),eth_type(0x0800)"
+expected=505400000100505400000005080045000014000000000000baeb0000000000000000
+actual=$(ovs-appctl ofproto/hexify ${flow_s})
+AT_CHECK([test ${expected} = ${actual}])
+
+# check that a longer flow string is successfully hexified
+flow_s="\
+eth(src=50:54:00:00:00:05,dst=50:54:00:00:01:00),eth_type(0x0800),\
+ipv4(src=10.0.0.2,dst=10.0.0.1,proto=6,tos=0,ttl=64,frag=no),\
+tcp(src=8,dst=9),tcp_flags(ack)"
+expected=50540000010050540000000508004500002800000000400666ce0a0000020a000001000800090000000000000000501000009bc10000
+actual=$(ovs-appctl ofproto/hexify ${flow_s})
+AT_CHECK([test ${expected} = ${actual}])
+
+# check that incomplete payload fails the command
+l7payload=$(printf 'd%.0s' {1..13})
+AT_CHECK([ovs-appctl ofproto/hexify ${flow_s} ${l7payload}], [2], [stdout], [stderr])
+AT_CHECK([tail -2 stderr], [0], [dnl
+Trailing garbage in payload data
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+
+# check that a properly sized payload is successfully appended
+l7payload=$(printf 'dead%.0s' {1..10})
+expected=50540000010050540000000508004500003c00000000400666ba0a0000020a00000100080009000000000000000050100000e8e20000deaddeaddeaddeaddeaddeaddeaddeaddeaddead
+actual=$(ovs-appctl ofproto/hexify ${flow_s} ${l7payload})
+AT_CHECK([test ${expected} = ${actual}])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP

@@ -4,7 +4,7 @@ These commands manage the core OpenFlow switch implementation (called
 .
 .IP "\fBofproto/list\fR"
 Lists the names of the running ofproto instances.  These are the names
-that may be used on \fBofproto/trace\fR.
+that may be used on \fBofproto/trace\fR and \fBofproto/hexify\fR.
 .
 .IP "\fBofproto/trace\fR [\fIoptions\fR] [\fIdpname\fR] \fIodp_flow\fR [\fIpacket\fR]
 .IQ "\fBofproto/trace\fR [\fIoptions\fR] \fIbridge\fR \fIbr_flow\fR [\fIpacket\fR]]
@@ -230,3 +230,37 @@ ofproto/trace br in_port=1,arp,arp_op=2
 .fi
 .RE
 .RE
+
+.IQ "\fBofproto/hexify\fR \fIodp_flow\fR [\fIpayload\fR]"
+Generates a hex digits representation of a frame matching
+\fIodp_flow\fR. When \fIpayload\fR is passed, the additional payload
+is attached to the end of the generated frame representation.
+.
+.RS
+.IP \(bu
+\fIodp_flow\fR is a flow in the form printed by \fBovs\-dpctl\fR(8)'s
+\fBdump\-flows\fR command.
+.
+.IP \(bu
+The command is agnostic to the datapath, that's why it doesn't support
+some standard \fIodp_flow\fR features like using port names.
+.RE
+.
+.IP "Usage examples:"
+.RS 4
+.PP
+\fBGenerate a unicast IPv4 TCP ACK packet\fR
+.RS 4
+.nf
+ofproto/hexify eth(src=50:54:00:00:00:05,dst=50:54:00:00:01:00),
+eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=6),
+tcp(src=8,dst=9),tcp_flags(ack)
+.RE
+.fi
+.PP
+\fBGenerate a unicast IPv4 TCP ACK packet with additional payload\fR
+.RS 4
+.nf
+ofproto/hexify eth(src=50:54:00:00:00:05,dst=50:54:00:00:01:00),
+eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=6),
+tcp(src=8,dst=9),tcp_flags(ack) 010203abcdef
