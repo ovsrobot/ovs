@@ -127,6 +127,8 @@ enum {
     MAX_ZONE = 0xFFFF,
 };
 
+BUILD_ASSERT_DECL(CT_DPIF_DEFAULT_ZONE == DEFAULT_ZONE);
+
 struct ct_dpif_entry;
 struct ct_dpif_tuple;
 
@@ -154,6 +156,6 @@ struct ipf *conntrack_ipf_ctx(struct conntrack *ct);
 struct conntrack_zone_limit zone_limit_get(struct conntrack *ct,
                                            int32_t zone);
 int zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit);
-int zone_limit_delete(struct conntrack *ct, uint16_t zone);
+int zone_limit_delete(struct conntrack *ct, int32_t zone);
 
 #endif /* conntrack.h */
