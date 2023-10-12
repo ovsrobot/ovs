@@ -3821,6 +3821,34 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
             supported by hardware.
           </column>
       </group>
+
+      <group title="dpdkvhostuser">
+        <p>
+          dpdkvhostuser and dpdkvhostuserclient
+          netdev specific interface status options.
+        </p>
+          <column name="status" key="mode">
+            Client or server vhost mode.
+          </column>
+          <column name="status" key="features">
+            vhost features bitmap.
+          </column>
+          <column name="status" key="num_of_vrings">
+            Number of vrings.
+          </column>
+          <column name="status" key="numa">
+            Vhost numa association.
+          </column>
+          <column name="status" key="socket">
+            Vhost socket path.
+          </column>
+          <column name="status" key="status">
+            Status of connection.
+          </column>
+          <column name="status" key="vring_n_size">
+            Size of vring n.
+          </column>
+      </group>
     </group>
 
     <group title="Statistics">
