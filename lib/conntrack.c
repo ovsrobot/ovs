@@ -50,6 +50,7 @@ COVERAGE_DEFINE(conntrack_full);
 COVERAGE_DEFINE(conntrack_l3csum_err);
 COVERAGE_DEFINE(conntrack_l4csum_err);
 COVERAGE_DEFINE(conntrack_lookup_natted_miss);
+COVERAGE_DEFINE(conntrack_duplicate);
 
 struct conn_lookup_ctx {
     struct conn_key key;
@@ -893,9 +894,9 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
                const struct nat_action_info_t *nat_action_info,
                const char *helper, const struct alg_exp_node *alg_exp,
                enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
-    OVS_REQUIRES(ct->ct_lock)
 {
     struct conn *nc = NULL;
+    uint32_t rev_hash;
 
     if (!valid_new(pkt, &ctx->key)) {
         pkt->md.ct_state = CS_INVALID;
@@ -961,17 +962,27 @@ conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
             }
 
             nat_packet(pkt, nc, false, ctx->icmp_related);
-            uint32_t rev_hash = conn_key_hash(&rev_key_node->key,
-                                              ct->hash_basis);
-            cmap_insert(&ct->conns, &rev_key_node->cm_node, rev_hash);
+            rev_hash = conn_key_hash(&rev_key_node->key, ct->hash_basis);
         }
 
         ovs_mutex_init_adaptive(&nc->lock);
         atomic_flag_clear(&nc->reclaimed);
         fwd_key_node->dir = CT_DIR_FWD;
         rev_key_node->dir = CT_DIR_REV;
+        ovs_mutex_lock(&ct->ct_lock);
+        if (conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
+            ovs_mutex_unlock(&ct->ct_lock);
+            COVERAGE_INC(conntrack_duplicate);
+            ovs_mutex_destroy(&nc->lock);
+            delete_conn__(nc);
+            return NULL;
+        }
+        if (nat_action_info) {
+            cmap_insert(&ct->conns, &rev_key_node->cm_node, rev_hash);
+        }
         cmap_insert(&ct->conns, &fwd_key_node->cm_node, ctx->hash);
         conn_expire_push_front(ct, nc);
+        ovs_mutex_unlock(&ct->ct_lock);
         atomic_count_inc(&ct->n_conn);
         ctx->conn = nc; /* For completeness. */
         if (zl) {
@@ -1290,12 +1301,8 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
         }
         ovs_rwlock_unlock(&ct->resources_lock);
 
-        ovs_mutex_lock(&ct->ct_lock);
-        if (!conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
-            conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
-                                  helper, alg_exp, ct_alg_ctl, tp_id);
-        }
-        ovs_mutex_unlock(&ct->ct_lock);
+        conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
+                              helper, alg_exp, ct_alg_ctl, tp_id);
     }
 
     write_ct_md(pkt, zone, conn, &ctx->key, alg_exp);
