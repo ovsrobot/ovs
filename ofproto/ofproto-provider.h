@@ -1925,6 +1925,11 @@ struct ofproto_class {
     /* Updates the CT zone limit for specified zone. */
     void (*ct_zone_limit_update)(const char *dp_type, int32_t zone,
                                  int64_t *limit);
+
+    /* Sets the CT zone limit protection to "protected" for the specified
+     * datapath type. */
+    void (*ct_zone_limit_protection_update)(const char *dp_type,
+                                            bool protected);
 };
 
 extern const struct ofproto_class ofproto_dpif_class;
