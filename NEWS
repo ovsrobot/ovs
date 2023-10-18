@@ -6,6 +6,9 @@ Post-v3.2.0
        from older version is supported but it may trigger more leader elections
        during the process, and error logs complaining unrecognized fields may
        be observed on old nodes.
+   - ovs-appctl:
+     * Added support removal of default CT zone limit, e.g.
+       "ovs-appctl dpctl/ct-del-limits default".
 
 
 v3.2.0 - 17 Aug 2023
