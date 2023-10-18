@@ -122,7 +122,8 @@ struct timeout_policy {
 
 enum {
     INVALID_ZONE = -2,
-    DEFAULT_ZONE = -1, /* Default zone for zone limit management. */
+    DEFAULT_ZONE = OVS_ZONE_LIMIT_DEFAULT_ZONE, /* Default zone for zone
+                                                 * limit management. */
     MIN_ZONE = 0,
     MAX_ZONE = 0xFFFF,
 };
@@ -154,6 +155,6 @@ struct ipf *conntrack_ipf_ctx(struct conntrack *ct);
 struct conntrack_zone_limit zone_limit_get(struct conntrack *ct,
                                            int32_t zone);
 int zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit);
-int zone_limit_delete(struct conntrack *ct, uint16_t zone);
+int zone_limit_delete(struct conntrack *ct, int32_t zone);
 
 #endif /* conntrack.h */
