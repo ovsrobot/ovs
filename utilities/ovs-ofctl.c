@@ -5092,8 +5092,9 @@ static const struct ovs_cmdl_command all_commands[] = {
     { "ct-flush-zone", "switch zone",
       2, 2, ofctl_ct_flush_zone, OVS_RO },
 
-    { "ct-flush", "switch [zone=N] [ct-orig-tuple [ct-reply-tuple]]",
-      1, 4, ofctl_ct_flush, OVS_RO },
+    { "ct-flush", "switch [zone=N] [mark=X[/M]] [labels=Y[/N]] "
+                  "[ct-orig-tuple [ct-reply-tuple]]",
+      1, 6, ofctl_ct_flush, OVS_RO },
 
     { "ofp-parse", "file",
       1, 1, ofctl_ofp_parse, OVS_RW },
