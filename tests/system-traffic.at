@@ -291,6 +291,54 @@ NS_CHECK_EXEC([at_ns0], [ping -s 3200 -q -c 3 -i 0.3 -w 2 10.1.1.2 | FORMAT_PING
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([datapath - bond active-backup failover])
+OVS_TRAFFIC_VSWITCHD_START([_ADD_BR([br1])])
+
+AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
+AT_CHECK([ovs-ofctl add-flow br1 "actions=normal"])
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+ADD_VETH(p1, at_ns1, br1, "10.1.1.2/24")
+on_exit 'ip link del link0a'
+on_exit 'ip link del link0b'
+AT_CHECK([ip link add link0a type veth peer name link1a])
+AT_CHECK([ip link add link0b type veth peer name link1b])
+
+AT_CHECK([ip link set dev link0a up])
+AT_CHECK([ip link set dev link1a up])
+AT_CHECK([ip link set dev link0b up])
+AT_CHECK([ip link set dev link1b up])
+
+AT_CHECK([ovs-vsctl add-bond br0 bond0 link0a link0b bond_mode=active-backup])
+AT_CHECK([ovs-vsctl add-bond br1 bond1 link1a link1b bond_mode=active-backup])
+
+dnl Set primary bond member.
+AT_CHECK([ovs-vsctl set port bond0 other_config:bond-primary=link0a -- \
+                    set port bond1 other_config:bond-primary=link1a])
+
+OVS_WAIT_UNTIL([ip netns exec at_ns0 ping -c 1 10.1.1.2])
+
+NS_CHECK_EXEC([at_ns0], [ping -q -c 4 -i 0.6 -w 4 10.1.1.2 | grep -qv "100% packet loss"], [0])
+
+dnl Check correct port is used.
+AT_CHECK([ovs-appctl dpctl/dump-flows -m | grep -Eq "actions:link[[01]]a"], [0])
+AT_CHECK([ovs-appctl dpctl/dump-flows -m | grep -Eqv "actions:link[[01]]b"], [0])
+
+dnl Change primary bond member.
+AT_CHECK([ovs-vsctl set port bond0 other_config:bond-primary=link0b -- \
+                    set port bond1 other_config:bond-primary=link1b])
+
+NS_CHECK_EXEC([at_ns0], [ping -q -c 4 -i 0.6 -w 4 10.1.1.2 | grep -q "4 received"], [0])
+
+dnl Check correct port is used.
+AT_CHECK([ovs-appctl dpctl/dump-flows -m | grep -Eqv "actions:link[[01]]a"], [0])
+AT_CHECK([ovs-appctl dpctl/dump-flows -m | grep -Eq "actions:link[[01]]b"], [0])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([datapath - ping over vxlan tunnel])
 OVS_CHECK_TUNNEL_TSO()
 OVS_CHECK_VXLAN()
