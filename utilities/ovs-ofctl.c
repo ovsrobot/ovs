@@ -4989,7 +4989,7 @@ ofctl_compose_packet(struct ovs_cmdl_context *ctx)
         l7_len = dp_packet_size(&payload);
         l7 = dp_packet_steal_data(&payload);
     }
-    flow_compose(&p, &flow1, l7, l7_len);
+    flow_compose(&p, &flow1, l7, l7_len, false);
     free(l7);
 
     if (print_pcap) {

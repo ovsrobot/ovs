@@ -19,6 +19,7 @@
 #include "odp-util.h"
 #include <stdio.h>
 #include "openvswitch/dynamic-string.h"
+#include "dp-packet.h"
 #include "flow.h"
 #include "openvswitch/match.h"
 #include "openvswitch/ofpbuf.h"
@@ -156,6 +157,96 @@ parse_actions(void)
 }
 
 static int
+hexify_keys(bool bad_csum)
+{
+    int exit_code = 0;
+    struct ds in;
+
+    uint8_t *l7 = NULL;
+    size_t l7_len = 0;
+
+    char *error = NULL;
+    struct dp_packet *packet = NULL;
+
+    ds_init(&in);
+    vlog_set_levels_from_string_assert("odp_util:console:dbg");
+    while (!ds_get_test_line(&in, stdin)) {
+        const char *line = ds_cstr(&in);
+
+        struct flow flow;
+        struct ofpbuf odp_key;
+        struct ofpbuf odp_mask;
+        ofpbuf_init(&odp_key, 0);
+        ofpbuf_init(&odp_mask, 0);
+
+        /* Handle trailing hex payload after a space char, if present. */
+        const char *first_space = strchr(line, ' ');
+        if (first_space) {
+            const char *hex_payload = first_space + 1;
+            struct dp_packet payload;
+            memset(&payload, 0, sizeof payload);
+            dp_packet_init(&payload, 0);
+            if (dp_packet_put_hex(&payload, hex_payload, NULL)[0] != '\0') {
+                dp_packet_uninit(&payload);
+                error = xstrdup("Trailing garbage in payload data");
+                goto next;
+            }
+            l7_len = dp_packet_size(&payload);
+            l7 = dp_packet_steal_data(&payload);
+            ds_truncate(&in, first_space - line);
+        }
+
+        /* Parse flow string. */
+        if (odp_flow_from_string(
+                ds_cstr(&in), NULL, &odp_key, &odp_mask, &error)) {
+            goto next;
+        }
+        if (odp_flow_key_to_flow(odp_key.data, odp_key.size, &flow, &error)
+            == ODP_FIT_ERROR) {
+            goto next;
+        }
+
+        /* Flow to binary. */
+        packet = dp_packet_new(0);
+        flow_compose(packet, &flow, l7, l7_len, bad_csum);
+
+        /* Binary to hex string. */
+        struct ds result = DS_EMPTY_INITIALIZER;
+        for (int i = 0; i < dp_packet_size(packet); i++) {
+            uint8_t val = ((uint8_t *) dp_packet_data(packet))[i];
+            /* Don't use ds_put_hex because it adds 0x prefix as well as
+             * it doesn't guarantee even number of payload characters, which is
+             * important elsewhere (e.g. in `receive` command. */
+            ds_put_format(&result, "%02" PRIx8, val);
+        }
+
+        puts(ds_cstr(&result));
+next:
+        ds_destroy(&result);
+        if (error) {
+            printf("%s", error);
+            free(error);
+            exit_code = 1;
+        }
+
+        dp_packet_delete(packet);
+        packet = NULL;
+        free(l7);
+        l7 = NULL;
+
+        ofpbuf_uninit(&odp_mask);
+        ofpbuf_uninit(&odp_key);
+        ds_destroy(&in);
+
+        if (exit_code) {
+            break;
+        }
+    }
+
+    return exit_code;
+}
+
+static int
 parse_filter(char *filter_parse)
 {
     struct ds in;
@@ -247,8 +338,14 @@ test_odp_main(int argc, char *argv[])
         exit_code = parse_actions();
     } else if (argc == 3 && !strcmp(argv[1], "parse-filter")) {
         exit_code =parse_filter(argv[2]);
+    } else if (argc == 2 && !strcmp(argv[1], "hexify-keys")) {
+        exit_code = hexify_keys(false);
+    } else if (argc == 3 && !strcmp(argv[1], "hexify-keys") &&
+            !strcmp(argv[2], "--bad-csum")) {
+        exit_code = hexify_keys(true);
     } else {
-        ovs_fatal(0, "usage: %s parse-keys | parse-wc-keys | parse-actions", argv[0]);
+        ovs_fatal(0, "usage: %s parse-keys | parse-wc-keys | parse-actions | "
+                     "hexify-keys [--bad-csum]", argv[0]);
     }
 
     exit(exit_code);
