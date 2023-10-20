@@ -17,6 +17,8 @@
 #ifndef UNIXCTL_H
 #define UNIXCTL_H 1
 
+#include "openvswitch/json.h"
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -47,6 +49,7 @@ void unixctl_command_register(const char *name, const char *usage,
                               unixctl_cb_func *cb, void *aux);
 void unixctl_command_reply_error(struct unixctl_conn *, const char *error);
 void unixctl_command_reply(struct unixctl_conn *, const char *body);
+void unixctl_command_reply_json(struct unixctl_conn *, struct json *body);
 
 #ifdef  __cplusplus
 }

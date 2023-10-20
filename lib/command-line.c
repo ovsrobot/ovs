@@ -54,6 +54,46 @@ ovs_cmdl_long_options_to_short_options(const struct option options[])
 }
 
 static char * OVS_WARN_UNUSED_RESULT
+ovs_cmdl_parse_output_fmt__(const char * arg, enum ovs_output_fmt *fmt)
+{
+    if (!strcmp(arg, "text")) {
+        *fmt = OVS_OUTPUT_FMT_TEXT;
+    } else if (!strcmp(arg, "json")) {
+        *fmt = OVS_OUTPUT_FMT_JSON;
+    } else {
+        return xasprintf("unsupported output format '%s'", arg);
+    }
+    return NULL;
+}
+
+char * OVS_WARN_UNUSED_RESULT
+ovs_cmdl_parse_output_fmt(int argi, int argc, const char *argv[],
+                          enum ovs_output_fmt *fmt, int *parsed)
+{
+    ovs_assert(argi < argc);
+    const char *arg = argv[argi];
+    *parsed = 0;
+
+    if (!strncmp(arg, "--output=", 9)) {
+        *parsed = 2;
+        if (strlen(arg) <= 9) {
+            return xasprintf("option '%s' requires an argument", arg);
+        }
+        return ovs_cmdl_parse_output_fmt__(arg + 9, fmt);
+    } else if (!strcmp(arg, "-o") || !strcmp(arg, "--output")) {
+        *parsed = 2;
+        if (argi+1 >= argc) {
+            return xasprintf("option '%s' requires an argument", arg);
+        }
+        return ovs_cmdl_parse_output_fmt__(argv[argi + 1], fmt);
+    } else {
+        return NULL;
+    }
+
+    OVS_NOT_REACHED();
+}
+
+static char * OVS_WARN_UNUSED_RESULT
 build_short_options(const struct option *long_options)
 {
     char *tmp, *short_options;

@@ -46,6 +46,14 @@ struct ovs_cmdl_command {
 
 char *ovs_cmdl_long_options_to_short_options(const struct option *options);
 
+enum ovs_output_fmt {
+    OVS_OUTPUT_FMT_TEXT,
+    OVS_OUTPUT_FMT_JSON
+};
+
+char * ovs_cmdl_parse_output_fmt(int argi, int argc, const char *argv[],
+                                 enum ovs_output_fmt *fmt, int *parsed);
+
 struct ovs_cmdl_parsed_option {
     const struct option *o;
     char *arg;

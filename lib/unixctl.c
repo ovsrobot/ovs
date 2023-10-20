@@ -21,7 +21,6 @@
 #include "coverage.h"
 #include "dirs.h"
 #include "openvswitch/dynamic-string.h"
-#include "openvswitch/json.h"
 #include "jsonrpc.h"
 #include "openvswitch/list.h"
 #include "openvswitch/poll-loop.h"
@@ -128,36 +127,42 @@ unixctl_command_register(const char *name, const char *usage,
     shash_add(&commands, name, command);
 }
 
-static void
-unixctl_command_reply__(struct unixctl_conn *conn,
-                        bool success, const char *body)
+static struct json *
+json_string_create__(const char *body)
 {
-    struct json *body_json;
-    struct jsonrpc_msg *reply;
-
-    COVERAGE_INC(unixctl_replied);
-    ovs_assert(conn->request_id);
-
     if (!body) {
         body = "";
     }
 
     if (body[0] && body[strlen(body) - 1] != '\n') {
-        body_json = json_string_create_nocopy(xasprintf("%s\n", body));
+        return json_string_create_nocopy(xasprintf("%s\n", body));
     } else {
-        body_json = json_string_create(body);
+        return json_string_create(body);
     }
+}
+
+/* Takes ownership of 'body'. */
+static void
+unixctl_command_reply__(struct unixctl_conn *conn,
+                        bool success, struct json *body)
+{
+    struct jsonrpc_msg *reply;
+
+    COVERAGE_INC(unixctl_replied);
+    ovs_assert(conn->request_id);
 
     if (success) {
-        reply = jsonrpc_create_reply(body_json, conn->request_id);
+        reply = jsonrpc_create_reply(body, conn->request_id);
     } else {
-        reply = jsonrpc_create_error(body_json, conn->request_id);
+        reply = jsonrpc_create_error(body, conn->request_id);
     }
 
     if (VLOG_IS_DBG_ENABLED()) {
         char *id = json_to_string(conn->request_id, 0);
+        char *msg = json_to_string(body, 0);
         VLOG_DBG("replying with %s, id=%s: \"%s\"",
-                 success ? "success" : "error", id, body);
+                 success ? "success" : "error", id, msg);
+        free(msg);
         free(id);
     }
 
@@ -170,22 +175,34 @@ unixctl_command_reply__(struct unixctl_conn *conn,
 
 /* Replies to the active unixctl connection 'conn'.  'result' is sent to the
  * client indicating the command was processed successfully.  Only one call to
- * unixctl_command_reply() or unixctl_command_reply_error() may be made per
- * request. */
+ * unixctl_command_reply(), unixctl_command_reply_error() or
+ * unixctl_command_reply_json() may be made per request. */
 void
 unixctl_command_reply(struct unixctl_conn *conn, const char *result)
 {
-    unixctl_command_reply__(conn, true, result);
+    unixctl_command_reply__(conn, true, json_string_create__(result));
 }
 
 /* Replies to the active unixctl connection 'conn'. 'error' is sent to the
- * client indicating an error occurred processing the command.  Only one call to
- * unixctl_command_reply() or unixctl_command_reply_error() may be made per
- * request. */
+ * client indicating an error occurred processing the command.  Only one call
+ * to unixctl_command_reply(), unixctl_command_reply_error() or
+ * unixctl_command_reply_json() may be made per request. */
 void
 unixctl_command_reply_error(struct unixctl_conn *conn, const char *error)
 {
-    unixctl_command_reply__(conn, false, error);
+    unixctl_command_reply__(conn, false, json_string_create__(error));
+}
+
+/* Replies to the active unixctl connection 'conn'.  'result' is sent to the
+ * client indicating the command was processed successfully.  Only one call to
+ * unixctl_command_reply(), unixctl_command_reply_error() or
+ * unixctl_command_reply_json() may be made per request.
+ *
+ * Takes ownership of 'body'. */
+void
+unixctl_command_reply_json(struct unixctl_conn *conn, struct json *body)
+{
+    unixctl_command_reply__(conn, true, body);
 }
 
 /* Creates a unixctl server listening on 'path', which for POSIX may be:
@@ -518,6 +535,20 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
     } else if (reply->result) {
         if (reply->result->type == JSON_STRING) {
             *result = xstrdup(json_string(reply->result));
+        } else if (reply->result->type == JSON_OBJECT ||
+                   reply->result->type == JSON_ARRAY) {
+            /* TODO: How about other result types? */
+
+            /* TODO: Do we really want to prettyfy and sort the output?
+             * The benefit for users is probably minimal because they could
+             * simply use jq to format the output if needed. Since JSON output
+             * is meant to be consumed by machines, this pretty-printing is
+             * probably unnecessary in most cases.
+             * However, it might have its use in our unit tests because it
+             * allows us to make readable checks without having to introduce a
+             * dependency on jq.
+             */
+            *result = json_to_string(reply->result, JSSF_PRETTY | JSSF_SORT);
         } else {
             VLOG_WARN("%s: unexpected result type in JSON rpc reply: %s",
                       jsonrpc_get_name(client),
