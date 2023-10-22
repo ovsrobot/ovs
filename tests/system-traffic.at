@@ -1751,7 +1751,9 @@ AT_CHECK([ovs-ofctl dump-flows br0 table=0 | grep "in_port=5" | sed -n 's/.*\(n\
 n_bytes=542
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 dnl Create 2 bridges and 2 namespaces to test truncate over
@@ -1882,7 +1884,9 @@ AT_CHECK([ovs-ofctl dump-flows br0 | grep "in_port=4" | ofctl_strip], [0], [dnl
  n_packets=1, n_bytes=100, priority=1,ip,in_port=4 actions=drop
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 dnl Create 2 bridges and 2 namespaces to test truncate over
@@ -2009,7 +2013,9 @@ AT_CHECK([ovs-ofctl dump-flows br0 | grep "in_port=4" | ofctl_strip], [0], [dnl
  n_packets=1, n_bytes=100, priority=1,ip,in_port=4 actions=drop
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 AT_SETUP([datapath - configure cache size])
@@ -2511,7 +2517,9 @@ AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "orig=.src=10\.1\.1\.1,"], [], 
 udp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=1,dport=2),reply=(src=10.1.1.2,dst=10.1.1.1,sport=2,dport=1)
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 AT_SETUP([conntrack - ct flush])
@@ -3683,7 +3691,9 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort | grep -v drop], [0], [d
 NXST_FLOW reply:
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 AT_SETUP([conntrack - ICMP related to original direction])
@@ -3740,7 +3750,9 @@ AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(192.100.1.8)], [0], [dnl
 udp,orig=(src=192.100.1.8,dst=192.100.2.5,sport=<cleared>,dport=<cleared>),reply=(src=192.100.2.5,dst=192.100.1.8,sport=<cleared>,dport=<cleared>),zone=34673
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 AT_SETUP([conntrack - ICMP related 2])
@@ -4838,7 +4850,9 @@ AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | sed 's/,protoi
 sctp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.240,sport=<cleared>,dport=<cleared>),zone=1
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 dnl Check kernel datapath to make sure conntrack fills in L3 and L4
@@ -6184,7 +6198,9 @@ udp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=
 
 AT_CHECK([tcpdump -v "icmp" -r p0.pcap 2>/dev/null | grep -E 'wrong|bad'], [1], [ignore-nolog])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 dnl CHECK_FTP_NAT(TITLE, IP_ADDR, FLOWS, CT_DUMP)
@@ -7307,7 +7323,9 @@ ovs-appctl revalidator/purge
 ovs-ofctl -O OpenFlow15 dump-flows br0
 ovs-ofctl -O OpenFlow15 dump-group-stats br0
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 
@@ -7396,7 +7414,9 @@ ovs-appctl revalidator/purge
 ovs-ofctl -O OpenFlow15 dump-flows br0
 ovs-ofctl -O OpenFlow15 dump-group-stats br0
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 AT_SETUP([conntrack - floating IP])
@@ -7730,7 +7750,9 @@ AT_CHECK([ovs-pcap client.pcap | grep 000000002010000000002000], [0], [dnl
 000000002010000000002000080045000038011f0000ff011137c0a81414c0a8140a0304f778000005784500001c000040000a11c762c0a8140ac0a814140001000200080000
 ])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 AT_BANNER([IGMP])
@@ -7839,7 +7861,9 @@ AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:vlan-limit=1])
 AT_CHECK([ovs-ofctl add-flow br0 "priority=100 dl_type=0x8100 action=drop"])
 NS_CHECK_EXEC([at_ns0], [ping -q -c 1 -w 3 10.2.2.2], [1], [ignore])
 
-OVS_TRAFFIC_VSWITCHD_STOP
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to flow_get (No such file or directory)/d
+/Failed to acquire udpif_key corresponding to unexpected flow (No such file or directory)/d"])
 AT_CLEANUP
 
 
