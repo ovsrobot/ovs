@@ -20,6 +20,7 @@
 #include "bond.h"
 #include "bundle.h"
 #include "byte-order.h"
+#include "command-line.h"
 #include "connectivity.h"
 #include "connmgr.h"
 #include "coverage.h"
@@ -6360,8 +6361,103 @@ done:
     return changed;
 }
 
+static struct json *
+dpif_show_backer_json(const struct dpif_backer *backer)
+{
+    struct json *json_backer = json_object_create();
+
+    /* add dpif name to json */
+    json_object_put_string(json_backer, "name", dpif_name(backer->dpif));
+
+    /* add dpif stats to json */
+    struct dpif_dp_stats dp_stats;
+    dpif_get_dp_stats(backer->dpif, &dp_stats);
+    struct json *json_dp_stats = json_object_create();
+    json_object_put_format(json_dp_stats, "n_hit", "%"PRIu64, dp_stats.n_hit);
+    json_object_put_format(json_dp_stats, "n_missed", "%"PRIu64,
+                           dp_stats.n_missed);
+    json_object_put(json_backer, "stats", json_dp_stats);
+
+    /* add ofprotos to json */
+    struct json *json_ofprotos = json_array_create_empty();
+    struct shash ofproto_shash;
+    shash_init(&ofproto_shash);
+    const struct shash_node **ofprotos = get_ofprotos(&ofproto_shash);
+    for (size_t i = 0; i < shash_count(&ofproto_shash); i++) {
+        struct ofproto_dpif *ofproto = ofprotos[i]->data;
+
+        if (ofproto->backer != backer) {
+            continue;
+        }
+
+        struct json *json_ofproto = json_object_create();
+
+        /* add ofproto name to json array */
+        json_object_put_string(json_ofproto, "name", ofproto->up.name);
+
+        /* add ofproto ports to json array */
+        struct json *json_ofproto_ports = json_array_create_empty();
+        const struct shash_node **ports;
+        ports = shash_sort(&ofproto->up.port_by_name);
+        for (size_t j = 0; j < shash_count(&ofproto->up.port_by_name); j++) {
+            const struct shash_node *port = ports[j];
+            struct ofport *ofport = port->data;
+
+            struct json * json_ofproto_port = json_object_create();
+            /* add ofproto port netdev name to json sub array */
+            json_object_put_string(json_ofproto_port, "netdev_name",
+                                   netdev_get_name(ofport->netdev));
+            /* add ofproto port ofp port to json sub array*/
+            json_object_put_format(json_ofproto_port, "ofp_port", "%u",
+                                   ofport->ofp_port);
+
+            /* add ofproto port odp port to json sub array*/
+            odp_port_t odp_port = ofp_port_to_odp_port(ofproto,
+                                                       ofport->ofp_port);
+            if (odp_port != ODPP_NONE) {
+                json_object_put_format(json_ofproto_port, "odp_port",
+                                       "%"PRIu32, odp_port);
+            } else {
+                json_object_put_string(json_ofproto_port, "odp_port", "none");
+            }
+
+            /* add ofproto port netdev type to json sub array */
+            json_object_put_string(json_ofproto_port, "netdev_type",
+                                   netdev_get_type(ofport->netdev));
+
+            /* add ofproto port config to json sub array */
+            struct json *json_port_config = json_object_create();
+            struct smap config;
+            smap_init(&config);
+            if (!netdev_get_config(ofport->netdev, &config)) {
+                struct smap_node *node;
+
+                SMAP_FOR_EACH (node, &config) {
+                    json_object_put_string(json_port_config, node->key,
+                                           node->value);
+                }
+            }
+            smap_destroy(&config);
+            json_object_put(json_ofproto_port, "netdev_config",
+                            json_port_config);
+
+            json_array_add(json_ofproto_ports, json_ofproto_port);
+        } /* end of ofproto port(s) */
+
+        free(ports);
+        json_object_put(json_ofproto, "ports", json_ofproto_ports);
+
+        json_array_add(json_ofprotos, json_ofproto);
+    } /* end of ofproto(s) */
+    shash_destroy(&ofproto_shash);
+    free(ofprotos);
+
+    json_object_put(json_backer, "ofprotos", json_ofprotos);
+    return json_backer;
+}
+
 static void
-dpif_show_backer(const struct dpif_backer *backer, struct ds *ds)
+dpif_show_backer_text(const struct dpif_backer *backer, struct ds *ds)
 {
     const struct shash_node **ofprotos;
     struct dpif_dp_stats dp_stats;
@@ -6427,21 +6523,27 @@ dpif_show_backer(const struct dpif_backer *backer, struct ds *ds)
 static void
 ofproto_unixctl_dpif_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                           const char *argv[] OVS_UNUSED,
-                          enum ovs_output_fmt fmt OVS_UNUSED,
-                          void *aux OVS_UNUSED)
+                          enum ovs_output_fmt fmt, void *aux OVS_UNUSED)
 {
     struct ds ds = DS_EMPTY_INITIALIZER;
-    const struct shash_node **backers;
-    int i;
 
-    backers = shash_sort(&all_dpif_backers);
-    for (i = 0; i < shash_count(&all_dpif_backers); i++) {
-        dpif_show_backer(backers[i]->data, &ds);
+    if (fmt == OVS_OUTPUT_FMT_JSON) {
+        struct json *backers = json_array_create_empty();
+        const struct shash_node *backer;
+        SHASH_FOR_EACH (backer, &all_dpif_backers) {
+            json_array_add(backers, dpif_show_backer_json(backer->data));
+        }
+        unixctl_command_reply_json(conn, backers);
+    } else {
+        const struct shash_node **backers = shash_sort(&all_dpif_backers);
+        for (int i = 0; i < shash_count(&all_dpif_backers); i++) {
+            dpif_show_backer_text(backers[i]->data, &ds);
+        }
+        free(backers);
+
+        unixctl_command_reply(conn, ds_cstr(&ds));
+        ds_destroy(&ds);
     }
-    free(backers);
-
-    unixctl_command_reply(conn, ds_cstr(&ds));
-    ds_destroy(&ds);
 }
 
 static void
@@ -6622,7 +6724,8 @@ ofproto_unixctl_init(void)
                              ofproto_unixctl_mcast_snooping_show, NULL);
     unixctl_command_register("dpif/dump-dps", "", 0, 0, OVS_OUTPUT_FMT_TEXT,
                              ofproto_unixctl_dpif_dump_dps, NULL);
-    unixctl_command_register("dpif/show", "", 0, 0, OVS_OUTPUT_FMT_TEXT,
+    unixctl_command_register("dpif/show", "", 0, 0,
+                             OVS_OUTPUT_FMT_TEXT | OVS_OUTPUT_FMT_JSON,
                              ofproto_unixctl_dpif_show, NULL);
     unixctl_command_register("dpif/show-dp-features", "bridge", 1, 1,
                              OVS_OUTPUT_FMT_TEXT,

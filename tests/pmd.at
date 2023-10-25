@@ -105,6 +105,35 @@ dummy@ovs-dummy: hit:0 missed:0
     p0 1/1: (dummy-pmd: configured_rx_queues=1, configured_tx_queues=<cleared>, requested_rx_queues=1, requested_tx_queues=<cleared>)
 ])
 
+AT_CHECK([ovs-appctl --format json dpif/show | sed 's/\(tx_queues": "\)[[0-9]]*"/\1<cleared>"/g'], [0], [dnl
+[[
+  {
+    "name": "dummy@ovs-dummy",
+    "ofprotos": [
+      {
+        "name": "br0",
+        "ports": [
+          {
+            "netdev_config": {
+              },
+            "netdev_name": "br0",
+            "netdev_type": "dummy-internal",
+            "odp_port": "100",
+            "ofp_port": "65534"},
+          {
+            "netdev_config": {
+              "configured_rx_queues": "1",
+              "configured_tx_queues": "<cleared>",
+              "requested_rx_queues": "1",
+              "requested_tx_queues": "<cleared>"},
+            "netdev_name": "p0",
+            "netdev_type": "dummy-pmd",
+            "odp_port": "1",
+            "ofp_port": "1"}]}],
+    "stats": {
+      "n_hit": "0",
+      "n_missed": "0"}}]]])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
