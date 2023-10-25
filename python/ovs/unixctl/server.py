@@ -137,22 +137,14 @@ class UnixctlConnection(object):
                     '"%s" command takes at most %d arguments'
                     % (method, command.max_args))
 
-            # TODO: Remove this check once output format will be passed to the
-            #       command handler below.
-            if fmt != ovs.util.OutputFormat.TEXT:
-                raise ValueError(
-                    'output format "%s" has not been implemented yet'
-                    % fmt.name.lower())
-
             unicode_params = [str(p) for p in params]
-            command.callback(self, unicode_params, # fmt,
-                             command.aux)
+            command.callback(self, unicode_params, fmt, command.aux)
 
         except Exception as e:
             self.reply_error(str(e))
 
 
-def _unixctl_version(conn, unused_argv, version):
+def _unixctl_version(conn, unused_argv, unused_fmt, version):
     assert isinstance(conn, UnixctlConnection)
     version = "%s (Open vSwitch) %s" % (ovs.util.PROGRAM_NAME, version)
     conn.reply(version)
@@ -230,6 +222,7 @@ class UnixctlServer(object):
             return error, None
 
         ovs.unixctl.command_register("version", "", 0, 0,
+                                     ovs.util.OutputFormat.TEXT,
                                      _unixctl_version,
                                      version)
 

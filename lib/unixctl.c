@@ -67,7 +67,8 @@ static const char *rpc_marker = "execute/v1";
 
 static void
 unixctl_list_commands(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                      const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                      const char *argv[] OVS_UNUSED,
+                      enum ovs_output_fmt fmt OVS_UNUSED, void *aux OVS_UNUSED)
 {
     struct ds ds = DS_EMPTY_INITIALIZER;
     const struct shash_node **nodes = shash_sort(&commands);
@@ -91,29 +92,10 @@ unixctl_list_commands(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
 static void
 unixctl_version(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                const char *argv[] OVS_UNUSED,
+                enum ovs_output_fmt fmt OVS_UNUSED, void *aux OVS_UNUSED)
 {
     unixctl_command_reply(conn, ovs_get_program_version());
-}
-
-/* Registers a unixctl command with the given 'name'.  'usage' describes the
- * arguments to the command; it is used only for presentation to the user in
- * "list-commands" output.  (If 'usage' is NULL, then the command is hidden.)
- *
- * 'cb' is called when the command is received.  It is passed an array
- * containing the command name and arguments, plus a copy of 'aux'.  Normally
- * 'cb' should reply by calling unixctl_command_reply() or
- * unixctl_command_reply_error() before it returns, but if the command cannot
- * be handled immediately then it can defer the reply until later.  A given
- * connection can only process a single request at a time, so a reply must be
- * made eventually to avoid blocking that connection. */
-void
-unixctl_command_register(const char *name, const char *usage,
-                         int min_args, int max_args,
-                         unixctl_cb_func *cb, void *aux)
-{
-    unixctl_command_register_fmt(name, usage, min_args, max_args,
-                                 OVS_OUTPUT_FMT_TEXT, cb, aux);
 }
 
 /* Registers a unixctl command with the given 'name'.  'usage' describes the
@@ -130,9 +112,9 @@ unixctl_command_register(const char *name, const char *usage,
  * connection can only process a single request at a time, so a reply must be
  * made eventually to avoid blocking that connection. */
 void
-unixctl_command_register_fmt(const char *name, const char *usage,
-                             int min_args, int max_args, int output_fmts,
-                             unixctl_cb_func *cb, void *aux)
+unixctl_command_register(const char *name, const char *usage,
+                         int min_args, int max_args, int output_fmts,
+                         unixctl_cb_func *cb, void *aux)
 {
     struct unixctl_command *command;
     struct unixctl_command *lookup = shash_find_data(&commands, name);
@@ -290,9 +272,10 @@ unixctl_server_create(const char *path, struct unixctl_server **serverp)
         return error;
     }
 
-    unixctl_command_register("list-commands", "", 0, 0, unixctl_list_commands,
-                             NULL);
-    unixctl_command_register("version", "", 0, 0, unixctl_version, NULL);
+    unixctl_command_register("list-commands", "", 0, 0, OVS_OUTPUT_FMT_TEXT,
+                             unixctl_list_commands, NULL);
+    unixctl_command_register("version", "", 0, 0, OVS_OUTPUT_FMT_TEXT,
+                             unixctl_version, NULL);
 
     struct unixctl_server *server = xmalloc(sizeof *server);
     server->listener = listener;
@@ -390,14 +373,6 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
         goto error;
     }
 
-    /* TODO: Remove this check once output format will be passed to the command
-     *       handler below. */
-    if (fmt != OVS_OUTPUT_FMT_TEXT) {
-        error = xasprintf("output format \"%s\" has not been implemented yet",
-                          ovs_output_fmt_to_string(fmt));
-        goto error;
-    }
-
     /* extract command args */
     svec_add(&argv, method);
     for (size_t i = args_offset; i < params->n; i++) {
@@ -405,10 +380,7 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
     }
     svec_terminate(&argv);
 
-    /* TODO: Output format will be passed as 'fmt' to the command in later
-     *       patch. */
-    command->cb(conn, argv.n, (const char **) argv.names, /* fmt, */
-                command->aux);
+    command->cb(conn, argv.n, (const char **) argv.names, fmt, command->aux);
 
     svec_destroy(&argv);
 
