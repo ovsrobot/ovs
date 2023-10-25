@@ -49,6 +49,10 @@ def main():
                         help="Arguments to the command.")
     parser.add_argument("-T", "--timeout", metavar="SECS",
                         help="wait at most SECS seconds for a response")
+    parser.add_argument("-f", "--format", metavar="FMT",
+                        help="Output format.", default="text",
+                        choices=[fmt.name.lower()
+                                 for fmt in ovs.util.OutputFormat])
     args = parser.parse_args()
 
     signal_alarm(int(args.timeout) if args.timeout else None)
@@ -56,7 +60,8 @@ def main():
     ovs.vlog.Vlog.init()
     target = args.target
     client = connect_to_target(target)
-    err_no, error, result = client.transact(args.command, args.argv)
+    err_no, error, result = client.transact(
+        args.command, args.argv, ovs.util.OutputFormat[args.format.upper()])
     client.close()
 
     if err_no:

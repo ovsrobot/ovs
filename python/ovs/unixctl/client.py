@@ -26,13 +26,20 @@ class UnixctlClient(object):
         assert isinstance(conn, ovs.jsonrpc.Connection)
         self._conn = conn
 
-    def transact(self, command, argv):
+    def transact(self, command, argv, fmt):
         assert isinstance(command, str)
         assert isinstance(argv, list)
         for arg in argv:
             assert isinstance(arg, str)
+        assert isinstance(fmt, ovs.util.OutputFormat)
+        plain_rpc = (fmt == ovs.util.OutputFormat.TEXT)
 
-        request = ovs.jsonrpc.Message.create_request(command, argv)
+        if plain_rpc:
+            request = ovs.jsonrpc.Message.create_request(command, argv)
+        else:
+            request = ovs.jsonrpc.Message.create_request(
+                "execute/v1", [command, fmt.name.lower()] + argv)
+
         error, reply = self._conn.transact_block(request)
 
         if error:
@@ -41,7 +48,14 @@ class UnixctlClient(object):
             return error, None, None
 
         if reply.error is not None:
-            return 0, str(reply.error), None
+            plain_rpc_error = ('"%s" is not a valid command' %
+                               ovs.util.RPC_MARKER)
+            if str(reply.error).startswith(plain_rpc_error):
+                return 0, "JSON RPC reply indicates incompatible "\
+                          "server. Please upgrade server side to "\
+                          "newer version.", None
+            else:
+                return 0, str(reply.error), None
         else:
             assert reply.result is not None
             return 0, None, str(reply.result)

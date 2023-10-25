@@ -104,30 +104,52 @@ class UnixctlConnection(object):
 
         self._request_id = request.id
 
-        error = None
-        params = request.params
-        method = request.method
-        command = ovs.unixctl.commands.get(method)
-        if command is None:
-            error = '"%s" is not a valid command' % method
-        elif len(params) < command.min_args:
-            error = '"%s" command requires at least %d arguments' \
-                    % (method, command.min_args)
-        elif len(params) > command.max_args:
-            error = '"%s" command takes at most %d arguments' \
-                    % (method, command.max_args)
-        else:
-            for param in params:
+        try:
+            plain_rpc = request.method != ovs.util.RPC_MARKER
+            args_offset = 0 if plain_rpc else 2
+
+            if not plain_rpc and len(request.params) < 2:
+                raise ValueError(
+                    "JSON-RPC API mismatch: Unexpected # of params: %d"
+                    % len(params))
+
+            for param in request.params:
                 if not isinstance(param, str):
-                    error = '"%s" command has non-string argument' % method
-                    break
+                  raise ValueError(
+                      "command has non-string argument: %s" % param)
 
-            if error is None:
-                unicode_params = [str(p) for p in params]
-                command.callback(self, unicode_params, command.aux)
+            method = request.method if plain_rpc else request.params[0]
+            if plain_rpc:
+                fmt = ovs.util.OutputFormat.TEXT
+            else:
+                fmt = ovs.util.OutputFormat[request.params[1].upper()]
+            params = request.params[args_offset:]
 
-        if error:
-            self.reply_error(error)
+            command = ovs.unixctl.commands.get(method)
+            if command is None:
+                raise ValueError('"%s" is not a valid command' % method)
+            elif len(params) < command.min_args:
+                raise ValueError(
+                    '"%s" command requires at least %d arguments'
+                    % (method, command.min_args))
+            elif len(params) > command.max_args:
+                raise ValueError(
+                    '"%s" command takes at most %d arguments'
+                    % (method, command.max_args))
+
+            # TODO: Remove this check once output format will be passed to the
+            #       command handler below.
+            if fmt != ovs.util.OutputFormat.TEXT:
+                raise ValueError(
+                    'output format "%s" has not been implemented yet'
+                    % fmt.name.lower())
+
+            unicode_params = [str(p) for p in params]
+            command.callback(self, unicode_params, # fmt,
+                             command.aux)
+
+        except Exception as e:
+            self.reply_error(str(e))
 
 
 def _unixctl_version(conn, unused_argv, version):
@@ -207,12 +229,13 @@ class UnixctlServer(object):
                                % path)
             return error, None
 
-        ovs.unixctl.command_register("version", "", 0, 0, _unixctl_version,
+        ovs.unixctl.command_register("version", "", 0, 0,
+                                     _unixctl_version,
                                      version)
 
         return 0, UnixctlServer(listener)
 
-
+# TODO: What is this? A copy of UnixctlClient from client.py?
 class UnixctlClient(object):
     def __init__(self, conn):
         assert isinstance(conn, ovs.jsonrpc.Connection)

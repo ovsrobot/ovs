@@ -15,9 +15,18 @@
 import os
 import os.path
 import sys
+import enum
 
 PROGRAM_NAME = os.path.basename(sys.argv[0])
 EOF = -1
+RPC_MARKER = "execute/v1"
+
+
+@enum.unique
+@enum.verify(enum.NAMED_FLAGS)
+class OutputFormat(enum.IntFlag):
+    TEXT = 1 << 0
+    JSON = 1 << 1
 
 
 def abs_file_name(dir_, file_name):
