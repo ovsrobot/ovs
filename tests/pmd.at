@@ -93,6 +93,11 @@ pmd thread numa_id <cleared> core_id <cleared>:
   overhead: NOT AVAIL
 ])
 
+AT_CHECK([ovs-appctl --format json dpif-netdev/pmd-rxq-show], [2], [], [dnl
+"dpif-netdev/pmd-rxq-show" command does not support output format "json" 1 2
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+
 AT_CHECK([ovs-appctl dpif/show | sed 's/\(tx_queues=\)[[0-9]]*/\1<cleared>/g'], [0], [dnl
 dummy@ovs-dummy: hit:0 missed:0
   br0:

@@ -91,6 +91,7 @@ parse_options(int argc, char *argv[])
         {"names", no_argument, NULL, OPT_NAMES},
         {"no-names", no_argument, NULL, OPT_NO_NAMES},
         {"timeout", required_argument, NULL, 't'},
+        {"format", required_argument, NULL, 'f'},
         {"help", no_argument, NULL, 'h'},
         {"option", no_argument, NULL, 'o'},
         {"version", no_argument, NULL, 'V'},
@@ -101,6 +102,7 @@ parse_options(int argc, char *argv[])
 
     bool set_names = false;
     unsigned int timeout = 0;
+    enum ovs_output_fmt fmt = OVS_OUTPUT_FMT_TEXT;
 
     for (;;) {
         int c;
@@ -141,6 +143,12 @@ parse_options(int argc, char *argv[])
             set_names = true;
             break;
 
+        case 'f':
+            if (!ovs_output_fmt_from_string(optarg, &fmt)) {
+                ovs_fatal(0, "value %s on -f or --format is invalid", optarg);
+            }
+            break;
+
         case 't':
             if (!str_to_uint(optarg, 10, &timeout) || !timeout) {
                 ovs_fatal(0, "value %s on -t or --timeout is invalid", optarg);
@@ -174,6 +182,8 @@ parse_options(int argc, char *argv[])
     if (!set_names) {
         dpctl_p.names = dpctl_p.verbosity > 0;
     }
+
+    dpctl_p.format = fmt;
 }
 
 static void
@@ -228,6 +238,8 @@ usage(void *userdata OVS_UNUSED)
            "  --clear                     reset existing stats to zero\n"
            "\nOther options:\n"
            "  -t, --timeout=SECS          give up after SECS seconds\n"
+           "  -f, --format=FMT            Output format. One of: 'json', "
+           "'text'\n                             ('text', by default)\n"
            "  -h, --help                  display this help message\n"
            "  -V, --version               display version information\n");
     exit(EXIT_SUCCESS);

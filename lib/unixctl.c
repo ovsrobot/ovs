@@ -21,7 +21,6 @@
 #include "coverage.h"
 #include "dirs.h"
 #include "openvswitch/dynamic-string.h"
-#include "openvswitch/json.h"
 #include "jsonrpc.h"
 #include "openvswitch/list.h"
 #include "openvswitch/poll-loop.h"
@@ -39,6 +38,7 @@ COVERAGE_DEFINE(unixctl_replied);
 struct unixctl_command {
     const char *usage;
     int min_args, max_args;
+    int output_fmts;
     unixctl_cb_func *cb;
     void *aux;
 };
@@ -62,6 +62,8 @@ struct unixctl_server {
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
 
 static struct shash commands = SHASH_INITIALIZER(&commands);
+
+static const char *rpc_marker = "execute/v1";
 
 static void
 unixctl_list_commands(struct unixctl_conn *conn, int argc OVS_UNUSED,
@@ -110,6 +112,28 @@ unixctl_command_register(const char *name, const char *usage,
                          int min_args, int max_args,
                          unixctl_cb_func *cb, void *aux)
 {
+    unixctl_command_register_fmt(name, usage, min_args, max_args,
+                                 OVS_OUTPUT_FMT_TEXT, cb, aux);
+}
+
+/* Registers a unixctl command with the given 'name'.  'usage' describes the
+ * arguments to the command; it is used only for presentation to the user in
+ * "list-commands" output.  (If 'usage' is NULL, then the command is hidden.)
+ * 'output_fmts' is a bitmap that defines what output formats a command
+ * supports, e.g. OVS_OUTPUT_FMT_TEXT | OVS_OUTPUT_FMT_JSON.
+ *
+ * 'cb' is called when the command is received.  It is passed an array
+ * containing the command name and arguments, plus a copy of 'aux'.  Normally
+ * 'cb' should reply by calling unixctl_command_reply() or
+ * unixctl_command_reply_error() before it returns, but if the command cannot
+ * be handled immediately then it can defer the reply until later.  A given
+ * connection can only process a single request at a time, so a reply must be
+ * made eventually to avoid blocking that connection. */
+void
+unixctl_command_register_fmt(const char *name, const char *usage,
+                             int min_args, int max_args, int output_fmts,
+                             unixctl_cb_func *cb, void *aux)
+{
     struct unixctl_command *command;
     struct unixctl_command *lookup = shash_find_data(&commands, name);
 
@@ -123,41 +147,48 @@ unixctl_command_register(const char *name, const char *usage,
     command->usage = usage;
     command->min_args = min_args;
     command->max_args = max_args;
+    command->output_fmts = output_fmts;
     command->cb = cb;
     command->aux = aux;
     shash_add(&commands, name, command);
 }
 
-static void
-unixctl_command_reply__(struct unixctl_conn *conn,
-                        bool success, const char *body)
+static struct json *
+json_string_create__(const char *body)
 {
-    struct json *body_json;
-    struct jsonrpc_msg *reply;
-
-    COVERAGE_INC(unixctl_replied);
-    ovs_assert(conn->request_id);
-
     if (!body) {
         body = "";
     }
 
     if (body[0] && body[strlen(body) - 1] != '\n') {
-        body_json = json_string_create_nocopy(xasprintf("%s\n", body));
+        return json_string_create_nocopy(xasprintf("%s\n", body));
     } else {
-        body_json = json_string_create(body);
+        return json_string_create(body);
     }
+}
+
+/* Takes ownership of 'body'. */
+static void
+unixctl_command_reply__(struct unixctl_conn *conn,
+                        bool success, struct json *body)
+{
+    struct jsonrpc_msg *reply;
+
+    COVERAGE_INC(unixctl_replied);
+    ovs_assert(conn->request_id);
 
     if (success) {
-        reply = jsonrpc_create_reply(body_json, conn->request_id);
+        reply = jsonrpc_create_reply(body, conn->request_id);
     } else {
-        reply = jsonrpc_create_error(body_json, conn->request_id);
+        reply = jsonrpc_create_error(body, conn->request_id);
     }
 
     if (VLOG_IS_DBG_ENABLED()) {
         char *id = json_to_string(conn->request_id, 0);
+        char *msg = json_to_string(body, 0);
         VLOG_DBG("replying with %s, id=%s: \"%s\"",
-                 success ? "success" : "error", id, body);
+                 success ? "success" : "error", id, msg);
+        free(msg);
         free(id);
     }
 
@@ -170,22 +201,34 @@ unixctl_command_reply__(struct unixctl_conn *conn,
 
 /* Replies to the active unixctl connection 'conn'.  'result' is sent to the
  * client indicating the command was processed successfully.  Only one call to
- * unixctl_command_reply() or unixctl_command_reply_error() may be made per
- * request. */
+ * unixctl_command_reply(), unixctl_command_reply_error() or
+ * unixctl_command_reply_json() may be made per request. */
 void
 unixctl_command_reply(struct unixctl_conn *conn, const char *result)
 {
-    unixctl_command_reply__(conn, true, result);
+    unixctl_command_reply__(conn, true, json_string_create__(result));
 }
 
 /* Replies to the active unixctl connection 'conn'. 'error' is sent to the
- * client indicating an error occurred processing the command.  Only one call to
- * unixctl_command_reply() or unixctl_command_reply_error() may be made per
- * request. */
+ * client indicating an error occurred processing the command.  Only one call
+ * to unixctl_command_reply(), unixctl_command_reply_error() or
+ * unixctl_command_reply_json() may be made per request. */
 void
 unixctl_command_reply_error(struct unixctl_conn *conn, const char *error)
 {
-    unixctl_command_reply__(conn, false, error);
+    unixctl_command_reply__(conn, false, json_string_create__(error));
+}
+
+/* Replies to the active unixctl connection 'conn'.  'result' is sent to the
+ * client indicating the command was processed successfully.  Only one call to
+ * unixctl_command_reply(), unixctl_command_reply_error() or
+ * unixctl_command_reply_json() may be made per request.
+ *
+ * Takes ownership of 'body'. */
+void
+unixctl_command_reply_json(struct unixctl_conn *conn, struct json *body)
+{
+    unixctl_command_reply__(conn, true, body);
 }
 
 /* Creates a unixctl server listening on 'path', which for POSIX may be:
@@ -266,6 +309,11 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
 
     struct unixctl_command *command;
     struct json_array *params;
+    const char *method;
+    enum ovs_output_fmt fmt;
+    struct svec argv = SVEC_EMPTY_INITIALIZER;
+    int args_offset;
+    bool plain_rpc;
 
     COVERAGE_INC(unixctl_received);
     conn->request_id = json_clone(request->id);
@@ -279,45 +327,95 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
         free(id_s);
     }
 
+    /* The JSON-RPC API requires an indirection in order to allow transporting
+     * additional data like the output format besides command and args. For
+     * backward compatibility with older clients the plain RPC is still
+     * supported. */
+    plain_rpc = strcmp(request->method, rpc_marker);
+    args_offset = plain_rpc ? 0 : 2;
+
     params = json_array(request->params);
-    command = shash_find_data(&commands, request->method);
+    if (!plain_rpc && (params->n < 2)) {
+        error = xasprintf("JSON-RPC API mismatch: Unexpected # of params:"\
+                          " %"PRIuSIZE, params->n);
+        goto error;
+    }
+
+    for (size_t i = 0; i < params->n; i++) {
+        if (params->elems[i]->type != JSON_STRING) {
+            error = xasprintf("command has non-string argument: %s",
+                              json_to_string(params->elems[i], 0));
+            goto error;
+        }
+    }
+
+    /* extract method name */
+    method = plain_rpc ? request->method : json_string(params->elems[0]);
+
+    /* extract output format */
+    if (plain_rpc) {
+        fmt = OVS_OUTPUT_FMT_TEXT;
+    } else {
+        if (!ovs_output_fmt_from_string(json_string(params->elems[1]), &fmt)) {
+            error = xasprintf("invalid output format: %s",
+                              json_string(params->elems[1]));
+            goto error;
+        }
+    }
+
+    /* find command with method name */
+    command = shash_find_data(&commands, method);
+
+    /* verify that method call complies with command requirements */
     if (!command) {
         error = xasprintf("\"%s\" is not a valid command (use "
                           "\"list-commands\" to see a list of valid commands)",
-                          request->method);
-    } else if (params->n < command->min_args) {
+                          method);
+        goto error;
+    } else if ((params->n - args_offset) < command->min_args) {
         error = xasprintf("\"%s\" command requires at least %d arguments",
-                          request->method, command->min_args);
-    } else if (params->n > command->max_args) {
+                          method, command->min_args);
+        goto error;
+    } else if ((params->n - args_offset) > command->max_args) {
         error = xasprintf("\"%s\" command takes at most %d arguments",
-                          request->method, command->max_args);
-    } else {
-        struct svec argv = SVEC_EMPTY_INITIALIZER;
-        int  i;
-
-        svec_add(&argv, request->method);
-        for (i = 0; i < params->n; i++) {
-            if (params->elems[i]->type != JSON_STRING) {
-                error = xasprintf("\"%s\" command has non-string argument",
-                                  request->method);
-                break;
-            }
-            svec_add(&argv, json_string(params->elems[i]));
-        }
-        svec_terminate(&argv);
-
-        if (!error) {
-            command->cb(conn, argv.n, (const char **) argv.names,
-                        command->aux);
-        }
-
-        svec_destroy(&argv);
+                          method, command->max_args);
+        goto error;
+    } else if ((!command->output_fmts && fmt != OVS_OUTPUT_FMT_TEXT) ||
+               (command->output_fmts && !(fmt & command->output_fmts)))
+    {
+        error = xasprintf("\"%s\" command does not support output format"\
+                          " \"%s\" %d %d", method,
+                          ovs_output_fmt_to_string(fmt), command->output_fmts,
+                          fmt);
+        goto error;
     }
 
-    if (error) {
-        unixctl_command_reply_error(conn, error);
-        free(error);
+    /* TODO: Remove this check once output format will be passed to the command
+     *       handler below. */
+    if (fmt != OVS_OUTPUT_FMT_TEXT) {
+        error = xasprintf("output format \"%s\" has not been implemented yet",
+                          ovs_output_fmt_to_string(fmt));
+        goto error;
     }
+
+    /* extract command args */
+    svec_add(&argv, method);
+    for (size_t i = args_offset; i < params->n; i++) {
+        svec_add(&argv, json_string(params->elems[i]));
+    }
+    svec_terminate(&argv);
+
+    /* TODO: Output format will be passed as 'fmt' to the command in later
+     *       patch. */
+    command->cb(conn, argv.n, (const char **) argv.names, /* fmt, */
+                command->aux);
+
+    svec_destroy(&argv);
+
+    return;
+error:
+    unixctl_command_reply_error(conn, error);
+    free(error);
 }
 
 static int
@@ -483,21 +581,43 @@ unixctl_client_create(const char *path, struct jsonrpc **client)
  * '*err' if not NULL. */
 int
 unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
-                        char *argv[], char **result, char **err)
+                        char *argv[], enum ovs_output_fmt fmt,
+                        char **result, char **err)
 {
     struct jsonrpc_msg *request, *reply;
     struct json **json_args, *params;
     int error, i;
+    /* The JSON-RPC API requires an indirection in order to allow transporting
+     * additional data like the output format besides command and args. For
+     * backward compatibility with older servers the plain RPC is still
+     * supported. */
+    bool plain_rpc = (fmt == OVS_OUTPUT_FMT_TEXT);
 
     *result = NULL;
     *err = NULL;
 
-    json_args = xmalloc(argc * sizeof *json_args);
-    for (i = 0; i < argc; i++) {
-        json_args[i] = json_string_create(argv[i]);
+    if (plain_rpc) {
+        json_args = xmalloc(argc * sizeof *json_args);
+        for (i = 0; i < argc; i++) {
+            json_args[i] = json_string_create(argv[i]);
+        }
+
+        params = json_array_create(json_args, argc);
+        request = jsonrpc_create_request(command, params, NULL);
+    } else {
+        json_args = xmalloc((argc + 2) * sizeof *json_args);
+        json_args[0] = json_string_create(command);
+        json_args[1] = ovs_output_fmt_to_json(fmt);
+        for (i = 0; i < argc; i++) {
+            json_args[i + 2] = json_string_create(argv[i]);
+        }
+
+        params = json_array_create(json_args, argc + 2);
+
+        /* Use a versioned command to ensure that both server and client
+         * use the same JSON-RPC API. */
+        request = jsonrpc_create_request(rpc_marker, params, NULL);
     }
-    params = json_array_create(json_args, argc);
-    request = jsonrpc_create_request(command, params, NULL);
 
     error = jsonrpc_transact_block(client, request, &reply);
     if (error) {
@@ -508,7 +628,17 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
 
     if (reply->error) {
         if (reply->error->type == JSON_STRING) {
-            *err = xstrdup(json_string(reply->error));
+            /* catch incompatible server and return helpful error msg */
+            char *plain_rpc_error = xasprintf("\"%s\" is not a valid command",
+                                              rpc_marker);
+            if (!strncmp(plain_rpc_error, json_string(reply->error),
+                         strlen(plain_rpc_error))) {
+                *err = xstrdup("JSON RPC reply indicates incompatible server. "
+                               "Please upgrade server side to newer version.");
+            } else {
+                *err = xstrdup(json_string(reply->error));
+            }
+            free(plain_rpc_error);
         } else {
             VLOG_WARN("%s: unexpected error type in JSON RPC reply: %s",
                       jsonrpc_get_name(client),
@@ -518,6 +648,20 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
     } else if (reply->result) {
         if (reply->result->type == JSON_STRING) {
             *result = xstrdup(json_string(reply->result));
+        } else if (reply->result->type == JSON_OBJECT ||
+                   reply->result->type == JSON_ARRAY) {
+            /* TODO: How about other result types? */
+
+            /* TODO: Do we really want to prettyfy and sort the output?
+             * The benefit for users is probably minimal because they could
+             * simply use jq to format the output if needed. Since JSON output
+             * is meant to be consumed by machines, this pretty-printing is
+             * probably unnecessary in most cases.
+             * However, it might have its use in our unit tests because it
+             * allows us to make readable checks without having to introduce a
+             * dependency on jq.
+             */
+            *result = json_to_string(reply->result, JSSF_PRETTY | JSSF_SORT);
         } else {
             VLOG_WARN("%s: unexpected result type in JSON rpc reply: %s",
                       jsonrpc_get_name(client),
