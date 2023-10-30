@@ -276,6 +276,13 @@ for src in 0 1 2 3 4 5 6 7; do
         AT_CHECK([ovs-appctl ofproto/trace br0 "in_port=1,dl_type=0x0800,nw_src=10.0.0.$src,nw_dst=10.0.0.$dst"], [0], [stdout])
         AT_CHECK_UNQUOTED([tail -1 stdout], [0], [Datapath actions: $out
 ])
+        dnl Check detailed output for conjunctive match.
+        if test $out = 3; then
+            AT_CHECK_UNQUOTED([cat stdout | grep conj\\. | sort], [0], [dnl
+     -> conj. priority=100,ip,nw_dst=10.0.0.$dst
+     -> conj. priority=100,ip,nw_src=10.0.0.$src
+])
+        fi
     done
 done
 OVS_VSWITCHD_STOP
@@ -414,6 +421,28 @@ ovs-ofctl: "conjunction" actions may be used along with "note" but not any other
 ])
 AT_CHECK([ovs-ofctl '-vPATTERN:console:%c|%p|%m' add-flow br0 'actions=conjunction(3,1/2),output:1'], [1], [], [dnl
 ovs-ofctl: "conjunction" actions may be used along with "note" but not any other kind of action (such as the "output" action used here)
+])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([conjunctive match with same priority])
+OVS_VSWITCHD_START
+add_of_ports br0 1 2
+AT_DATA([flows.txt], [dnl
+conj_id=1,actions=2
+conj_id=2,actions=drop
+
+priority=10,ip,ip_dst=10.0.0.1,actions=conjunction(1,1/2)
+priority=10,ip,ip_src=10.0.0.2,actions=conjunction(1,2/2)
+priority=10,ip,ip_dst=10.0.0.3,actions=conjunction(2,1/2)
+priority=10,ip,in_port=1,actions=conjunction(2,2/2)
+])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+# Check that "priority=10,ip,in_port=1,actions=conjunction(2,2/2)" is
+# correctly excluded from the output.
+AT_CHECK([ovs-appctl ofproto/trace br0 "in_port=1,dl_type=0x0800,nw_dst=10.0.0.1,nw_src=10.0.0.2" | grep conj\\. | sort], [0], [dnl
+     -> conj. priority=10,ip,nw_dst=10.0.0.1
+     -> conj. priority=10,ip,nw_src=10.0.0.2
 ])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
