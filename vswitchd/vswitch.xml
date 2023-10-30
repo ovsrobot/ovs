@@ -3821,6 +3821,17 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
             supported by hardware.
           </column>
       </group>
+
+      <group title="afxdp">
+        <p>
+          AF_XDP netdev specific interface status options.
+        </p>
+
+          <column name="status" key="xdp-mode">
+            XDP mode which was chosen.
+          </column>
+
+      </group>
     </group>
 
     <group title="Statistics">
