@@ -1336,16 +1336,19 @@ parse_gre_match(struct flow_patterns *patterns,
         greh_spec->k = !!(match->flow.tunnel.flags & FLOW_TNL_F_KEY);
         greh_mask->k = 1;
 
-        key_spec = xzalloc(sizeof *key_spec);
-        key_mask = xzalloc(sizeof *key_mask);
+        if (greh_spec->k) {
+            key_spec = xzalloc(sizeof *key_spec);
+            key_mask = xzalloc(sizeof *key_mask);
 
-        *key_spec = htonl(ntohll(match->flow.tunnel.tun_id));
-        *key_mask = htonl(ntohll(match->wc.masks.tunnel.tun_id));
+            *key_spec = htonl(ntohll(match->flow.tunnel.tun_id));
+            *key_mask = htonl(ntohll(match->wc.masks.tunnel.tun_id));
+
+            add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_GRE_KEY, key_spec,
+                             key_mask, NULL);
+        }
 
         consumed_masks->tunnel.tun_id = 0;
         consumed_masks->tunnel.flags &= ~FLOW_TNL_F_KEY;
-        add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_GRE_KEY, key_spec,
-                         key_mask, NULL);
     }
 
     consumed_masks->tunnel.flags &= ~FLOW_TNL_F_DONT_FRAGMENT;
