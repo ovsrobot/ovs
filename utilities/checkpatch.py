@@ -95,7 +95,7 @@ def open_spell_check_dict():
                                                 'dictionary.txt')
         spell_check_dict = enchant.DictWithPWL('en_US', word_dic)
         for kw in extra_keywords:
-            spell_check_dict.add(kw)
+            spell_check_dict.add_to_session(kw)
 
         return True
     except:
