@@ -91,7 +91,9 @@ def open_spell_check_dict():
                           'syscall', 'lacp', 'ipf', 'skb', 'valgrind']
 
         global spell_check_dict
-        spell_check_dict = enchant.Dict("en_US")
+        word_dic = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                'dictionary.txt')
+        spell_check_dict = enchant.DictWithPWL('en_US', word_dic)
         for kw in extra_keywords:
             spell_check_dict.add(kw)
 
