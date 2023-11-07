@@ -61,6 +61,9 @@ struct xlate_out {
 
     /* Recirc action IDs on which references are held. */
     struct recirc_refs recircs;
+
+    /* Set of matching conjunctive flows. */
+    struct hmapx conj_flows;
 };
 
 struct xlate_in {

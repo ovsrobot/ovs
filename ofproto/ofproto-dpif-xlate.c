@@ -866,6 +866,34 @@ xlate_report_action_set(const struct xlate_ctx *ctx, const char *verb)
     }
 }
 
+static void
+xlate_report_conj_matches(const struct xlate_ctx *ctx,
+                          const struct ofputil_port_map *map)
+{
+    struct ds s = DS_EMPTY_INITIALIZER;
+    struct hmapx_node *node;
+    struct cls_rule *rule;
+
+    /* NOTE: The conj flows have meaning in order.  For each flow that is a
+     * component of conj flows, 'k' in 'conjunction(id, k/n)' represents the
+     * dimension.  When there are multiple flows with the same id, it may be
+     * implicitly expected that they would be output in ascending order of 'k'.
+     *
+     * However, because of the use of hmapx strucutre and the fact that the
+     * classifier returns them in arbitrary order, they are output in arbitrary
+     * order here. */
+    HMAPX_FOR_EACH (node, &ctx->xout->conj_flows) {
+        ds_clear(&s);
+
+        rule = node->data;
+
+        cls_rule_format(rule, ofproto_get_tun_tab(&ctx->xin->ofproto->up),
+                        map, &s);
+        xlate_report(ctx, OFT_DETAIL, "conj. %s", ds_cstr(&s));
+    }
+
+    ds_destroy(&s);
+}
 
 /* If tracing is enabled in 'ctx', appends a node representing 'rule' (in
  * OpenFlow table 'table_id') to the trace and makes this node the parent for
@@ -882,6 +910,8 @@ xlate_report_table(const struct xlate_ctx *ctx, struct rule_dpif *rule,
         return;
     }
 
+    struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
+
     struct ds s = DS_EMPTY_INITIALIZER;
     ds_put_format(&s, "%2d. ", table_id);
     if (rule == ctx->xin->ofproto->miss_rule) {
@@ -892,8 +922,6 @@ xlate_report_table(const struct xlate_ctx *ctx, struct rule_dpif *rule,
         ds_put_cstr(&s, "Packets are IP fragments and "
                     "the fragment handling mode is \"drop\".");
     } else {
-        struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
-
         if (ctx->xin->names) {
             struct ofproto_dpif *ofprotop;
             ofprotop = ofproto_dpif_lookup_by_name(ctx->xbridge->name);
@@ -903,8 +931,6 @@ xlate_report_table(const struct xlate_ctx *ctx, struct rule_dpif *rule,
         minimatch_format(&rule->up.cr.match,
                          ofproto_get_tun_tab(&ctx->xin->ofproto->up),
                          &map, &s, OFP_DEFAULT_PRIORITY);
-
-        ofputil_port_map_destroy(&map);
 
         if (ds_last(&s) != ' ') {
             ds_put_cstr(&s, ", ");
@@ -918,6 +944,9 @@ xlate_report_table(const struct xlate_ctx *ctx, struct rule_dpif *rule,
     ctx->xin->trace = &oftrace_report(ctx->xin->trace, OFT_TABLE,
                                       ds_cstr(&s))->subs;
     ds_destroy(&s);
+
+    xlate_report_conj_matches(ctx, &map);
+    ofputil_port_map_destroy(&map);
 }
 
 /* If tracing is enabled in 'ctx', adds an OFT_DETAIL trace node to 'ctx'
@@ -4653,7 +4682,8 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
                                            ctx->xin->resubmit_stats,
                                            &ctx->table_id, in_port,
                                            may_packet_in, honor_table_miss,
-                                           ctx->xin->xcache);
+                                           ctx->xin->xcache,
+                                           &ctx->xout->conj_flows);
         /* Swap back. */
         if (with_ct_orig) {
             tuple_swap(&ctx->xin->flow, ctx->wc);
@@ -7970,6 +8000,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     *xout = (struct xlate_out) {
         .slow = 0,
         .recircs = RECIRC_REFS_EMPTY_INITIALIZER,
+        .conj_flows = HMAPX_INITIALIZER(&xout->conj_flows),
     };
 
     struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);
@@ -8181,7 +8212,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         ctx.rule = rule_dpif_lookup_from_table(
             ctx.xbridge->ofproto, ctx.xin->tables_version, flow, ctx.wc,
             ctx.xin->resubmit_stats, &ctx.table_id,
-            flow->in_port.ofp_port, true, true, ctx.xin->xcache);
+            flow->in_port.ofp_port, true, true, ctx.xin->xcache,
+            ctx.xin->trace ? &ctx.xout->conj_flows : NULL);
         if (ctx.xin->resubmit_stats) {
             rule_dpif_credit_stats(ctx.rule, ctx.xin->resubmit_stats, false);
         }
@@ -8374,6 +8406,9 @@ exit:
     ofpbuf_uninit(&ctx.frozen_actions);
     ofpbuf_uninit(&scratch_actions);
     ofpbuf_delete(ctx.encap_data);
+
+    /* Clean up 'conj_flows' as it is no longer needed. */
+    hmapx_destroy(&xout->conj_flows);
 
     /* Make sure we return a "drop flow" in case of an error. */
     if (ctx.error) {
