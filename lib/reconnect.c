@@ -99,9 +99,9 @@ reconnect_create(long long int now)
     struct reconnect *fsm = xzalloc(sizeof *fsm);
 
     fsm->name = xstrdup("void");
-    fsm->min_backoff = RECONNECT_DEFAULT_MIN_BACKOFF;
-    fsm->max_backoff = RECONNECT_DEFAULT_MAX_BACKOFF;
-    fsm->probe_interval = RECONNECT_DEFAULT_PROBE_INTERVAL;
+    fsm->min_backoff = reconnect_default_min_backoff();
+    fsm->max_backoff = reconnect_default_max_backoff();
+    fsm->probe_interval = reconnect_default_probe_interval();
     fsm->passive = false;
     fsm->info = VLL_INFO;
 
@@ -163,7 +163,7 @@ reconnect_set_name(struct reconnect *fsm, const char *name)
 }
 
 /* Return the minimum number of milliseconds to back off between consecutive
- * connection attempts.  The default is RECONNECT_DEFAULT_MIN_BACKOFF. */
+ * connection attempts.  The default is reconnect_default_min_backoff(). */
 int
 reconnect_get_min_backoff(const struct reconnect *fsm)
 {
@@ -171,7 +171,7 @@ reconnect_get_min_backoff(const struct reconnect *fsm)
 }
 
 /* Return the maximum number of milliseconds to back off between consecutive
- * connection attempts.  The default is RECONNECT_DEFAULT_MAX_BACKOFF. */
+ * connection attempts.  The default is reconnect_default_max_backoff(). */
 int
 reconnect_get_max_backoff(const struct reconnect *fsm)
 {
@@ -188,6 +188,57 @@ int
 reconnect_get_probe_interval(const struct reconnect *fsm)
 {
     return fsm->probe_interval;
+}
+
+/* Returns the default min_backoff value for reconnect. It uses the environment
+ * variable OVS_RECONNECT_MIN_BACKOFF if set and valid or otherwise defaults
+ * to 1 second. The return value is in ms. */
+unsigned int reconnect_default_min_backoff(void) {
+    static unsigned int default_min_backoff = 0;
+    if (default_min_backoff == 0) {
+        char *env = getenv("OVS_RECONNECT_MIN_BACKOFF");
+        if (env && env[0]) {
+            str_to_uint(env, 10, &default_min_backoff);
+        }
+        if (default_min_backoff == 0) {
+            default_min_backoff = 1000;
+        }
+    }
+    return default_min_backoff;
+}
+
+/* Returns the default max_backoff value for reconnect. It uses the environment
+ * variable OVS_RECONNECT_MAX_BACKOFF if set and valid or otherwise defaults
+ * to 8 second. The return value is in ms. */
+unsigned int reconnect_default_max_backoff(void) {
+    static unsigned int default_max_backoff = 0;
+    if (default_max_backoff == 0) {
+        char *env = getenv("OVS_RECONNECT_MAX_BACKOFF");
+        if (env && env[0]) {
+            str_to_uint(env, 10, &default_max_backoff);
+        }
+        if (default_max_backoff == 0) {
+            default_max_backoff = 8000;
+        }
+    }
+    return default_max_backoff;
+}
+
+/* Returns the default probe_interval value for reconnect. It uses the
+ * environment variable OVS_RECONNECT_PROBE_INTERVAL if set and valid or
+ * otherwise defaults to 5 second. The return value is in ms. */
+unsigned int reconnect_default_probe_interval(void) {
+    static unsigned int default_probe_interval = 0;
+    if (default_probe_interval == 0) {
+        char *env = getenv("OVS_RECONNECT_PROBE_INTERVAL");
+        if (env && env[0]) {
+            str_to_uint(env, 10, &default_probe_interval);
+        }
+        if (default_probe_interval == 0) {
+            default_probe_interval = 5000;
+        }
+    }
+    return default_probe_interval;
 }
 
 /* Limits the maximum number of times that 'fsm' will ask the client to try to
@@ -234,7 +285,7 @@ reconnect_set_backoff(struct reconnect *fsm, int min_backoff, int max_backoff)
     fsm->min_backoff = MAX(min_backoff, 1000);
     fsm->max_backoff = (max_backoff
                         ? MAX(max_backoff, 1000)
-                        : RECONNECT_DEFAULT_MAX_BACKOFF);
+                        : reconnect_default_max_backoff());
     if (fsm->min_backoff > fsm->max_backoff) {
         fsm->max_backoff = fsm->min_backoff;
     }

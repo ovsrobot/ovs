@@ -211,9 +211,9 @@ struct ovsdb_jsonrpc_options *
 ovsdb_jsonrpc_default_options(const char *target)
 {
     struct ovsdb_jsonrpc_options *options = xzalloc(sizeof *options);
-    options->max_backoff = RECONNECT_DEFAULT_MAX_BACKOFF;
+    options->max_backoff = reconnect_default_max_backoff();
     options->probe_interval = (stream_or_pstream_needs_probes(target)
-                               ? RECONNECT_DEFAULT_PROBE_INTERVAL
+                               ? reconnect_default_probe_interval()
                                : 0);
     return options;
 }

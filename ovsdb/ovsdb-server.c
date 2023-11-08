@@ -330,7 +330,7 @@ main(int argc, char *argv[])
     struct shash all_dbs;
     struct shash_node *node;
     int replication_probe_interval = REPLICATION_DEFAULT_PROBE_INTERVAL;
-    int relay_source_probe_interval = RELAY_SOURCE_DEFAULT_PROBE_INTERVAL;
+    int relay_source_probe_interval = reconnect_default_probe_interval();
 
     ovs_cmdl_proctitle_init(argc, argv);
     set_program_name(argv[0]);

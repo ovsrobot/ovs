@@ -1269,8 +1269,8 @@ void
 jsonrpc_session_enable_reconnect(struct jsonrpc_session *s)
 {
     reconnect_set_max_tries(s->reconnect, UINT_MAX);
-    reconnect_set_backoff(s->reconnect, RECONNECT_DEFAULT_MIN_BACKOFF,
-                          RECONNECT_DEFAULT_MAX_BACKOFF);
+    reconnect_set_backoff(s->reconnect, reconnect_default_min_backoff(),
+                          reconnect_default_max_backoff());
 }
 
 /* Forces 's' to drop its connection (if any) and reconnect. */
