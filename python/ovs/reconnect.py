@@ -38,6 +38,9 @@ class Reconnect(object):
     since there is no hidden state.  When not testing, just pass the return
     value of ovs.time.msec().  (Perhaps this design should be revisited
     later.)"""
+    default_min_backoff = None
+    default_max_backoff = None
+    default_probe_interval = None
 
     class Void(object):
         name = "VOID"
@@ -161,9 +164,9 @@ class Reconnect(object):
         self.enable() and self.set_name() on the returned object."""
 
         self.name = "void"
-        self.min_backoff = 1000
-        self.max_backoff = 8000
-        self.probe_interval = 5000
+        self.min_backoff = Reconnect.get_default_min_backoff()
+        self.max_backoff = Reconnect.get_default_max_backoff()
+        self.probe_interval = Reconnect.get_default_probe_interval()
         self.passive = False
         self.info_level = vlog.info
 
@@ -230,6 +233,42 @@ class Reconnect(object):
         If the interval passes again without self.activity() being called,
         self.run() returns ovs.reconnect.DISCONNECT."""
         return self.probe_interval
+
+    def get_default_min_backoff():
+        """Returns the default min_backoff value for reconnect. It uses the
+        environment variable OVS_RECONNECT_MIN_BACKOFF if set and valid or
+        otherwise defaults to 1 second. The return value is in ms."""
+        if Reconnect.default_min_backoff is None:
+            try:
+                Reconnect.default_min_backoff = int(os.environ.get(
+                    "OVS_RECONNECT_MIN_BACKOFF", ""))
+            except ValueError:
+                Reconnect.default_min_backoff = 1000
+        return Reconnect.default_min_backoff
+
+    def get_default_max_backoff():
+        """Returns the default min_backoff value for reconnect. It uses the
+        environment variable OVS_RECONNECT_MIN_BACKOFF if set and valid or
+        otherwise defaults to 1 second. The return value is in ms."""
+        if Reconnect.default_max_backoff is None:
+            try:
+                Reconnect.default_max_backoff = int(os.environ.get(
+                    "OVS_RECONNECT_MAX_BACKOFF", ""))
+            except ValueError:
+                Reconnect.default_max_backoff = 8000
+        return Reconnect.default_max_backoff
+
+    def get_default_probe_interval():
+        """Returns the default probe_interval value for reconnect. It uses the
+        environment variable OVS_RECONNECT_PROBE_INTERVAL if set and valid or
+        otherwise defaults to 1 second. The return value is in ms."""
+        if Reconnect.default_probe_interval is None:
+            try:
+                Reconnect.default_probe_interval = int(os.environ.get(
+                    "OVS_RECONNECT_PROBE_INTERVAL", ""))
+            except ValueError:
+                Reconnect.default_probe_interval = 5000
+        return Reconnect.default_probe_interval
 
     def set_max_tries(self, max_tries):
         """Limits the maximum number of times that this object will ask the
