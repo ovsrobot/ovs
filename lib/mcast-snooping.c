@@ -948,6 +948,7 @@ mcast_snooping_flush_bundle(struct mcast_snooping *ms, void *port)
 {
     struct mcast_group *g;
     struct mcast_mrouter_bundle *m;
+    struct mcast_port_bundle *p;
 
     if (!mcast_snooping_enabled(ms)) {
         return;
@@ -967,6 +968,20 @@ mcast_snooping_flush_bundle(struct mcast_snooping *ms, void *port)
     LIST_FOR_EACH_SAFE (m, mrouter_node, &ms->mrouter_lru) {
         if (m->port == port) {
             mcast_snooping_flush_mrouter(m);
+            ms->need_revalidate = true;
+        }
+    }
+
+    LIST_FOR_EACH_SAFE (p, node, &ms->fport_list) {
+        if (p->port == port) {
+            mcast_snooping_flush_port(p);
+            ms->need_revalidate = true;
+        }
+    }
+
+    LIST_FOR_EACH_SAFE (p, node, &ms->rport_list) {
+        if (p->port == port) {
+            mcast_snooping_flush_port(p);
             ms->need_revalidate = true;
         }
     }
