@@ -51,6 +51,9 @@ struct mcast_group {
     /* VLAN tag. */
     uint16_t vlan;
 
+    /* Multicast group IPv6/IPv4 Protocol version IGMPv1,2,3 or MLDv1,2 */
+    uint8_t protocol_version;
+
     /* Node in parent struct mcast_snooping group_lru. */
     struct ovs_list group_node OVS_GUARDED;
 
@@ -185,14 +188,14 @@ mcast_snooping_lookup4(const struct mcast_snooping *ms, ovs_be32 ip4,
 /* Learning. */
 bool mcast_snooping_add_group(struct mcast_snooping *ms,
                               const struct in6_addr *addr,
-                              uint16_t vlan, void *port)
+                              uint16_t vlan, void *port, uint8_t grp_proto)
     OVS_REQ_WRLOCK(ms->rwlock);
 bool mcast_snooping_add_group4(struct mcast_snooping *ms, ovs_be32 ip4,
-                               uint16_t vlan, void *port)
+                               uint16_t vlan, void *port, uint8_t grp_proto)
     OVS_REQ_WRLOCK(ms->rwlock);
 int mcast_snooping_add_report(struct mcast_snooping *ms,
                               const struct dp_packet *p,
-                              uint16_t vlan, void *port)
+                              uint16_t vlan, void *port, uint8_t grp_proto)
     OVS_REQ_WRLOCK(ms->rwlock);
 int mcast_snooping_add_mld(struct mcast_snooping *ms,
                            const struct dp_packet *p,
