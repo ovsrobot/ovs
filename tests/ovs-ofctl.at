@@ -545,8 +545,8 @@ ipv6,ipv6_label=0x12345 actions=2
 ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5 actions=3
 ipv6,ipv6_src=2001:db8:3c4d:1:2:3:4:5/64 actions=4
 ipv6,ipv6_dst=2001:db8:3c4d:1:2:3:4:5/127 actions=5
-tcp6,ipv6_src=2001:db8:3c4d:1::1,tp_dst=80 actions=drop 
-udp6,ipv6_src=2001:db8:3c4d:1::3,tp_dst=53 actions=drop 
+tcp6,ipv6_src=2001:db8:3c4d:1::1,tp_dst=80 actions=drop
+udp6,ipv6_src=2001:db8:3c4d:1::3,tp_dst=53 actions=drop
 in_port=3 icmp6,ipv6_src=2001:db8:3c4d:1::1,icmp_type=134 actions=drop
 udp dl_vlan_pcp=7 idle_timeout=5 actions=strip_vlan output:0
 tcp,nw_src=192.168.0.3,tp_dst=80 actions=set_queue:37,output:1
@@ -1021,7 +1021,7 @@ nx_pull_match() returned error OFPBMC_BAD_WILDCARDS
 
 # eth type
 NXM_OF_ETH_TYPE(0800)
-NXM_OF_IN_PORT(0012), NXM_OF_ETH_TYPE(0800) 
+NXM_OF_IN_PORT(0012), NXM_OF_ETH_TYPE(0800)
 
 # vlan tci
 NXM_OF_VLAN_TCI(f009)
@@ -3306,6 +3306,42 @@ AT_CHECK([ovs-ofctl ct-flush br0])
 
 OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 5])
 AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: <all>" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 mark=0])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 6])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=0 mark=0" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 mark=0/0x5])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 7])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=0 mark=0/0x5" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 mark=0xabc/0xdef])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 8])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=0 mark=0xabc/0xdef" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 labels=0])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 9])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=0 labels=0" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 labels=0/0x5])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 10])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=0 labels=0/0x5" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 labels=0xabc/0xdef])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 11])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=0 labels=0xabc/0xdef" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 zone=5 mark=25 labels=25])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 12])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=5 mark=0x19 labels=0x19" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 zone=5 mark=30/25 labels=30/25])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 13])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone=5 mark=0x1e/0x19 labels=0x1e/0x19" ovs-vswitchd.log])
+
+AT_CHECK([ovs-ofctl ct-flush br0 zone=6 mark=30/0 labels=30/0])
+OVS_WAIT_UNTIL([test $(grep -c "|ct_dpif|DBG|.*ct_flush" ovs-vswitchd.log) -eq 14])
+AT_CHECK([grep -q "ct_dpif|DBG|.*ct_flush: zone 6" ovs-vswitchd.log])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP

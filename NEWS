@@ -6,6 +6,7 @@ Post-v3.2.0
        from older version is supported but it may trigger more leader elections
        during the process, and error logs complaining unrecognized fields may
        be observed on old nodes.
+<<<<<<< HEAD
    - ovs-appctl:
      * Output of 'dpctl/show' command no longer shows interface configuration
        status, only values of the actual configuration options, a.k.a.
@@ -13,6 +14,9 @@ Post-v3.2.0
        a.k.a. 'configured' values, can be found in the 'status' column of
        the Interface table, i.e. with 'ovs-vsctl get interface <..> status'.
        Reported names adjusted accordingly.
+   - OpenFlow:
+     * Extended the NXT_CT_FLUSH to support matching on CT label and mark
+       fields.
 
 
 v3.2.0 - 17 Aug 2023
