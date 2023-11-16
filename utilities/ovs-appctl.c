@@ -26,6 +26,7 @@
 #include "daemon.h"
 #include "dirs.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/json.h"
 #include "jsonrpc.h"
 #include "process.h"
 #include "timeval.h"
@@ -38,6 +39,7 @@ static void usage(void);
 /* Parsed command line args. */
 struct cmdl_args {
     enum ovs_output_fmt format;
+    int format_flags;
     char *target;
 };
 
@@ -67,7 +69,8 @@ main(int argc, char *argv[])
     cmd_argc = argc - optind;
     cmd_argv = cmd_argc ? argv + optind : NULL;
     error = unixctl_client_transact(client, cmd, cmd_argc, cmd_argv,
-                                    args->format, &cmd_result, &cmd_error);
+                                    args->format, args->format_flags,
+                                    &cmd_result, &cmd_error);
     if (error) {
         ovs_fatal(error, "%s: transaction error", args->target);
     }
@@ -113,6 +116,11 @@ Other options:\n\
   --timeout=SECS     wait at most SECS seconds for a response\n\
   -f, --format=FMT   Output format. One of: 'json', or 'text'\n\
                      ('text', by default)\n\
+  --pretty           By default, JSON in output is printed as compactly as\n\
+                     possible. This option causes JSON in output to be\n\
+                     printed in a more readable fashion. Members of objects\n\
+                     and elements of arrays are printed one per line, with\n\
+                     indentation.\n\
   -h, --help         Print this helpful information\n\
   -V, --version      Display ovs-appctl version information\n",
            program_name, program_name);
@@ -124,6 +132,7 @@ cmdl_args_create(void) {
     struct cmdl_args *args = xmalloc(sizeof *args);
 
     args->format = OVS_OUTPUT_FMT_TEXT;
+    args->format_flags = 0;
     args->target = NULL;
 
     return args;
@@ -143,7 +152,8 @@ parse_command_line(int argc, char *argv[])
 {
     enum {
         OPT_START = UCHAR_MAX + 1,
-        VLOG_OPTION_ENUMS
+        OPT_PRETTY,
+        VLOG_OPTION_ENUMS,
     };
     static const struct option long_options[] = {
         {"target", required_argument, NULL, 't'},
@@ -151,6 +161,7 @@ parse_command_line(int argc, char *argv[])
         {"format", required_argument, NULL, 'f'},
         {"help", no_argument, NULL, 'h'},
         {"option", no_argument, NULL, 'o'},
+        {"pretty", no_argument, NULL, OPT_PRETTY},
         {"version", no_argument, NULL, 'V'},
         {"timeout", required_argument, NULL, 'T'},
         VLOG_LONG_OPTIONS,
@@ -202,6 +213,10 @@ parse_command_line(int argc, char *argv[])
         case 'o':
             ovs_cmdl_print_options(long_options);
             exit(EXIT_SUCCESS);
+
+        case OPT_PRETTY:
+            args->format_flags |= JSSF_PRETTY | JSSF_SORT;
+            break;
 
         case 'T':
             if (!str_to_uint(optarg, 10, &timeout) || !timeout) {

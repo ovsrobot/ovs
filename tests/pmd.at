@@ -105,7 +105,7 @@ dummy@ovs-dummy: hit:0 missed:0
     p0 1/1: (dummy-pmd: n_rxq=1, n_txq=1, numa_id=0)
 ])
 
-AT_CHECK([ovs-appctl --format json dpif/show], [0], [dnl
+AT_CHECK([ovs-appctl --format json --pretty dpif/show], [0], [dnl
 [[
   {
     "name": "dummy@ovs-dummy",
