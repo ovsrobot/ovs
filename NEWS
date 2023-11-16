@@ -13,6 +13,8 @@ Post-v3.2.0
        a.k.a. 'configured' values, can be found in the 'status' column of
        the Interface table, i.e. with 'ovs-vsctl get interface <..> status'.
        Reported names adjusted accordingly.
+     * Added new option [-f|--format] to choose the output format, e.g. 'json'
+       or 'text' (by default).
 
 
 v3.2.0 - 17 Aug 2023
