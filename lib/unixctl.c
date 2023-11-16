@@ -63,8 +63,6 @@ static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
 
 static struct shash commands = SHASH_INITIALIZER(&commands);
 
-static const char *rpc_marker = "execute/v1";
-
 static void
 unixctl_list_commands(struct unixctl_conn *conn, int argc OVS_UNUSED,
                       const char *argv[] OVS_UNUSED,
@@ -292,11 +290,9 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
 
     struct unixctl_command *command;
     struct json_array *params;
-    const char *method;
-    enum ovs_output_fmt fmt;
+    enum ovs_output_fmt fmt = OVS_OUTPUT_FMT_TEXT;
     struct svec argv = SVEC_EMPTY_INITIALIZER;
-    int args_offset;
-    bool plain_rpc;
+    int argc;
 
     COVERAGE_INC(unixctl_received);
     conn->request_id = json_clone(request->id);
@@ -310,20 +306,9 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
         free(id_s);
     }
 
-    /* The JSON-RPC API requires an indirection in order to allow transporting
-     * additional data like the output format besides command and args.  For
-     * backward compatibility with older clients the plain RPC is still
-     * supported. */
-    plain_rpc = strcmp(request->method, rpc_marker);
-    args_offset = plain_rpc ? 0 : 2;
-
     params = json_array(request->params);
-    if (!plain_rpc && (params->n < 2)) {
-        error = xasprintf("JSON-RPC API mismatch: Unexpected # of params:"\
-                          " %"PRIuSIZE, params->n);
-        goto error;
-    }
 
+    /* Verify type of arguments. */
     for (size_t i = 0; i < params->n; i++) {
         if (params->elems[i]->type != JSON_STRING) {
             error = xasprintf("command has non-string argument: %s",
@@ -332,53 +317,69 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
         }
     }
 
-    /* Extract method name. */
-    method = plain_rpc ? request->method : json_string(params->elems[0]);
+    argc = params->n;
 
-    /* Extract output format. */
-    if (plain_rpc) {
-        fmt = OVS_OUTPUT_FMT_TEXT;
-    } else {
-        if (!ovs_output_fmt_from_string(json_string(params->elems[1]), &fmt)) {
-            error = xasprintf("invalid output format: %s",
-                              json_string(params->elems[1]));
-            goto error;
+    /* Extract and process command args. */
+    svec_add(&argv, request->method);
+    for (size_t i = 0; i < params->n; i++) {
+        if (!strcmp(json_string(params->elems[i]), "-f") ||
+            !strcmp(json_string(params->elems[i]), "--format"))
+        {
+            /* Parse output format argument. */
+
+            if ((i + 1) == (params->n)) {
+                error = xasprintf("option requires an argument -- %s",
+                                  json_string(params->elems[i]));
+                goto error;
+            }
+
+            /* Move index to option argument. */
+            i++;
+
+            if (!ovs_output_fmt_from_string(json_string(params->elems[i]),
+                                            &fmt))
+            {
+                error = xasprintf("option %s has invalid value %s",
+                                  json_string(params->elems[i - 1]),
+                                  json_string(params->elems[i]));
+                goto error;
+            }
+
+            argc -= 2;
+        } else {
+            /* Pass other arguments to command. */
+            svec_add(&argv, json_string(params->elems[i]));
         }
     }
+    svec_terminate(&argv);
 
     /* Find command with method name. */
-    command = shash_find_data(&commands, method);
+    command = shash_find_data(&commands, request->method);
 
     /* Verify that method call complies with command requirements. */
     if (!command) {
         error = xasprintf("\"%s\" is not a valid command (use "
                           "\"list-commands\" to see a list of valid commands)",
-                          method);
+                          request->method);
         goto error;
-    } else if ((params->n - args_offset) < command->min_args) {
+    } else if (argc < command->min_args) {
         error = xasprintf("\"%s\" command requires at least %d arguments",
-                          method, command->min_args);
+                          request->method, command->min_args);
         goto error;
-    } else if ((params->n - args_offset) > command->max_args) {
+    } else if (argc > command->max_args) {
         error = xasprintf("\"%s\" command takes at most %d arguments",
-                          method, command->max_args);
+                          request->method, command->max_args);
         goto error;
     } else if ((!command->output_fmts && fmt != OVS_OUTPUT_FMT_TEXT) ||
                (command->output_fmts && !(fmt & command->output_fmts)))
     {
         error = xasprintf("\"%s\" command does not support output format"\
-                          " \"%s\" %d %d", method,
-                          ovs_output_fmt_to_string(fmt), command->output_fmts,
+                          " \"%s\" %d %d", request->method,
+                          ovs_output_fmt_to_string(fmt),
+                          command->output_fmts,
                           fmt);
         goto error;
     }
-
-    /* Extract command args. */
-    svec_add(&argv, method);
-    for (size_t i = args_offset; i < params->n; i++) {
-        svec_add(&argv, json_string(params->elems[i]));
-    }
-    svec_terminate(&argv);
 
     command->cb(conn, argv.n, (const char **) argv.names, fmt, command->aux);
 
@@ -387,6 +388,9 @@ process_command(struct unixctl_conn *conn, struct jsonrpc_msg *request)
     return;
 error:
     unixctl_command_reply_error(conn, error);
+    if (!svec_is_empty(&argv)) {
+        svec_destroy(&argv);
+    }
     free(error);
 }
 
@@ -558,38 +562,31 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
 {
     struct jsonrpc_msg *request, *reply;
     struct json **json_args, *params;
-    int error, i;
-    /* The JSON-RPC API requires an indirection in order to allow transporting
-     * additional data like the output format besides command and args.  For
-     * backward compatibility with older servers the plain RPC is still
-     * supported. */
-    bool plain_rpc = (fmt == OVS_OUTPUT_FMT_TEXT);
+    int error, i, argcx = 0;
+
+    if (fmt != OVS_OUTPUT_FMT_TEXT) {
+        argcx += 2;
+    }
 
     *result = NULL;
     *err = NULL;
 
-    if (plain_rpc) {
-        json_args = xmalloc(argc * sizeof *json_args);
-        for (i = 0; i < argc; i++) {
-            json_args[i] = json_string_create(argv[i]);
-        }
-
-        params = json_array_create(json_args, argc);
-        request = jsonrpc_create_request(command, params, NULL);
-    } else {
-        json_args = xmalloc((argc + 2) * sizeof *json_args);
-        json_args[0] = json_string_create(command);
-        json_args[1] = ovs_output_fmt_to_json(fmt);
-        for (i = 0; i < argc; i++) {
-            json_args[i + 2] = json_string_create(argv[i]);
-        }
-
-        params = json_array_create(json_args, argc + 2);
-
-        /* Use a versioned command to ensure that both server and client
-         * use the same JSON-RPC API. */
-        request = jsonrpc_create_request(rpc_marker, params, NULL);
+    json_args = xmalloc((argc + argcx) * sizeof *json_args);
+    for (i = 0; i < argc; i++) {
+        json_args[i] = json_string_create(argv[i]);
     }
+
+    /* Pass output format for non-text only to keep compatibility with old
+       servers. */
+    if (fmt != OVS_OUTPUT_FMT_TEXT) {
+        json_args[i] = json_string_create("--format");
+        ++i;
+        json_args[i] = ovs_output_fmt_to_json(fmt);
+        ++i;
+    }
+
+    params = json_array_create(json_args, argc + argcx);
+    request = jsonrpc_create_request(command, params, NULL);
 
     error = jsonrpc_transact_block(client, request, &reply);
     if (error) {
@@ -600,17 +597,7 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
 
     if (reply->error) {
         if (reply->error->type == JSON_STRING) {
-            /* Catch incompatible server and return helpful error msg. */
-            char *plain_rpc_error = xasprintf("\"%s\" is not a valid command",
-                                              rpc_marker);
-            if (!strncmp(plain_rpc_error, json_string(reply->error),
-                         strlen(plain_rpc_error))) {
-                *err = xstrdup("JSON RPC reply indicates incompatible server. "
-                               "Please upgrade server side to newer version.");
-            } else {
-                *err = xstrdup(json_string(reply->error));
-            }
-            free(plain_rpc_error);
+            *err = xstrdup(json_string(reply->error));
         } else {
             VLOG_WARN("%s: unexpected error type in JSON RPC reply: %s",
                       jsonrpc_get_name(client),

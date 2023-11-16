@@ -19,7 +19,6 @@ import enum
 
 PROGRAM_NAME = os.path.basename(sys.argv[0])
 EOF = -1
-RPC_MARKER = "execute/v1"
 
 
 @enum.unique

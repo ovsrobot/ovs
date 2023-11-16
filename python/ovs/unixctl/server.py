@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import copy
 import errno
 import os
@@ -105,34 +106,32 @@ class UnixctlConnection(object):
         self._request_id = request.id
 
         try:
-            plain_rpc = request.method != ovs.util.RPC_MARKER
-            args_offset = 0 if plain_rpc else 2
-
-            if not plain_rpc and len(request.params) < 2:
-                raise ValueError(
-                    "JSON-RPC API mismatch: Unexpected # of params: %d"
-                    % len(request.params))
-
             for param in request.params:
                 if not isinstance(param, str):
                     raise ValueError(
                         "command has non-string argument: %s" % param)
 
-            method = request.method if plain_rpc else request.params[0]
-            if plain_rpc:
-                fmt = ovs.util.OutputFormat.TEXT
-            else:
-                fmt = ovs.util.OutputFormat[request.params[1].upper()]
-            params = request.params[args_offset:]
+            params = request.params
 
+            parser = argparse.ArgumentParser()
+            parser.add_argument("argv", nargs="*")
+            parser.add_argument("-f", "--format",
+                                default="text",
+                                choices=[fmt.name.lower()
+                                         for fmt in ovs.util.OutputFormat])
+            args = parser.parse_args(params)
+            fmt = ovs.util.OutputFormat[args.format.upper()]
+
+            method = request.method
             command = ovs.unixctl.commands.get(method)
+
             if command is None:
                 raise ValueError('"%s" is not a valid command' % method)
-            elif len(params) < command.min_args:
+            elif len(args.argv) < command.min_args:
                 raise ValueError(
                     '"%s" command requires at least %d arguments'
                     % (method, command.min_args))
-            elif len(params) > command.max_args:
+            elif len(args.argv) > command.max_args:
                 raise ValueError(
                     '"%s" command takes at most %d arguments'
                     % (method, command.max_args))
@@ -141,8 +140,10 @@ class UnixctlConnection(object):
                                  ' "%s" %d %d' % (method, fmt.name.lower(),
                                                   command.output_fmts, fmt))
 
-            unicode_params = [str(p) for p in params]
-            command.callback(self, unicode_params, fmt, command.aux)
+            command.callback(self,
+                             args.argv,
+                             fmt,
+                             command.aux)
 
         except Exception as e:
             self.reply_error(str(e))
