@@ -481,6 +481,10 @@ class Idl(object):
                         break
                 else:
                     self.__parse_update(msg.params[1], OVSDB_UPDATE)
+            elif (msg.type == ovs.jsonrpc.Message.T_NOTIFY
+                    and msg.method == "monitor_canceled"):
+                self.force_reconnect()
+                break
             elif (msg.type == ovs.jsonrpc.Message.T_REPLY
                   and self._monitor_request_id is not None
                   and self._monitor_request_id == msg.id):
