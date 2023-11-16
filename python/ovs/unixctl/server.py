@@ -136,28 +136,19 @@ class UnixctlConnection(object):
                 raise ValueError(
                     '"%s" command takes at most %d arguments'
                     % (method, command.max_args))
-            # FIXME: Uncomment when command.output_fmts is available
-            # elif fmt not in command.output_fmts:
-            #    raise ValueError('"%s" command does not support output format'
-            #                     ' "%s" %d %d' % (method, fmt.name.lower(),
-            #                                      command.output_fmts, fmt))
-
-            # FIXME: Remove this check once output format will be passed to the
-            #        command handler below.
-            if fmt != ovs.util.OutputFormat.TEXT:
-                raise ValueError(
-                    'output format "%s" has not been implemented yet'
-                    % fmt.name.lower())
+            elif fmt not in command.output_fmts:
+                raise ValueError('"%s" command does not support output format'
+                                 ' "%s" %d %d' % (method, fmt.name.lower(),
+                                                  command.output_fmts, fmt))
 
             unicode_params = [str(p) for p in params]
-            command.callback(self, unicode_params,  # FIXME: fmt,
-                             command.aux)
+            command.callback(self, unicode_params, fmt, command.aux)
 
         except Exception as e:
             self.reply_error(str(e))
 
 
-def _unixctl_version(conn, unused_argv, version):
+def _unixctl_version(conn, unused_argv, unused_fmt, version):
     assert isinstance(conn, UnixctlConnection)
     version = "%s (Open vSwitch) %s" % (ovs.util.PROGRAM_NAME, version)
     conn.reply(version)
@@ -235,6 +226,7 @@ class UnixctlServer(object):
             return error, None
 
         ovs.unixctl.command_register("version", "", 0, 0,
+                                     ovs.util.OutputFormat.TEXT,
                                      _unixctl_version,
                                      version)
 

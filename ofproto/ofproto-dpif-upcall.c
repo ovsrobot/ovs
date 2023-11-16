@@ -354,25 +354,38 @@ static void revalidator_pause(struct revalidator *);
 static void revalidator_sweep(struct revalidator *);
 static void revalidator_purge(struct revalidator *);
 static void upcall_unixctl_show(struct unixctl_conn *conn, int argc,
-                                const char *argv[], void *aux);
+                                const char *argv[],
+                                enum ovs_output_fmt fmt,
+                                void *aux);
 static void upcall_unixctl_disable_megaflows(struct unixctl_conn *, int argc,
-                                             const char *argv[], void *aux);
+                                             const char *argv[],
+                                             enum ovs_output_fmt fmt,
+                                             void *aux);
 static void upcall_unixctl_enable_megaflows(struct unixctl_conn *, int argc,
-                                            const char *argv[], void *aux);
+                                            const char *argv[],
+                                            enum ovs_output_fmt fmt,
+                                            void *aux);
 static void upcall_unixctl_disable_ufid(struct unixctl_conn *, int argc,
-                                              const char *argv[], void *aux);
+                                        const char *argv[],
+                                        enum ovs_output_fmt fmt, void *aux);
 static void upcall_unixctl_enable_ufid(struct unixctl_conn *, int argc,
-                                             const char *argv[], void *aux);
+                                       const char *argv[],
+                                       enum ovs_output_fmt fmt, void *aux);
 static void upcall_unixctl_set_flow_limit(struct unixctl_conn *conn, int argc,
-                                            const char *argv[], void *aux);
+                                          const char *argv[],
+                                          enum ovs_output_fmt fmt, void *aux);
 static void upcall_unixctl_dump_wait(struct unixctl_conn *conn, int argc,
-                                     const char *argv[], void *aux);
+                                     const char *argv[],
+                                     enum ovs_output_fmt fmt, void *aux);
 static void upcall_unixctl_purge(struct unixctl_conn *conn, int argc,
-                                 const char *argv[], void *aux);
+                                 const char *argv[], enum ovs_output_fmt fmt,
+                                 void *aux);
 static void upcall_unixctl_pause(struct unixctl_conn *conn, int argc,
-                                 const char *argv[], void *aux);
+                                 const char *argv[], enum ovs_output_fmt fmt,
+                                 void *aux);
 static void upcall_unixctl_resume(struct unixctl_conn *conn, int argc,
-                                  const char *argv[], void *aux);
+                                  const char *argv[], enum ovs_output_fmt fmt,
+                                  void *aux);
 
 static struct udpif_key *ukey_create_from_upcall(struct upcall *,
                                                  struct flow_wildcards *);
@@ -430,26 +443,36 @@ udpif_init(void)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     if (ovsthread_once_start(&once)) {
-        unixctl_command_register("upcall/show", "", 0, 0, upcall_unixctl_show,
+        unixctl_command_register("upcall/show", "", 0, 0, OVS_OUTPUT_FMT_TEXT,
+                                 upcall_unixctl_show,
                                  NULL);
         unixctl_command_register("upcall/disable-megaflows", "", 0, 0,
+                                 OVS_OUTPUT_FMT_TEXT,
                                  upcall_unixctl_disable_megaflows, NULL);
         unixctl_command_register("upcall/enable-megaflows", "", 0, 0,
+                                 OVS_OUTPUT_FMT_TEXT,
                                  upcall_unixctl_enable_megaflows, NULL);
         unixctl_command_register("upcall/disable-ufid", "", 0, 0,
+                                 OVS_OUTPUT_FMT_TEXT,
                                  upcall_unixctl_disable_ufid, NULL);
         unixctl_command_register("upcall/enable-ufid", "", 0, 0,
+                                 OVS_OUTPUT_FMT_TEXT,
                                  upcall_unixctl_enable_ufid, NULL);
         unixctl_command_register("upcall/set-flow-limit", "flow-limit-number",
-                                 1, 1, upcall_unixctl_set_flow_limit, NULL);
+                                 1, 1, OVS_OUTPUT_FMT_TEXT,
+                                 upcall_unixctl_set_flow_limit, NULL);
         unixctl_command_register("revalidator/wait", "", 0, 0,
+                                 OVS_OUTPUT_FMT_TEXT,
                                  upcall_unixctl_dump_wait, NULL);
         unixctl_command_register("revalidator/purge", "", 0, 0,
-                                 upcall_unixctl_purge, NULL);
+                                 OVS_OUTPUT_FMT_TEXT, upcall_unixctl_purge,
+                                 NULL);
         unixctl_command_register("revalidator/pause", NULL, 0, 0,
-                                 upcall_unixctl_pause, NULL);
+                                 OVS_OUTPUT_FMT_TEXT, upcall_unixctl_pause,
+                                 NULL);
         unixctl_command_register("revalidator/resume", NULL, 0, 0,
-                                 upcall_unixctl_resume, NULL);
+                                 OVS_OUTPUT_FMT_TEXT, upcall_unixctl_resume,
+                                 NULL);
         ovsthread_once_done(&once);
     }
 }
@@ -3072,7 +3095,9 @@ dp_purge_cb(void *aux, unsigned pmd_id)
 
 static void
 upcall_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                    const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                    const char *argv[] OVS_UNUSED,
+                    enum ovs_output_fmt fmt OVS_UNUSED,
+                    void *aux OVS_UNUSED)
 {
     struct ds ds = DS_EMPTY_INITIALIZER;
     uint64_t n_offloaded_flows;
@@ -3126,6 +3151,7 @@ static void
 upcall_unixctl_disable_megaflows(struct unixctl_conn *conn,
                                  int argc OVS_UNUSED,
                                  const char *argv[] OVS_UNUSED,
+                                 enum ovs_output_fmt fmt OVS_UNUSED,
                                  void *aux OVS_UNUSED)
 {
     atomic_store_relaxed(&enable_megaflows, false);
@@ -3141,6 +3167,7 @@ static void
 upcall_unixctl_enable_megaflows(struct unixctl_conn *conn,
                                 int argc OVS_UNUSED,
                                 const char *argv[] OVS_UNUSED,
+                                enum ovs_output_fmt fmt OVS_UNUSED,
                                 void *aux OVS_UNUSED)
 {
     atomic_store_relaxed(&enable_megaflows, true);
@@ -3154,7 +3181,9 @@ upcall_unixctl_enable_megaflows(struct unixctl_conn *conn,
  * documented in the man page. */
 static void
 upcall_unixctl_disable_ufid(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                           const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                            const char *argv[] OVS_UNUSED,
+                            enum ovs_output_fmt fmt OVS_UNUSED,
+                            void *aux OVS_UNUSED)
 {
     atomic_store_relaxed(&enable_ufid, false);
     unixctl_command_reply(conn, "Datapath dumping tersely using UFID disabled");
@@ -3166,7 +3195,9 @@ upcall_unixctl_disable_ufid(struct unixctl_conn *conn, int argc OVS_UNUSED,
  * in the man page. */
 static void
 upcall_unixctl_enable_ufid(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                          const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                           const char *argv[] OVS_UNUSED,
+                           enum ovs_output_fmt fmt OVS_UNUSED,
+                           void *aux OVS_UNUSED)
 {
     atomic_store_relaxed(&enable_ufid, true);
     unixctl_command_reply(conn, "Datapath dumping tersely using UFID enabled "
@@ -3181,6 +3212,7 @@ static void
 upcall_unixctl_set_flow_limit(struct unixctl_conn *conn,
                               int argc OVS_UNUSED,
                               const char *argv[],
+                              enum ovs_output_fmt fmt OVS_UNUSED,
                               void *aux OVS_UNUSED)
 {
     struct ds ds = DS_EMPTY_INITIALIZER;
@@ -3199,6 +3231,7 @@ static void
 upcall_unixctl_dump_wait(struct unixctl_conn *conn,
                          int argc OVS_UNUSED,
                          const char *argv[] OVS_UNUSED,
+                         enum ovs_output_fmt fmt OVS_UNUSED,
                          void *aux OVS_UNUSED)
 {
     if (ovs_list_is_singleton(&all_udpifs)) {
@@ -3217,7 +3250,9 @@ upcall_unixctl_dump_wait(struct unixctl_conn *conn,
 
 static void
 upcall_unixctl_purge(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                     const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                     const char *argv[] OVS_UNUSED,
+                     enum ovs_output_fmt fmt OVS_UNUSED,
+                     void *aux OVS_UNUSED)
 {
     struct udpif *udpif;
 
@@ -3241,7 +3276,9 @@ upcall_unixctl_purge(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
 static void
 upcall_unixctl_pause(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                     const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                     const char *argv[] OVS_UNUSED,
+                     enum ovs_output_fmt fmt OVS_UNUSED,
+                     void *aux OVS_UNUSED)
 {
     struct udpif *udpif;
 
@@ -3253,7 +3290,9 @@ upcall_unixctl_pause(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
 static void
 upcall_unixctl_resume(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                      const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                      const char *argv[] OVS_UNUSED,
+                      enum ovs_output_fmt fmt OVS_UNUSED,
+                      void *aux OVS_UNUSED)
 {
     struct udpif *udpif;
 
