@@ -141,6 +141,9 @@ nl_ct_dump_start(struct nl_ct_dump_state **statep, const uint16_t *zone,
 
     nl_msg_put_nfgenmsg(&state->buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
                         IPCTNL_MSG_CT_GET, NLM_F_REQUEST);
+    if (zone) {
+        nl_msg_put_be16(&state->buf, CTA_ZONE, htons(*zone));
+    }
     nl_dump_start(&state->dump, NETLINK_NETFILTER, &state->buf);
     ofpbuf_clear(&state->buf);
 
@@ -283,23 +286,65 @@ nl_ct_flush_zone(uint16_t flush_zone)
     return err;
 }
 #else
+
+static bool netlink_flush_supports_zone(void) {
+    static bool valid, supported = false;
+    if (!valid) {
+        char *env = getenv("OVS_NETLINK_CONNTRAK_FLUSH_ZONE_SUPPORTED");
+        if (env && env[0]) {
+            if (env[0] == 'T' || env[0] == 't') {
+                supported = true;
+            }
+        }
+        valid = true;
+    }
+    return supported;
+}
+
 int
 nl_ct_flush_zone(uint16_t flush_zone)
 {
-    /* Apparently, there's no netlink interface to flush a specific zone.
+    /* In older kernels, there was no netlink interface to flush a specific
+     * conntrack zone.
      * This code dumps every connection, checks the zone and eventually
      * delete the entry.
+     * In newer kernels there is the option to specifiy a zone for filtering
+     * during dumps. Older kernels ignore this option. We set it here in the
+     * hope we only get relevant entries back, but fall back to filtering here
+     * to keep compatibility.
      *
-     * This is race-prone, but it is better than using shell scripts. */
+     * This is race-prone, but it is better than using shell scripts.
+     *
+     * Additionaly newer kenerls also support flushing a zone without listing
+     * it first. However it is not easily possible to discover if the kernel
+     * supports this feature or if it will flush the complete conntrack table.
+     * We therefor rely on an environment variable, allowing the user to
+     * provide us this information. In the future we can use kernel version
+     * numbers. */
 
     struct nl_dump dump;
     struct ofpbuf buf, reply, delete;
+    int err;
+
+    if (netlink_flush_supports_zone()) {
+        ofpbuf_init(&buf, NL_DUMP_BUFSIZE);
+
+        nl_msg_put_nfgenmsg(&buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
+                            IPCTNL_MSG_CT_DELETE, NLM_F_REQUEST);
+        nl_msg_put_be16(&buf, CTA_ZONE, htons(flush_zone));
+
+        err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+        ofpbuf_uninit(&buf);
+
+        return err;
+    }
 
     ofpbuf_init(&buf, NL_DUMP_BUFSIZE);
     ofpbuf_init(&delete, NL_DUMP_BUFSIZE);
 
     nl_msg_put_nfgenmsg(&buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
                         IPCTNL_MSG_CT_GET, NLM_F_REQUEST);
+    nl_msg_put_be16(&buf, CTA_ZONE, htons(flush_zone));
     nl_dump_start(&dump, NETLINK_NETFILTER, &buf);
     ofpbuf_clear(&buf);
 
