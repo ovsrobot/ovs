@@ -361,10 +361,16 @@ make_unix_socket(int style, bool nonblock,
         int dirfd;
 
         error = make_sockaddr_un(connect_path, &un, &un_len, &dirfd, linkname);
-        if (!error
-            && connect(fd, (struct sockaddr*) &un, un_len)
-            && errno != EINPROGRESS) {
-            error = errno;
+        if (!error) {
+            for (;;) {
+                if (!connect(fd, (struct sockaddr *)&un, un_len)) {
+                    break;
+                }
+                if (errno != EINPROGRESS) {
+                    error = errno;
+                    break;
+                }
+            }
         }
         free_sockaddr_un(dirfd, linkname);
 
