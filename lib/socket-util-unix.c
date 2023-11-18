@@ -376,9 +376,6 @@ make_unix_socket(int style, bool nonblock,
     return fd;
 
 error:
-    if (error == EAGAIN) {
-        error = EPROTO;
-    }
     if (bind_path) {
         fatal_signal_unlink_file_now(bind_path);
     }
