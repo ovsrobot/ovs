@@ -366,7 +366,7 @@ make_unix_socket(int style, bool nonblock,
                 if (!connect(fd, (struct sockaddr *)&un, un_len)) {
                     break;
                 }
-                if (errno != EINPROGRESS) {
+                if (errno != EAGAIN && errno != EINPROGRESS) {
                     error = errno;
                     break;
                 }
