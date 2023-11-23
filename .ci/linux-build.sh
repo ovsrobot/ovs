@@ -139,7 +139,7 @@ else
             export DPDK_EAL_OPTIONS="--lcores 0@1,1@1,2@1"
         fi
         $run_as_root make $testsuite TESTSUITEFLAGS="$JOBS $TEST_RANGE" \
-                                     RECHECK=yes
+                                     RECHECK=yes GITHUB_ACTIONS=$GITHUB_ACTIONS
     done
 fi
 
