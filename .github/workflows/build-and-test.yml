@@ -12,7 +12,7 @@ jobs:
     name: dpdk gcc
     outputs:
       dpdk_key: ${{ steps.gen_dpdk_key.outputs.key }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
 
     steps:
@@ -76,7 +76,8 @@ jobs:
     env:
       dependencies: |
         automake libtool gcc bc libjemalloc2 libjemalloc-dev libssl-dev \
-        llvm-dev libnuma-dev libpcap-dev selinux-policy-dev libbpf-dev
+        llvm-dev libnuma-dev libpcap-dev selinux-policy-dev libbpf-dev \
+        lftp libreswan
       ASAN:        ${{ matrix.asan }}
       UBSAN:       ${{ matrix.ubsan }}
       CC:          ${{ matrix.compiler }}
@@ -87,9 +88,10 @@ jobs:
       OPTS:        ${{ matrix.opts }}
       STD:         ${{ matrix.std }}
       TESTSUITE:   ${{ matrix.testsuite }}
+      TEST_RANGE:  ${{ matrix.test_range }}
 
     name: linux ${{ join(matrix.*, ' ') }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
 
     strategy:
@@ -166,6 +168,13 @@ jobs:
 
           - compiler:     gcc
             testsuite:    check-ovsdb-cluster
+
+          - compiler:     gcc
+            testsuite:    check-kernel
+            test_range:   "-100"
+          - compiler:     gcc
+            testsuite:    check-kernel
+            test_range:   "100-"
 
     steps:
     - name: checkout
