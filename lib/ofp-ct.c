@@ -31,6 +31,9 @@
 #include "openvswitch/ofp-prop.h"
 #include "openvswitch/ofp-util.h"
 #include "openvswitch/packets.h"
+#include "openvswitch/vlog.h"
+
+VLOG_DEFINE_THIS_MODULE(ofp_ct);
 
 static void
 ofp_ct_tuple_format(struct ds *ds, const struct ofp_ct_tuple *tuple,
@@ -376,6 +379,10 @@ ofp_ct_match_decode(struct ofp_ct_match *match, bool *with_zone,
                 *with_zone = true;
             }
             error = ofpprop_parse_u16(&property, zone_id);
+            break;
+
+        default:
+            error = OFPPROP_UNKNOWN(false, "ofp_ct_match", type);
             break;
         }
 
