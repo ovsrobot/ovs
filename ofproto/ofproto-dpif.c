@@ -6122,7 +6122,7 @@ ofproto_unixctl_mcast_snooping_show(struct unixctl_conn *conn,
         return;
     }
 
-    ds_put_cstr(&ds, " port  VLAN  GROUP                Age\n");
+    ds_put_cstr(&ds, " port  VLAN  PROTO  GROUP                Age\n");
     ovs_rwlock_rdlock(&ofproto->ms->rwlock);
     LIST_FOR_EACH (grp, group_node, &ofproto->ms->group_lru) {
         LIST_FOR_EACH(b, bundle_node, &grp->bundle_lru) {
@@ -6131,7 +6131,9 @@ ofproto_unixctl_mcast_snooping_show(struct unixctl_conn *conn,
             bundle = b->port;
             ofputil_port_to_string(ofbundle_get_a_port(bundle)->up.ofp_port,
                                    NULL, name, sizeof name);
-            ds_put_format(&ds, "%5s  %4d  ", name, grp->vlan);
+            ds_put_format(&ds, "%5s  %4d  %5s  ", name, grp->vlan,
+                          mcast_snooping_group_proto_str(
+                          grp->protocol_version));
             ipv6_format_mapped(&grp->addr, &ds);
             ds_put_format(&ds, "         %3d\n",
                           mcast_bundle_age(ofproto->ms, b));
