@@ -114,7 +114,7 @@ setup_args = dict(
                     'flow': flow_extras_require,
                     'dns': ['unbound'],
                     'flowviz':
-                        [*flow_extras_require, 'click', 'rich'],
+                        [*flow_extras_require, 'click', 'rich', 'graphviz'],
                     },
     scripts=["ovs/flowviz/ovs-flowviz"],
     data_files=["ovs/flowviz/ovs-flowviz.conf"],
