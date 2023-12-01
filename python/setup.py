@@ -113,9 +113,12 @@ setup_args = dict(
     extras_require={':sys_platform == "win32"': ['pywin32 >= 1.0'],
                     'flow': flow_extras_require,
                     'dns': ['unbound'],
-                    'flowviz': [*flow_extras_require, 'click'],
+                    'flowviz':
+                        [*flow_extras_require, 'click', 'rich'],
                     },
     scripts=["ovs/flowviz/ovs-flowviz"],
+    data_files=["ovs/flowviz/ovs-flowviz.conf"],
+    include_package_data=True,
 )
 
 try:
