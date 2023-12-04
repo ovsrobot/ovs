@@ -19,6 +19,13 @@ Post-v3.2.0
      * Added support for Generic Segmentation Offloading for the cases where
        TSO is enabled but not supported by an egress interface (except for
        tunnel interfaces).
+   - The environment variable OVS_RECONNECT_MIN_BACKOFF,
+     OVS_RECONNECT_MAX_BACKOFF and OVS_RECONNECT_PROBE_INTERVAL, if set, allow
+     users to tune the default reconnect configuration. E.g. adapting
+     OVS_RECONNECT_PROBE_INTERVAL modifies the default probe interval, for all
+     servers and clients. These variables are valid for all ovs code as well as
+     the python client. Values set for individual connections (e.g. using the
+     `inactivity_probe` column in the `Manager` tables) will take precedence.
 
 
 v3.2.0 - 17 Aug 2023
