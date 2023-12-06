@@ -26,6 +26,9 @@ Post-v3.2.0
      * Added support for Generic Segmentation Offloading for the cases where
        TSO is enabled but not supported by an egress interface (except for
        tunnel interfaces).
+   - OpenFlow:
+     * Extended the NXT_CT_FLUSH to support matching on CT label and mark
+       fields.
 
 
 v3.2.0 - 17 Aug 2023
