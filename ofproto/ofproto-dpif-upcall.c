@@ -1574,15 +1574,20 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
             const struct frozen_state *state = &recirc_node->state;
 
             struct ofproto_async_msg *am = xmalloc(sizeof *am);
+
+            /* Resolve offloaded checksums, if any. */
+            struct dp_packet *packet_clone = dp_packet_clone(packet);
+            dp_packet_ol_send_prepare(packet_clone, 0);
+
             *am = (struct ofproto_async_msg) {
                 .controller_id = cookie->controller.controller_id,
                 .oam = OAM_PACKET_IN,
                 .pin = {
                     .up = {
                         .base = {
-                            .packet = xmemdup(dp_packet_data(packet),
-                                              dp_packet_size(packet)),
-                            .packet_len = dp_packet_size(packet),
+                            .packet = xmemdup(dp_packet_data(packet_clone),
+                                              dp_packet_size(packet_clone)),
+                            .packet_len = dp_packet_size(packet_clone),
                             .reason = cookie->controller.reason,
                             .table_id = state->table_id,
                             .cookie = get_32aligned_be64(
@@ -1597,6 +1602,8 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
                     .max_len = cookie->controller.max_len,
                 },
             };
+
+            dp_packet_delete(packet_clone);
 
             if (cookie->controller.continuation) {
                 am->pin.up.stack = (state->stack_size
