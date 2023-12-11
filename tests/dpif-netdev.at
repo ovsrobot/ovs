@@ -810,6 +810,56 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([userspace offload - tso])
+OVS_VSWITCHD_START(
+  [set Open_vSwitch . other_config:userspace-tso-enable=true -- \
+   add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-port br1 p2 -- \
+       set Interface p2 type=dummy --])
+
+dnl Modify the ip_dst addr to force changing the IP csum.
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=output:p2])
+
+flow_s="\
+  eth_src=8a:bf:7e:2f:05:84,eth_dst=0a:8f:39:4f:e0:73,dl_type=0x0800,\
+  nw_src=192.168.123.2,nw_dst=192.168.123.1,nw_proto=6,nw_ttl=64,nw_frag=no,\
+  tp_src=54392,tp_dst=5201,tcp_flags=ack"
+
+payload=$(dd if=/dev/zero bs=2000 count=1 | hexdump -ve '1/1 "%02x"')
+
+big_frame=$(ovs-ofctl compose-packet --bare "${flow_s}" "${payload}")
+
+dnl Send from tso to no-tso.
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_ip_csum=true])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_ip_csum_set_good=false])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_tso_segsz=500])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${big_frame}])
+AT_CHECK([tcpdump -vvnnr p2.pcap > p2.pcap.txt 2>&1])
+
+dnl Send from tso to tso.
+dnl AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2_tso.pcap])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_csum=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_csum_set_good=false])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_tso_segsz=500])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${big_frame}])
+AT_CHECK([tcpdump -vvnnr p2.pcap > p2.pcap.txt 2>&1])
+
+dnl Verify 5 packets with good checksums, 4 500 bytes and one 2000 bytes.
+AT_CHECK([grep -c "length 2000" p2.pcap.txt], [0], [1
+])
+AT_CHECK([grep -c "length 500" p2.pcap.txt], [0], [4
+])
+AT_CHECK([grep -c "bad cksum" p2.pcap.txt], [1], [0
+])
+AT_CHECK([grep -c "incorrect" p2.pcap.txt], [1], [0
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([dpif-netdev - revalidators handle dp modification fail correctly])
 OVS_VSWITCHD_START(
   [add-port br0 p1 \
