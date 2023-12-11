@@ -26,6 +26,9 @@ Post-v3.2.0
      * Added support for Generic Segmentation Offloading for the cases where
        TSO is enabled but not supported by an egress interface (except for
        tunnel interfaces).
+     * The userspace conntrack module no longer requires the user to specify
+       connection helpers in all flow rules. Instead, the helper specified
+       during connection commit will be used by default.
 
 
 v3.2.0 - 17 Aug 2023
