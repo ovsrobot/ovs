@@ -388,10 +388,10 @@ ovsdb_convert(const struct ovsdb *src, const struct ovsdb_schema *new_schema,
     return NULL;
 
 error:
-    ovsdb_destroy(dst);
     if (txn) {
         ovsdb_txn_abort(txn);
     }
+    ovsdb_destroy(dst);
     *dstp = NULL;
     return error;
 }
