@@ -1038,7 +1038,8 @@ raft_record_to_standalone_log(const char *db_file_name,
                 check_ovsdb_error(ovsdb_log_commit_block(db_log_data));
 
                 old_db = ovsdb_file_read(db_file_name, false);
-                check_ovsdb_error(ovsdb_convert(old_db, schema, &new_db));
+                check_ovsdb_error(ovsdb_convert(old_db, schema, &new_db,
+                                                false));
                 ovsdb_destroy(old_db);
 
                 pa->elems[1] = ovsdb_to_txn_json(

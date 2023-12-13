@@ -299,7 +299,8 @@ ovsdb_trigger_try(struct ovsdb_trigger *t, long long int now)
             }
             if (!error) {
                 ovsdb_destroy(t->converted_db);
-                error = ovsdb_convert(t->db, new_schema, &t->converted_db);
+                error = ovsdb_convert(t->db, new_schema, &t->converted_db,
+                                      true);
             }
             if (error) {
                 ovsdb_schema_destroy(new_schema);

@@ -4915,6 +4915,12 @@ raft_log_election_timer(struct raft *raft)
                                               NULL));
 }
 
+uint64_t
+raft_get_election_timer(struct raft *raft)
+{
+    return raft ? raft->election_timer : 0;
+}
+
 static void
 raft_unixctl_change_election_timer(struct unixctl_conn *conn,
                                    int argc OVS_UNUSED, const char *argv[],

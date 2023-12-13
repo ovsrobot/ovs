@@ -203,6 +203,12 @@ ovsdb_storage_get_memory_usage(const struct ovsdb_storage *storage,
     }
 }
 
+uint64_t
+ovsdb_storage_get_election_timer(const struct ovsdb_storage *storage)
+{
+    return storage->raft ? raft_get_election_timer(storage->raft) : 0;
+}
+
 char *
 ovsdb_storage_get_error(const struct ovsdb_storage *storage)
 {

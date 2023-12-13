@@ -272,11 +272,15 @@ error:
 static struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_convert_table(struct ovsdb_txn *txn,
                     const struct ovsdb_table *src_table,
-                    struct ovsdb_table *dst_table)
+                    struct ovsdb_table *dst_table,
+                    long long int *msec_left,
+                    bool timeout_is_error)
 {
     const struct ovsdb_column **dst_columns;
+    size_t n_rows_since_last_tick = 0;
     struct ovsdb_error *error = NULL;
     const struct ovsdb_row *src_row;
+    long long int last_tick = 0;
     unsigned long *src_equal;
     struct shash_node *node;
     size_t n_src_columns;
@@ -308,6 +312,28 @@ ovsdb_convert_table(struct ovsdb_txn *txn,
     }
 
     HMAP_FOR_EACH (src_row, hmap_node, &src_table->rows) {
+        if (msec_left && !n_rows_since_last_tick) {
+            last_tick = time_msec();
+        }
+        if (msec_left && ++n_rows_since_last_tick == 4000) {
+            long long int elapsed = time_msec() - last_tick;
+            *msec_left -= elapsed;
+            if (*msec_left <= 0 && timeout_is_error) {
+                error = ovsdb_error("aborted", "stopping conversion to avoid "
+                                               "raft election timer to expire "
+                                               "before completion.");
+                goto exit;
+            } else if (*msec_left <= 0 && !timeout_is_error) {
+                VLOG_WARN("Wall clock time for conversion of clustered "
+                          "database exceeded Raft election timer, consider "
+                          "increasing the election-timer.");
+                /* stop time keeping */
+                msec_left = NULL;
+            }
+            /* in the event processing is so fast that no time has elapsed
+             * since last update of last_tick, skip next last_tick update. */
+            n_rows_since_last_tick = elapsed ? 0 : 1;
+        }
         struct ovsdb_row *dst_row = ovsdb_row_create(dst_table);
         *ovsdb_row_get_uuid_rw(dst_row) = *ovsdb_row_get_uuid(src_row);
 
@@ -351,16 +377,52 @@ exit:
 
 /* Copies the data in 'src', converts it into the schema specified in
  * 'new_schema', and puts it into a newly created, unbacked database, and
- * stores a pointer to the new database in '*dstp'.  Returns null if
- * successful, otherwise an error; on error, stores NULL in '*dstp'. */
+ * stores a pointer to the new database in '*dstp'.  When 'src' is a clustered
+ * database and 'timeout_is_error' is set to true, the operation aborts with
+ * error return in the event of overrunning the election timer, if set to false
+ * a warning will be logged in the same situation.  Returns null if successful,
+ * otherwise an error; on error, stores NULL in '*dstp'. */
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_convert(const struct ovsdb *src, const struct ovsdb_schema *new_schema,
-              struct ovsdb **dstp)
+              struct ovsdb **dstp, bool timeout_is_error)
 {
     struct ovsdb *dst = ovsdb_create(ovsdb_schema_clone(new_schema),
                                      ovsdb_storage_create_unbacked(NULL));
     struct ovsdb_txn *txn = ovsdb_txn_create(dst);
     struct ovsdb_error *error = NULL;
+    long long int msec_left = 0;
+
+    if (src->storage &&
+        ovsdb_storage_is_clustered(src->storage))
+    {
+        msec_left = ovsdb_storage_get_election_timer(src->storage);
+
+        if (timeout_is_error) {
+            /* Set aside buffer time, relative to the election timer.
+             *
+             * After the conversion is processed we need time to write the
+             * result of the conversion to the local log and initiate the
+             * command to replace the data on our peers prior our peers
+             * starting an election for the next term.
+             *
+             * A divisor of 4 will give 4 seconds buffer time for a 16 second
+             * election timer and 250 ms buffer time for a 1 second election
+             * timer.
+             *
+             * The value required for buffer time would depend on environmental
+             * factors such as size of database, speed of physical storage and
+             * so on.  If it turns out that this blanket default is
+             * insufficient we could consider adding a unixctl command to
+             * configure this value. */
+            long long int buffer_time = msec_left / 4;
+            VLOG_DBG("schema conversion for clustered database: "
+                      "timeout_is_error=%d election_timer=%lld "
+                      "buffer_time=%lld",
+                      timeout_is_error, msec_left, buffer_time);
+            msec_left -= buffer_time;
+        }
+    }
+
 
     struct shash_node *node;
     SHASH_FOR_EACH (node, &src->tables) {
@@ -372,7 +434,8 @@ ovsdb_convert(const struct ovsdb *src, const struct ovsdb_schema *new_schema,
             continue;
         }
 
-        error = ovsdb_convert_table(txn, src_table, dst_table);
+        error = ovsdb_convert_table(txn, src_table, dst_table, &msec_left,
+                                    timeout_is_error);
         if (error) {
             goto error;
         }
@@ -382,6 +445,11 @@ ovsdb_convert(const struct ovsdb *src, const struct ovsdb_schema *new_schema,
     if (error) {
         txn = NULL;            /* ovsdb_txn_replay_commit() already aborted. */
         goto error;
+    }
+
+    if (msec_left) {
+        VLOG_DBG("schema conversion for clustered database: completed with "
+                 "%lld msec left", msec_left);
     }
 
     *dstp = dst;

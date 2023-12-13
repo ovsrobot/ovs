@@ -117,6 +117,7 @@ const struct uuid *raft_get_sid(const struct raft *);
 bool raft_is_connected(const struct raft *);
 bool raft_is_leader(const struct raft *);
 void raft_get_memory_usage(const struct raft *, struct simap *usage);
+uint64_t raft_get_election_timer(struct raft *);
 
 /* Parameter validation */
 struct ovsdb_error *raft_validate_election_timer(const uint64_t ms);

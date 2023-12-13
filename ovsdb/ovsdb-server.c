@@ -605,7 +605,7 @@ update_schema(struct ovsdb *db,
         new_db = ovsdb_trigger_find_and_steal_converted_db(db, txnid);
         if (!new_db) {
             /* No luck.  Converting. */
-            error = ovsdb_convert(db, schema, &new_db);
+            error = ovsdb_convert(db, schema, &new_db, false);
             if (error) {
                 /* Should never happen, because conversion should have been
                  * checked before writing the schema to the storage. */

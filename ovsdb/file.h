@@ -41,7 +41,7 @@ struct ovsdb *ovsdb_file_read_as_schema(const char *filename,
 
 struct ovsdb_error *ovsdb_convert(const struct ovsdb *src,
                                   const struct ovsdb_schema *new_schema,
-                                  struct ovsdb **dstp)
+                                  struct ovsdb **dstp, bool timeout_is_error)
     OVS_WARN_UNUSED_RESULT;
 
 #endif /* ovsdb/file.h */
