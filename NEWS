@@ -26,6 +26,8 @@ Post-v3.2.0
      * Added support for Generic Segmentation Offloading for the cases where
        TSO is enabled but not supported by an egress interface (except for
        tunnel interfaces).
+   - DPDK:
+     * Add support for DPDK 23.11.
 
 
 v3.2.0 - 17 Aug 2023
