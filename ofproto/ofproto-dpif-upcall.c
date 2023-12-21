@@ -52,6 +52,9 @@
 
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif_upcall);
 
+COVERAGE_DEFINE(dump_duration_low);
+COVERAGE_DEFINE(dump_duration_medium);
+COVERAGE_DEFINE(dump_duration_high);
 COVERAGE_DEFINE(dumped_duplicate_flow);
 COVERAGE_DEFINE(dumped_inconsistent_flow);
 COVERAGE_DEFINE(dumped_new_flow);
@@ -1039,11 +1042,15 @@ udpif_revalidator(void *arg)
             udpif->dump_duration = duration;
             if (duration > 2000) {
                 flow_limit /= duration / 1000;
+                COVERAGE_INC(dump_duration_high);
             } else if (duration > 1300) {
                 flow_limit = flow_limit * 3 / 4;
-            } else if (duration < 1000 &&
-                       flow_limit < n_flows * 1000 / duration) {
-                flow_limit += 1000;
+                COVERAGE_INC(dump_duration_medium);
+            } else if (duration < 1000) {
+                if (flow_limit < n_flows * 1000 / duration) {
+                    flow_limit += 1000;
+                }
+                COVERAGE_INC(dump_duration_low);
             }
             flow_limit = MIN(ofproto_flow_limit, MAX(flow_limit, 1000));
             atomic_store_relaxed(&udpif->flow_limit, flow_limit);
