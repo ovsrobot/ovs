@@ -102,14 +102,14 @@ else
     CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${SPARSE_FLAGS}"
 fi
 
-if [ "$ASAN" ]; then
+if [[ $SANITIZERS == *asan* ]]; then
     # This will override default option configured in tests/atlocal.in.
     export ASAN_OPTIONS='detect_leaks=1'
     CFLAGS_ASAN="-fno-omit-frame-pointer -fno-common -fsanitize=address"
     CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${CFLAGS_ASAN}"
 fi
 
-if [ "$UBSAN" ]; then
+if [[ $SANITIZERS == *ubsan* ]]; then
     # Use the default options configured in tests/atlocal.in, in UBSAN_OPTIONS.
     CFLAGS_UBSAN="-fno-omit-frame-pointer -fno-common -fsanitize=undefined"
     CFLAGS_FOR_OVS="${CFLAGS_FOR_OVS} ${CFLAGS_UBSAN}"
