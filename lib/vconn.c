@@ -681,8 +681,8 @@ do_send(struct vconn *vconn, struct ofpbuf *msg)
     ovs_assert(msg->size >= sizeof(struct ofp_header));
 
     ofpmsg_update_length(msg);
+    COVERAGE_INC(vconn_sent);
     if (!VLOG_IS_DBG_ENABLED()) {
-        COVERAGE_INC(vconn_sent);
         retval = (vconn->vclass->send)(vconn, msg);
     } else {
         char *s = ofp_to_string(msg->data, msg->size, NULL, NULL, 1);
