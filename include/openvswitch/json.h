@@ -81,6 +81,7 @@ struct json *json_boolean_create(bool);
 struct json *json_string_create(const char *);
 struct json *json_string_create_nocopy(char *);
 struct json *json_serialized_object_create(const struct json *);
+struct json *json_serialized_object_create_with_yield(const struct json *);
 struct json *json_integer_create(long long int);
 struct json *json_real_create(double);
 
@@ -137,7 +138,8 @@ struct json *json_from_stream(FILE *stream);
 
 enum {
     JSSF_PRETTY = 1 << 0,       /* Multiple lines with indentation, if true. */
-    JSSF_SORT = 1 << 1          /* Object members in sorted order, if true. */
+    JSSF_SORT = 1 << 1,         /* Object members in sorted order, if true. */
+    JSSF_YIELD = 1 << 2         /* Yield during processing */
 };
 char *json_to_string(const struct json *, int flags);
 void json_to_ds(const struct json *, int flags, struct ds *);
