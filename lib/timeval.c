@@ -533,6 +533,10 @@ nsec_to_timespec(long long int nsec, struct timespec *ts)
     ts->tv_nsec = nsec;
 }
 
+#define MONOTONIC_CLOCK_HAS_WARP_CONN(c) \
+    ( (struct clock *) c)->large_warp.conn && \
+    (uintptr_t) ( (struct clock *) c)->large_warp.conn != UINTPTR_MAX
+
 static void
 timewarp_work(void)
 {
@@ -540,6 +544,8 @@ timewarp_work(void)
     struct timespec warp;
 
     ovs_mutex_lock(&c->mutex);
+    /* note that we do not use MONOTONIC_CLOCK_HAS_WARP_CONN here as we want
+     * to perform work in case of an internal caller has requested warp. */
     if (!c->large_warp.conn) {
         ovs_mutex_unlock(&c->mutex);
         return;
@@ -560,7 +566,9 @@ timewarp_work(void)
     }
 
     if (!c->large_warp.total_warp) {
-        unixctl_command_reply(c->large_warp.conn, "warped");
+        if (MONOTONIC_CLOCK_HAS_WARP_CONN(c)) {
+            unixctl_command_reply(c->large_warp.conn, "warped");
+        }
         c->large_warp.conn = NULL;
     }
 
@@ -763,17 +771,22 @@ get_cpu_usage(void)
 
 /* "time/stop" stops the monotonic time returned by e.g. time_msec() from
  * advancing, except due to later calls to "time/warp". */
-static void
-timeval_stop_cb(struct unixctl_conn *conn,
-                 int argc OVS_UNUSED, const char *argv[] OVS_UNUSED,
-                 void *aux OVS_UNUSED)
+void
+timeval_stop(void)
 {
     ovs_mutex_lock(&monotonic_clock.mutex);
     atomic_store_relaxed(&monotonic_clock.slow_path, true);
     monotonic_clock.stopped = true;
     xclock_gettime(monotonic_clock.id, &monotonic_clock.cache);
     ovs_mutex_unlock(&monotonic_clock.mutex);
+}
 
+static void
+timeval_stop_cb(struct unixctl_conn *conn,
+                 int argc OVS_UNUSED, const char *argv[] OVS_UNUSED,
+                 void *aux OVS_UNUSED)
+{
+    timeval_stop();
     unixctl_command_reply(conn, NULL);
 }
 
@@ -787,6 +800,25 @@ timeval_stop_cb(struct unixctl_conn *conn,
  * time to run after the clock has been advanced by MSECS.
  *
  * Does not affect wall clock readings. */
+void
+timeval_warp(long long int total_warp, long long int msecs)
+{
+    ovs_mutex_lock(&monotonic_clock.mutex);
+    if (!MONOTONIC_CLOCK_HAS_WARP_CONN(&monotonic_clock)) {
+        /* we do not have a unixctl connection for internal callers, but the
+         * pointer needs to be set for timewarp_work() to know when to
+         * perform work. */
+        monotonic_clock.large_warp.conn = (struct unixctl_conn *) UINTPTR_MAX;
+    }
+    atomic_store_relaxed(&monotonic_clock.slow_path, true);
+    monotonic_clock.large_warp.total_warp = total_warp;
+    monotonic_clock.large_warp.warp = msecs;
+    monotonic_clock.large_warp.main_thread_id = ovsthread_id_self();
+    ovs_mutex_unlock(&monotonic_clock.mutex);
+
+    timewarp_work();
+}
+
 static void
 timeval_warp_cb(struct unixctl_conn *conn,
                 int argc OVS_UNUSED, const char *argv[], void *aux OVS_UNUSED)
@@ -799,25 +831,25 @@ timeval_warp_cb(struct unixctl_conn *conn,
     }
 
     ovs_mutex_lock(&monotonic_clock.mutex);
-    if (monotonic_clock.large_warp.conn) {
+    if (MONOTONIC_CLOCK_HAS_WARP_CONN(&monotonic_clock)) {
         ovs_mutex_unlock(&monotonic_clock.mutex);
         unixctl_command_reply_error(conn, "A previous warp in progress");
         return;
     }
-    atomic_store_relaxed(&monotonic_clock.slow_path, true);
     monotonic_clock.large_warp.conn = conn;
-    monotonic_clock.large_warp.total_warp = total_warp;
-    monotonic_clock.large_warp.warp = msecs;
-    monotonic_clock.large_warp.main_thread_id = ovsthread_id_self();
     ovs_mutex_unlock(&monotonic_clock.mutex);
 
-    timewarp_work();
+    timeval_warp(total_warp, msecs);
 }
 
 void
+timeval_timewarp_enable(void) {
+    timewarp_enabled = true;
+}
+void
 timeval_dummy_register(void)
 {
-    timewarp_enabled = true;
+    timeval_timewarp_enable();
     unixctl_command_register("time/stop", "", 0, 0, timeval_stop_cb, NULL);
     unixctl_command_register("time/warp", "[large_msecs] msecs", 1, 2,
                              timeval_warp_cb, NULL);
