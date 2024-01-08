@@ -21,6 +21,7 @@
 
 #include "bitmap.h"
 #include "column.h"
+#include "cooperative-multitasking.h"
 #include "openvswitch/dynamic-string.h"
 #include "monitor.h"
 #include "openvswitch/json.h"
@@ -599,6 +600,7 @@ ovsdb_jsonrpc_session_run_all(struct ovsdb_jsonrpc_remote *remote)
     struct ovsdb_jsonrpc_session *s;
 
     LIST_FOR_EACH_SAFE (s, node, &remote->sessions) {
+        cooperative_multitasking_yield();
         int error = ovsdb_jsonrpc_session_run(s);
         if (error) {
             ovsdb_jsonrpc_session_close(s);
@@ -674,6 +676,7 @@ ovsdb_jsonrpc_session_reconnect_all(struct ovsdb_jsonrpc_remote *remote,
     struct ovsdb_jsonrpc_session *s;
 
     LIST_FOR_EACH_SAFE (s, node, &remote->sessions) {
+        cooperative_multitasking_yield();
         if (force || !s->db_change_aware) {
             jsonrpc_session_force_reconnect(s->js);
             if (comment && jsonrpc_session_is_connected(s->js)) {

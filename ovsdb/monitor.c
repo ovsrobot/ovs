@@ -20,6 +20,7 @@
 
 #include "bitmap.h"
 #include "column.h"
+#include "cooperative-multitasking.h"
 #include "openvswitch/dynamic-string.h"
 #include "openvswitch/json.h"
 #include "jsonrpc.h"
@@ -229,6 +230,7 @@ ovsdb_monitor_json_cache_search(const struct ovsdb_monitor *dbmon,
     uint32_t hash = json_cache_hash(version, change_set);
 
     HMAP_FOR_EACH_WITH_HASH(node, hmap_node, hash, &dbmon->json_cache) {
+        cooperative_multitasking_yield();
         if (uuid_equals(&node->change_set_uuid, &change_set->uuid) &&
             node->version == version) {
             return node;
@@ -262,6 +264,7 @@ ovsdb_monitor_json_cache_flush(struct ovsdb_monitor *dbmon)
     struct ovsdb_monitor_json_cache_node *node;
 
     HMAP_FOR_EACH_POP(node, hmap_node, &dbmon->json_cache) {
+        cooperative_multitasking_yield();
         json_destroy(node->json);
         free(node);
     }
@@ -309,6 +312,7 @@ ovsdb_monitor_changes_row_find(
 
     HMAP_FOR_EACH_WITH_HASH (row, hmap_node, uuid_hash(uuid),
                              &changes->rows) {
+        cooperative_multitasking_yield();
         if (uuid_equals(uuid, &row->uuid)) {
             return row;
         }
@@ -406,6 +410,7 @@ ovsdb_monitor_columns_sort(struct ovsdb_monitor *dbmon)
     struct shash_node *node;
 
     SHASH_FOR_EACH (node, &dbmon->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table *mt = node->data;
 
         if (mt->n_columns == 0) {
@@ -546,6 +551,7 @@ ovsdb_monitor_condition_bind(struct ovsdb_monitor *dbmon,
     struct shash_node *node;
 
     SHASH_FOR_EACH(node, &cond->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table_condition *mtc = node->data;
         struct ovsdb_monitor_table *mt =
             shash_find_data(&dbmon->tables, mtc->table->schema->name);
@@ -576,6 +582,7 @@ ovsdb_monitor_add_change_set(struct ovsdb_monitor *dbmon,
 
     struct shash_node *node;
     SHASH_FOR_EACH (node, &dbmon->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table *mt = node->data;
         if (!init_only || (mt->select & OJMS_INITIAL)) {
             struct ovsdb_monitor_change_set_for_table *mcst =
@@ -599,6 +606,7 @@ ovsdb_monitor_find_change_set(const struct ovsdb_monitor *dbmon,
 {
     struct ovsdb_monitor_change_set *cs;
     LIST_FOR_EACH (cs, list_node, &dbmon->change_sets) {
+        cooperative_multitasking_yield();
         if (uuid_equals(&cs->prev_txn, prev_txn)) {
             /* Check n_columns for each table in dbmon, in case it is changed
              * after the change set is populated. */
@@ -666,6 +674,7 @@ ovsdb_monitor_change_set_destroy(struct ovsdb_monitor_change_set *mcs)
 
         struct ovsdb_monitor_row *row;
         HMAP_FOR_EACH_SAFE (row, hmap_node, &mcst->rows) {
+            cooperative_multitasking_yield();
             hmap_remove(&mcst->rows, &row->hmap_node);
             ovsdb_monitor_row_destroy(mcst->mt, row, mcst->n_columns);
         }
@@ -694,6 +703,7 @@ ovsdb_monitor_session_condition_set_mode(
     struct shash_node *node;
 
     SHASH_FOR_EACH (node, &cond->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table_condition *mtc = node->data;
 
         if (!ovsdb_condition_is_true(&mtc->new_condition)) {
@@ -727,6 +737,7 @@ ovsdb_monitor_session_condition_destroy(
     }
 
     SHASH_FOR_EACH_SAFE (node, &condition->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table_condition *mtc = node->data;
 
         ovsdb_condition_destroy(&mtc->new_condition);
@@ -1119,6 +1130,7 @@ ovsdb_monitor_max_columns(struct ovsdb_monitor *dbmon)
     size_t max_columns = 0;
 
     SHASH_FOR_EACH (node, &dbmon->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table *mt = node->data;
 
         max_columns = MAX(max_columns, mt->n_columns);
@@ -1172,6 +1184,7 @@ ovsdb_monitor_compose_update(
         struct ovsdb_monitor_table *mt = mcst->mt;
 
         HMAP_FOR_EACH_SAFE (row, hmap_node, &mcst->rows) {
+            cooperative_multitasking_yield();
             struct json *row_json;
             row_json = (*row_update)(mt, condition, OVSDB_MONITOR_ROW, row,
                                      initial, changed, mcst->n_columns);
@@ -1215,6 +1228,7 @@ ovsdb_monitor_compose_cond_change_update(
 
         /* Iterate over all rows in table */
         HMAP_FOR_EACH (row, hmap_node, &mt->table->rows) {
+            cooperative_multitasking_yield();
             struct json *row_json;
 
             row_json = ovsdb_monitor_compose_row_update2(mt, condition,
@@ -1286,7 +1300,8 @@ ovsdb_monitor_get_update(
 
                         /* Pre-serializing the object to avoid doing this
                          * for every client. */
-                        json_serialized = json_serialized_object_create(json);
+                        json_serialized =
+                            json_serialized_object_create_with_yield(json);
                         json_destroy(json);
                         json = json_serialized;
                     }
@@ -1540,6 +1555,7 @@ ovsdb_monitor_get_initial(struct ovsdb_monitor *dbmon,
             if (mcst->mt->select & OJMS_INITIAL) {
                 struct ovsdb_row *row;
                 HMAP_FOR_EACH (row, hmap_node, &mcst->mt->table->rows) {
+                    cooperative_multitasking_yield();
                     ovsdb_monitor_changes_update(NULL, row, mcst->mt, mcst);
                 }
             }
@@ -1595,6 +1611,7 @@ ovsdb_monitor_get_changes_after(const struct uuid *txn_uuid,
     struct ovsdb_txn_history_node *h_node;
     bool found = false;
     LIST_FOR_EACH (h_node, node, &dbmon->db->txn_history) {
+        cooperative_multitasking_yield();
         struct ovsdb_txn *txn = h_node->txn;
         if (!found) {
             /* find the txn with last_id in history */
@@ -1627,6 +1644,7 @@ ovsdb_monitor_remove_jsonrpc_monitor(struct ovsdb_monitor *dbmon,
 
     /* Find and remove the jsonrpc monitor from the list.  */
     LIST_FOR_EACH(jm, node, &dbmon->jsonrpc_monitors) {
+        cooperative_multitasking_yield();
         if (jm->jsonrpc_monitor == jsonrpc_monitor) {
             /* Release the tracked changes. */
             if (change_set) {
@@ -1683,6 +1701,7 @@ ovsdb_monitor_equal(const struct ovsdb_monitor *a,
     }
 
     SHASH_FOR_EACH(node, &a->tables) {
+        cooperative_multitasking_yield();
         const struct ovsdb_monitor_table *mta = node->data;
         const struct ovsdb_monitor_table *mtb;
 
@@ -1740,6 +1759,7 @@ ovsdb_monitor_add(struct ovsdb_monitor *new_dbmon)
 
     hash = ovsdb_monitor_hash(new_dbmon, 0);
     HMAP_FOR_EACH_WITH_HASH(dbmon, hmap_node, hash, &ovsdb_monitors) {
+        cooperative_multitasking_yield();
         if (ovsdb_monitor_equal(dbmon,  new_dbmon)) {
             return dbmon;
         }
@@ -1765,10 +1785,12 @@ ovsdb_monitor_destroy(struct ovsdb_monitor *dbmon)
 
     struct ovsdb_monitor_change_set *cs;
     LIST_FOR_EACH_SAFE (cs, list_node, &dbmon->change_sets) {
+        cooperative_multitasking_yield();
         ovsdb_monitor_change_set_destroy(cs);
     }
 
     SHASH_FOR_EACH (node, &dbmon->tables) {
+        cooperative_multitasking_yield();
         struct ovsdb_monitor_table *mt = node->data;
         ovs_assert(ovs_list_is_empty(&mt->change_sets));
         free(mt->columns);
@@ -1805,6 +1827,7 @@ ovsdb_monitors_commit(struct ovsdb *db, const struct ovsdb_txn *txn)
     struct ovsdb_monitor *m;
 
     LIST_FOR_EACH (m, list_node, &db->monitors) {
+        cooperative_multitasking_yield();
         ovsdb_monitor_commit(m, txn);
     }
 }

@@ -6,6 +6,9 @@ Post-v3.2.0
        from older version is supported but it may trigger more leader elections
        during the process, and error logs complaining unrecognized fields may
        be observed on old nodes.
+     * Make use of cooperative multitasking to ensure stable maintenance of
+       RAFT cluster during long running processing such as online schema
+       conversion.
    - OpenFlow:
      * NXT_CT_FLUSH extension is updated to support flushing connections
        based on mark and labels.  'ct-flush' command of ovs-ofctl updated
@@ -36,6 +39,11 @@ Post-v3.2.0
        The existing behaviour is maintained and a non key:value pair value
        will be applied to all other PMD thread cores.'pmd-sleep-show' is
        updated to show the maximum sleep for each PMD thread core.
+   - lib:
+     * Introduce cooperative multitasking module which allow us to interleave
+       important processing with long running tasks while avoiding the
+       additional resource consumption of threads and complexity of
+       asynchronous state machines.
 
 
 v3.2.0 - 17 Aug 2023
