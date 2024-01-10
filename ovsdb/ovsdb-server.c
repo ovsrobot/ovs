@@ -195,44 +195,6 @@ main_loop(struct server_config *config,
     ssl_error = NULL;
     remotes_error = NULL;
     while (!*exiting) {
-        memory_run();
-        if (memory_should_report()) {
-            struct simap usage;
-
-            simap_init(&usage);
-            ovsdb_jsonrpc_server_get_memory_usage(jsonrpc, &usage);
-            ovsdb_monitor_get_memory_usage(&usage);
-            SHASH_FOR_EACH(node, all_dbs) {
-                struct db *db = node->data;
-                ovsdb_get_memory_usage(db->db, &usage);
-            }
-            memory_report(&usage);
-            simap_destroy(&usage);
-        }
-
-        /* Run unixctl_server_run() before reconfigure_remotes() because
-         * ovsdb-server/add-remote and ovsdb-server/remove-remote can change
-         * the set of remotes that reconfigure_remotes() uses. */
-        unixctl_server_run(unixctl);
-
-        ovsdb_jsonrpc_server_set_read_only(jsonrpc, *is_backup);
-
-        report_error_if_changed(
-            reconfigure_remotes(jsonrpc, all_dbs, remotes),
-            &remotes_error);
-        report_error_if_changed(reconfigure_ssl(all_dbs), &ssl_error);
-        ovsdb_jsonrpc_server_run(jsonrpc);
-
-        if (*is_backup) {
-            replication_run();
-            if (!replication_is_alive()) {
-                disconnect_active_server();
-                *is_backup = false;
-            }
-        }
-
-        ovsdb_relay_run();
-
         SHASH_FOR_EACH_SAFE (node, all_dbs) {
             struct db *db = node->data;
 
@@ -260,6 +222,46 @@ main_loop(struct server_config *config,
                 log_and_free_error(ovsdb_snapshot(db->db, trim_memory));
             }
         }
+
+        memory_run();
+        if (memory_should_report()) {
+            struct simap usage;
+
+            simap_init(&usage);
+            ovsdb_jsonrpc_server_get_memory_usage(jsonrpc, &usage);
+            ovsdb_monitor_get_memory_usage(&usage);
+            SHASH_FOR_EACH(node, all_dbs) {
+                struct db *db = node->data;
+                ovsdb_get_memory_usage(db->db, &usage);
+            }
+            memory_report(&usage);
+            simap_destroy(&usage);
+        }
+
+        /* Run unixctl_server_run() before reconfigure_remotes() because
+         * ovsdb-server/add-remote and ovsdb-server/remove-remote can change
+         * the set of remotes that reconfigure_remotes() uses. */
+        unixctl_server_run(unixctl);
+
+        ovsdb_jsonrpc_server_set_read_only(jsonrpc, *is_backup);
+
+        report_error_if_changed(
+            reconfigure_remotes(jsonrpc, all_dbs, remotes),
+            &remotes_error);
+        report_error_if_changed(reconfigure_ssl(all_dbs), &ssl_error);
+
+        ovsdb_jsonrpc_server_run(jsonrpc);
+
+        if (*is_backup) {
+            replication_run();
+            if (!replication_is_alive()) {
+                disconnect_active_server();
+                *is_backup = false;
+            }
+        }
+
+        ovsdb_relay_run();
+
         if (run_process) {
             process_run();
             if (process_exited(run_process)) {
