@@ -24,6 +24,7 @@
 #include <limits.h>
 #include <string.h>
 
+#include "cooperative-multitasking.h"
 #include "openvswitch/dynamic-string.h"
 #include "hash.h"
 #include "openvswitch/shash.h"
@@ -181,12 +182,24 @@ json_string_create(const char *s)
     return json_string_create_nocopy(xstrdup(s));
 }
 
+static struct json *
+json_serialized_object_create__(const struct json *src, int flags)
+{
+    struct json *json = json_create(JSON_SERIALIZED_OBJECT);
+    json->string = json_to_string(src, flags);
+    return json;
+}
+
 struct json *
 json_serialized_object_create(const struct json *src)
 {
-    struct json *json = json_create(JSON_SERIALIZED_OBJECT);
-    json->string = json_to_string(src, JSSF_SORT);
-    return json;
+    return json_serialized_object_create__(src, JSSF_SORT);
+}
+
+struct json *
+json_serialized_object_create_with_yield(const struct json *src)
+{
+    return json_serialized_object_create__(src, JSSF_SORT | JSSF_YIELD);
 }
 
 struct json *
@@ -360,20 +373,20 @@ json_integer(const struct json *json)
     return json->integer;
 }
 
-static void json_destroy_object(struct shash *object);
-static void json_destroy_array(struct json_array *array);
+static void json_destroy_object(struct shash *object, bool yield);
+static void json_destroy_array(struct json_array *array, bool yield);
 
 /* Frees 'json' and everything it points to, recursively. */
 void
-json_destroy__(struct json *json)
+json_destroy__(struct json *json, bool yield)
 {
     switch (json->type) {
     case JSON_OBJECT:
-        json_destroy_object(json->object);
+        json_destroy_object(json->object, yield);
         break;
 
     case JSON_ARRAY:
-        json_destroy_array(&json->array);
+        json_destroy_array(&json->array, yield);
         break;
 
     case JSON_STRING:
@@ -395,13 +408,16 @@ json_destroy__(struct json *json)
 }
 
 static void
-json_destroy_object(struct shash *object)
+json_destroy_object(struct shash *object, bool yield)
 {
     struct shash_node *node;
 
     SHASH_FOR_EACH_SAFE (node, object) {
         struct json *value = node->data;
 
+        if (yield) {
+            cooperative_multitasking_yield();
+        }
         json_destroy(value);
         shash_delete(object, node);
     }
@@ -410,12 +426,13 @@ json_destroy_object(struct shash *object)
 }
 
 static void
-json_destroy_array(struct json_array *array)
+json_destroy_array(struct json_array *array, bool yield)
 {
     size_t i;
 
     for (i = 0; i < array->n; i++) {
-        json_destroy(array->elems[i]);
+        yield ? json_destroy_with_yield(array->elems[i]) :
+                json_destroy(array->elems[i]);
     }
     free(array->elems);
 }
@@ -1525,7 +1542,7 @@ static void json_serialize_object(const struct shash *object,
                                   struct json_serializer *);
 static void json_serialize_array(const struct json_array *,
                                  struct json_serializer *);
-static void json_serialize_string(const char *, struct ds *);
+static void json_serialize_string(const char *, struct json_serializer *);
 
 /* Converts 'json' to a string in JSON format, encoded in UTF-8, and returns
  * that string.  The caller is responsible for freeing the returned string,
@@ -1598,7 +1615,7 @@ json_serialize(const struct json *json, struct json_serializer *s)
         break;
 
     case JSON_STRING:
-        json_serialize_string(json->string, ds);
+        json_serialize_string(json->string, s);
         break;
 
     case JSON_SERIALIZED_OBJECT:
@@ -1631,7 +1648,7 @@ json_serialize_object_member(size_t i, const struct shash_node *node,
         indent_line(s);
     }
 
-    json_serialize_string(node->name, ds);
+    json_serialize_string(node->name, s);
     ds_put_char(ds, ':');
     if (s->flags & JSSF_PRETTY) {
         ds_put_char(ds, ' ');
@@ -1734,7 +1751,7 @@ static const char *chars_escaping[256] = {
 };
 
 static void
-json_serialize_string(const char *string, struct ds *ds)
+json_serialize_string(const char *string, struct json_serializer *s)
 {
     uint8_t c;
     uint8_t c2;
@@ -1742,26 +1759,32 @@ json_serialize_string(const char *string, struct ds *ds)
     const char *escape;
     const char *start;
 
-    ds_put_char(ds, '"');
+    ds_put_char(s->ds, '"');
     count = 0;
     start = string;
     while ((c = *string++) != '\0') {
+        if (s->flags & JSSF_YIELD) {
+            cooperative_multitasking_yield();
+        }
         if (c >= ' ' && c != '"' && c != '\\') {
             count++;
         } else {
             if (count) {
-                ds_put_buffer(ds, start, count);
+                ds_put_buffer(s->ds, start, count);
                 count = 0;
             }
             start = string;
             escape = chars_escaping[c];
             while ((c2 = *escape++) != '\0') {
-                ds_put_char(ds, c2);
+                if (s->flags & JSSF_YIELD) {
+                    cooperative_multitasking_yield();
+                }
+                ds_put_char(s->ds, c2);
             }
         }
     }
     if (count) {
-        ds_put_buffer(ds, start, count);
+        ds_put_buffer(s->ds, start, count);
     }
-    ds_put_char(ds, '"');
+    ds_put_char(s->ds, '"');
 }
