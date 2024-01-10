@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <unistd.h>
 
+#include "cooperative-multitasking.h"
 #include "hash.h"
 #include "jsonrpc.h"
 #include "lockfile.h"
@@ -423,6 +424,8 @@ raft_make_address_passive(const char *address_)
     }
 }
 
+#define RAFT_TIMER_THRESHOLD(t) t / 3
+
 static struct raft *
 raft_alloc(void)
 {
@@ -445,6 +448,10 @@ raft_alloc(void)
 
     raft->conn_backlog_max_n_msgs = DEFAULT_MAX_BACKLOG_N_MSGS;
     raft->conn_backlog_max_n_bytes = DEFAULT_MAX_BACKLOG_N_BYTES;
+
+    COOPERATIVE_MULTITASKING_REGISTER(
+        &raft_run, raft, RAFT_TIMER_THRESHOLD(raft->election_timer),
+        "consider increasing the election timer.");
 
     return raft;
 }
@@ -991,12 +998,22 @@ raft_reset_election_timer(struct raft *raft)
         duration += raft->election_timer;
     }
     raft->election_timeout = raft->election_base + duration;
+
+    COOPERATIVE_MULTITASKING_UPDATE(
+        &raft_run, raft,
+        raft->election_base,
+        RAFT_TIMER_THRESHOLD(raft->election_base + duration));
 }
 
 static void
 raft_reset_ping_timer(struct raft *raft)
 {
-    raft->ping_timeout = time_msec() + raft->election_timer / 3;
+    long long int now = time_msec();
+
+    raft->ping_timeout = now + RAFT_TIMER_THRESHOLD(raft->election_timer);
+
+    COOPERATIVE_MULTITASKING_UPDATE(
+        &raft_run, raft, now, RAFT_TIMER_THRESHOLD(raft->election_timer));
 }
 
 static void
