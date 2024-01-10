@@ -20,6 +20,7 @@
 #include <limits.h>
 #include <string.h>
 
+#include "cooperative-multitasking.h"
 #include "file.h"
 #include "openvswitch/json.h"
 #include "jsonrpc.h"
@@ -181,6 +182,7 @@ ovsdb_trigger_run(struct ovsdb *db, long long int now)
     bool disconnect_all = false;
 
     LIST_FOR_EACH_SAFE (t, node, &db->triggers) {
+        cooperative_multitasking_yield();
         if (run_triggers
             || now - t->created >= t->timeout_msec
             || t->progress || t->txn_forward) {
@@ -202,6 +204,7 @@ ovsdb_trigger_wait(struct ovsdb *db, long long int now)
         struct ovsdb_trigger *t;
 
         LIST_FOR_EACH (t, node, &db->triggers) {
+            cooperative_multitasking_yield();
             if (t->created < LLONG_MAX - t->timeout_msec) {
                 long long int t_deadline = t->created + t->timeout_msec;
                 if (deadline > t_deadline) {

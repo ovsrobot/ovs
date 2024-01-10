@@ -24,6 +24,7 @@
 
 #include "column.h"
 #include "command-line.h"
+#include "cooperative-multitasking.h"
 #include "daemon.h"
 #include "dirs.h"
 #include "dns-resolve.h"
@@ -64,6 +65,8 @@
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(ovsdb_server);
+
+static struct hmap cooperative_multitasking_callbacks;
 
 struct db {
     char *filename;
@@ -340,6 +343,7 @@ main(int argc, char *argv[])
     fatal_ignore_sigpipe();
     process_init();
     dns_resolve_init(true);
+    cooperative_multitasking_init(&cooperative_multitasking_callbacks);
 
     bool active = false;
     parse_options(argc, argv, &db_filenames, &remotes, &unixctl_path,
@@ -532,6 +536,7 @@ main(int argc, char *argv[])
     }
     dns_resolve_destroy();
     perf_counters_destroy();
+    cooperative_multitasking_destroy();
     service_stop();
     return 0;
 }
