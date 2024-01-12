@@ -24,8 +24,10 @@
 #include <limits.h>
 #include <string.h>
 
+#include "cooperative-multitasking.h"
 #include "openvswitch/dynamic-string.h"
 #include "hash.h"
+#include "json.h"
 #include "openvswitch/shash.h"
 #include "unicode.h"
 #include "util.h"
@@ -360,20 +362,20 @@ json_integer(const struct json *json)
     return json->integer;
 }
 
-static void json_destroy_object(struct shash *object);
-static void json_destroy_array(struct json_array *array);
+static void json_destroy_object(struct shash *object, bool yield);
+static void json_destroy_array(struct json_array *array, bool yield);
 
 /* Frees 'json' and everything it points to, recursively. */
 void
-json_destroy__(struct json *json)
+json_destroy__(struct json *json, bool yield)
 {
     switch (json->type) {
     case JSON_OBJECT:
-        json_destroy_object(json->object);
+        json_destroy_object(json->object, yield);
         break;
 
     case JSON_ARRAY:
-        json_destroy_array(&json->array);
+        json_destroy_array(&json->array, yield);
         break;
 
     case JSON_STRING:
@@ -395,14 +397,22 @@ json_destroy__(struct json *json)
 }
 
 static void
-json_destroy_object(struct shash *object)
+json_destroy_object(struct shash *object, bool yield)
 {
     struct shash_node *node;
+
+    if (yield) {
+        cooperative_multitasking_yield();
+    }
 
     SHASH_FOR_EACH_SAFE (node, object) {
         struct json *value = node->data;
 
-        json_destroy(value);
+        if (yield) {
+            json_destroy_with_yield(value);
+        } else {
+            json_destroy(value);
+        }
         shash_delete(object, node);
     }
     shash_destroy(object);
@@ -410,12 +420,20 @@ json_destroy_object(struct shash *object)
 }
 
 static void
-json_destroy_array(struct json_array *array)
+json_destroy_array(struct json_array *array, bool yield)
 {
     size_t i;
 
+    if (yield) {
+        cooperative_multitasking_yield();
+    }
+
     for (i = 0; i < array->n; i++) {
-        json_destroy(array->elems[i]);
+        if (yield) {
+            json_destroy_with_yield(array->elems[i]);
+        } else {
+            json_destroy(array->elems[i]);
+        }
     }
     free(array->elems);
 }
