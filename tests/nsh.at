@@ -176,7 +176,7 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), p
 recirc_id(0x4),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=100),encap(eth_type(0x0800),ipv4(frag=no)), packets:1, bytes:102, used:0.0s, actions:2
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -819,5 +819,5 @@ AT_CHECK([
  table=3, n_packets=4, n_bytes=336, packet_type=(1,0x800) actions=encap(ethernet),set_field:aa:55:aa:55:00:03->eth_dst,output:30
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP

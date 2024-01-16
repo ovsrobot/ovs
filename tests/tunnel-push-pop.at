@@ -678,7 +678,8 @@ Listening ports:
 ])
 
 OVS_VSWITCHD_STOP(["/dropping tunnel packet marked ECN CE but is not ECN capable/d
-/ip packet has invalid checksum/d"])
+/ip packet has invalid checksum/d
+/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([tunnel_push_pop - packet_out])

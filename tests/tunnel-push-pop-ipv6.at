@@ -634,5 +634,5 @@ AT_CHECK([ovs-appctl tnl/ports/show |sort], [0], [dnl
 Listening ports:
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP

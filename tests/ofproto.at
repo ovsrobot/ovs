@@ -3032,7 +3032,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
  in_port=5 actions=drop
 NXST_FLOW reply:
 ])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto - eviction upon table overflow, with modified idle timeout])
@@ -3076,7 +3076,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
  n_packets=1, n_bytes=14, idle_timeout=13, in_port=1 actions=drop
 NXST_FLOW reply:
 ])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto - asynchronous message control (OpenFlow 1.0)])
@@ -5662,7 +5662,7 @@ OFPT_BUNDLE_CONTROL (OF1.4):
 OFPT_BARRIER_REPLY (OF1.4):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto - bundle custom timeout (OpenFlow 1.4)])
@@ -5727,7 +5727,7 @@ OFPT_BUNDLE_CONTROL (OF1.4):
 OFPT_BARRIER_REPLY (OF1.4):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto - bundle reset timeout to default (OpenFlow 1.4)])
@@ -5792,7 +5792,7 @@ OFPT_BUNDLE_CONTROL (OF1.4):
 OFPT_BARRIER_REPLY (OF1.4):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto - bundle open (OpenFlow 1.3)])

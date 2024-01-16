@@ -238,7 +238,7 @@ sleep 1
 AT_CHECK([ovs-ofctl dump-flows br0 table=1 --no-stats | sort], [0], [dnl
  table=1, priority=0 actions=FLOOD
 ])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([learning action - TCPv4 port learning])
@@ -490,7 +490,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0],
  n_packets=3, n_bytes=354, hard_timeout=10, priority=65535,vlan_tci=0x0000/0x0fff,dl_src=50:54:00:00:00:06 actions=output:3
 NXST_FLOW reply:
 ]])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([learning action - fin_timeout feature])
@@ -894,5 +894,5 @@ AT_CHECK([ovs-ofctl --no-stats dump-flows br0 | ofctl_strip | grep 0x123], [0], 
  table=2, actions=learn(table=0,hard_timeout=3,priority=1,cookie=0x123,NXM_OF_ETH_DST[[]]=NXM_OF_ETH_SRC[[]],output:OXM_OF_IN_PORT[[]]),output:3
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP

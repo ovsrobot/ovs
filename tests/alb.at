@@ -89,7 +89,7 @@ get_log_next_line_num
 ovs-appctl time/warp 600000 10000
 OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD auto load balance nothing to do, no configuration changes since last check."])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ALB - cross-numa])
@@ -135,7 +135,7 @@ ovs-appctl time/warp 600000 10000
 OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD auto load balance performing dry run."])
 OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep "PMD auto load balance detected cross-numa polling"])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ALB - PMD/RxQ assignment type])

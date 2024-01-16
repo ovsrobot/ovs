@@ -80,7 +80,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:
    AT_CHECK([grep -A 1 'miss upcall' ovs-vswitchd.log | tail -n 1], [0], [dnl
 recirc_id(0),dp_hash(0),skb_priority(0),in_port(1),skb_mark(0),ct_state(0),ct_zone(0),ct_mark(0),ct_label(0),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:05,dst=50:54:00:00:06:00),eth_type(0x0800),ipv4(src=10.0.0.5,dst=10.0.0.6,proto=6,tos=0,ttl=64,frag=no),tcp(src=8,dst=9),tcp_flags(ack)
 ])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -117,7 +117,7 @@ recirc_id(0),in_port(7),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:
 recirc_id(0),in_port(8),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(frag=no), actions: <del>
 ])
 
-   OVS_VSWITCHD_STOP
+   OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
    AT_CLEANUP])
 
 DPIF_NETDEV_DUMMY_IFACE([dummy])
@@ -399,7 +399,7 @@ recirc_id(0),in_port(8),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), a
 
 AT_CHECK([ovs-ofctl -O OpenFlow13 del-meters br0])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD],
@@ -458,7 +458,7 @@ recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), p
    AT_CHECK([filter_hw_flow_del < ovs-vswitchd.log | strip_xout], [0], [dnl
 p1: flow del: mark: 1
 ])
-   OVS_VSWITCHD_STOP
+   OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
    AT_CLEANUP])
 
 DPIF_NETDEV_FLOW_HW_OFFLOAD([dummy])
@@ -536,7 +536,7 @@ udp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:
 udp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=192.168.0.7,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,nw_frag=no,tp_src=81,tp_dst=3773
 ])
 
-   OVS_VSWITCHD_STOP
+   OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
    AT_CLEANUP])
 
 DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS([dummy])
@@ -613,7 +613,7 @@ arp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:
 arp,in_port=ANY,dl_vlan=11,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,arp_spa=127.0.0.1,arp_tpa=127.0.0.1,arp_op=1,arp_sha=00:0b:0c:0d:0e:0f,arp_tha=00:00:00:00:00:00
 ])
 
-   OVS_VSWITCHD_STOP
+   OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
    AT_CLEANUP])
 
 DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS_VID_ARP([dummy])

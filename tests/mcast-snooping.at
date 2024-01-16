@@ -482,6 +482,7 @@ AT_CHECK([ovs-appctl mdb/show br0], [0], [dnl
     1     2  224.1.1.1           0
 ])
 
+OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([mcast - delete the port mdb when port destroyed])
@@ -537,6 +538,7 @@ AT_CHECK([ovs-appctl mdb/show br0], [0], [dnl
     1     2  224.1.1.1           0
 ])
 
+OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 
@@ -604,4 +606,5 @@ recirc_id(<recirc>),in_port(1),ct_state(+new-inv+trk),eth_type(0x0800),ipv4(prot
 recirc_id(<recirc>),in_port(1),ct_state(+new-inv+trk),eth_type(0x0800),ipv4(proto=2,frag=no), packets:0, bytes:0, used:never, actions:userspace(controller(reason=1,dont_send=0,continuation=0,recirc_id=<recirc>,rule_cookie=0,controller_id=0,max_len=65535))
 ])
 
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP

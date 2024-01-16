@@ -1758,7 +1758,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
 NXST_FLOW reply:
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - Default Table Miss - OF1.3 (OFPTC_TABLE_MISS_DROP)])
@@ -1786,7 +1786,7 @@ AT_CHECK([ovs-ofctl -OOpenFlow13 dump-flows br0 | ofctl_strip | sort], [0], [dnl
 OFPST_FLOW reply (OF1.3):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - Table Miss - goto table and OFPTC_TABLE_MISS_CONTROLLER])
@@ -2047,7 +2047,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
 NXST_FLOW reply:
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - Table Miss - goto table and OFPTC_TABLE_MISS_DROP])
@@ -2377,7 +2377,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
 NXST_FLOW reply:
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -3529,7 +3529,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
 NXST_FLOW reply:
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - MPLS handling with goto_table])
@@ -3706,7 +3706,7 @@ AT_CHECK([ovs-ofctl --protocols=OpenFlow13 dump-flows br0 | ofctl_strip | sort],
 OFPST_FLOW reply (OF1.3):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - table-miss flow with async config (OpenFlow 1.3)])
@@ -3779,7 +3779,7 @@ AT_CHECK([ovs-ofctl --protocols=OpenFlow13 dump-flows br0 | ofctl_strip | sort],
 OFPST_FLOW reply (OF1.3):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -3821,7 +3821,7 @@ AT_CHECK([ovs-ofctl --protocols=OpenFlow14 dump-flows br0 | ofctl_strip | sort],
 OFPST_FLOW reply (OF1.4):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -3893,7 +3893,7 @@ AT_CHECK([ovs-ofctl --protocols=OpenFlow13 dump-flows br0 | ofctl_strip | sort],
 OFPST_FLOW reply (OF1.3):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -3965,7 +3965,7 @@ AT_CHECK([ovs-ofctl --protocols=OpenFlow14 dump-flows br0 | ofctl_strip | sort],
 OFPST_FLOW reply (OF1.4):
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - packet-in reasons (Openflow 1.3)])
@@ -4033,7 +4033,7 @@ arp,in_port=ANY,vlan_tci=0x0000,dl_src=80:88:88:88:88:88,dl_dst=ff:ff:ff:ff:ff:f
 arp,in_port=ANY,vlan_tci=0x0000,dl_src=80:88:88:88:88:88,dl_dst=ff:ff:ff:ff:ff:ff,arp_spa=192.168.128.1,arp_tpa=192.168.0.2,arp_op=2,arp_sha=50:54:00:00:00:05,arp_tha=40:44:44:44:44:41
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - VLAN handling])
@@ -7360,7 +7360,7 @@ AT_CHECK_UNQUOTED([ovs-appctl fdb/stats-show br0 | grep expired], [0], [dnl
   Total number of expired MAC entries     : 2
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - basic truncate action])
@@ -7850,7 +7850,7 @@ m4_define([CHECK_NETFLOW_EXPIRATION],
 
   ovs-appctl time/warp 6000
   ovs-appctl revalidator/wait
-  OVS_VSWITCHD_STOP
+  OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
   OVS_APP_EXIT_AND_WAIT([test-netflow])
 
   AT_CHECK([test `grep "192.168.0.1 > 192.168.0.2, if 1 > 65535, 1 pkts, 106 bytes, ICMP 8:0" netflow.log | wc -l` -eq 1])
@@ -7901,7 +7901,7 @@ m4_define([CHECK_NETFLOW_ACTIVE_EXPIRATION],
   ovs-appctl time/warp 10000
 
   ovs-appctl revalidator/wait
-  OVS_VSWITCHD_STOP
+  OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
   OVS_APP_EXIT_AND_WAIT([test-netflow])
 
   # Count the number of reported packets:
@@ -8719,7 +8719,7 @@ AT_CHECK([test $idle3 -gt $hard3])
 AT_CHECK([test $idle4 -lt $hard4])
 AT_CHECK([test $hard4 -lt $duration4])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - fin_timeout])
@@ -9060,7 +9060,7 @@ AT_CHECK([sed -n 's/=[[0-9]][[0-9]]\(\.[[0-9]][[0-9]]*\)\{0,1\}s/=?s/p' stdout],
            duration=?s
            duration=?s
 ])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 
@@ -9377,7 +9377,7 @@ AT_CHECK([filter_flow_install < ovs-vswitchd.log | strip_xout], [0], [dnl
 recirc_id(0),in_port(7),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(frag=no), actions: <del>
 recirc_id(0),in_port(7),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x0800),ipv4(frag=no), actions: <del>
 ])
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif megaflow - resubmit port action])
@@ -10846,7 +10846,7 @@ dnl
 OFPT_ECHO_REQUEST (xid=0x0): 0 bytes of payload
 ])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - conntrack - untrackable traffic])
@@ -11859,7 +11859,7 @@ dnl We don't want revalidators to delete any flow.  If the flow has been
 dnl deleted it means that there's some inconsistency with the revalidation.
 AT_CHECK([grep flow_del ovs-vswitchd.log], [1])
 
-OVS_VSWITCHD_STOP
+OVS_VSWITCHD_STOP(["/Spent an unreasonably long .*ms dumping flows/d"])
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - check_pkt_larger action])
