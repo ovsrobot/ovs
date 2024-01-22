@@ -207,6 +207,7 @@ void *dp_packet_resize_l2(struct dp_packet *, int increment);
 void *dp_packet_resize_l2_5(struct dp_packet *, int increment);
 static inline void *dp_packet_eth(const struct dp_packet *);
 static inline void dp_packet_reset_offsets(struct dp_packet *);
+static inline void dp_packet_reset_offload(struct dp_packet *);
 static inline uint16_t dp_packet_l2_pad_size(const struct dp_packet *);
 static inline void dp_packet_set_l2_pad_size(struct dp_packet *, uint16_t);
 static inline void *dp_packet_l2_5(const struct dp_packet *);
@@ -380,6 +381,7 @@ dp_packet_clear(struct dp_packet *b)
 {
     dp_packet_set_data(b, dp_packet_base(b));
     dp_packet_set_size(b, 0);
+    dp_packet_reset_offload(b);
 }
 
 /* Removes 'size' bytes from the head end of 'b', which must contain at least
@@ -537,7 +539,7 @@ dp_packet_inner_l4(const struct dp_packet *b)
 static inline size_t
 dp_packet_inner_l4_size(const struct dp_packet *b)
 {
-    return OVS_LIKELY(b->l4_ofs != UINT16_MAX)
+    return OVS_LIKELY(b->inner_l4_ofs != UINT16_MAX)
            ? (const char *) dp_packet_tail(b)
            - (const char *) dp_packet_inner_l4(b)
            - dp_packet_l2_pad_size(b)
