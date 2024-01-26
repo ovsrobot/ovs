@@ -344,6 +344,23 @@ you wish to link with jemalloc add it to LIBS::
 
     $ ./configure LIBS=-ljemalloc
 
+.. note::
+  Linking Open vSwitch with the jemalloc shared library may not work as
+  expected in certain operating system development environments if the GCC
+  compiler tries to optimize the linking process using the ``-flto`` flag.
+  You can overrides the automatic compiler decision removing the link-time
+  optimization by passing ``-fno-lto`` or disabling ``-fno-builtin`` flag since
+  the jemalloc override standard built-in memory allocation functions such as
+  malloc, calloc, etc. Both options can solve possible jemalloc linker issues
+  with pros and cons for each case, feel free to choose the path that appears
+  best to you. Disabling LTO flag example::
+
+      $ ./configure LIBS=-ljemalloc CFLAGS=-fno-lto
+
+  Disabling built-in flag example::
+
+      ./configure LIBS=-ljemalloc CFLAGS=-fno-builtin
+
 .. _general-building:
 
 Building
