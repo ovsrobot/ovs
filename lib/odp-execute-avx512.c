@@ -35,10 +35,11 @@
 
 VLOG_DEFINE_THIS_MODULE(odp_execute_avx512);
 
-/* The below three build asserts make sure that l2_5_ofs, l3_ofs, and l4_ofs
- * fields remain in the same order and offset to l2_padd_size. This is needed
- * as the avx512_dp_packet_resize_l2() function will manipulate those fields at
- * a fixed memory index based on the l2_padd_size offset. */
+/* The below three build asserts make sure that l2_5_ofs, l3_ofs, l4_ofs,
+ * inner_l3_ofs, and inner_l4_ofs fields remain in the same order and offset to
+ * l2_padd_size. This is needed as the avx512_dp_packet_resize_l2() function
+ * will manipulate those fields at a fixed memory index based on the
+ * l2_padd_size offset. */
 BUILD_ASSERT_DECL(offsetof(struct dp_packet, l2_pad_size) +
                   MEMBER_SIZEOF(struct dp_packet, l2_pad_size) ==
                   offsetof(struct dp_packet, l2_5_ofs));
@@ -50,6 +51,14 @@ BUILD_ASSERT_DECL(offsetof(struct dp_packet, l2_5_ofs) +
 BUILD_ASSERT_DECL(offsetof(struct dp_packet, l3_ofs) +
                            MEMBER_SIZEOF(struct dp_packet, l3_ofs) ==
                            offsetof(struct dp_packet, l4_ofs));
+
+BUILD_ASSERT_DECL(offsetof(struct dp_packet, l4_ofs) +
+                           MEMBER_SIZEOF(struct dp_packet, l4_ofs) ==
+                           offsetof(struct dp_packet, inner_l3_ofs));
+
+BUILD_ASSERT_DECL(offsetof(struct dp_packet, inner_l3_ofs) +
+                           MEMBER_SIZEOF(struct dp_packet, inner_l3_ofs) ==
+                           offsetof(struct dp_packet, inner_l4_ofs));
 
 /* The below build assert makes sure it's safe to read/write 128-bits starting
  * at the l2_pad_size location. */
@@ -125,7 +134,7 @@ avx512_dp_packet_resize_l2(struct dp_packet *b, int resize_by_bytes)
     /* Each lane represents 16 bits in a 12-bit register. In this case the
      * first three 16-bit values, which will map to the l2_5_ofs, l3_ofs and
      * l4_ofs fields. */
-    const uint8_t k_lanes = 0b1110;
+    const uint8_t k_lanes = 0b111110;
 
     /* Set all 16-bit words in the 128-bits v_offset register to the value we
      * need to add/substract from the l2_5_ofs, l3_ofs, and l4_ofs fields. */
