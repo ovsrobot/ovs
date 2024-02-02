@@ -463,7 +463,7 @@ bridge_init(const char *remote)
     ovsdb_idl_omit_alert(idl, &ovsrec_port_col_rstp_status);
     ovsdb_idl_omit_alert(idl, &ovsrec_port_col_rstp_statistics);
     ovsdb_idl_omit_alert(idl, &ovsrec_port_col_statistics);
-    ovsdb_idl_omit_alert(idl, &ovsrec_port_col_bond_active_slave);
+    ovsdb_idl_omit_alert(idl, &ovsrec_port_col_bond_active_member);
     ovsdb_idl_omit(idl, &ovsrec_port_col_external_ids);
     ovsdb_idl_omit_alert(idl, &ovsrec_port_col_trunks);
     ovsdb_idl_omit_alert(idl, &ovsrec_port_col_vlan_mode);
@@ -3003,7 +3003,7 @@ port_refresh_bond_status(struct port *port, bool force_update)
 
         ds_init(&mac_s);
         ds_put_format(&mac_s, ETH_ADDR_FMT, ETH_ADDR_ARGS(mac));
-        ovsrec_port_set_bond_active_slave(port->cfg, ds_cstr(&mac_s));
+        ovsrec_port_set_bond_active_member(port->cfg, ds_cstr(&mac_s));
         ds_destroy(&mac_s);
     }
 }
@@ -4640,7 +4640,7 @@ port_configure_bond(struct port *port, struct bond_settings *s)
         netdev_set_miimon_interval(iface->netdev, miimon_interval);
     }
 
-    mac_s = port->cfg->bond_active_slave;
+    mac_s = port->cfg->bond_active_member;
     if (!mac_s || !ovs_scan(mac_s, ETH_ADDR_SCAN_FMT,
                             ETH_ADDR_SCAN_ARGS(s->active_member_mac))) {
         /* OVSDB did not store the last active interface */

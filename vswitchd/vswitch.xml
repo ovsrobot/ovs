@@ -2557,7 +2557,7 @@
       </column>
     </group>
 
-    <column name="bond_active_slave">
+    <column name="bond_active_member">
       For a bonded port, record the MAC address of the current active
       member.
     </column>

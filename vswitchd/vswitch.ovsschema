@@ -1,6 +1,6 @@
 {"name": "Open_vSwitch",
- "version": "8.5.0",
- "cksum": "4040946650 27557",
+ "version": "9.0.0",
+ "cksum": "3156488466 27558",
  "tables": {
    "Open_vSwitch": {
      "columns": {
@@ -194,7 +194,7 @@
          "type": "integer"},
        "bond_downdelay": {
          "type": "integer"},
-       "bond_active_slave": {
+       "bond_active_member": {
          "type": {"key": {"type": "string"},
                   "min": 0, "max": 1}},
        "bond_fake_iface": {
