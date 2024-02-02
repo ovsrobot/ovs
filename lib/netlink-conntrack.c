@@ -25,6 +25,7 @@
 #include <linux/netfilter/nf_conntrack_tcp.h>
 #include <linux/netfilter/nf_conntrack_ftp.h>
 #include <linux/netfilter/nf_conntrack_sctp.h>
+#include <sys/utsname.h>
 
 #include "byte-order.h"
 #include "compiler.h"
@@ -141,6 +142,9 @@ nl_ct_dump_start(struct nl_ct_dump_state **statep, const uint16_t *zone,
 
     nl_msg_put_nfgenmsg(&state->buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
                         IPCTNL_MSG_CT_GET, NLM_F_REQUEST);
+    if (zone) {
+        nl_msg_put_be16(&state->buf, CTA_ZONE, htons(*zone));
+    }
     nl_dump_start(&state->dump, NETLINK_NETFILTER, &state->buf);
     ofpbuf_clear(&state->buf);
 
@@ -283,23 +287,72 @@ nl_ct_flush_zone(uint16_t flush_zone)
     return err;
 }
 #else
+
+static bool
+netlink_flush_supports_zone(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    static bool supported = false;
+
+    if (ovsthread_once_start(&once)) {
+        struct utsname utsname;
+        int major, minor;
+
+        if (uname(&utsname) == -1) {
+            VLOG_WARN("uname failed (%s)", ovs_strerror(errno));
+        } else if (!ovs_scan(utsname.release, "%d.%d", &major, &minor)) {
+            VLOG_WARN("uname reported bad OS release (%s)", utsname.release);
+        } else if (major < 6 || (major == 6 && minor < 8)) {
+            VLOG_INFO("disabling conntrack flush by zone in Linux kernel %s",
+                      utsname.release);
+        } else {
+            supported = true;
+        }
+        ovsthread_once_done(&once);
+    }
+    return supported;
+}
+
 int
 nl_ct_flush_zone(uint16_t flush_zone)
 {
-    /* Apparently, there's no netlink interface to flush a specific zone.
+    /* In older kernels, there was no netlink interface to flush a specific
+     * conntrack zone.
      * This code dumps every connection, checks the zone and eventually
      * delete the entry.
+     * In newer kernels there is the option to specifiy a zone for filtering
+     * during dumps. Older kernels ignore this option. We set it here in the
+     * hope we only get relevant entries back, but fall back to filtering here
+     * to keep compatibility.
      *
-     * This is race-prone, but it is better than using shell scripts. */
+     * This is race-prone, but it is better than using shell scripts.
+     *
+     * Additionally newer kernels also support flushing a zone without listing
+     * it first. */
 
     struct nl_dump dump;
     struct ofpbuf buf, reply, delete;
+    int err;
+
+    if (netlink_flush_supports_zone()) {
+        ofpbuf_init(&buf, NL_DUMP_BUFSIZE);
+
+        nl_msg_put_nfgenmsg(&buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
+                            IPCTNL_MSG_CT_DELETE, NLM_F_REQUEST);
+        nl_msg_put_be16(&buf, CTA_ZONE, htons(flush_zone));
+
+        err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+        ofpbuf_uninit(&buf);
+
+        return err;
+    }
 
     ofpbuf_init(&buf, NL_DUMP_BUFSIZE);
     ofpbuf_init(&delete, NL_DUMP_BUFSIZE);
 
     nl_msg_put_nfgenmsg(&buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
                         IPCTNL_MSG_CT_GET, NLM_F_REQUEST);
+    nl_msg_put_be16(&buf, CTA_ZONE, htons(flush_zone));
     nl_dump_start(&dump, NETLINK_NETFILTER, &buf);
     ofpbuf_clear(&buf);
 
