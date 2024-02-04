@@ -1131,8 +1131,9 @@ bfd_set_state(struct bfd *bfd, enum state state, enum diag diag)
         if (!VLOG_DROP_INFO(&rl)) {
             struct ds ds = DS_EMPTY_INITIALIZER;
 
-            ds_put_format(&ds, "%s: BFD state change: %s->%s"
-                          " \"%s\"->\"%s\".\n",
+            ds_put_format(&ds, "%s: BFD state change: %s->%s,"
+                          " previous failure \"%s\", current failure"
+                          " \"%s\".\n",
                           bfd->name, bfd_state_str(bfd->state),
                           bfd_state_str(state), bfd_diag_str(bfd->diag),
                           bfd_diag_str(diag));
