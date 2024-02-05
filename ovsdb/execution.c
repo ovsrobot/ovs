@@ -609,7 +609,14 @@ ovsdb_execute_mutate(struct ovsdb_execution *x, struct ovsdb_parser *parser,
         error = ovsdb_condition_from_json(table->schema, where, x->symtab,
                                           &condition);
     }
-    if (!error) {
+    if (!error &&
+        ovsdb_condition_empty(&condition) &&
+        ovsdb_mutation_set_empty(&mutations)) {
+        /* Special case with no conditions or mutations, just return the row
+         * count. */
+        json_object_put(result, "count",
+                        json_integer_create(hmap_count(&table->rows)));
+    } else if (!error) {
         mr.n_matches = 0;
         mr.txn = x->txn;
         mr.mutations = &mutations;

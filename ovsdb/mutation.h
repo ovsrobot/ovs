@@ -68,5 +68,10 @@ struct json *ovsdb_mutation_set_to_json(const struct ovsdb_mutation_set *);
 void ovsdb_mutation_set_destroy(struct ovsdb_mutation_set *);
 struct ovsdb_error *ovsdb_mutation_set_execute(
     struct ovsdb_row *, const struct ovsdb_mutation_set *) OVS_WARN_UNUSED_RESULT;
+static inline bool ovsdb_mutation_set_empty(
+    const struct ovsdb_mutation_set *ms)
+{
+    return ms->n_mutations == 0;
+}
 
 #endif /* ovsdb/mutation.h */
