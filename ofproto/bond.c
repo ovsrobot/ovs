@@ -423,7 +423,7 @@ update_recirc_rules__(struct bond *bond)
 
 static void
 update_recirc_rules(struct bond *bond)
-    OVS_REQ_RDLOCK(rwlock)
+    OVS_REQ_WRLOCK(rwlock)
 {
     update_recirc_rules__(bond);
 }
