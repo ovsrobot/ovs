@@ -407,6 +407,10 @@ update_recirc_rules__(struct bond *bond)
 
                 VLOG_ERR("failed to remove post recirculation flow %s", err_s);
                 free(err_s);
+            } else if (bond->hash) {
+                uint32_t hash = pr_op->hmap_node.hash & BOND_MASK;
+                struct bond_entry *entry = &bond->hash[hash];
+                entry->pr_tx_bytes = 0;
             }
 
             hmap_remove(&bond->pr_rule_ops, &pr_op->hmap_node);
