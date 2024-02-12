@@ -338,6 +338,18 @@ dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
 AT_CHECK([diff -q payload.bin data], [0])
 
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > data], [nc.pid])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc.pid)])
+AT_CHECK([kill $(cat nc.pid)])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
+AT_CHECK([diff -q payload.bin data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
@@ -480,6 +492,19 @@ dnl Check large bidirectional TCP.
 AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
 OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > data], [nc.pid])
 NS_CHECK_EXEC([at_ns0], [nc $NC_EOF_OPT 10.1.1.100 1234 < payload.bin])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
+AT_CHECK([diff -q payload.bin data], [0])
+
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > data], [nc.pid])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc.pid)])
+AT_CHECK([kill $(cat nc.pid)])
 
 dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
@@ -766,6 +791,18 @@ dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
 AT_CHECK([diff -q payload.bin data], [0])
 
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > data], [nc.pid])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc.pid)])
+AT_CHECK([kill $(cat nc.pid)])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
+AT_CHECK([diff -q payload.bin data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
@@ -918,6 +955,19 @@ dnl Check large bidirectional TCP.
 AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
 OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > data], [nc.pid])
 NS_CHECK_EXEC([at_ns0], [nc $NC_EOF_OPT 10.1.1.100 1234 < payload.bin])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
+AT_CHECK([diff -q payload.bin data], [0])
+
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > data], [nc.pid])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc.pid)])
+AT_CHECK([kill $(cat nc.pid)])
 
 dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
