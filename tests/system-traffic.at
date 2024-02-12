@@ -341,6 +341,54 @@ AT_CHECK([diff -q payload.bin data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([datapath - tcp over vxlan tunnel with software fallback])
+AT_SKIP_IF([test $HAVE_NC = no])
+OVS_CHECK_VXLAN()
+
+OVS_TRAFFIC_VSWITCHD_START()
+ADD_BR([br-underlay])
+
+AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
+AT_CHECK([ovs-ofctl add-flow br-underlay "actions=normal"])
+
+ADD_NAMESPACES(at_ns0)
+
+dnl Set up underlay link from host into the namespace using veth pair.
+ADD_VETH(p0, at_ns0, br-underlay, "172.31.1.1/24")
+AT_CHECK([ip addr add dev br-underlay "172.31.1.100/24"])
+AT_CHECK([ip link set dev br-underlay up])
+
+dnl Test the case where only one side has all checksum and tso offload disabled.
+AT_CHECK([ethtool -K ovs-p0 tso off], [0], [ignore], [ignore])
+AT_CHECK([ethtool -K ovs-p0 sg off], [0], [ignore], [ignore])
+
+dnl Reinitialize.
+AT_CHECK([ovs-vsctl del-port ovs-p0])
+AT_CHECK([ovs-vsctl add-port br-underlay ovs-p0])
+
+dnl Set up tunnel endpoints on OVS outside the namespace and with a native
+dnl linux device inside the namespace.
+ADD_OVS_TUNNEL([vxlan], [br0], [at_vxlan0], [172.31.1.1], [10.1.1.100/24])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan1], [at_ns0], [172.31.1.100], [10.1.1.1/24],
+                  [id 0 dstport 4789])
+
+dnl First, check the underlay.
+NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 172.31.1.100 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+dnl Large TCP transfer aimed towards ovs-p0, which has TSO disabled.
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
+NETNS_DAEMONIZE([at_ns0], [nc -l 10.1.1.1 1234 > data2], [nc2.pid])
+AT_CHECK([nc $NC_EOF_OPT 10.1.1.1 1234 < payload.bin])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc2.pid)])
+AT_CHECK([diff -q payload.bin data2], [0])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([datapath - ping vlan over vxlan tunnel])
 OVS_CHECK_TUNNEL_TSO()
 OVS_CHECK_VXLAN()
