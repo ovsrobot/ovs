@@ -292,6 +292,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([datapath - ping over vxlan tunnel])
+AT_SKIP_IF([test $HAVE_NC = no])
 OVS_CHECK_VXLAN()
 
 OVS_TRAFFIC_VSWITCHD_START()
@@ -318,6 +319,10 @@ NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 172.31.1.100 | FORMAT_PING], [
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
+dnl Start ncat listeners.
+OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > tcp_data], [nc.pid])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > udp_data], [nc2.pid])
+
 dnl Okay, now check the overlay with different packet sizes
 NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PING], [0], [dnl
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
@@ -331,13 +336,23 @@ NS_CHECK_EXEC([at_ns0], [ping -s 3200 -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PI
 
 dnl Check large bidirectional TCP.
 AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
-OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > data], [nc.pid])
 NS_CHECK_EXEC([at_ns0], [nc $NC_EOF_OPT 10.1.1.100 1234 < payload.bin])
 
 dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
-AT_CHECK([diff -q payload.bin data], [0])
+AT_CHECK([diff -q payload.bin tcp_data], [0])
 
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc2.pid)])
+AT_CHECK([kill $(cat nc2.pid)])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc2.pid)])
+AT_CHECK([diff -q payload.bin udp_data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
@@ -444,6 +459,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([datapath - ping over vxlan6 tunnel])
+AT_SKIP_IF([test $HAVE_NC = no])
 OVS_CHECK_VXLAN_UDP6ZEROCSUM()
 
 OVS_TRAFFIC_VSWITCHD_START()
@@ -472,6 +488,10 @@ NS_CHECK_EXEC([at_ns0], [ping6 -q -c 3 -i 0.3 -W 2 fc00::100 | FORMAT_PING], [0]
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
+dnl Start ncat listeners.
+OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > tcp_data], [nc.pid])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > udp_data], [nc2.pid])
+
 dnl Okay, now check the overlay with different packet sizes
 NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PING], [0], [dnl
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
@@ -485,12 +505,23 @@ NS_CHECK_EXEC([at_ns0], [ping -s 3200 -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PI
 
 dnl Check large bidirectional TCP.
 AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
-OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > data], [nc.pid])
 NS_CHECK_EXEC([at_ns0], [nc $NC_EOF_OPT 10.1.1.100 1234 < payload.bin])
 
 dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
-AT_CHECK([diff -q payload.bin data], [0])
+AT_CHECK([diff -q payload.bin tcp_data], [0])
+
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc2.pid)])
+AT_CHECK([kill $(cat nc2.pid)])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc2.pid)])
+AT_CHECK([diff -q payload.bin udp_data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
@@ -727,6 +758,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([datapath - ping over geneve tunnel])
+AT_SKIP_IF([test $HAVE_NC = no])
 OVS_CHECK_GENEVE()
 
 OVS_TRAFFIC_VSWITCHD_START()
@@ -753,6 +785,10 @@ NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 172.31.1.100 | FORMAT_PING], [
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
+dnl Start ncat listeners.
+OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > tcp_data], [nc.pid])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > udp_data], [nc2.pid])
+
 dnl Okay, now check the overlay with different packet sizes
 NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PING], [0], [dnl
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
@@ -766,13 +802,23 @@ NS_CHECK_EXEC([at_ns0], [ping -s 3200 -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PI
 
 dnl Check large bidirectional TCP.
 AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
-OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > data], [nc.pid])
 NS_CHECK_EXEC([at_ns0], [nc $NC_EOF_OPT 10.1.1.100 1234 < payload.bin])
 
 dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
-AT_CHECK([diff -q payload.bin data], [0])
+AT_CHECK([diff -q payload.bin tcp_data], [0])
 
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc2.pid)])
+AT_CHECK([kill $(cat nc2.pid)])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc2.pid)])
+AT_CHECK([diff -q payload.bin udp_data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
@@ -882,6 +928,7 @@ OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([datapath - ping over geneve6 tunnel])
+AT_SKIP_IF([test $HAVE_NC = no])
 OVS_CHECK_GENEVE_UDP6ZEROCSUM()
 
 OVS_TRAFFIC_VSWITCHD_START()
@@ -910,6 +957,10 @@ NS_CHECK_EXEC([at_ns0], [ping6 -q -c 3 -i 0.3 -W 2 fc00::100 | FORMAT_PING], [0]
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
+dnl Start ncat listeners.
+OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > tcp_data], [nc.pid])
+NETNS_DAEMONIZE([at_ns0], [nc -l -u 10.1.1.1 4321 > udp_data], [nc2.pid])
+
 dnl Okay, now check the overlay with different packet sizes
 NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PING], [0], [dnl
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
@@ -923,12 +974,23 @@ NS_CHECK_EXEC([at_ns0], [ping -s 3200 -q -c 3 -i 0.3 -W 2 10.1.1.100 | FORMAT_PI
 
 dnl Check large bidirectional TCP.
 AT_CHECK([dd if=/dev/urandom of=payload.bin bs=60000 count=1 2> /dev/null])
-OVS_DAEMONIZE([nc -l 10.1.1.100 1234 > data], [nc.pid])
 NS_CHECK_EXEC([at_ns0], [nc $NC_EOF_OPT 10.1.1.100 1234 < payload.bin])
 
 dnl Wait until transfer completes before checking.
 OVS_WAIT_WHILE([kill -0 $(cat nc.pid)])
-AT_CHECK([diff -q payload.bin data], [0])
+AT_CHECK([diff -q payload.bin tcp_data], [0])
+
+dnl Check UDP
+AT_CHECK([dd if=/dev/urandom of=payload.bin bs=600 count=1 2> /dev/null])
+AT_CHECK([nc $NC_EOF_OPT -u 10.1.1.1 4321 < payload.bin])
+
+dnl The UDP listener will just listen forever if not terminated.
+OVS_WAIT_UNTIL([kill -0 $(cat nc2.pid)])
+AT_CHECK([kill $(cat nc2.pid)])
+
+dnl Wait until transfer completes before checking.
+OVS_WAIT_WHILE([kill -0 $(cat nc2.pid)])
+AT_CHECK([diff -q payload.bin udp_data], [0])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
