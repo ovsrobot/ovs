@@ -103,6 +103,7 @@ struct conntrack_dump {
     union {
         struct cmap_position cm_pos;
         struct hmap_position hmap_pos;
+        struct cmap_cursor cursor;
     };
     bool filter_zone;
     uint16_t zone;
