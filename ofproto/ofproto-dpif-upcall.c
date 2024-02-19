@@ -66,6 +66,7 @@ COVERAGE_DEFINE(upcall_flow_limit_reduced);
 COVERAGE_DEFINE(upcall_flow_limit_scaled);
 COVERAGE_DEFINE(upcall_ukey_contention);
 COVERAGE_DEFINE(upcall_ukey_replace);
+COVERAGE_DEFINE(upcall_packet_flow_inconsistant);
 
 /* A thread that reads upcalls from dpif, forwards each upcall's packet,
  * and possibly sets up a kernel flow as a cache. */
@@ -840,6 +841,7 @@ recv_upcalls(struct handler *handler)
     struct dpif_upcall dupcalls[UPCALL_MAX_BATCH];
     struct upcall upcalls[UPCALL_MAX_BATCH];
     struct flow flows[UPCALL_MAX_BATCH];
+    struct flow odp_key_flow;
     size_t n_upcalls, i;
 
     n_upcalls = 0;
@@ -903,6 +905,8 @@ recv_upcalls(struct handler *handler)
         upcall->out_tun_key = dupcall->out_tun_key;
         upcall->actions = dupcall->actions;
 
+        /* Save odp flow before overwrite. */
+        memcpy(&odp_key_flow, flow, sizeof odp_key_flow);
         pkt_metadata_from_flow(&dupcall->packet.md, flow);
         flow_extract(&dupcall->packet, flow);
 
@@ -912,6 +916,12 @@ recv_upcalls(struct handler *handler)
             goto cleanup;
         }
 
+        if (!flow_equal_except(&odp_key_flow, flow, &upcall->wc)) {
+            /* If odp flow is not consistant with flow extract from packet,
+             * bad ukey/mask will be installed. */
+            COVERAGE_INC(upcall_packet_flow_inconsistant);
+            upcall->xout.avoid_caching = true;
+        }
         n_upcalls++;
         continue;
 
@@ -1373,6 +1383,10 @@ should_install_flow(struct udpif *udpif, struct upcall *upcall)
         return false;
     } else if (upcall->recirc && !upcall->have_recirc_ref) {
         VLOG_DBG_RL(&rl, "upcall: no reference for recirc flow");
+        return false;
+    }
+
+    if (upcall->xout.avoid_caching) {
         return false;
     }
 
