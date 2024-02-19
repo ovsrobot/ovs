@@ -76,7 +76,8 @@ class FlowTree:
     on recirculation ids.
 
     Args:
-        flows (list[ODPFlow]): Optional, initial list of flows
+        flows (list[ODPFlow]): Optional, initial list of flows or dictionary of
+        flows indexed by recirc_id
         root (TreeElem): Optional, root of the tree.
     """
 
@@ -84,8 +85,15 @@ class FlowTree:
         self._flows = {}
         self.root = root
         if flows:
-            for flow in flows:
-                self.add(flow)
+            if isinstance(flows, dict):
+                self._flows = flows
+            elif isinstance(flows, list):
+                for flow in flows:
+                    self.add(flow)
+            else:
+                raise Exception(
+                    "flows in wrong format: {}".format(type(flows))
+                )
 
     def add(self, flow):
         """Add a flow"""
@@ -191,6 +199,10 @@ class FlowTree:
                 to_remove.append(l0)
         for elem in to_remove:
             self.root.children.remove(elem)
+
+    def all(self):
+        """Return all the flows in a dictionary by recirc_id."""
+        return self._flows
 
 
 class ConsoleTreeProcessor(DatapathFactory, FileProcessor):
