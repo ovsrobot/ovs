@@ -18,6 +18,7 @@ from ovs.flowviz.main import maincli
 from ovs.flowviz.process import (
     DatapathFactory,
     JSONProcessor,
+    ConsoleProcessor,
 )
 
 
@@ -40,3 +41,27 @@ def json(opts):
     proc = JSONPrint(opts)
     proc.process()
     print(proc.json_string())
+
+
+class DPConsoleProcessor(DatapathFactory, ConsoleProcessor):
+    def __init__(self, opts, heat_map):
+        super().__init__(opts, heat_map)
+
+
+@datapath.command()
+@click.option(
+    "-h",
+    "--heat-map",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Create heat-map with packet and byte counters",
+)
+@click.pass_obj
+def console(opts, heat_map):
+    """Print the flows in the console with some style."""
+    proc = DPConsoleProcessor(
+        opts, heat_map=["packets", "bytes"] if heat_map else []
+    )
+    proc.process()
+    proc.print()
