@@ -702,7 +702,9 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
             tnl_cfg.dst_port = htons(atoi(node->value));
         } else if (!strcmp(node->key, "csum") && has_csum) {
             if (!strcmp(node->value, "true")) {
-                tnl_cfg.csum = true;
+                tnl_cfg.csum = NETDEV_TNL_CSUM_ENABLED;
+            } else if (!strcmp(node->value, "false")) {
+                tnl_cfg.csum = NETDEV_TNL_CSUM_DISABLED;
             }
         } else if (!strcmp(node->key, "seq") && has_seq) {
             if (!strcmp(node->value, "true")) {
@@ -848,6 +850,11 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
             ds_put_format(&errors, "%s: unknown %s argument '%s'\n", name,
                           type, node->key);
         }
+    }
+
+    /* The default csum state for GRE is special. */
+    if (tnl_cfg.csum == NETDEV_TNL_CSUM_DEFAULT && strstr(type, "gre")) {
+        tnl_cfg.csum = NETDEV_TNL_CSUM_DEFAULT_GRE;
     }
 
     enum tunnel_layers layers = tunnel_supported_layers(type, &tnl_cfg);
@@ -1026,8 +1033,10 @@ get_tunnel_config(const struct netdev *dev, struct smap *args)
         }
     }
 
-    if (tnl_cfg->csum) {
+    if (tnl_cfg->csum == NETDEV_TNL_CSUM_ENABLED) {
         smap_add(args, "csum", "true");
+    } else if (tnl_cfg->csum == NETDEV_TNL_CSUM_DISABLED) {
+        smap_add(args, "csum", "false");
     }
 
     if (tnl_cfg->set_seq) {
