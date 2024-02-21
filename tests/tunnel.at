@@ -1037,7 +1037,7 @@ AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'tunnel(tun_id=0,src=1.1.1.1,dst=1.1.1.2,ttl=64),in_port(4789)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
-  [Datapath actions: set(tunnel(ipv6_dst=2001:cafe::1,ttl=64,tp_dst=4789,flags(df))),4789
+  [Datapath actions: set(tunnel(ipv6_dst=2001:cafe::1,ttl=64,tp_dst=4789,flags(df|csum))),4789
 ])
 
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'tunnel(tun_id=0x0,ipv6_src=2001:cafe::1,ipv6_dst=2001:cafe::2,ttl=64),in_port(4789)'], [0], [stdout])
@@ -1312,13 +1312,13 @@ port 6: p2 (srv6: ::->flow, key=0, legacy_l3, dp port=6, ttl=64)
 dnl Encap: ipv4 inner packet
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=6,tos=4,ttl=128,frag=no),tcp(src=8,dst=9)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
-  [Datapath actions: set(tunnel(ipv6_dst=fc00::2,ttl=64,flags(df))),pop_eth,6
+  [Datapath actions: set(tunnel(ipv6_dst=fc00::2,ttl=64,flags(df|csum))),pop_eth,6
 ])
 
 dnl Encap: ipv6 inner packet
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x86dd),ipv6(src=2001:cafe::92,dst=2001:cafe::88,label=0,proto=47,tclass=0x0,hlimit=64)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0],
-  [Datapath actions: set(tunnel(ipv6_dst=fc00::2,ttl=64,flags(df))),pop_eth,6
+  [Datapath actions: set(tunnel(ipv6_dst=fc00::2,ttl=64,flags(df|csum))),pop_eth,6
 ])
 
 OVS_VSWITCHD_STOP

@@ -111,6 +111,13 @@ enum netdev_srv6_flowlabel {
     SRV6_FLOWLABEL_COMPUTE,
 };
 
+enum netdev_tnl_csum {
+    NETDEV_TNL_CSUM_DEFAULT,
+    NETDEV_TNL_CSUM_ENABLED,
+    NETDEV_TNL_CSUM_DISABLED,
+    NETDEV_TNL_CSUM_DEFAULT_GRE,
+};
+
 /* Configuration specific to tunnels. */
 struct netdev_tunnel_config {
     ovs_be64 in_key;
@@ -139,7 +146,7 @@ struct netdev_tunnel_config {
     uint8_t tos;
     bool tos_inherit;
 
-    bool csum;
+    enum netdev_tnl_csum csum;
     bool dont_fragment;
     enum netdev_pt_mode pt_mode;
 
