@@ -17,6 +17,7 @@
 import os
 import pwd
 from random import randint
+import signal
 import subprocess
 import sys
 import time
@@ -417,8 +418,22 @@ def py_which(executable):
                for path in os.environ["PATH"].split(os.pathsep))
 
 
+def ignore_fatal_signals():
+    if sys.platform == "win32":
+        signals = [signal.SIGTERM, signal.SIGINT]
+    else:
+        signals = [signal.SIGTERM, signal.SIGINT, signal.SIGHUP,
+                   signal.SIGALRM]
+
+    for signr in signals:
+        signal.signal(signr, signal.SIG_IGN)
+
+
 def teardown(db_sock, interface, mirror_interface, tap_created):
     def cleanup_mirror():
+        # Ignore fatal signals, avoid it to break OVSDB operations.
+        # So that cleanup mirror and ports be finished.
+        ignore_fatal_signals()
         try:
             ovsdb = OVSDB(db_sock)
             ovsdb.destroy_mirror(interface, ovsdb.port_bridge(interface))
