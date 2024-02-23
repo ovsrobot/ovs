@@ -151,6 +151,7 @@ struct frozen_state {
     struct frozen_metadata metadata; /* Flow metadata. */
     uint8_t *stack;               /* Stack if any. */
     size_t stack_size;
+    size_t resubmits;             /* Number of resubmits prior to freeze. */
     mirror_mask_t mirrors;        /* Mirrors already output. */
     bool conntracked;             /* Conntrack occurred prior to freeze. */
     bool was_mpls;                /* MPLS packet */

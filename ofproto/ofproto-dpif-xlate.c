@@ -71,6 +71,7 @@
 COVERAGE_DEFINE(xlate_actions);
 COVERAGE_DEFINE(xlate_actions_oversize);
 COVERAGE_DEFINE(xlate_actions_too_many_output);
+COVERAGE_DEFINE(xlate_stack_exhausted);
 
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif_xlate);
 
@@ -381,6 +382,7 @@ struct xlate_ctx {
     * case at that point.
     */
     bool freezing;
+    enum oftrace_recirc_type recirc_type; /* Recirculation type for tracing. */
     bool recirc_update_dp_hash;    /* Generated recirculation will be preceded
                                     * by datapath HASH action to get an updated
                                     * dp_hash after recirculation. */
@@ -495,6 +497,7 @@ ctx_cancel_freeze(struct xlate_ctx *ctx)
 {
     if (ctx->freezing) {
         ctx->freezing = false;
+        ctx->recirc_type = OFT_RECIRC_NONE;
         ctx->recirc_update_dp_hash = false;
         ofpbuf_clear(&ctx->frozen_actions);
         ctx->frozen_actions.header = NULL;
@@ -4607,6 +4610,12 @@ xlate_resubmit_resource_check(struct xlate_ctx *ctx)
     } else if (ctx->stack.size >= 65536) {
         xlate_report_error(ctx, "resubmits yielded over 64 kB of stack");
         ctx->error = XLATE_STACK_TOO_DEEP;
+    } else if (ovsthread_low_on_stack()) {
+        xlate_report(ctx, OFT_WARN, "Thread stack exhausted, "
+                     "recirculating to avoid overflow.");
+        COVERAGE_INC(xlate_stack_exhausted);
+        ctx->recirc_type = OFT_RECIRC_STACK_EXHAUSTED;
+        ctx_trigger_freeze(ctx);
     } else {
         return true;
     }
@@ -5125,6 +5134,7 @@ xlate_controller_action(struct xlate_ctx *ctx, int len,
         .ofproto_uuid = ctx->xbridge->ofproto->uuid,
         .stack = ctx->stack.data,
         .stack_size = ctx->stack.size,
+        .resubmits = ctx->resubmits,
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
         .was_mpls = ctx->was_mpls,
@@ -5200,6 +5210,7 @@ finish_freezing__(struct xlate_ctx *ctx, uint8_t table)
         .ofproto_uuid = ctx->xbridge->ofproto->uuid,
         .stack = ctx->stack.data,
         .stack_size = ctx->stack.size,
+        .resubmits = ctx->resubmits,
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
         .was_mpls = ctx->was_mpls,
@@ -5248,6 +5259,24 @@ finish_freezing__(struct xlate_ctx *ctx, uint8_t table)
             act_hash->hash_basis = ctx->dp_hash_basis;
         }
         nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_RECIRC, recirc_id);
+
+        if (OVS_UNLIKELY(ctx->xin->trace) && recirc_id &&
+            ctx->recirc_type == OFT_RECIRC_STACK_EXHAUSTED) {
+            if (oftrace_add_recirc_node(ctx->xin->recirc_queue,
+                                        ctx->recirc_type,
+                                        &ctx->xin->flow,
+                                        ctx->ct_nat_action,
+                                        ctx->xin->packet,
+                                        recirc_id,
+                                        ctx->xin->flow.ct_zone)) {
+                xlate_report(ctx, OFT_DETAIL,
+                             "Packet is sent for recirculation, "
+                             "recric_id = 0x%"PRIx32".", recirc_id);
+            } else {
+                xlate_report(ctx, OFT_DETAIL, "Failed to trace recirculation "
+                             "with recirc_id = 0x%"PRIx32".", recirc_id);
+            }
+        }
     }
 
     /* Undo changes done by freezing. */
@@ -8062,6 +8091,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         .mirrors = 0,
 
         .freezing = false,
+        .recirc_type = OFT_RECIRC_NONE,
         .recirc_update_dp_hash = false,
         .frozen_actions = OFPBUF_STUB_INITIALIZER(frozen_actions_stub),
         .pause = NULL,
@@ -8138,6 +8168,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         if (!state->conntracked) {
             clear_conntrack(&ctx);
         }
+
+        ctx.resubmits = state->resubmits;
 
         /* Restore pipeline metadata. May change flow's in_port and other
          * metadata to the values that existed when freezing was triggered. */

@@ -51,9 +51,11 @@ enum oftrace_node_type {
 
 /* Reason why a flow is in a recirculation queue. */
 enum oftrace_recirc_type {
+    OFT_RECIRC_NONE = 0,
     OFT_RECIRC_CONNTRACK,
     OFT_RECIRC_MPLS,
     OFT_RECIRC_BOND,
+    OFT_RECIRC_STACK_EXHAUSTED,
 };
 
 /* A node within a trace. */

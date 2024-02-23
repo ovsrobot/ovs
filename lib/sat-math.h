@@ -18,11 +18,8 @@
 #define SAT_MATH_H 1
 
 #include <limits.h>
+#include "openvswitch/compiler.h"
 #include "openvswitch/util.h"
-
-#ifndef __has_builtin
-#define __has_builtin(x) 0
-#endif
 
 /* Returns x + y, clamping out-of-range results into the range of the return
  * type. */
