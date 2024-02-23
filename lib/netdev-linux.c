@@ -6427,18 +6427,10 @@ getqdisc_is_safe(void)
     static bool safe = false;
 
     if (ovsthread_once_start(&once)) {
-        struct utsname utsname;
-        int major, minor;
-
-        if (uname(&utsname) == -1) {
-            VLOG_WARN("uname failed (%s)", ovs_strerror(errno));
-        } else if (!ovs_scan(utsname.release, "%d.%d", &major, &minor)) {
-            VLOG_WARN("uname reported bad OS release (%s)", utsname.release);
-        } else if (major < 2 || (major == 2 && minor < 35)) {
-            VLOG_INFO("disabling unsafe RTM_GETQDISC in Linux kernel %s",
-                      utsname.release);
-        } else {
+        if (ovs_kernel_is_version_or_newer(2, 35)) {
             safe = true;
+        } else {
+            VLOG_INFO("disabling unsafe RTM_GETQDISC in Linux kernel");
         }
         ovsthread_once_done(&once);
     }
