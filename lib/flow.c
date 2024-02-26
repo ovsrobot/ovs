@@ -3569,7 +3569,7 @@ miniflow_equal_in_minimask(const struct miniflow *a, const struct miniflow *b,
     return true;
 }
 
-/* Returns true if 'a' and 'b' are equal at the places where there are 1-bits
+/* Returns true if 'a' and 'b' are equal at the places where there are 0-bits
  * in 'mask', false if they differ. */
 bool
 miniflow_equal_flow_in_minimask(const struct miniflow *a, const struct flow *b,
@@ -3580,6 +3580,25 @@ miniflow_equal_flow_in_minimask(const struct miniflow *a, const struct flow *b,
 
     FLOWMAP_FOR_EACH_INDEX(idx, mask->masks.map) {
         if ((miniflow_get(a, idx) ^ flow_u64_value(b, idx)) & *p++) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/* Returns false if 'a' and 'b' differ in places where there are 1-bits in
+ * 'wc', true otherwise. */
+bool
+miniflow_equal_flow_in_flow_wc(const struct miniflow *a, const struct flow *b,
+                               const struct flow_wildcards *wc)
+{
+    const struct flow *wc_masks = &wc->masks;
+    size_t idx;
+
+    FLOWMAP_FOR_EACH_INDEX (idx, a->map) {
+        if ((miniflow_get(a, idx) ^ flow_u64_value(b, idx)) &
+                flow_u64_value(wc_masks, idx)) {
             return false;
         }
     }

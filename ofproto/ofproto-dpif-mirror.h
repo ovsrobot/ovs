@@ -23,8 +23,8 @@
 typedef uint32_t mirror_mask_t;
 
 struct ofproto_mirror_settings;
-struct ofproto_dpif;
 struct ofbundle;
+struct ofproto;
 
 struct mirror_bundles {
     struct ofbundle **srcs;
@@ -43,6 +43,11 @@ struct mirror_config {
     /* VLANs of packets to select for mirroring. */
     unsigned long *vlans;           /* vlan_bitmap, NULL selects all VLANs. */
 
+    /* The flow if a filter is used, or NULL. */
+    struct miniflow *filter_flow;
+    /* The filter's flow mask, or NULL. */
+    struct minimask *filter_mask;
+
     /* Output (mutually exclusive). */
     struct ofbundle *out_bundle;    /* A registered ofbundle handle or NULL. */
     uint16_t out_vlan;              /* Output VLAN, not used if out_bundle is
@@ -52,7 +57,6 @@ struct mirror_config {
      * truncation will occur.  */
     uint16_t snaplen;
 };
-
 
 /* The following functions are used by handler threads without any locking,
  * assuming RCU protection. */
@@ -78,8 +82,8 @@ bool mbridge_need_revalidate(struct mbridge *);
 void mbridge_register_bundle(struct mbridge *, struct ofbundle *);
 void mbridge_unregister_bundle(struct mbridge *, struct ofbundle *);
 
-int mirror_set(struct mbridge *mbridge, void *aux,
-               const struct ofproto_mirror_settings *ms,
+int mirror_set(struct mbridge *mbridge, const struct ofproto *ofproto,
+               void *aux, const struct ofproto_mirror_settings *ms,
                const struct mirror_bundles *mb);
 void mirror_destroy(struct mbridge *, void *aux);
 int mirror_get_stats(struct mbridge *, void *aux, uint64_t *packets,

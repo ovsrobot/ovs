@@ -748,6 +748,9 @@ bool miniflow_equal_in_minimask(const struct miniflow *a,
 bool miniflow_equal_flow_in_minimask(const struct miniflow *a,
                                      const struct flow *b,
                                      const struct minimask *);
+bool miniflow_equal_flow_in_flow_wc(const struct miniflow *a,
+                                    const struct flow *b,
+                                    const struct flow_wildcards *);
 uint32_t miniflow_hash_5tuple(const struct miniflow *flow, uint32_t basis);
 
 
@@ -937,6 +940,15 @@ static inline void
 flow_union_with_miniflow(struct flow *dst, const struct miniflow *src)
 {
     flow_union_with_miniflow_subset(dst, src, src->map);
+}
+
+/* Perform a bitwise OR of minimask 'src' mask data with the equivalent
+ * fields in 'dst', storing the result in 'dst'. */
+static inline void
+flow_wildcards_union_with_minimask(struct flow_wildcards *dst,
+                                   const struct minimask *src)
+{
+    flow_union_with_miniflow_subset(&dst->masks, &src->masks, src->masks.map);
 }
 
 static inline bool is_ct_valid(const struct flow *flow,
