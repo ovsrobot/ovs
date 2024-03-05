@@ -461,12 +461,6 @@ conn_clean(struct conntrack *ct, struct conn *conn)
     atomic_count_dec(&ct->n_conn);
 }
 
-static void
-conn_force_expire(struct conn *conn)
-{
-    atomic_store_relaxed(&conn->expiration, 0);
-}
-
 /* Destroys the connection tracker 'ct' and frees all the allocated memory.
  * The caller of this function must already have shut down packet input
  * and PMD threads (which would have been quiesced).  */
@@ -1030,7 +1024,10 @@ conn_update_state(struct conntrack *ct, struct dp_packet *pkt,
         case CT_UPDATE_NEW:
             if (conn_lookup(ct, &conn->key_node[CT_DIR_FWD].key,
                             now, NULL, NULL)) {
-                conn_force_expire(conn);
+                /* Instead of setting conn->expiration and let ct_clean thread
+                 * clean the conn, doing the clean now to avoid duplicate hash
+                 * in ct->conns for performance reason. */
+                conn_clean(ct, conn);
             }
             create_new_conn = true;
             break;
@@ -1242,7 +1239,7 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
     if (OVS_UNLIKELY(force && ctx->reply && conn)) {
         if (conn_lookup(ct, &conn->key_node[CT_DIR_FWD].key,
                         now, NULL, NULL)) {
-            conn_force_expire(conn);
+            conn_clean(ct, conn);
         }
         conn = NULL;
     }
@@ -1429,7 +1426,8 @@ conntrack_get_sweep_interval(struct conntrack *ct)
 }
 
 static size_t
-ct_sweep(struct conntrack *ct, struct rculist *list, long long now)
+ct_sweep(struct conntrack *ct, struct rculist *list, long long now,
+         size_t *cleaned_count)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     struct conn *conn;
@@ -1438,6 +1436,7 @@ ct_sweep(struct conntrack *ct, struct rculist *list, long long now)
     RCULIST_FOR_EACH (conn, node, list) {
         if (conn_expired(conn, now)) {
             conn_clean(ct, conn);
+            (*cleaned_count) ++;
         }
 
         count++;
@@ -1454,7 +1453,7 @@ conntrack_clean(struct conntrack *ct, long long now)
 {
     long long next_wakeup = now + conntrack_get_sweep_interval(ct);
     unsigned int n_conn_limit, i;
-    size_t clean_end, count = 0;
+    size_t clean_end, count = 0, cleaned_count = 0;
 
     atomic_read_relaxed(&ct->n_conn_limit, &n_conn_limit);
     clean_end = n_conn_limit / 64;
@@ -1465,13 +1464,13 @@ conntrack_clean(struct conntrack *ct, long long now)
             break;
         }
 
-        count += ct_sweep(ct, &ct->exp_lists[i], now);
+        count += ct_sweep(ct, &ct->exp_lists[i], now, &cleaned_count);
     }
 
     ct->next_sweep = (i < N_EXP_LISTS) ? i : 0;
 
-    VLOG_DBG("conntrack cleanup %"PRIuSIZE" entries in %lld msec", count,
-             time_msec() - now);
+    VLOG_DBG("conntrack cleanup %"PRIuSIZE"/%"PRIuSIZE" entries in %lld msec",
+             cleaned_count, count, time_msec() - now);
 
     return next_wakeup;
 }
