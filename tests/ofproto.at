@@ -2418,6 +2418,18 @@ AT_CHECK([ovs-ofctl -O OpenFlow15 dump-table-features br0 |grep '^  table'],
   table 253:
 ])
 
+# Make sure that the new name is old table's name prefix can also take effect.
+AT_CHECK([ovs-ofctl -O OpenFlow13 mod-table br0 3 name:thr])
+AT_CHECK([ovs-ofctl -O OpenFlow15 dump-table-features br0 |grep '^  table'],
+  [0], [dnl
+  table 0 ("zero"):
+  table 1 ("one"): ditto
+  table 2: ditto
+  table 3 ("thr"): ditto
+  tables 4...252: ditto
+  table 253:
+])
+
 # Set some table names via OVSDB.
 AT_CHECK(
   [ovs-vsctl \
