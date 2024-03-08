@@ -9293,7 +9293,9 @@ oftable_set_name(struct oftable *table, const char *name, int level)
     if (level >= table->name_level) {
         if (name) {
             if (name[0]) {
-                if (!table->name || strncmp(name, table->name, len)) {
+                if (!table->name
+                    || strncmp(name, table->name, len)
+                    || len != strlen(table->name)) {
                     free(table->name);
                     table->name = xmemdup0(name, len);
                 }
