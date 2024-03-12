@@ -3905,14 +3905,19 @@ port_query_by_name(const struct ofproto *ofproto_, const char *devname,
 
     if (sset_contains(&ofproto->ghost_ports, devname)) {
         const char *type = netdev_get_type_from_name(devname);
+        const struct ofport *ofport =
+                        shash_find_data(&ofproto->up.port_by_name, devname);
+        if (!type && ofport && ofport->netdev) {
+            type = netdev_get_type(ofport->netdev);
+        }
 
         /* We may be called before ofproto->up.port_by_name is populated with
          * the appropriate ofport.  For this reason, we must get the name and
-         * type from the netdev layer directly. */
+         * type from the netdev layer directly.
+         * When a port deleted, the corresponding netdev is also removed from
+         * netdev_shash. netdev_get_type_from_name returns NULL in such case.
+         * We should try to get type from ofport->netdev. */
         if (type) {
-            const struct ofport *ofport;
-
-            ofport = shash_find_data(&ofproto->up.port_by_name, devname);
             ofproto_port->ofp_port = ofport ? ofport->ofp_port : OFPP_NONE;
             ofproto_port->name = xstrdup(devname);
             ofproto_port->type = xstrdup(type);
