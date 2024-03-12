@@ -5443,7 +5443,8 @@ AT_CLEANUP
 # This test verifies that mirror state is preserved across recirculation.
 #
 # Otherwise, post-recirculation the ingress and the output to port 4
-# would cause the packet to be mirrored to port 3 a second time.
+# would cause the packet to be mirrored to port 3 a second time. A register
+# is also modified to verify that this doesn't reset the mirror context.
 AT_SETUP([ofproto-dpif - mirroring with recirculation])
 AT_KEYWORDS([mirror mirrors mirroring])
 OVS_VSWITCHD_START
@@ -5454,7 +5455,7 @@ ovs-vsctl \
         --id=@m create Mirror name=mymirror select_all=true output_port=@p3
 
 AT_DATA([flows.txt], [dnl
-in_port=1 actions=2,debug_recirc,4
+in_port=1 actions=2,debug_recirc,set_field:1->reg4,4
 ])
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
