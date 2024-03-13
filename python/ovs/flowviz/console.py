@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import colorsys
+import itertools
+import zlib
 
 from rich.console import Console
 from rich.color import Color
@@ -168,6 +170,25 @@ def heat_pallete(min_value, max_value):
         return Style(color=Color.from_rgb(r * 255, g * 255, b * 255))
 
     return heat
+
+
+def hash_pallete(hue, saturation, value):
+    """Generates a color pallete with the cartesian product
+    of the hsv values provided and returns a callable that assigns a color for
+    each value hash
+    """
+    HSV_tuples = itertools.product(hue, saturation, value)
+    RGB_tuples = map(lambda x: colorsys.hsv_to_rgb(*x), HSV_tuples)
+    styles = [
+        Style(color=Color.from_rgb(r * 255, g * 255, b * 255))
+        for r, g, b in RGB_tuples
+    ]
+
+    def get_style(string):
+        hash_val = zlib.crc32(bytes(str(string), "utf-8"))
+        return styles[hash_val % len(styles)]
+
+    return get_style
 
 
 def default_highlight():
