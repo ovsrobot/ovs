@@ -74,12 +74,12 @@ ovs_flowviz = \
 	python/ovs/flowviz/odp/tree.py \
 	python/ovs/flowviz/ofp/__init__.py \
 	python/ovs/flowviz/ofp/cli.py \
+	python/ovs/flowviz/ofp/logic.py \
 	python/ovs/flowviz/ofp/html.py \
 	python/ovs/flowviz/ovs-flowviz \
 	python/ovs/flowviz/process.py
 
-# These python files are used at build time but not runtime,
-# so they are not installed.
+# These python files are used at build time but not runtime, so they are not installed.
 EXTRA_DIST += \
 	python/ovs_build_helpers/__init__.py \
 	python/ovs_build_helpers/extract_ofp_fields.py \
