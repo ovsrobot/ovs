@@ -20,6 +20,13 @@ from ovs.flow.decoders import FlowEncoder
 from ovs.flow.odp import ODPFlow
 from ovs.flow.ofp import OFPFlow
 
+from ovs.flowviz.console import (
+    ConsoleFormatter,
+    default_highlight,
+    heat_pallete,
+    file_header,
+)
+
 
 class FileProcessor(object):
     """Base class for file-based Flow processing. It is able to create flows
@@ -134,21 +141,24 @@ class FileProcessor(object):
         self.end()
 
 
-class DatapathFactory():
+class DatapathFactory:
     """A mixin class that creates Datapath flows."""
 
     def create_flow(self, line, idx):
         # Skip strings commonly found in Datapath flow dumps.
-        if any(s in line for s in [
-            "flow-dump from the main thread",
-            "flow-dump from pmd on core",
-        ]):
+        if any(
+            s in line
+            for s in [
+                "flow-dump from the main thread",
+                "flow-dump from pmd on core",
+            ]
+        ):
             return None
 
         return ODPFlow(line, idx)
 
 
-class OpenFlowFactory():
+class OpenFlowFactory:
     """A mixin class that creates OpenFlow flows."""
 
     def create_flow(self, line, idx):
@@ -190,3 +200,64 @@ class JSONProcessor(FileProcessor):
             indent=4,
             cls=FlowEncoder,
         )
+
+
+class ConsoleProcessor(FileProcessor):
+    """A generic Console Processor that prints flows into the console"""
+
+    def __init__(self, opts, heat_map=[]):
+        super().__init__(opts)
+        self.heat_map = heat_map
+        self.console = ConsoleFormatter(opts)
+        if len(self.console.style) == 0 and self.opts.get("highlight"):
+            # Add some style to highlights or else they won't be seen.
+            self.console.style.set_default_value_style(
+                default_highlight(), True
+            )
+            self.console.style.set_default_key_style(default_highlight(), True)
+
+        self.flows = dict()  # Dictionary of flow-lists, one per file.
+        self.min_max = dict()  # Used for heat-map. calculation
+
+    def start_file(self, name, filename):
+        self.flows_list = list()
+        if len(self.heat_map) > 0:
+            self.min = [-1] * len(self.heat_map)
+            self.max = [0] * len(self.heat_map)
+
+    def stop_file(self, name, filename):
+        self.flows[name] = self.flows_list
+        if len(self.heat_map) > 0:
+            self.min_max[name] = (self.min, self.max)
+
+    def process_flow(self, flow, name):
+        # Running calculation of min and max values for all the fields that
+        # take place in the heatmap.
+        for i, field in enumerate(self.heat_map):
+            val = flow.info.get(field)
+            if self.min[i] == -1 or val < self.min[i]:
+                self.min[i] = val
+            if val > self.max[i]:
+                self.max[i] = val
+
+        self.flows_list.append(flow)
+
+    def print(self):
+        for name, flows in self.flows.items():
+            self.console.console.print("\n")
+            self.console.console.print(file_header(name))
+
+            if len(self.heat_map) > 0 and len(self.flows) > 0:
+                for i, field in enumerate(self.heat_map):
+                    (min_val, max_val) = self.min_max[name][i]
+                    self.console.style.set_value_style(
+                        field, heat_pallete(min_val, max_val)
+                    )
+
+            for flow in flows:
+                high = None
+                if self.opts.get("highlight"):
+                    result = self.opts.get("highlight").evaluate(flow)
+                    if result:
+                        high = result.kv
+                self.console.print_flow(flow, high)
