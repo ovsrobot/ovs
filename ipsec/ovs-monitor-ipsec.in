@@ -456,15 +456,38 @@ conn prevent_unencrypted_vxlan
     CERT_PREFIX = "ovs_cert_"
     CERTKEY_PREFIX = "ovs_certkey_"
 
+    def collect_environment(self):
+        """Extract important paths from ipsec file."""
+        env = {
+            "IPSEC_CONF": "/etc/ipsec.conf",
+            "IPSEC_NSSDIR": "/etc/ipsec.d",
+            "IPSEC_RUNDIR": "/run/pluto"
+        }
+        try:
+            with open(self.IPSEC) as fh:
+                e_list = re.findall("^([A-Z_]+)=.*:-(.*)}",
+                                    fh.read(),
+                                    re.MULTILINE)
+        except:
+            return env
+
+        for k, v in e_list:
+            env[k] = v
+
+        return env
+
     def __init__(self, libreswan_root_prefix, args):
-        ipsec_conf = args.ipsec_conf if args.ipsec_conf else "/etc/ipsec.conf"
-        ipsec_d = args.ipsec_d if args.ipsec_d else "/etc/ipsec.d"
+        self.IPSEC = libreswan_root_prefix + "/usr/sbin/ipsec"
+
+        env = self.collect_environment()
+
+        ipsec_conf = args.ipsec_conf if args.ipsec_conf else env["IPSEC_CONF"]
+        ipsec_d = args.ipsec_d if args.ipsec_d else env["IPSEC_NSSDIR"]
         ipsec_secrets = (args.ipsec_secrets if args.ipsec_secrets
                         else "/etc/ipsec.secrets")
         ipsec_ctl = (args.ipsec_ctl if args.ipsec_ctl
-                        else "/run/pluto/pluto.ctl")
+                        else os.path.join(env["IPSEC_RUNDIR"], "pluto.ctl"))
 
-        self.IPSEC = libreswan_root_prefix + "/usr/sbin/ipsec"
         self.IPSEC_CONF = libreswan_root_prefix + ipsec_conf
         self.IPSEC_SECRETS = libreswan_root_prefix + ipsec_secrets
         self.IPSEC_D = "sql:" + libreswan_root_prefix + ipsec_d
