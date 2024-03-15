@@ -1261,8 +1261,12 @@ raft_transfer_leadership(struct raft *raft, const char *reason)
         return;
     }
 
+    size_t n = hmap_count(&raft->servers) * 3;
     struct raft_server *s;
-    HMAP_FOR_EACH (s, hmap_node, &raft->servers) {
+
+    while (n--) {
+        s = CONTAINER_OF(hmap_random_node(&raft->servers),
+                         struct raft_server, hmap_node);
         if (!uuid_equals(&raft->sid, &s->sid)
             && s->phase == RAFT_PHASE_STABLE) {
             struct raft_conn *conn = raft_find_conn_by_sid(raft, &s->sid);
