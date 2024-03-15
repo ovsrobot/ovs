@@ -2126,10 +2126,11 @@ raft_run(struct raft *raft)
         raft_reset_ping_timer(raft);
     }
 
+    uint64_t interval = raft->joining
+                        ? 1000 : RAFT_TIMER_THRESHOLD(raft->election_timer);
     cooperative_multitasking_set(
         &raft_run_cb, (void *) raft, time_msec(),
-        RAFT_TIMER_THRESHOLD(raft->election_timer)
-        + RAFT_TIMER_THRESHOLD(raft->election_timer) / 10, "raft_run");
+        interval + interval / 10, "raft_run");
 
     /* Do this only at the end; if we did it as soon as we set raft->left or
      * raft->failed in handling the RemoveServerReply, then it could easily
