@@ -491,6 +491,9 @@ def main():
         print("TCPDUMP Args: %s" % ' '.join(tcpdargs))
 
     ovsdb = OVSDB(db_sock)
+    if not ovsdb.port_exists(interface):
+        print("ERROR: Port %s does not exist." % interface)
+        sys.exit(1)
     if mirror_interface is None:
         mirror_interface = "mi%s" % interface
         if sys.platform in _make_mirror_name:
@@ -512,9 +515,6 @@ def main():
               (mirror_interface, mirror_interface + "2"))
         sys.exit(1)
 
-    if not ovsdb.port_exists(interface):
-        print("ERROR: Port %s does not exist." % interface)
-        sys.exit(1)
     if ovsdb.port_exists(mirror_interface):
         print("ERROR: Mirror port (%s) exists for port %s." %
               (mirror_interface, interface))
