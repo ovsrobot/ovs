@@ -1354,6 +1354,12 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
     }
 
+    if (!strcmp(info.driver_name, "net_ice")) {
+        VLOG_INFO("%s: disabled Tx outer udp checksum offloads for a "
+                  "net/ice port.", netdev_get_name(&dev->up));
+        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM;
+    }
+
     if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_IPV4_CKSUM_OFFLOAD;
     } else {
