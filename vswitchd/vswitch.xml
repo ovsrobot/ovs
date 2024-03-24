@@ -869,6 +869,16 @@
           The feature is considered experimental.
         </p>
       </column>
+      <column name="other_config" key="route-notify-disabled-interfaces">
+        <p>
+          Ignore route changes of specified interfaces. One of the usage
+          scenarios is to prevent kubernets from triggering ovs route table
+          refresh on pod create/destroy.
+        </p>
+        <p>
+          The format is interface names joined by ','. i.e. "eth1,eth2"
+        </p>
+      </column>
     </group>
     <group title="Status">
       <column name="next_cfg">
