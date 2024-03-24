@@ -33,6 +33,7 @@
 #include "netlink-notifier.h"
 #include "netlink-socket.h"
 #include "openvswitch/ofpbuf.h"
+#include "lib/sset.h"
 #include "ovs-router.h"
 #include "packets.h"
 #include "rtnetlink.h"
@@ -82,6 +83,7 @@ static struct nln_notifier *route6_notifier = NULL;
 static struct nln_notifier *name_notifier = NULL;
 
 static bool route_table_valid = false;
+static struct sset disabled_ifaces = SSET_INITIALIZER(&disabled_ifaces);
 
 static void route_table_reset(void);
 static void route_table_handle_msg(const struct route_table_msg *);
@@ -91,6 +93,7 @@ static void route_map_clear(void);
 
 static void name_table_init(void);
 static void name_table_change(const struct rtnetlink_change *, void *);
+
 
 uint64_t
 route_table_get_change_seq(void)
@@ -354,13 +357,45 @@ route_table_parse(struct ofpbuf *buf, struct route_table_msg *change)
     return ipv4 ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE;
 }
 
+void
+disable_notify_on_interfaces(const char *ifaces)
+{
+    struct sset tmp_ifaces;
+
+    if (ifaces) {
+        sset_from_delimited_string(&tmp_ifaces, ifaces, ", ");
+    } else {
+        sset_init(&tmp_ifaces);
+    }
+    if (! sset_equals(&disabled_ifaces, &tmp_ifaces)) {
+        const char *iface;
+        struct ds ds = DS_EMPTY_INITIALIZER;
+
+        sset_swap(&disabled_ifaces, &tmp_ifaces);
+        SSET_FOR_EACH (iface, &disabled_ifaces) {
+            ds_put_format(&ds, " %s", iface);
+        }
+        VLOG_DBG_RL(&rl, "route notify disabled interfaces: [%s]",
+                    ds_cstr(&ds));
+        ds_destroy(&ds);
+    }
+    sset_destroy(&tmp_ifaces);
+}
+
 static void
-route_table_change(const struct route_table_msg *change OVS_UNUSED,
+route_table_change(const struct route_table_msg *change,
                    void *aux OVS_UNUSED)
 {
-    if (!change || change->relevant) {
-        route_table_valid = false;
+    if (change) {
+        if (!change->relevant) {
+            return;
+        }
+        if (change->rd.ifname[0] != '\0' &&
+            sset_contains(&disabled_ifaces, change->rd.ifname)) {
+            return;
+        }
     }
+    route_table_valid = false;
 }
 
 static void

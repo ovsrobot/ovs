@@ -33,4 +33,5 @@ void route_table_wait(void);
 bool route_table_fallback_lookup(const struct in6_addr *ip6_dst,
                                  char name[],
                                  struct in6_addr *gw6);
+void disable_notify_on_interfaces(const char *ifaces);
 #endif /* route-table.h */

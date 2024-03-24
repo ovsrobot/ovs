@@ -48,3 +48,8 @@ void
 route_table_wait(void)
 {
 }
+
+void
+disable_notify_on_interfaces(const char *ifaces OVS_UNUSED)
+{
+}
