@@ -71,6 +71,7 @@
 #include "unixctl.h"
 #include "lib/vswitch-idl.h"
 #include "vlan-bitmap.h"
+#include "route-table.h"
 
 VLOG_DEFINE_THIS_MODULE(bridge);
 
@@ -888,6 +889,8 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
     ofproto_set_threads(
         smap_get_int(&ovs_cfg->other_config, "n-handler-threads", 0),
         smap_get_int(&ovs_cfg->other_config, "n-revalidator-threads", 0));
+    disable_notify_on_interfaces(smap_get(&ovs_cfg->other_config,
+                                 "route-notify-disabled-interfaces"));
 
     /* Destroy "struct bridge"s, "struct port"s, and "struct iface"s according
      * to 'ovs_cfg', with only very minimal configuration otherwise.

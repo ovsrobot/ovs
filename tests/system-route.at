@@ -128,3 +128,54 @@ OVS_WAIT_UNTIL([test $(ovs-appctl ovs/route/show | grep -c 'p1-route') -eq 0 ])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+
+dnl Checks that disabled interface doesn't trigger route table refresh.
+AT_SETUP([ovs-route - filter by interface])
+AT_KEYWORDS([route])
+OVS_TRAFFIC_VSWITCHD_START()
+
+dnl Create tap port.
+on_exit 'ip link del p1-route; ip link del p2-route'
+AT_CHECK([ip tuntap add name p1-route mode tap])
+AT_CHECK([ip tuntap add name p2-route mode tap])
+AT_CHECK([ip link set p1-route up])
+AT_CHECK([ip link set p2-route up])
+
+dnl Add ip address.
+AT_CHECK([ip addr add 10.0.0.17/24 dev p1-route], [0], [stdout])
+AT_CHECK([ip addr add 10.0.1.17/24 dev p2-route], [0], [stdout])
+
+dnl Check that OVS catches route updates.
+OVS_WAIT_UNTIL_EQUAL([ovs-appctl ovs/route/show | grep -P 'p(1|2)-route' | sort], [dnl
+Cached: 10.0.0.0/24 dev p1-route SRC 10.0.0.17
+Cached: 10.0.0.17/32 dev p1-route SRC 10.0.0.17 local
+Cached: 10.0.1.0/24 dev p2-route SRC 10.0.1.17
+Cached: 10.0.1.17/32 dev p2-route SRC 10.0.1.17 local])
+
+dnl Set disabled interface
+AT_CHECK([ovs-appctl vlog/set 'route_table,dbg'])
+get_log_next_line_num
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:route-notify-disabled-interfaces="p2-route"])
+dnl expected log line: "route_table|DBG|route notify disabled interfaces: [ p2-route]"
+OVS_WAIT_UNTIL([tail -n +$LINENUM ovs-vswitchd.log | grep -P "notify disabled interfaces: . p2-route"])
+
+dnl Add a route with interface p1-route.
+AT_CHECK([ip route add 10.0.0.18/32 dev p1-route])
+OVS_WAIT_UNTIL_EQUAL([ovs-appctl ovs/route/show | grep 'p1-route' | sort], [dnl
+Cached: 10.0.0.0/24 dev p1-route SRC 10.0.0.17
+Cached: 10.0.0.17/32 dev p1-route SRC 10.0.0.17 local
+Cached: 10.0.0.18/32 dev p1-route SRC 10.0.0.17])
+
+dnl Add a route with disabled interface p2-route.
+AT_CHECK([ip route add 10.0.1.18/32 dev p2-route])
+dnl Give the main thread a chance to act.
+AT_CHECK([ovs-appctl revalidator/wait])
+dnl Check that OVS didn't refresh route table.
+AT_CHECK([ovs-appctl ovs/route/show | grep 'p2-route' | sort], [0], [dnl
+Cached: 10.0.1.0/24 dev p2-route SRC 10.0.1.17
+Cached: 10.0.1.17/32 dev p2-route SRC 10.0.1.17 local
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
