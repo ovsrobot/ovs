@@ -1354,18 +1354,6 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
     }
 
-    if (!strcmp(info.driver_name, "net_ice")
-        || !strcmp(info.driver_name, "net_i40e")) {
-        /* FIXME: Driver advertises the capability but doesn't seem
-         * to actually support it correctly.  Can remove this once
-         * the driver is fixed on DPDK side. */
-        VLOG_INFO("%s: disabled Tx outer udp checksum offloads for a "
-                  "net/ice or net/i40e port.", netdev_get_name(&dev->up));
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM;
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO;
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO;
-    }
-
     if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_IPV4_CKSUM_OFFLOAD;
     } else {
@@ -2584,16 +2572,18 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
     struct dp_packet *pkt = CONTAINER_OF(mbuf, struct dp_packet, mbuf);
     struct tcp_header *th;
 
-    const uint64_t all_requests = (RTE_MBUF_F_TX_IP_CKSUM |
-                                   RTE_MBUF_F_TX_L4_MASK  |
-                                   RTE_MBUF_F_TX_OUTER_IP_CKSUM  |
-                                   RTE_MBUF_F_TX_OUTER_UDP_CKSUM |
-                                   RTE_MBUF_F_TX_TCP_SEG);
-    const uint64_t all_marks = (RTE_MBUF_F_TX_IPV4 |
-                                RTE_MBUF_F_TX_IPV6 |
-                                RTE_MBUF_F_TX_OUTER_IPV4 |
-                                RTE_MBUF_F_TX_OUTER_IPV6 |
-                                RTE_MBUF_F_TX_TUNNEL_MASK);
+    const uint64_t all_inner_requests = (RTE_MBUF_F_TX_IP_CKSUM |
+                                         RTE_MBUF_F_TX_L4_MASK |
+                                         RTE_MBUF_F_TX_TCP_SEG);
+    const uint64_t all_outer_requests = (RTE_MBUF_F_TX_OUTER_IP_CKSUM  |
+                                          RTE_MBUF_F_TX_OUTER_UDP_CKSUM);
+    const uint64_t all_requests = all_inner_requests | all_outer_requests;
+    const uint64_t all_inner_marks = (RTE_MBUF_F_TX_IPV4 |
+                                      RTE_MBUF_F_TX_IPV6);
+    const uint64_t all_outer_marks = (RTE_MBUF_F_TX_OUTER_IPV4 |
+                                      RTE_MBUF_F_TX_OUTER_IPV6 |
+                                      RTE_MBUF_F_TX_TUNNEL_MASK);
+    const uint64_t all_marks = all_inner_marks | all_outer_marks;
 
     if (!(mbuf->ol_flags & all_requests)) {
         /* No offloads requested, no marks should be set. */
@@ -2610,32 +2600,45 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
         return true;
     }
 
-    /* If packet is vxlan or geneve tunnel packet, calculate outer
-     * l2 len and outer l3 len. Inner l2/l3/l4 len are calculated
-     * before. */
     const uint64_t tunnel_type = mbuf->ol_flags & RTE_MBUF_F_TX_TUNNEL_MASK;
-    if (tunnel_type == RTE_MBUF_F_TX_TUNNEL_GENEVE ||
-        tunnel_type == RTE_MBUF_F_TX_TUNNEL_VXLAN) {
-        mbuf->outer_l2_len = (char *) dp_packet_l3(pkt) -
-                 (char *) dp_packet_eth(pkt);
-        mbuf->outer_l3_len = (char *) dp_packet_l4(pkt) -
-                 (char *) dp_packet_l3(pkt);
-
-        /* If neither inner checksums nor TSO is requested, inner marks
-         * should not be set. */
-        if (!(mbuf->ol_flags & (RTE_MBUF_F_TX_IP_CKSUM |
-                                RTE_MBUF_F_TX_L4_MASK  |
-                                RTE_MBUF_F_TX_TCP_SEG))) {
-            mbuf->ol_flags &= ~(RTE_MBUF_F_TX_IPV4 |
-                                RTE_MBUF_F_TX_IPV6);
-        }
-    } else if (OVS_UNLIKELY(tunnel_type)) {
+    if (OVS_UNLIKELY(tunnel_type
+                     && tunnel_type != RTE_MBUF_F_TX_TUNNEL_GENEVE
+                     && tunnel_type != RTE_MBUF_F_TX_TUNNEL_VXLAN)) {
         VLOG_WARN_RL(&rl, "%s: Unexpected tunnel type: %#"PRIx64,
                      netdev_get_name(&dev->up), tunnel_type);
         netdev_dpdk_mbuf_dump(netdev_get_name(&dev->up),
                               "Packet with unexpected tunnel type", mbuf);
         return false;
+    }
+
+    /* If packet is vxlan or geneve tunnel packet, calculate outer
+     * l2 len and outer l3 len. Inner l2/l3/l4 len are calculated
+     * before. */
+    if ((tunnel_type == RTE_MBUF_F_TX_TUNNEL_GENEVE
+         || tunnel_type == RTE_MBUF_F_TX_TUNNEL_VXLAN)
+        && (mbuf->ol_flags & all_inner_requests)) {
+
+        mbuf->outer_l2_len = (char *) dp_packet_l3(pkt) -
+                 (char *) dp_packet_eth(pkt);
+        mbuf->outer_l3_len = (char *) dp_packet_l4(pkt) -
+                 (char *) dp_packet_l3(pkt);
     } else {
+        if (OVS_UNLIKELY(!(mbuf->ol_flags & all_inner_requests))) {
+            /* If no inner offloading is requested, fallback to non tunneling
+             * checksum offloads. */
+
+            mbuf->ol_flags &= ~all_inner_marks;
+            if (mbuf->ol_flags & RTE_MBUF_F_TX_OUTER_IP_CKSUM) {
+                mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM;
+                mbuf->ol_flags |= RTE_MBUF_F_TX_IPV4;
+            }
+            if (mbuf->ol_flags & RTE_MBUF_F_TX_OUTER_UDP_CKSUM) {
+                mbuf->ol_flags |= RTE_MBUF_F_TX_UDP_CKSUM;
+                mbuf->ol_flags |= mbuf->ol_flags & RTE_MBUF_F_TX_OUTER_IPV4
+                                  ? RTE_MBUF_F_TX_IPV4 : RTE_MBUF_F_TX_IPV6;
+            }
+            mbuf->ol_flags &= ~(all_outer_requests | all_outer_marks);
+        }
         mbuf->l2_len = (char *) dp_packet_l3(pkt) -
                (char *) dp_packet_eth(pkt);
         mbuf->l3_len = (char *) dp_packet_l4(pkt) -
