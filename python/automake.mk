@@ -129,7 +129,7 @@ ovs-uninstall-local:
 ALL_LOCAL += $(srcdir)/python/ovs/version.py
 $(srcdir)/python/ovs/version.py: config.status
 	$(AM_V_GEN)$(ro_shell) > $(@F).tmp && \
-	echo 'VERSION = "$(VERSION)"' >> $(@F).tmp && \
+	echo 'VERSION = "$(VERSION)$(VERSION_SUFFIX)"' >> $(@F).tmp && \
 	if cmp -s $(@F).tmp $@; then touch $@; rm $(@F).tmp; else mv $(@F).tmp $@; fi
 
 ALL_LOCAL += $(srcdir)/python/ovs/dirs.py
@@ -146,6 +146,15 @@ $(srcdir)/python/ovs/dirs.py: python/ovs/dirs.py.template
 	mv $@.tmp $@
 EXTRA_DIST += python/ovs/dirs.py.template
 CLEANFILES += python/ovs/dirs.py
+
+ALL_LOCAL += $(srcdir)/python/setup.py
+$(srcdir)/python/setup.py: python/setup.py.template
+	$(AM_V_GEN)sed \
+		-e 's,[@]VERSION[@],$(VERSION),g' \
+		< $? > $@.tmp && \
+	mv $@.tmp $@
+EXTRA_DIST += python/setup.py.template
+CLEANFILES += python/setup.py
 
 EXTRA_DIST += python/TODO.rst
 
