@@ -9289,11 +9289,12 @@ oftable_destroy(struct oftable *table)
 static void
 oftable_set_name(struct oftable *table, const char *name, int level)
 {
-    int len = name ? strnlen(name, OFP_MAX_TABLE_NAME_LEN) : 0;
     if (level >= table->name_level) {
         if (name) {
             if (name[0]) {
-                if (!table->name || strncmp(name, table->name, len)) {
+                if (!table->name || strncmp(name, table->name,
+                                            OFP_MAX_TABLE_NAME_LEN)) {
+                    int len = strnlen(name, OFP_MAX_TABLE_NAME_LEN);
                     free(table->name);
                     table->name = xmemdup0(name, len);
                 }
@@ -9318,10 +9319,8 @@ oftable_may_set_name(const struct oftable *table, const char *name, int level)
     return (level >= table->name_level
             || !name
             || !table->name
-            || !strncmp(name, table->name,
-                        strnlen(name, OFP_MAX_TABLE_NAME_LEN)));
+            || !strncmp(name, table->name,OFP_MAX_TABLE_NAME_LEN));
 }
-
 /* oftables support a choice of two policies when adding a rule would cause the
  * number of flows in the table to exceed the configured maximum number: either
  * they can refuse to add the new flow or they can evict some existing flow.
