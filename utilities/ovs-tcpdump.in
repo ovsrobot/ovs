@@ -142,6 +142,8 @@ The following options are available:
    --mirror-to                The name for the mirror port to use (optional)
                               Default 'miINTERFACE'
    --span                     If specified, mirror all ports (optional)
+   --vlan                     If specified, mirror vlan traffic and pop
+                              its tag (optional)
 """ % {'prog': sys.argv[0]})
     sys.exit(0)
 
@@ -319,7 +321,7 @@ class OVSDB(object):
                                  (mirror_name, txn.get_error()))
         self._txn = None
 
-    def make_port(self, port_name, bridge_name):
+    def make_port(self, port_name, bridge_name, vlan=None):
         iface_row = self.make_interface(port_name, False)
         txn = self._txn
 
@@ -329,6 +331,10 @@ class OVSDB(object):
 
         port = txn.insert(self.get_table('Port'))
         port.name = port_name
+
+        if vlan is not None:
+            port.verify('tag')
+            port.tag = [vlan]
 
         br.verify('ports')
         ports = getattr(br, 'ports', [])
@@ -354,7 +360,7 @@ class OVSDB(object):
         return result
 
     def bridge_mirror(self, intf_name, mirror_intf_name, br_name,
-                      mirror_select_all=False):
+                      mirror_select_all=False, mirrored_vlan=None):
 
         txn = self._start_txn()
         mirror = txn.insert(self.get_table('Mirror'))
@@ -373,6 +379,12 @@ class OVSDB(object):
         src_port = getattr(mirror, 'select_src_port', [])
         src_port.append(mirrored_port)
         mirror.select_src_port = src_port
+
+        if mirrored_vlan:
+            mirror.verify('select_vlan')
+            select_vlan = getattr(mirror, 'select_vlan', [])
+            select_vlan.append(mirrored_vlan)
+            mirror.select_vlan = select_vlan
 
         output_port = self._find_row_by_name('Port', mirror_intf_name)
 
@@ -440,6 +452,7 @@ def main():
     db_sock = 'unix:%s' % os.path.join(rundir, "db.sock")
     interface = None
     tcpdargs = []
+    vlan = None
 
     skip_next = False
     mirror_interface = None
@@ -474,11 +487,24 @@ def main():
         elif cur in ['--span']:
             mirror_select_all = True
             continue
+        elif cur in ['--vlan']:
+            vlan = nxt
+            skip_next = True
+            continue
         tcpdargs.append(cur)
 
     if interface is None:
         print("Error: must at least specify an interface with '-i' option")
         sys.exit(1)
+
+    if vlan:
+        try:
+            vlan = int(vlan)
+            if vlan < 0 or vlan > 4095:
+                raise ValueError("out of range")
+        except ValueError:
+            print("Error: vlan must be within <0-4095>")
+            sys.exit(1)
 
     if not py_which(dump_cmd):
         print("Error: unable to execute '%s' (check PATH)" % dump_cmd)
@@ -523,10 +549,11 @@ def main():
     teardown(db_sock, interface, mirror_interface, tap_created)
 
     try:
-        ovsdb.make_port(mirror_interface, ovsdb.port_bridge(interface))
+        ovsdb.make_port(mirror_interface,
+                        ovsdb.port_bridge(interface), vlan)
         ovsdb.bridge_mirror(interface, mirror_interface,
                             ovsdb.port_bridge(interface),
-                            mirror_select_all)
+                            mirror_select_all, vlan)
     except OVSDBException as oe:
         print("ERROR: Unable to properly setup the mirror: %s." % str(oe))
         sys.exit(1)
