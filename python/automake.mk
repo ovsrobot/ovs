@@ -89,7 +89,8 @@ EXTRA_DIST += \
 	python/ovs/compat/sortedcontainers/LICENSE \
 	python/README.rst \
 	python/setup.py \
-	python/test_requirements.txt
+	python/test_requirements.txt \
+	python/ovs/flowviz/ovs-flowviz.conf
 
 # C extension support.
 EXTRA_DIST += python/ovs/_json.c
@@ -109,6 +110,8 @@ FLAKE8_PYFILES += \
 	python/setup.py
 
 nobase_pkgdata_DATA = $(ovs_pyfiles) $(ovstest_pyfiles) $(ovs_flowviz)
+nobase_pkgdata_DATA += python/ovs/flowviz/ovs-flowviz.conf
+
 ovs-install-data-local:
 	$(MKDIR_P) python/ovs
 	sed \
