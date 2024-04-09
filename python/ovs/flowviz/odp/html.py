@@ -55,10 +55,18 @@ class HTMLTree(FlowTree):
         flows(dict[int, list[DPFlow]): Optional; initial flows
     """
 
+    html_body_style = """
+    <style>
+    body {{
+        background-color: {bg};
+        color: {fg};
+    }}
+    </style>"""
+
     html_header = """
     <style>
     .flow{
-        background-color:white;
+        background-color:inherit;
         display: inline-block;
         text-align: left;
         font-family: monospace;
@@ -177,9 +185,9 @@ class HTMLTree(FlowTree):
         append()
         """
 
-        def __init__(self, parent_name, flow=None, opts=None):
+        def __init__(self, parent_name, flow=None, fmt=None, opts=None):
             self._parent_name = parent_name
-            self._formatter = HTMLFormatter(opts)
+            self._formatter = fmt
             self._opts = opts
             super(HTMLTree.HTMLTreeElem, self).__init__(flow)
 
@@ -232,13 +240,14 @@ class HTMLTree(FlowTree):
     def __init__(self, name, opts, flows=None):
         self.opts = opts
         self.name = name
+        self._formatter = HTMLFormatter(opts)
         super(HTMLTree, self).__init__(
             flows, self.HTMLTreeElem("", flow=None, opts=self.opts)
         )
 
     def _new_elem(self, flow, _):
         """Override _new_elem to provide HTMLTreeElems."""
-        return self.HTMLTreeElem(self.name, flow, self.opts)
+        return self.HTMLTreeElem(self.name, flow, self._formatter, self.opts)
 
     def render(self):
         """Render the Tree in HTML.
@@ -247,10 +256,21 @@ class HTMLTree(FlowTree):
             an html string representing the element
         """
         name = self.name.replace(" ", "_")
+        bg = (
+            self._formatter.style.get("background").color
+            if self._formatter.style.get("background")
+            else "white"
+        )
+        fg = (
+            self._formatter.style.get("default").color
+            if self._formatter.style.get("default")
+            else "black"
+        )
 
         html_text = """<input id="collapsible_main-{name}" class="toggle" type="checkbox" onclick="toggle_checkbox(this)" checked>
 <label for="collapsible_main-{name}" class="lbl-toggle lbl-toggle-main">Flow Table</label>"""  # noqa: E501
-        html_obj = self.html_header + html_text.format(name=name)
+        html_obj = self.html_body_style.format(bg=bg, fg=fg)
+        html_obj += self.html_header + html_text.format(name=name)
 
         html_obj += "<div id=flow_list-{name}>".format(name=name)
         (html_elem, _) = self.root.render()
