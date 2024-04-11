@@ -7,6 +7,9 @@ Post-v3.3.0
    - The primary development branch has been renamed from 'master' to 'main'.
      The OVS tree remains hosted on GitHub.
      https://github.com/openvswitch/ovs.git
+   - ovs-appctl:
+     * Added new option [-f|--format] to choose the output format, e.g. 'json'
+       or 'text' (by default).
 
 
 v3.3.0 - 16 Feb 2024

@@ -17,6 +17,9 @@
 #ifndef UNIXCTL_H
 #define UNIXCTL_H 1
 
+#include "openvswitch/json.h"
+#include "command-line.h"
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -36,6 +39,7 @@ int unixctl_client_create(const char *path, struct jsonrpc **client);
 int unixctl_client_transact(struct jsonrpc *client,
                             const char *command,
                             int argc, char *argv[],
+                            enum ovs_output_fmt fmt,
                             char **result, char **error);
 
 /* Command registration. */
@@ -45,8 +49,15 @@ typedef void unixctl_cb_func(struct unixctl_conn *,
 void unixctl_command_register(const char *name, const char *usage,
                               int min_args, int max_args,
                               unixctl_cb_func *cb, void *aux);
+enum ovs_output_fmt unixctl_command_get_output_format(struct unixctl_conn *);
+void unixctl_command_set_output_format(struct unixctl_conn *,
+                                       enum ovs_output_fmt);
 void unixctl_command_reply_error(struct unixctl_conn *, const char *error);
+void unixctl_command_reply_error_json(struct unixctl_conn *,
+                                      struct json *error);
 void unixctl_command_reply(struct unixctl_conn *, const char *body);
+void unixctl_command_reply_json(struct unixctl_conn *,
+                                struct json *body);
 
 #ifdef  __cplusplus
 }
