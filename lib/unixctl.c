@@ -572,8 +572,8 @@ unixctl_client_create(const char *path, struct jsonrpc **client)
  * '*err' if not NULL. */
 int
 unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
-                        char *argv[], enum ovs_output_fmt fmt, char **result,
-                        char **err)
+                        char *argv[], enum ovs_output_fmt fmt, int fmt_flags,
+                        char **result, char **err)
 {
     struct jsonrpc_msg *request, *reply;
     struct json **json_args, *params, *output_src;
@@ -604,7 +604,7 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
         if (fmt == OVS_OUTPUT_FMT_TEXT && output_src->type == JSON_STRING) {
             *output_dst = xstrdup(json_string(output_src));
         } else if (fmt == OVS_OUTPUT_FMT_JSON) {
-            *output_dst = json_to_string(output_src, 0);
+            *output_dst = json_to_string(output_src, fmt_flags);
         } else {
             VLOG_WARN("%s: unexpected %s type in JSON rpc reply: %s",
                       jsonrpc_get_name(client),
