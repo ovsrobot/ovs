@@ -27,7 +27,7 @@ class UnixctlClient(object):
         assert isinstance(conn, ovs.jsonrpc.Connection)
         self._conn = conn
 
-    def transact(self, command, argv, fmt):
+    def transact(self, command, argv, fmt, fmt_flags):
         assert isinstance(command, str)
         assert isinstance(argv, list)
         for arg in argv:
@@ -46,7 +46,7 @@ class UnixctlClient(object):
             if fmt == ovs.util.OutputFormat.TEXT:
                 return str(body)
             else:
-                return ovs.json.to_string(body)
+                return ovs.json.to_string(body, **fmt_flags)
 
         if reply.error is not None:
             return 0, to_string(reply.error), None
