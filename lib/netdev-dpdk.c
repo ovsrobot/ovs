@@ -1294,15 +1294,10 @@ dpdk_eth_dev_init_rx_metadata(struct netdev_dpdk *dev)
     dev->rx_metadata_delivery_configured = true;
 }
 
-static int
-dpdk_eth_dev_init(struct netdev_dpdk *dev)
-    OVS_REQUIRES(dev->mutex)
+static void
+dpdk_eth_offload_config(struct netdev_dpdk *dev,
+                               struct rte_eth_dev_info *info)
 {
-    struct rte_pktmbuf_pool_private *mbp_priv;
-    struct rte_eth_dev_info info;
-    struct rte_ether_addr eth_addr;
-    int diag;
-    int n_rxq, n_txq;
     uint32_t rx_chksm_offload_capa = RTE_ETH_RX_OFFLOAD_UDP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
@@ -1319,16 +1314,14 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         dpdk_eth_dev_init_rx_metadata(dev);
     }
 
-    rte_eth_dev_info_get(dev->port_id, &info);
-
-    if (strstr(info.driver_name, "vf") != NULL) {
+    if (strstr(info->driver_name, "vf") != NULL) {
         VLOG_INFO("Virtual function detected, HW_CRC_STRIP will be enabled");
         dev->hw_ol_features |= NETDEV_RX_HW_CRC_STRIP;
     } else {
         dev->hw_ol_features &= ~NETDEV_RX_HW_CRC_STRIP;
     }
 
-    if ((info.rx_offload_capa & rx_chksm_offload_capa) !=
+    if ((info->rx_offload_capa & rx_chksm_offload_capa) !=
             rx_chksm_offload_capa) {
         VLOG_WARN("Rx checksum offload is not supported on port "
                   DPDK_PORT_ID_FMT, dev->port_id);
@@ -1337,66 +1330,66 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
         dev->hw_ol_features |= NETDEV_RX_CHECKSUM_OFFLOAD;
     }
 
-    if (info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_SCATTER) {
+    if (info->rx_offload_capa & RTE_ETH_RX_OFFLOAD_SCATTER) {
         dev->hw_ol_features |= NETDEV_RX_HW_SCATTER;
     } else {
         /* Do not warn on lack of scatter support */
         dev->hw_ol_features &= ~NETDEV_RX_HW_SCATTER;
     }
 
-    if (!strcmp(info.driver_name, "net_tap")) {
+    if (!strcmp(info->driver_name, "net_tap")) {
         /* FIXME: L4 checksum offloading is broken in DPDK net/tap driver.
          * This workaround can be removed once the fix makes it to a DPDK
          * LTS release used by OVS. */
         VLOG_INFO("%s: disabled Tx L4 checksum offloads for a net/tap port.",
                   netdev_get_name(&dev->up));
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+        info->tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+        info->tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
     }
 
-    if (!strcmp(info.driver_name, "net_ice")
-        || !strcmp(info.driver_name, "net_i40e")) {
+    if (!strcmp(info->driver_name, "net_ice")
+        || !strcmp(info->driver_name, "net_i40e")) {
         /* FIXME: Driver advertises the capability but doesn't seem
          * to actually support it correctly.  Can remove this once
          * the driver is fixed on DPDK side. */
         VLOG_INFO("%s: disabled Tx outer udp checksum offloads for a "
                   "net/ice or net/i40e port.", netdev_get_name(&dev->up));
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM;
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO;
-        info.tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO;
+        info->tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM;
+        info->tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO;
+        info->tx_offload_capa &= ~RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO;
     }
 
-    if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) {
+    if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_IPV4_CKSUM_OFFLOAD;
     } else {
         dev->hw_ol_features &= ~NETDEV_TX_IPV4_CKSUM_OFFLOAD;
     }
 
-    if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_TCP_CKSUM) {
+    if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_TCP_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_TCP_CKSUM_OFFLOAD;
     } else {
         dev->hw_ol_features &= ~NETDEV_TX_TCP_CKSUM_OFFLOAD;
     }
 
-    if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_UDP_CKSUM) {
+    if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_UDP_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_UDP_CKSUM_OFFLOAD;
     } else {
         dev->hw_ol_features &= ~NETDEV_TX_UDP_CKSUM_OFFLOAD;
     }
 
-    if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_SCTP_CKSUM) {
+    if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SCTP_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_SCTP_CKSUM_OFFLOAD;
     } else {
         dev->hw_ol_features &= ~NETDEV_TX_SCTP_CKSUM_OFFLOAD;
     }
 
-    if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_OUTER_IPV4_CKSUM) {
+    if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_OUTER_IPV4_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_OUTER_IP_CKSUM_OFFLOAD;
     } else {
         dev->hw_ol_features &= ~NETDEV_TX_OUTER_IP_CKSUM_OFFLOAD;
     }
 
-    if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM) {
+    if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM) {
         dev->hw_ol_features |= NETDEV_TX_OUTER_UDP_CKSUM_OFFLOAD;
     } else {
         dev->hw_ol_features &= ~NETDEV_TX_OUTER_UDP_CKSUM_OFFLOAD;
@@ -1404,27 +1397,42 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
 
     dev->hw_ol_features &= ~NETDEV_TX_TSO_OFFLOAD;
     if (userspace_tso_enabled()) {
-        if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_TCP_TSO) {
+        if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_TCP_TSO) {
             dev->hw_ol_features |= NETDEV_TX_TSO_OFFLOAD;
         } else {
             VLOG_WARN("%s: Tx TSO offload is not supported.",
                       netdev_get_name(&dev->up));
         }
 
-        if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO) {
+        if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO) {
             dev->hw_ol_features |= NETDEV_TX_VXLAN_TNL_TSO_OFFLOAD;
         } else {
             VLOG_WARN("%s: Tx Vxlan tunnel TSO offload is not supported.",
                       netdev_get_name(&dev->up));
         }
 
-        if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO) {
+        if (info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO) {
             dev->hw_ol_features |= NETDEV_TX_GENEVE_TNL_TSO_OFFLOAD;
         } else {
             VLOG_WARN("%s: Tx Geneve tunnel TSO offload is not supported.",
                       netdev_get_name(&dev->up));
         }
     }
+
+}
+
+static int
+dpdk_eth_dev_init(struct netdev_dpdk *dev)
+    OVS_REQUIRES(dev->mutex)
+{
+    struct rte_pktmbuf_pool_private *mbp_priv;
+    struct rte_eth_dev_info info;
+    struct rte_ether_addr eth_addr;
+    int diag;
+    int n_rxq, n_txq;
+
+    rte_eth_dev_info_get(dev->port_id, &info);
+    dpdk_eth_offload_config(dev, &info);
 
     n_rxq = MIN(info.max_rx_queues, dev->up.n_rxq);
     n_txq = MIN(info.max_tx_queues, dev->up.n_txq);
@@ -1437,6 +1445,13 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
                  dev->lsc_interrupt_mode ? "true" : "false",
                  rte_strerror(-diag));
         return -diag;
+    }
+
+    rte_eth_dev_info_get(dev->port_id, &info);
+    if (!strcmp(info.driver_name, "net_bonding")) {
+        dpdk_eth_offload_config(dev, &info);
+        VLOG_INFO("%s: configure offloads for a dpdk net_bonding port.",
+                   netdev_get_name(&dev->up));
     }
 
     diag = rte_eth_dev_start(dev->port_id);
