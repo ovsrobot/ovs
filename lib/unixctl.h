@@ -39,7 +39,7 @@ int unixctl_client_create(const char *path, struct jsonrpc **client);
 int unixctl_client_transact(struct jsonrpc *client,
                             const char *command,
                             int argc, char *argv[],
-                            enum ovs_output_fmt fmt,
+                            enum ovs_output_fmt fmt, unsigned int fmt_flags,
                             char **result, char **error);
 
 /* Command registration. */
