@@ -53,18 +53,29 @@ def main():
                         help="Output format.", default="text",
                         choices=[fmt.name.lower()
                                  for fmt in ovs.util.OutputFormat])
+    parser.add_argument("--pretty", action="store_true",
+                        help="By default, JSON in output is printed as"
+                             " compactly as possible. This option causes JSON"
+                             " in output to be printed in a more readable"
+                             " fashion. Members of objects and elements of"
+                             " arrays are printed one per line, with"
+                             " indentation.")
     args = parser.parse_args()
+
+    if args.format != ovs.util.OutputFormat.JSON.name.lower() and args.pretty:
+        ovs.util.ovs_fatal(0, "--pretty is supported with --format json only")
 
     signal_alarm(int(args.timeout) if args.timeout else None)
 
     ovs.vlog.Vlog.init()
     target = args.target
     format = ovs.util.OutputFormat[args.format.upper()]
+    format_flags = dict(pretty=True, sort_keys=True) if args.pretty else {}
     client = connect_to_target(target)
 
     if format != ovs.util.OutputFormat.TEXT:
         err_no, error, _ = client.transact(
-            "set-options", ["--format", args.format], format)
+            "set-options", ["--format", args.format], format, format_flags)
 
         if err_no:
             ovs.util.ovs_fatal(err_no, "%s: transaction error" % target)
@@ -73,7 +84,8 @@ def main():
             ovs.util.ovs_error(0, "%s: server returned an error" % target)
             sys.exit(2)
 
-    err_no, error, result = client.transact(args.command, args.argv, format)
+    err_no, error, result = client.transact(
+        args.command, args.argv, format, format_flags)
     client.close()
 
     if err_no:
