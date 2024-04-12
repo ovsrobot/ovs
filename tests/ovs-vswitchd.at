@@ -281,3 +281,14 @@ AT_CHECK_UNQUOTED([ovs-appctl --format json --pretty version], [0], [dnl
   "reply-format": "plain"}])
 
 AT_CLEANUP
+
+AT_SETUP([ovs-vswitchd list-commands])
+OVS_VSWITCHD_START
+
+AT_CHECK([ovs-appctl list-commands], [0], [ignore])
+AT_CHECK([ovs-appctl --format json list-commands], [0], [stdout])
+AT_CHECK([wc -l stdout], [0], [0 stdout
+])
+AT_CHECK([grep -E '^\[[\{"name":.*\}\]]$' stdout], [0], [ignore])
+
+AT_CLEANUP
