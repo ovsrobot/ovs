@@ -14,6 +14,7 @@
 
 import os
 
+import ovs.json
 import ovs.jsonrpc
 import ovs.stream
 import ovs.util
@@ -26,11 +27,12 @@ class UnixctlClient(object):
         assert isinstance(conn, ovs.jsonrpc.Connection)
         self._conn = conn
 
-    def transact(self, command, argv):
+    def transact(self, command, argv, fmt):
         assert isinstance(command, str)
         assert isinstance(argv, list)
         for arg in argv:
             assert isinstance(arg, str)
+        assert isinstance(fmt, ovs.util.OutputFormat)
 
         request = ovs.jsonrpc.Message.create_request(command, argv)
         error, reply = self._conn.transact_block(request)
@@ -40,11 +42,17 @@ class UnixctlClient(object):
                       % (self._conn.name, os.strerror(error)))
             return error, None, None
 
+        def to_string(body):
+            if fmt == ovs.util.OutputFormat.TEXT:
+                return str(body)
+            else:
+                return ovs.json.to_string(body)
+
         if reply.error is not None:
-            return 0, str(reply.error), None
+            return 0, to_string(reply.error), None
         else:
             assert reply.result is not None
-            return 0, None, str(reply.result)
+            return 0, None, to_string(reply.result)
 
     def close(self):
         self._conn.close()

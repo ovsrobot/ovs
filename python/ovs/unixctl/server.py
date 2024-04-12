@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import copy
 import errno
 import os
@@ -35,6 +36,7 @@ class UnixctlConnection(object):
         assert isinstance(rpc, ovs.jsonrpc.Connection)
         self._rpc = rpc
         self._request_id = None
+        self._fmt = ovs.util.OutputFormat.TEXT
 
     def run(self):
         self._rpc.run()
@@ -65,8 +67,14 @@ class UnixctlConnection(object):
     def reply(self, body):
         self._reply_impl(True, body)
 
+    def reply_json(self, body):
+        self._reply_impl_json(True, body)
+
     def reply_error(self, body):
         self._reply_impl(False, body)
+
+    def reply_error_json(self, body):
+        self._reply_impl_json(False, body)
 
     # Called only by unixctl classes.
     def _close(self):
@@ -79,16 +87,26 @@ class UnixctlConnection(object):
             self._rpc.recv_wait(poller)
 
     def _reply_impl(self, success, body):
-        assert isinstance(success, bool)
         assert body is None or isinstance(body, str)
-
-        assert self._request_id is not None
 
         if body is None:
             body = ""
 
         if body and not body.endswith("\n"):
             body += "\n"
+
+        if self._fmt == ovs.util.OutputFormat.JSON:
+            body = {
+                "reply-format": "plain",
+                "reply": body
+            }
+
+        return self._reply_impl_json(success, body)
+
+    def _reply_impl_json(self, success, body):
+        assert isinstance(success, bool)
+
+        assert self._request_id is not None
 
         if success:
             reply = Message.create_reply(body, self._request_id)
@@ -134,6 +152,24 @@ def _unixctl_version(conn, unused_argv, version):
     assert isinstance(conn, UnixctlConnection)
     version = "%s (Open vSwitch) %s" % (ovs.util.PROGRAM_NAME, version)
     conn.reply(version)
+
+
+def _unixctl_set_options(conn, argv, unused_aux):
+    assert isinstance(conn, UnixctlConnection)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--format", default="text",
+                        choices=[fmt.name.lower()
+                                 for fmt in ovs.util.OutputFormat])
+
+    try:
+        args = parser.parse_args(args=argv)
+    except argparse.ArgumentError as e:
+        conn.reply_error(str(e))
+        return
+
+    conn._fmt = ovs.util.OutputFormat[args.format.upper()]
+    conn.reply(None)
 
 
 class UnixctlServer(object):
@@ -209,5 +245,8 @@ class UnixctlServer(object):
 
         ovs.unixctl.command_register("version", "", 0, 0, _unixctl_version,
                                      version)
+
+        ovs.unixctl.command_register("set-options", "[--format text|json]", 2,
+                                     2, _unixctl_set_options, None)
 
         return 0, UnixctlServer(listener)
