@@ -21,7 +21,6 @@
 #include "coverage.h"
 #include "dirs.h"
 #include "openvswitch/dynamic-string.h"
-#include "openvswitch/json.h"
 #include "jsonrpc.h"
 #include "openvswitch/list.h"
 #include "openvswitch/poll-loop.h"
@@ -50,6 +49,8 @@ struct unixctl_conn {
     /* Only one request can be in progress at a time.  While the request is
      * being processed, 'request_id' is populated, otherwise it is null. */
     struct json *request_id;   /* ID of the currently active request. */
+
+    enum ovs_output_fmt fmt;
 };
 
 /* Server for control connection. */
@@ -94,6 +95,39 @@ unixctl_version(struct unixctl_conn *conn, int argc OVS_UNUSED,
     unixctl_command_reply(conn, ovs_get_program_version());
 }
 
+static void
+unixctl_set_options(struct unixctl_conn *conn, int argc, const char *argv[],
+                    void *aux OVS_UNUSED)
+{
+    char * error = NULL;
+
+    for (size_t i = 1; i < argc; i++) {
+        if ((i + 1) == argc) {
+            error = xasprintf("option requires an argument -- %s", argv[i]);
+            goto error;
+        } else if (!strcmp(argv[i], "--format")) {
+            /* Move index to option argument. */
+            i++;
+
+            /* Parse output format argument. */
+            if (!ovs_output_fmt_from_string(argv[i], &conn->fmt)) {
+                error = xasprintf("option %s has invalid value %s",
+                                  argv[i - 1], argv[i]);
+                goto error;
+            }
+        } else {
+            error = xasprintf("invalid option -- %s", argv[i]);
+            goto error;
+
+        }
+    }
+    unixctl_command_reply(conn, NULL);
+    return;
+error:
+    unixctl_command_reply_error(conn, error);
+    free(error);
+}
+
 /* Registers a unixctl command with the given 'name'.  'usage' describes the
  * arguments to the command; it is used only for presentation to the user in
  * "list-commands" output.  (If 'usage' is NULL, then the command is hidden.)
@@ -128,36 +162,68 @@ unixctl_command_register(const char *name, const char *usage,
     shash_add(&commands, name, command);
 }
 
-static void
-unixctl_command_reply__(struct unixctl_conn *conn,
-                        bool success, const char *body)
+enum ovs_output_fmt
+unixctl_command_get_output_format(struct unixctl_conn *conn)
 {
-    struct json *body_json;
-    struct jsonrpc_msg *reply;
+    return conn->fmt;
+}
 
-    COVERAGE_INC(unixctl_replied);
-    ovs_assert(conn->request_id);
+void
+unixctl_command_set_output_format(struct unixctl_conn *conn,
+                                  enum ovs_output_fmt fmt)
+{
+    conn->fmt = fmt;
+}
+
+static struct json *
+json_reply_create__(struct unixctl_conn *conn, const char *body)
+{
+    struct json * json_body;
 
     if (!body) {
         body = "";
     }
 
     if (body[0] && body[strlen(body) - 1] != '\n') {
-        body_json = json_string_create_nocopy(xasprintf("%s\n", body));
+        json_body = json_string_create_nocopy(xasprintf("%s\n", body));
     } else {
-        body_json = json_string_create(body);
+        json_body = json_string_create(body);
     }
 
+    if (conn->fmt == OVS_OUTPUT_FMT_TEXT) {
+        return json_body;
+    }
+
+    struct json *json_reply = json_object_create();
+
+    json_object_put_string(json_reply, "reply-format", "plain");
+    json_object_put(json_reply, "reply", json_body);
+
+    return json_reply;
+}
+
+/* Takes ownership of 'body'. */
+static void
+unixctl_command_reply__(struct unixctl_conn *conn,
+                        bool success, struct json *body)
+{
+    struct jsonrpc_msg *reply;
+
+    COVERAGE_INC(unixctl_replied);
+    ovs_assert(conn->request_id);
+
     if (success) {
-        reply = jsonrpc_create_reply(body_json, conn->request_id);
+        reply = jsonrpc_create_reply(body, conn->request_id);
     } else {
-        reply = jsonrpc_create_error(body_json, conn->request_id);
+        reply = jsonrpc_create_error(body, conn->request_id);
     }
 
     if (VLOG_IS_DBG_ENABLED()) {
         char *id = json_to_string(conn->request_id, 0);
+        char *msg = json_to_string(body, 0);
         VLOG_DBG("replying with %s, id=%s: \"%s\"",
-                 success ? "success" : "error", id, body);
+                 success ? "success" : "error", id, msg);
+        free(msg);
         free(id);
     }
 
@@ -170,20 +236,40 @@ unixctl_command_reply__(struct unixctl_conn *conn,
 
 /* Replies to the active unixctl connection 'conn'.  'result' is sent to the
  * client indicating the command was processed successfully.  Only one call to
- * unixctl_command_reply() or unixctl_command_reply_error() may be made per
- * request. */
+ * the unixctl_command_reply*() functions may be made per request. */
 void
 unixctl_command_reply(struct unixctl_conn *conn, const char *result)
 {
-    unixctl_command_reply__(conn, true, result);
+    unixctl_command_reply__(conn, true, json_reply_create__(conn, result));
+}
+
+/* Replies to the active unixctl connection 'conn'.  'result' is sent to the
+ * client indicating the command was processed successfully.  Only one call to
+ * the unixctl_command_reply*() functions may be made per request.
+ *
+ * Takes ownership of 'body'. */
+void
+unixctl_command_reply_json(struct unixctl_conn *conn, struct json *body)
+{
+    unixctl_command_reply__(conn, true, body);
 }
 
 /* Replies to the active unixctl connection 'conn'. 'error' is sent to the
- * client indicating an error occurred processing the command.  Only one call to
- * unixctl_command_reply() or unixctl_command_reply_error() may be made per
- * request. */
+ * client indicating an error occurred processing the command.  Only one call
+ * to the unixctl_command_reply*() functions may be made per request. */
 void
 unixctl_command_reply_error(struct unixctl_conn *conn, const char *error)
+{
+    unixctl_command_reply__(conn, false, json_reply_create__(conn, error));
+}
+
+/* Replies to the active unixctl connection 'conn'.  'error' is sent to the
+ * client indicating an error occurred processing the command.  Only one call
+ * to the unixctl_command_reply*() functions may be made per request.
+ *
+ * Takes ownership of 'error'. */
+void
+unixctl_command_reply_error_json(struct unixctl_conn *conn, struct json *error)
 {
     unixctl_command_reply__(conn, false, error);
 }
@@ -250,6 +336,8 @@ unixctl_server_create(const char *path, struct unixctl_server **serverp)
     unixctl_command_register("list-commands", "", 0, 0, unixctl_list_commands,
                              NULL);
     unixctl_command_register("version", "", 0, 0, unixctl_version, NULL);
+    unixctl_command_register("set-options", "[--format text|json]", 2, 2,
+                             unixctl_set_options, NULL);
 
     struct unixctl_server *server = xmalloc(sizeof *server);
     server->listener = listener;
@@ -381,6 +469,7 @@ unixctl_server_run(struct unixctl_server *server)
             struct unixctl_conn *conn = xzalloc(sizeof *conn);
             ovs_list_push_back(&server->conns, &conn->node);
             conn->rpc = jsonrpc_open(stream);
+            conn->fmt = OVS_OUTPUT_FMT_TEXT;
         } else if (error == EAGAIN) {
             break;
         } else {
@@ -483,10 +572,12 @@ unixctl_client_create(const char *path, struct jsonrpc **client)
  * '*err' if not NULL. */
 int
 unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
-                        char *argv[], char **result, char **err)
+                        char *argv[], enum ovs_output_fmt fmt, char **result,
+                        char **err)
 {
     struct jsonrpc_msg *request, *reply;
-    struct json **json_args, *params;
+    struct json **json_args, *params, *output_src;
+    char **output_dst;
     int error, i;
 
     *result = NULL;
@@ -506,22 +597,19 @@ unixctl_client_transact(struct jsonrpc *client, const char *command, int argc,
         return error;
     }
 
-    if (reply->error) {
-        if (reply->error->type == JSON_STRING) {
-            *err = xstrdup(json_string(reply->error));
+    output_src = reply->error ? reply->error : reply->result;
+    output_dst = reply->error ? err : result;
+
+    if (output_src) {
+        if (fmt == OVS_OUTPUT_FMT_TEXT && output_src->type == JSON_STRING) {
+            *output_dst = xstrdup(json_string(output_src));
+        } else if (fmt == OVS_OUTPUT_FMT_JSON) {
+            *output_dst = json_to_string(output_src, 0);
         } else {
-            VLOG_WARN("%s: unexpected error type in JSON RPC reply: %s",
+            VLOG_WARN("%s: unexpected %s type in JSON rpc reply: %s",
                       jsonrpc_get_name(client),
-                      json_type_to_string(reply->error->type));
-            error = EINVAL;
-        }
-    } else if (reply->result) {
-        if (reply->result->type == JSON_STRING) {
-            *result = xstrdup(json_string(reply->result));
-        } else {
-            VLOG_WARN("%s: unexpected result type in JSON rpc reply: %s",
-                      jsonrpc_get_name(client),
-                      json_type_to_string(reply->result->type));
+                      reply->error ? "error" : "result",
+                      json_type_to_string(output_src->type));
             error = EINVAL;
         }
     }
