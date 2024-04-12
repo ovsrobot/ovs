@@ -14,6 +14,7 @@ Post-v3.3.0
        E.g. members of objects and elements of arrays are printed one per line,
        with indentation.
      * 'list-commands' now supports output in JSON format.
+     * 'dpif/show' now supports output in JSON format.
    - Python:
      * Added support for choosing the output format, e.g. 'json' or 'text'.
      * Added new option [--pretty] to print JSON output in a readable fashion.
