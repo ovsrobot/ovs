@@ -163,6 +163,7 @@ SUFFIXES += .in
 	    -e 's,[@]PYTHON3[@],$(PYTHON3),g' \
 	    -e 's,[@]RUNDIR[@],$(RUNDIR),g' \
 	    -e 's,[@]VERSION[@],$(VERSION),g' \
+	    -e 's,[@]VERSION_SUFFIX[@],$(VERSION_SUFFIX),g' \
 	    -e 's,[@]localstatedir[@],$(localstatedir),g' \
 	    -e 's,[@]pkgdatadir[@],$(pkgdatadir),g' \
 	    -e 's,[@]sysconfdir[@],$(sysconfdir),g' \
