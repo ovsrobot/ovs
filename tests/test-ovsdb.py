@@ -36,6 +36,53 @@ vlog.set_levels_from_string("console:dbg")
 vlog.init(None)
 
 
+OBJ_STR = "_OBJECT_{}_"
+
+
+def substitute_object_text(data, quotechar='"', obj_chars=("{}", "[]")):
+    obj_chars = dict(obj_chars)
+    in_quote = False
+    in_object = []
+    removed_text = []
+    output = ""
+    start = end = 0
+    for i, s in enumerate(data):
+        if not in_object:
+            if not in_quote and s in obj_chars:
+                in_object.append(s)
+                start = i
+            else:
+                output += s
+            if s == quotechar:
+                in_quote = not in_quote
+        elif not in_quote:  # unquoted object
+            if s == in_object[0]:
+                in_object.append(s)
+            elif s == obj_chars[in_object[0]]:
+                in_object.pop()
+                if not in_object:
+                    end = i + 1
+                    removed_text.append(data[start:end])
+                    output += OBJ_STR.format(len(removed_text) - 1)
+    return output, removed_text
+
+
+def recover_object_text_from_list(words, json):
+    if not json:
+        return words
+    results = []
+    i = 0
+    for word in words:
+        while json:
+            if OBJ_STR.format(i) not in word:
+                results.append(word)
+                break
+            replacement = json.pop(0)
+            results.append(word.replace(OBJ_STR.format(i), replacement))
+            i += 1
+    return results
+
+
 def unbox_json(json):
     if type(json) is list and len(json) == 1:
         return json[0]
@@ -377,8 +424,10 @@ def idl_set(idl, commands, step):
     increment = False
     fetch_cmds = []
     events = []
+    commands, data = substitute_object_text(commands)
     for command in commands.split(','):
         words = command.split()
+        words = recover_object_text_from_list(words, data)
         name = words[0]
         args = words[1:]
 
@@ -437,6 +486,12 @@ def idl_set(idl, commands, step):
             s = txn.insert(idl.tables["simple"], new_uuid=args[0],
                            persist_uuid=True)
             s.i = int(args[1])
+        elif name == "add_op":
+            if len(args) != 1:
+                sys.stderr.write('"add_op" command requires 1 argument\n')
+                sys.stderr.write(f"args={args}\n")
+                sys.exit(1)
+            txn.add_op(ovs.json.from_string(args[0]))
         elif name == "delete":
             if len(args) != 1:
                 sys.stderr.write('"delete" command requires 1 argument\n')

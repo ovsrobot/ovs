@@ -1703,6 +1703,8 @@ class Transaction(object):
 
         self._inserted_rows = {}  # Map from UUID to _InsertedRow
 
+        self._operations = []
+
     def add_comment(self, comment):
         """Appends 'comment' to the comments that will be passed to the OVSDB
         server when this transaction is committed.  (The comment will be
@@ -1838,7 +1840,7 @@ class Transaction(object):
                                    "rows": [rows]})
 
         # Add updates.
-        any_updates = False
+        any_updates = bool(self._operations)
         for row in self._txn_rows.values():
             if row._changes is None:
                 if row._table.is_root:
@@ -1977,6 +1979,7 @@ class Transaction(object):
         if self.dry_run:
             operations.append({"op": "abort"})
 
+        operations += self._operations
         if not any_updates:
             self._status = Transaction.UNCHANGED
         else:
@@ -1990,6 +1993,19 @@ class Transaction(object):
 
         self.__disassemble()
         return self._status
+
+    def add_op(self, op):
+        """Add a raw OVSDB operation to the transaction
+
+        This can be useful for re-using the existing Idl connection to take
+        actions that are difficult or expensive to do with the Idl itself. e.g.
+        deleting a bunch of rows on the server that you don't want to store
+        in memory.
+
+        :param op: An "op" for an OVSDB "transact" request (rfc 7047 Sec 5.2)
+        :type op:   dict
+        """
+        self._operations.append(op)
 
     def commit_block(self):
         """Attempts to commit this transaction, blocking until the commit
