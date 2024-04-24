@@ -8,6 +8,8 @@
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
 
+#define TC_COOKIE_MAX_SIZE 16
+
 /* Action attributes */
 enum {
 	TCA_ACT_UNSPEC,

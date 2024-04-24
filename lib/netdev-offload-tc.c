@@ -1038,6 +1038,21 @@ parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
             nl_msg_end_nested(buf, offset);
         }
         break;
+        case TC_ACT_SAMPLE: {
+            size_t offset;
+
+            offset = nl_msg_start_nested(buf, OVS_ACTION_ATTR_SAMPLE);
+            nl_msg_put_u32(buf, OVS_SAMPLE_ATTR_PROBABILITY,
+                           UINT32_MAX / action->sample.rate);
+            nl_msg_put_u32(buf, OVS_SAMPLE_ATTR_PSAMPLE_GROUP,
+                           action->sample.group_id);
+            nl_msg_put_unspec(buf, OVS_SAMPLE_ATTR_PSAMPLE_COOKIE,
+                              &action->sample.cookie[0],
+                              action->sample.cookie_len);
+
+            nl_msg_end_nested(buf, offset);
+        }
+        break;
         }
 
         if (action->jump_action && action->type != TC_ACT_POLICE_MTU) {
@@ -2055,6 +2070,53 @@ parse_check_pkt_len_action(struct netdev *netdev, struct tc_flower *flower,
 }
 
 static int
+parse_sample_action(struct tc_flower *flower, const struct nlattr *nl_act,
+                    struct tc_action *action)
+{
+    /* Only offloadable if it's psample only. Use the policy to enforce it by
+     * making psample arguments mandatory and omitting actions. */
+    static const struct nl_policy ovs_sample_policy[] = {
+        [OVS_SAMPLE_ATTR_PROBABILITY] = { .type = NL_A_U32 },
+        [OVS_SAMPLE_ATTR_PSAMPLE_GROUP] = { .type = NL_A_U32, },
+        [OVS_SAMPLE_ATTR_PSAMPLE_COOKIE] = { .type = NL_A_UNSPEC,
+                                             .optional = true,
+                                             .max_len = TC_COOKIE_MAX_SIZE }
+    };
+    struct nlattr *a[ARRAY_SIZE(ovs_sample_policy)];
+    uint32_t probability;
+
+    if (!nl_parse_nested(nl_act, ovs_sample_policy, a, ARRAY_SIZE(a))) {
+        return EOPNOTSUPP;
+    }
+
+    action->type = TC_ACT_SAMPLE;
+    /* OVS probability and TC sampling rate have different semantics.
+     * The former represents the number of sampled packets out of UINT32_MAX
+     * while the other represents the ratio between observed and sampled
+     * packets. */
+    probability = nl_attr_get_u32(a[OVS_SAMPLE_ATTR_PROBABILITY]);
+    if (!probability) {
+        return EINVAL;
+    }
+    action->sample.rate = UINT32_MAX / probability;
+
+    action->sample.group_id =
+        nl_attr_get_u32(a[OVS_SAMPLE_ATTR_PSAMPLE_GROUP]);
+
+    if (a[OVS_SAMPLE_ATTR_PSAMPLE_COOKIE]) {
+        action->sample.cookie_len =
+            nl_attr_get_size(a[OVS_SAMPLE_ATTR_PSAMPLE_COOKIE]);
+
+        memcpy(&action->sample.cookie[0],
+               nl_attr_get(a[OVS_SAMPLE_ATTR_PSAMPLE_COOKIE]),
+               action->sample.cookie_len);
+    }
+
+    flower->action_count++;
+    return 0;
+}
+
+static int
 netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
                            struct offload_info *info,
                            const struct nlattr *actions, size_t actions_len,
@@ -2192,6 +2254,11 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
                                              && !more_actions,
                                              need_jump_update,
                                              recirc_act);
+            if (err) {
+                return err;
+            }
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_SAMPLE) {
+            err = parse_sample_action(flower, nla, action);
             if (err) {
                 return err;
             }

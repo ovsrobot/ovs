@@ -201,6 +201,7 @@ enum tc_action_type {
     TC_ACT_CT,
     TC_ACT_POLICE,
     TC_ACT_POLICE_MTU,
+    TC_ACT_SAMPLE,
 };
 
 enum nat_type {
@@ -296,6 +297,12 @@ struct tc_action {
             uint32_t result_jump;
             uint16_t mtu;
         } police;
+        struct {
+            uint32_t rate;
+            uint32_t group_id;
+            uint16_t cookie_len;
+            uint8_t cookie[TC_COOKIE_MAX_SIZE];
+        } sample;
     };
 
     enum tc_action_type type;

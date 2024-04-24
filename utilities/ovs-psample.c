@@ -35,7 +35,7 @@
 #include "openvswitch/uuid.h"
 #include "openvswitch/vlog.h"
 
-VLOG_DEFINE_THIS_MODULE(ovs_sample);
+VLOG_DEFINE_THIS_MODULE(ovs_psample);
 
 /* -g, --group: Group id filter option */
 static uint32_t group_id = 0;
@@ -206,7 +206,7 @@ parse_psample(struct ofpbuf *buf, struct sample *sample) {
     struct nlmsghdr *nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
     struct genlmsghdr *genl = ofpbuf_try_pull(&b, sizeof *genl);
     struct nlattr *attr;
-    const char *cookie;
+    const uint32_t *cookie;
 
     struct nlattr *a[ARRAY_SIZE(psample_packet_policy)];
     if (!nlmsg || !genl
@@ -227,8 +227,8 @@ parse_psample(struct ofpbuf *buf, struct sample *sample) {
     if (attr && nl_attr_get_size(attr) == 8) {
         cookie = nl_attr_get(attr);
         sample->has_cookie = true;
-        sample->obs_domain_id = (uint32_t) *(&cookie[0]);
-        sample->obs_point_id = (uint32_t) *(&cookie[4]);
+        sample->obs_domain_id = cookie[0];
+        sample->obs_point_id = cookie[1];
     }
     return 0;
 }
