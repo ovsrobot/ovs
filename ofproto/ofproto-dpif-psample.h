@@ -20,6 +20,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+struct dpif_flow_stats;
 struct dpif_psample;
 struct ovs_list;
 
@@ -30,5 +31,8 @@ struct dpif_psample* dpif_psample_ref(const struct dpif_psample *);
 bool dpif_psample_set_options(struct dpif_psample *, const struct ovs_list *);
 
 bool dpif_psample_get_group_id(struct dpif_psample *, uint32_t, uint32_t *);
+
+void dpif_psample_credit_stats(struct dpif_psample *, uint32_t,
+                               const struct dpif_flow_stats *);
 
 #endif // OFPROTO_DPIF_PSAMPLE_H

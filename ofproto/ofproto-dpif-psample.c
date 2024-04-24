@@ -17,6 +17,7 @@
 #include <config.h>
 #include "ofproto-dpif-psample.h"
 
+#include "dpif.h"
 #include "hash.h"
 #include "ofproto.h"
 #include "openvswitch/hmap.h"
@@ -30,6 +31,8 @@ static struct ovs_mutex mutex = OVS_MUTEX_INITIALIZER;
 struct psample_exporter {
     uint32_t group_id;
     uint32_t collector_set_id;
+    uint64_t n_packets;
+    uint64_t n_bytes;
 };
 
 struct psample_exporter_map_node {
@@ -144,6 +147,23 @@ dpif_psample_get_group_id(struct dpif_psample *ps, uint32_t collector_set_id,
     ovs_mutex_unlock(&mutex);
     return found;
 }
+
+void
+dpif_psample_credit_stats(struct dpif_psample *ps, uint32_t collector_set_id,
+                          const struct dpif_flow_stats *stats)
+OVS_EXCLUDED(mutex)
+{
+    struct psample_exporter_map_node *node;
+
+    ovs_mutex_lock(&mutex);
+    node = dpif_psample_find_exporter_node(ps, collector_set_id);
+    if (node) {
+        node->exporter.n_packets += stats->n_packets;
+        node->exporter.n_bytes += stats->n_bytes;
+    }
+    ovs_mutex_unlock(&mutex);
+}
+
 
 /* Creation and destruction. */
 struct dpif_psample *

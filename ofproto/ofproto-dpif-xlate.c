@@ -5989,6 +5989,15 @@ xlate_sample_action(struct xlate_ctx *ctx,
                        sizeof(os->obs_domain_id));
             ofpbuf_put(&psample_args->cookie, &os->obs_point_id,
                        sizeof(os->obs_point_id));
+
+            if (ctx->xin->xcache) {
+                struct xc_entry *entry;
+
+                entry = xlate_cache_add_entry(ctx->xin->xcache, XC_PSAMPLE);
+                entry->psample.psample = dpif_psample_ref(psample);
+                entry->psample.collector_set_id = os->collector_set_id;
+            }
+
         }
     }
 
