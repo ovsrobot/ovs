@@ -471,6 +471,7 @@ fi
 %{_bindir}/ovs-dpctl
 %{_bindir}/ovs-dpctl-top
 %{_bindir}/ovs-ofctl
+%{_bindir}/ovs-psample
 %{_bindir}/ovs-vsctl
 %{_bindir}/ovsdb-client
 %{_bindir}/ovsdb-tool
@@ -502,6 +503,7 @@ fi
 %{_mandir}/man8/ovs-kmod-ctl.8*
 %{_mandir}/man8/ovs-ofctl.8*
 %{_mandir}/man8/ovs-pki.8*
+%{_mandir}/man8/ovs-psample.8*
 %{_mandir}/man8/ovs-vsctl.8*
 %{_mandir}/man8/ovs-vswitchd.8*
 %{_mandir}/man8/ovs-parse-backtrace.8*

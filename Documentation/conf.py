@@ -134,6 +134,8 @@ _man_pages = [
      u'convert "tcpdump -xx" output to hex strings'),
     ('ovs-test.8',
      u'Check Linux drivers for performance, vlan and L3 tunneling problems'),
+    ('ovs-psample.8',
+     u'Print packets sampled by psample'),
     ('ovs-vlan-test.8',
      u'Check Linux drivers for problems with vlan traffic'),
     ('ovsdb-server.7',

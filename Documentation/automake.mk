@@ -165,6 +165,7 @@ RST_MANPAGES = \
 	ovs-l3ping.8.rst \
 	ovs-parse-backtrace.8.rst \
 	ovs-pki.8.rst \
+	ovs-psample.8.rst \
 	ovs-tcpdump.8.rst \
 	ovs-tcpundump.1.rst \
 	ovs-test.8.rst \

@@ -195,6 +195,7 @@ exit 0
 /usr/bin/ovs-pki
 /usr/bin/ovs-tcpdump
 /usr/bin/ovs-tcpundump
+/usr/bin/ovs-sample
 /usr/bin/ovs-vlan-test
 /usr/bin/ovs-vsctl
 /usr/bin/ovsdb-client
