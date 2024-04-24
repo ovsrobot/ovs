@@ -349,6 +349,8 @@ class ODPFlow(Flow):
             KVDecoders(
                 {
                     "sample": (lambda x: float(x.strip("%"))),
+                    "group_id": decode_int,
+                    "cookie": decode_default,
                     "actions": nested_kv_decoder(
                         KVDecoders(
                             decoders=_decoders,

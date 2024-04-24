@@ -227,12 +227,16 @@ format_odp_sample_action(struct ds *ds, const struct nlattr *attr,
 {
     static const struct nl_policy ovs_sample_policy[] = {
         [OVS_SAMPLE_ATTR_PROBABILITY] = { .type = NL_A_U32 },
-        [OVS_SAMPLE_ATTR_ACTIONS] = { .type = NL_A_NESTED }
+        [OVS_SAMPLE_ATTR_ACTIONS] = { .type = NL_A_NESTED,
+                                      .optional = true },
+        [OVS_SAMPLE_ATTR_PSAMPLE_GROUP] = { .type = NL_A_U32,
+                                            .optional = true },
+        [OVS_SAMPLE_ATTR_PSAMPLE_COOKIE] = { .type = NL_A_UNSPEC,
+                                             .optional = true }
     };
     struct nlattr *a[ARRAY_SIZE(ovs_sample_policy)];
+    const struct nlattr *nla;
     double percentage;
-    const struct nlattr *nla_acts;
-    int len;
 
     ds_put_cstr(ds, "sample");
 
@@ -244,13 +248,33 @@ format_odp_sample_action(struct ds *ds, const struct nlattr *attr,
     percentage = (100.0 * nl_attr_get_u32(a[OVS_SAMPLE_ATTR_PROBABILITY])) /
                         UINT32_MAX;
 
-    ds_put_format(ds, "(sample=%.1f%%,", percentage);
+    ds_put_format(ds, "(sample=%.1f%%", percentage);
 
-    ds_put_cstr(ds, "actions(");
-    nla_acts = nl_attr_get(a[OVS_SAMPLE_ATTR_ACTIONS]);
-    len = nl_attr_get_size(a[OVS_SAMPLE_ATTR_ACTIONS]);
-    format_odp_actions(ds, nla_acts, len, portno_names);
-    ds_put_format(ds, "))");
+    nla = a[OVS_SAMPLE_ATTR_PSAMPLE_GROUP];
+    if (nla) {
+        ds_put_format(ds, ",group_id=%d", nl_attr_get_u32(nla));
+
+        nla = a[OVS_SAMPLE_ATTR_PSAMPLE_COOKIE];
+
+        if (nla) {
+            size_t i;
+            const uint8_t *c = nl_attr_get(nla);
+            ds_put_cstr(ds, ",cookie=");
+            for (i = 0; i < nl_attr_get_size(nla); i++) {
+                ds_put_format(ds, "%02x", c[i]);
+            }
+        }
+    }
+
+    nla = a[OVS_SAMPLE_ATTR_ACTIONS];
+    if (nla) {
+        ds_put_cstr(ds, ",actions(");
+        format_odp_actions(ds, nl_attr_get(nla), nl_attr_get_size(nla),
+                           portno_names);
+        ds_put_format(ds, "))");
+    } else {
+        ds_put_format(ds, ")");
+    }
 }
 
 static void
@@ -1346,6 +1370,84 @@ format_odp_actions(struct ds *ds, const struct nlattr *actions,
     } else {
         ds_put_cstr(ds, "drop");
     }
+}
+
+static int
+parse_action_list(struct parse_odp_context *context, const char *s,
+                  struct ofpbuf *actions);
+static int
+parse_odp_sample_action(const char *s, struct parse_odp_context *context,
+                        struct ofpbuf *actions)
+{
+    double percentage;
+    uint32_t group_id;
+    size_t sample_ofs, actions_ofs;
+    double probability;
+    int parsed = 0;
+    int n;
+
+    if (!ovs_scan(s, "sample(sample=%lf%%,%n", &percentage, &parsed)) {
+        return -EINVAL;
+    }
+
+    probability = floor(UINT32_MAX * (percentage / 100.0) + .5);
+    sample_ofs = nl_msg_start_nested(actions, OVS_ACTION_ATTR_SAMPLE);
+    nl_msg_put_u32(actions, OVS_SAMPLE_ATTR_PROBABILITY,
+                   (probability <= 0 ? 0
+                    : probability >= UINT32_MAX ? UINT32_MAX
+                    : probability));
+
+    if (ovs_scan(s + parsed, "group_id=%"PRIu32"%n", &group_id, &n)) {
+        parsed += n;
+
+        nl_msg_put_u32(actions, OVS_SAMPLE_ATTR_PSAMPLE_GROUP, group_id);
+
+        if (ovs_scan(s + parsed, ",cookie=%n", &n)) {
+            struct ofpbuf buf;
+            size_t size;
+            char *end;
+
+            parsed += n;
+            ofpbuf_init(&buf, OVS_PSAMPLE_COOKIE_MAX_SIZE);
+
+            end = ofpbuf_put_hex(&buf, s + parsed, &size);
+            if (!end ||
+                size > OVS_PSAMPLE_COOKIE_MAX_SIZE ||
+               (end[0] != ')' && end[0] != ',')) {
+                ofpbuf_uninit(&buf);
+                return -EINVAL;
+            }
+
+            nl_msg_put_unspec(actions, OVS_SAMPLE_ATTR_PSAMPLE_COOKIE,
+                              buf.data, buf.size);
+
+            ofpbuf_uninit(&buf);
+            parsed = end - s;
+        }
+        if (s[parsed] == ')') {
+            nl_msg_end_nested(actions, sample_ofs);
+            return parsed + 1;
+        } else if (s[parsed] == ',') {
+            parsed += 1;
+        } else {
+            return -EINVAL;
+        }
+    }
+
+    if (ovs_scan(s + parsed, "actions(%n", &n)) {
+        parsed += n;
+        actions_ofs = nl_msg_start_nested(actions, OVS_SAMPLE_ATTR_ACTIONS);
+        int retval = parse_action_list(context, s + parsed, actions);
+        if (retval < 0) {
+            return retval;
+        }
+        parsed += retval;
+        nl_msg_end_nested(actions, actions_ofs);
+        nl_msg_end_nested(actions, sample_ofs);
+        return s[parsed + 1] == ')' ? parsed + 2 : -EINVAL;
+    }
+
+    return -EINVAL;
 }
 
 /* Separate out parse_odp_userspace_action() function. */
@@ -2561,34 +2663,8 @@ parse_odp_action__(struct parse_odp_context *context, const char *s,
     }
 
     {
-        double percentage;
-        int n = -1;
-
-        if (ovs_scan(s, "sample(sample=%lf%%,actions(%n", &percentage, &n)
-            && percentage >= 0. && percentage <= 100.0) {
-            size_t sample_ofs, actions_ofs;
-            double probability;
-
-            probability = floor(UINT32_MAX * (percentage / 100.0) + .5);
-            sample_ofs = nl_msg_start_nested(actions, OVS_ACTION_ATTR_SAMPLE);
-            nl_msg_put_u32(actions, OVS_SAMPLE_ATTR_PROBABILITY,
-                           (probability <= 0 ? 0
-                            : probability >= UINT32_MAX ? UINT32_MAX
-                            : probability));
-
-            actions_ofs = nl_msg_start_nested(actions,
-                                              OVS_SAMPLE_ATTR_ACTIONS);
-            int retval = parse_action_list(context, s + n, actions);
-            if (retval < 0) {
-                return retval;
-            }
-
-
-            n += retval;
-            nl_msg_end_nested(actions, actions_ofs);
-            nl_msg_end_nested(actions, sample_ofs);
-
-            return s[n + 1] == ')' ? n + 2 : -EINVAL;
+        if (ovs_scan(s, "sample(")) {
+            return parse_odp_sample_action(s, context, actions);
         }
     }
 

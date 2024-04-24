@@ -3064,6 +3064,8 @@ dpif_ipfix_read_sample_actions(const struct flow *flow,
                                     &sample_actions);
             break;
 
+        case OVS_SAMPLE_ATTR_PSAMPLE_GROUP:
+        case OVS_SAMPLE_ATTR_PSAMPLE_COOKIE:
         case OVS_SAMPLE_ATTR_UNSPEC:
         case __OVS_SAMPLE_ATTR_MAX:
         default:
