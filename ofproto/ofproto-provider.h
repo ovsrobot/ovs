@@ -1479,6 +1479,15 @@ struct ofproto_class {
         const struct ofproto_ipfix_flow_exporter_options
             *flow_exporters_options, size_t n_flow_exporters_options);
 
+    /* Configures psample on 'ofproto' according to the options in
+     * 'options' or turns off psample if 'options' is NULL.
+     *
+     * 'options' contains 'struct ofproto_psample_options'.
+     * EOPNOTSUPP as a return value indicates that 'ofproto' does not support
+     * psample, as does a null pointer. */
+    int (*set_psample)(struct ofproto *ofproto,
+                       const struct ovs_list *options);
+
     /* Gets IPFIX stats on 'ofproto' according to the exporter of birdge
      * IPFIX or flow-based IPFIX.
      *

@@ -1000,6 +1000,16 @@ ofproto_get_datapath_cap(const char *datapath_type, struct smap *dp_cap)
     }
 }
 
+int ofproto_set_psample(struct ofproto *ofproto,
+                        const struct ovs_list *pso)
+{
+    if (ofproto->ofproto_class->set_psample) {
+        return ofproto->ofproto_class->set_psample(ofproto, pso);
+    } else {
+        return (!pso || ovs_list_is_empty(pso)) ? 0: ENOTSUP;
+    }
+}
+
 /* Connection tracking configuration. */
 void
 ofproto_ct_set_zone_timeout_policy(const char *datapath_type, uint16_t zone_id,

@@ -50,6 +50,7 @@
 #include "ofproto-dpif-sflow.h"
 #include "ofproto-dpif-trace.h"
 #include "ofproto-dpif-upcall.h"
+#include "ofproto-dpif-psample.h"
 #include "ofproto-dpif-xlate.h"
 #include "ofproto-dpif-xlate-cache.h"
 #include "openvswitch/ofp-actions.h"
@@ -2527,6 +2528,37 @@ get_ipfix_stats(const struct ofproto *ofproto_,
     }
 
     return dpif_ipfix_get_stats(di, bridge_ipfix, replies);
+}
+
+static int
+set_psample(struct ofproto *ofproto_, const struct ovs_list *pso)
+{
+    struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
+    struct dpif_psample *ps = ofproto->psample;
+    bool changed = false;
+    bool has_options = pso && !ovs_list_is_empty(pso);
+
+    if(!ofproto->backer->rt_support.psample)
+        return ENOTSUP;
+
+    if (has_options && !ps) {
+        ps = ofproto->psample = dpif_psample_create();
+        changed = true;
+    }
+
+    if (ps) {
+        if (!has_options) {
+            dpif_psample_unref(ps);
+            ofproto->psample = NULL;
+            changed = true;
+        } else {
+            changed |= dpif_psample_set_options(ps, pso);
+        }
+    }
+
+    if (changed)
+        ofproto->backer->need_revalidate = REV_RECONFIGURE;
+    return 0;
 }
 
 static int
@@ -7099,6 +7131,7 @@ const struct ofproto_class ofproto_dpif_class = {
     get_netflow_ids,
     set_sflow,
     set_ipfix,
+    set_psample,
     get_ipfix_stats,
     set_cfm,
     cfm_status_changed,
