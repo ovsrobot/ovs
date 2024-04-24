@@ -933,3 +933,56 @@ OVS_WAIT_UNTIL([grep -q "Datapath does not support explicit drop action" ovs-vsw
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+
+AT_SETUP([offloads - sample action])
+OVS_TRAFFIC_VSWITCHD_START([], [], [-- set Open_vSwitch . other_config:hw-offload=true])
+OVS_CHECK_PSAMPLE()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24")
+
+# Choosing numbers whose hex representation is the same for big and little endian.
+AT_DATA([flows.txt], [dnl
+arp action=NORMAL
+in_port=ovs-p0 actions=sample(probability=65535,collector_set_id=1,obs_domain_id=1431655765,obs_point_id=1717986918),NORMAL
+in_port=ovs-p1 actions=sample(probability=65535,collector_set_id=2,obs_domain_id=2290649224,obs_point_id=2576980377),NORMAL
+])
+
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+AT_CHECK([ovs-vsctl --id=@br get Bridge br0 \
+                    -- create FLow_Sample_Collector_Set bridge=@br id=1 psample_group=10 \
+                    -- create FLow_Sample_Collector_Set bridge=@br id=2 psample_group=12],
+         [0], [ignore])
+
+OVS_DAEMONIZE([ovs-psample > psample.out], [psample.pid])
+on_exit 'kill `cat psample.pid`'
+sleep 1
+
+NS_CHECK_EXEC([at_ns0], [ping -q -c 10 -i 0.1 -W 2 10.1.1.2 | FORMAT_PING], [0], [dnl
+10 packets transmitted, 10 received, 0% packet loss, time 0ms
+])
+
+AT_CHECK([ovs-appctl dpctl/dump-flows | grep "eth_type(0x0800)" | DUMP_CLEAN_SORTED], [0], [dnl
+in_port(2),eth(macs),eth_type(0x0800),ipv4(frag=no), packets:9, bytes:756, used:0.001s, actions:sample(sample=100.0%,group_id=10,cookie=5555555566666666),3
+in_port(3),eth(macs),eth_type(0x0800),ipv4(frag=no), packets:9, bytes:756, used:0.001s, actions:sample(sample=100.0%,group_id=12,cookie=8888888899999999),2
+])
+
+AT_CHECK([ovs-appctl dpctl/dump-flows type=ovs | grep "eth_type(0x0800)" | DUMP_CLEAN_SORTED], [0], [])
+
+AT_CHECK([ovs-appctl dpctl/dump-flows type=tc,offloaded | grep "eth_type(0x0800)" | DUMP_CLEAN_SORTED], [0], [dnl
+in_port(2),eth(macs),eth_type(0x0800),ipv4(frag=no), packets:9, bytes:756, used:0.001s, actions:sample(sample=100.0%,group_id=10,cookie=5555555566666666),3
+in_port(3),eth(macs),eth_type(0x0800),ipv4(frag=no), packets:9, bytes:756, used:0.001s, actions:sample(sample=100.0%,group_id=12,cookie=8888888899999999),2
+])
+
+AT_CHECK([ovs-appctl upcall/show | grep -E "offloaded flows : [[1-9]]"], [0], [ignore])
+
+AT_CHECK([grep -E "group_id=0xa obs_domain=0x55555555,obs_point=0x66666666 .*icmp.*nw_src=10.1.1.1,nw_dst=10.1.1.2" psample.out >/dev/null])
+AT_CHECK([grep -E "group_id=0xc obs_domain=0x88888888,obs_point=0x99999999 .*icmp.*nw_src=10.1.1.2,nw_dst=10.1.1.1" psample.out >/dev/null])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
