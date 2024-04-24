@@ -288,6 +288,7 @@ static void bridge_configure_mac_table(struct bridge *);
 static void bridge_configure_mcast_snooping(struct bridge *);
 static void bridge_configure_sflow(struct bridge *, int *sflow_bridge_number);
 static void bridge_configure_ipfix(struct bridge *);
+static void bridge_configure_psample(struct bridge *);
 static void bridge_configure_spanning_tree(struct bridge *);
 static void bridge_configure_tables(struct bridge *);
 static void bridge_configure_dp_desc(struct bridge *);
@@ -989,6 +990,7 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
         bridge_configure_netflow(br);
         bridge_configure_sflow(br, &sflow_bridge_number);
         bridge_configure_ipfix(br);
+        bridge_configure_psample(br);
         bridge_configure_spanning_tree(br);
         bridge_configure_tables(br);
         bridge_configure_dp_desc(br);
@@ -1537,10 +1539,11 @@ ovsrec_ipfix_is_valid(const struct ovsrec_ipfix *ipfix)
     return ipfix && ipfix->n_targets > 0;
 }
 
-/* Returns whether a Flow_Sample_Collector_Set row is valid. */
+/* Returns whether a Flow_Sample_Collector_Set row constains valid IPFIX
+ * configuration. */
 static bool
-ovsrec_fscs_is_valid(const struct ovsrec_flow_sample_collector_set *fscs,
-                     const struct bridge *br)
+ovsrec_fscs_is_valid_ipfix(const struct ovsrec_flow_sample_collector_set *fscs,
+                           const struct bridge *br)
 {
     return ovsrec_ipfix_is_valid(fscs->ipfix) && fscs->bridge == br->cfg;
 }
@@ -1558,7 +1561,7 @@ bridge_configure_ipfix(struct bridge *br)
     const char *virtual_obs_id;
 
     OVSREC_FLOW_SAMPLE_COLLECTOR_SET_FOR_EACH(fe_cfg, idl) {
-        if (ovsrec_fscs_is_valid(fe_cfg, br)) {
+        if (ovsrec_fscs_is_valid_ipfix(fe_cfg, br)) {
             n_fe_opts++;
         }
     }
@@ -1621,7 +1624,7 @@ bridge_configure_ipfix(struct bridge *br)
         fe_opts = xcalloc(n_fe_opts, sizeof *fe_opts);
         opts = fe_opts;
         OVSREC_FLOW_SAMPLE_COLLECTOR_SET_FOR_EACH(fe_cfg, idl) {
-            if (ovsrec_fscs_is_valid(fe_cfg, br)) {
+            if (ovsrec_fscs_is_valid_ipfix(fe_cfg, br)) {
                 opts->collector_set_id = fe_cfg->id;
                 sset_init(&opts->targets);
                 sset_add_array(&opts->targets, fe_cfg->ipfix->targets,
@@ -1664,6 +1667,47 @@ bridge_configure_ipfix(struct bridge *br)
             opts++;
         }
         free(fe_opts);
+    }
+}
+
+/* Set psample configuration on 'br'. */
+static void
+bridge_configure_psample(struct bridge *br)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+    const struct ovsrec_flow_sample_collector_set *fscs;
+    struct ofproto_psample_options *ps_options;
+    struct ovs_list options_list;
+    int ret;
+
+    ovs_list_init(&options_list);
+
+    OVSREC_FLOW_SAMPLE_COLLECTOR_SET_FOR_EACH(fscs, idl) {
+        if (!fscs->psample_group || fscs->n_psample_group != 1
+            || fscs->bridge != br->cfg)
+            continue;
+
+        ps_options = xzalloc(sizeof *ps_options);
+        ps_options->collector_set_id = fscs->id;
+        ps_options->group_id = *fscs->psample_group;
+
+        ovs_list_insert(&options_list, &ps_options->list_node);
+    }
+
+    ret = ofproto_set_psample(br->ofproto, &options_list);
+
+    if (ret == ENOTSUP) {
+        if (!ovs_list_is_empty(&options_list)) {
+            VLOG_WARN_RL(&rl, "bridge %s: ignoring psample configuration: "
+                              "not supported by this datapath", br->name);
+        }
+    } else if (ret) {
+        VLOG_ERR_RL(&rl, "bridge %s: error configuring psample: %s",
+                     br->name, ovs_strerror(ret));
+    }
+
+    LIST_FOR_EACH_POP(ps_options, list_node, &options_list) {
+        free(ps_options);
     }
 }
 
