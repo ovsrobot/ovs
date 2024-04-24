@@ -1322,8 +1322,8 @@ netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
             continue;
         }
 
-        if (flower.act_cookie.len >= sizeof *ufid) {
-            *ufid = get_32aligned_u128(flower.act_cookie.data);
+        if (flower.flow_cookie.len >= sizeof *ufid) {
+            *ufid = get_32aligned_u128(flower.flow_cookie.data);
         } else if (!find_ufid(netdev, &id, ufid)) {
             continue;
         }
@@ -2537,8 +2537,8 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         return ENOSPC;
     }
 
-    flower.act_cookie.data = ufid;
-    flower.act_cookie.len = sizeof *ufid;
+    flower.flow_cookie.data = ufid;
+    flower.flow_cookie.len = sizeof *ufid;
 
     block_id = get_block_id_from_netdev(netdev);
     id = tc_make_tcf_id_chain(ifindex, block_id, chain, prio, hook);

@@ -2088,8 +2088,8 @@ nl_parse_single_action(struct nlattr *action, struct tc_flower *flower,
     }
 
     if (act_cookie) {
-        flower->act_cookie.data = nl_attr_get(act_cookie);
-        flower->act_cookie.len = nl_attr_get_size(act_cookie);
+        flower->flow_cookie.data = nl_attr_get(act_cookie);
+        flower->flow_cookie.len = nl_attr_get_size(act_cookie);
     }
 
     return nl_parse_action_stats(action_attrs[TCA_ACT_STATS],
@@ -3458,7 +3458,7 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
                                               TCA_EGRESS_MIRROR);
                     }
                 }
-                nl_msg_put_act_cookie(request, &flower->act_cookie);
+                nl_msg_put_act_cookie(request, &flower->flow_cookie);
                 nl_msg_put_act_flags(request);
                 nl_msg_end_nested(request, act_offset);
             }
@@ -3476,14 +3476,14 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
 
                 act_offset = nl_msg_start_nested(request, act_index++);
                 nl_msg_put_act_gact(request, action->chain);
-                nl_msg_put_act_cookie(request, &flower->act_cookie);
+                nl_msg_put_act_cookie(request, &flower->flow_cookie);
                 nl_msg_end_nested(request, act_offset);
             }
             break;
             case TC_ACT_CT: {
                 act_offset = nl_msg_start_nested(request, act_index++);
                 nl_msg_put_act_ct(request, action, action_pc);
-                nl_msg_put_act_cookie(request, &flower->act_cookie);
+                nl_msg_put_act_cookie(request, &flower->flow_cookie);
                 nl_msg_end_nested(request, act_offset);
             }
             break;
@@ -3501,7 +3501,7 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
                                               released)) {
                     return -EOPNOTSUPP;
                 }
-                nl_msg_put_act_cookie(request, &flower->act_cookie);
+                nl_msg_put_act_cookie(request, &flower->flow_cookie);
                 nl_msg_put_act_flags(request);
                 nl_msg_end_nested(request, act_offset);
             }
@@ -3515,7 +3515,7 @@ nl_msg_put_flower_acts(struct ofpbuf *request, struct tc_flower *flower)
     if (!flower->action_count) {
         act_offset = nl_msg_start_nested(request, act_index++);
         nl_msg_put_act_gact(request, 0);
-        nl_msg_put_act_cookie(request, &flower->act_cookie);
+        nl_msg_put_act_cookie(request, &flower->flow_cookie);
         nl_msg_put_act_flags(request);
         nl_msg_end_nested(request, act_offset);
     }

@@ -386,7 +386,7 @@ struct tc_flower {
 
     bool tunnel;
 
-    struct tc_cookie act_cookie;
+    struct tc_cookie flow_cookie; /* Cookie to help identify the flow. */
 
     bool needs_full_ip_proto_mask;
 
