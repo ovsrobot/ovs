@@ -20,9 +20,12 @@
 #include "dpif.h"
 #include "hash.h"
 #include "ofproto.h"
+#include "ofproto-dpif.h"
+#include "openvswitch/dynamic-string.h"
 #include "openvswitch/hmap.h"
 #include "openvswitch/thread.h"
 #include "openvswitch/vlog.h"
+#include "unixctl.h"
 
 VLOG_DEFINE_THIS_MODULE(psample);
 
@@ -203,5 +206,61 @@ dpif_psample_unref(struct dpif_psample *ps) OVS_EXCLUDED(mutex)
 {
     if (ps && ovs_refcount_unref_relaxed(&ps->ref_cnt) == 1) {
         dpif_psample_destroy(ps);
+    }
+}
+
+/* Unix commands. */
+static void
+psample_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                     const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    struct psample_exporter_map_node *node;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    const struct ofproto_dpif *ofproto;
+    bool first = true;
+
+    ofproto = ofproto_dpif_lookup_by_name(argv[1]);
+    if (!ofproto) {
+        unixctl_command_reply_error(conn, "no such bridge");
+        return;
+    }
+
+    if (!ofproto->psample) {
+        unixctl_command_reply_error(conn, "no psample exporters configured");
+        return;
+    }
+
+    ds_put_format(&ds, "Psample statistics for bridge \"%s\":\n", argv[1]);
+
+    ovs_mutex_lock(&mutex);
+    HMAP_FOR_EACH (node, node, &ofproto->psample->exporters_map) {
+        if (!first) {
+            ds_put_cstr(&ds, "\n");
+        } else {
+            first = false;
+        }
+
+        ds_put_format(&ds, "- Collector Set ID: %"PRIu32"\n",
+                    node->exporter.collector_set_id);
+        ds_put_format(&ds, "  Psample Group ID: %"PRIu32"\n",
+                    node->exporter.group_id);
+        ds_put_format(&ds, "  Total number of bytes: %"PRIu64"\n",
+                    node->exporter.n_bytes);
+        ds_put_format(&ds, "  Total number of packets: %"PRIu64"\n",
+                    node->exporter.n_packets);
+    }
+    ovs_mutex_unlock(&mutex);
+
+    unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
+}
+
+void dpif_psample_init(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    if (ovsthread_once_start(&once)) {
+        unixctl_command_register("psample/show", "bridge", 1, 1,
+                                 psample_unixctl_show, NULL);
+        ovsthread_once_done(&once);
     }
 }

@@ -34,5 +34,6 @@ bool dpif_psample_get_group_id(struct dpif_psample *, uint32_t, uint32_t *);
 
 void dpif_psample_credit_stats(struct dpif_psample *, uint32_t,
                                const struct dpif_flow_stats *);
+void dpif_psample_init(void);
 
 #endif // OFPROTO_DPIF_PSAMPLE_H
