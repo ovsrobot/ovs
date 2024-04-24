@@ -18,6 +18,7 @@
 #define OFPROTO_DPIF_PSAMPLE_H 1
 
 #include <stdbool.h>
+#include <stdint.h>
 
 struct dpif_psample;
 struct ovs_list;
@@ -27,5 +28,7 @@ void dpif_psample_unref(struct dpif_psample *);
 struct dpif_psample* dpif_psample_ref(const struct dpif_psample *);
 
 bool dpif_psample_set_options(struct dpif_psample *, const struct ovs_list *);
+
+bool dpif_psample_get_group_id(struct dpif_psample *, uint32_t, uint32_t *);
 
 #endif // OFPROTO_DPIF_PSAMPLE_H

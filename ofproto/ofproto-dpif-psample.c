@@ -125,6 +125,26 @@ OVS_EXCLUDED(mutex)
     return changed;
 }
 
+/* Returns the group_id of the exporter with the given collector_set_id, if it
+ * exists. */
+bool
+dpif_psample_get_group_id(struct dpif_psample *ps, uint32_t collector_set_id,
+                          uint32_t *group_id) OVS_EXCLUDED(mutex)
+{
+
+    struct psample_exporter_map_node *node;
+    bool found = false;
+
+    ovs_mutex_lock(&mutex);
+    node = dpif_psample_find_exporter_node(ps, collector_set_id);
+    if (node) {
+        found = true;
+        *group_id = node->exporter.group_id;
+    }
+    ovs_mutex_unlock(&mutex);
+    return found;
+}
+
 /* Creation and destruction. */
 struct dpif_psample *
 dpif_psample_create(void)
