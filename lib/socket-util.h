@@ -28,6 +28,8 @@
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 
+#define LISTEN_BACKLOG 64
+
 struct ds;
 
 int set_nonblocking(int fd);

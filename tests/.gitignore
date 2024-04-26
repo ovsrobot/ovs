@@ -66,6 +66,7 @@
 /test-timeval
 /test-type-props
 /test-unix-socket
+/test-unix-socket-listen-backlog
 /test-util
 /test-uuid
 /test-uuidset

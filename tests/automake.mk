@@ -493,7 +493,8 @@ tests_ovstest_SOURCES = \
 
 if !WIN32
 tests_ovstest_SOURCES += \
-	tests/test-unix-socket.c
+	tests/test-unix-socket.c \
+	tests/test-unix-socket-listen-backlog.c
 endif
 
 if LINUX

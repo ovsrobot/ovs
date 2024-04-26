@@ -363,7 +363,10 @@ make_unix_socket(int style, bool nonblock,
         error = make_sockaddr_un(connect_path, &un, &un_len, &dirfd, linkname);
         if (!error
             && connect(fd, (struct sockaddr*) &un, un_len)
-            && errno != EINPROGRESS) {
+            /* POSIX connect() returns EINPROGRESS for all non-blocking
+             * sockets. Linux connect() returns either EAGAIN - for AF_UNIX
+             * sockets - or EINPROGRESS - for other families. Handle both. */
+            && errno != EINPROGRESS && errno != EAGAIN) {
             error = errno;
         }
         free_sockaddr_un(dirfd, linkname);
@@ -376,9 +379,6 @@ make_unix_socket(int style, bool nonblock,
     return fd;
 
 error:
-    if (error == EAGAIN) {
-        error = EPROTO;
-    }
     if (bind_path) {
         fatal_signal_unlink_file_now(bind_path);
     }
