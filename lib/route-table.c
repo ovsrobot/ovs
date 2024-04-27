@@ -232,6 +232,7 @@ route_table_parse(struct ofpbuf *buf, struct route_table_msg *change)
         [RTA_OIF] = { .type = NL_A_U32, .optional = true },
         [RTA_GATEWAY] = { .type = NL_A_U32, .optional = true },
         [RTA_MARK] = { .type = NL_A_U32, .optional = true },
+        [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
         [RTA_PREFSRC] = { .type = NL_A_U32, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
     };
@@ -241,6 +242,7 @@ route_table_parse(struct ofpbuf *buf, struct route_table_msg *change)
         [RTA_OIF] = { .type = NL_A_U32, .optional = true },
         [RTA_MARK] = { .type = NL_A_U32, .optional = true },
         [RTA_GATEWAY] = { .type = NL_A_IPV6, .optional = true },
+        [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
         [RTA_PREFSRC] = { .type = NL_A_IPV6, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
     };
@@ -323,6 +325,7 @@ route_table_parse(struct ofpbuf *buf, struct route_table_msg *change)
         } else if (ipv4) {
             in6_addr_set_mapped_ipv4(&change->rd.rta_dst, 0);
         }
+
         if (attrs[RTA_PREFSRC]) {
             if (ipv4) {
                 ovs_be32 prefsrc;
@@ -333,6 +336,29 @@ route_table_parse(struct ofpbuf *buf, struct route_table_msg *change)
                     nl_attr_get_in6_addr(attrs[RTA_PREFSRC]);
             }
         }
+
+        if (attrs[RTA_VIA]) {
+                const struct rtvia *via;
+
+                via = nl_attr_get(attrs[RTA_VIA]);
+                switch (via->rtvia_family) {
+                case AF_INET:
+                    ovs_be32 gw;
+                    gw = get_unaligned_be32(ALIGNED_CAST(ovs_be32 *,
+                                                         via->rtvia_addr));
+                    in6_addr_set_mapped_ipv4(&change->rd.rta_gw, gw);
+                    break;
+                case AF_INET6:
+                    change->rd.rta_gw = *(ALIGNED_CAST(struct in6_addr *,
+                                                       via->rtvia_addr));
+                    break;
+                default:
+                    VLOG_WARN("Unknown address family %d\n",
+                              via->rtvia_family);
+                    return 0;
+                }
+        }
+
         if (attrs[RTA_GATEWAY]) {
             if (ipv4) {
                 ovs_be32 gw;
