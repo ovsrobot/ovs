@@ -7,6 +7,12 @@ Post-v3.3.0
    - The primary development branch has been renamed from 'master' to 'main'.
      The OVS tree remains hosted on GitHub.
      https://github.com/openvswitch/ovs.git
+   - ovs-vsctl:
+     * Added a new filter column in the Mirror table which can be used to
+       apply filters to mirror ports.
+   - ovs-tcpdump:
+     * Added command line parameter --filter to enable filtering the flows
+       that are captured by tcpdump.
 
 
 v3.3.0 - 16 Feb 2024
