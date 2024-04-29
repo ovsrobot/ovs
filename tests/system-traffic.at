@@ -8977,3 +8977,65 @@ OVS_WAIT_UNTIL([cat p2.pcap | grep -E "0x0050: *0000 *0000 *5002 *2000 *b85e *00
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+
+AT_SETUP([datapath - IP mod_nw_src/set_field on fragments])
+AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+OVS_TRAFFIC_VSWITCHD_START()
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24", 36:b1:ee:7c:01:03)
+ADD_VETH(p1, at_ns1, br0, "10.1.1.2/24", 36:b1:ee:7c:01:02)
+
+AT_DATA([flows.txt], [dnl
+  in_port=ovs-p0,ip,nw_src=10.1.1.1 actions=mod_nw_src=11.1.1.1,ovs-p1
+  in_port=ovs-p0,ipv6,ipv6_src=fc00::1 actions=set_field:fc00::100->ipv6_src,ovs-p1
+])
+
+AT_CHECK([ovs-ofctl del-flows br0])
+AT_CHECK([ovs-ofctl -Oopenflow13 add-flows br0 flows.txt])
+
+NETNS_DAEMONIZE([at_ns1], [tcpdump -l -nn -xx -U -i p1 > p1.out],
+  [tcpdump.pid])
+sleep 1
+
+dnl We send each packet multiple times, ones for learning which will flow
+dnl through the used datapath for learning, and the others will go through the
+dnl actuall datapath.
+for i in 1 2 3 4 5; do
+  NS_CHECK_EXEC([at_ns0], [$PYTHON3 $srcdir/sendpkt.py p0 \
+    36 b1 ee 7c 01 02 36 b1 ee 7c 01 03 08 00 45 00 00 26 00 01 20 00 40 11 \
+    44 c2 0a 01 01 01 0a 01 01 02 0b c4 08 84 00 26 e9 64 01 02 03 04 05 06 \
+    07 08 09 0a > /dev/null])
+done
+
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0000:  *36b1 *ee7c *0102 *36b1 *ee7c *0103 *0800 *4500" p1.out) -eq 5])
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0010:  *0026 *0001 *2000 *4011 *43c2 *0b01 *0101 *0a01" p1.out) -eq 5])
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0020:  *0102 *0bc4 *0884 *0026 *e864 *0102 *0304 *0506" p1.out) -eq 5])
+
+dnl Repeat similar test with IPv6.
+for i in 1 2 3 4 5; do
+  NS_CHECK_EXEC([at_ns0], [$PYTHON3 $srcdir/sendpkt.py p0 \
+    36 b1 ee 7c 01 02 36 b1 ee 7c 01 03 86 dd 60 00 00 00 00 18 2c 40 fc 00 \
+    00 00 00 00 00 00 00 00 00 00 00 00 00 01 fc 00 00 00 00 00 00 00 00 00 \
+    00 00 00 00 00 02 11 00 00 01 23 16 ab 36 0b c4 08 84 00 26 07 65 01 02 \
+    03 04 05 06 07 08 > /dev/null])
+done
+
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0000:  *36b1 *ee7c *0102 *36b1 *ee7c *0103 *86dd *6000" p1.out) -eq 5])
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0010:  *0000 *0018 *2c40 *fc00 *0000 *0000 *0000 *0000" p1.out) -eq 5])
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0020:  *0000 *0000 *0100 *fc00 *0000 *0000 *0000 *0000" p1.out) -eq 5])
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0030:  *0000 *0000 *0002 *1100 *0001 *2316 *ab36 *0bc4" p1.out) -eq 5])
+OVS_WAIT_UNTIL([test $(grep -c -E \
+  "0x0040:  *0884 *0026 *0666 *0102 *0304 *0506 *0708" p1.out) -eq 5])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
