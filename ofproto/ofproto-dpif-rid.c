@@ -234,6 +234,7 @@ recirc_alloc_id__(const struct frozen_state *state, uint32_t hash)
 {
     ovs_assert(state->action_set_len <= state->ofpacts_len);
 
+    struct recirc_id_node *hash_recirc_node = NULL;
     struct recirc_id_node *node = xzalloc(sizeof *node);
 
     node->hash = hash;
@@ -241,6 +242,12 @@ recirc_alloc_id__(const struct frozen_state *state, uint32_t hash)
     frozen_state_clone(CONST_CAST(struct frozen_state *, &node->state), state);
 
     ovs_mutex_lock(&mutex);
+    hash_recirc_node = recirc_ref_equal(&node->state, node->hash);
+    if (hash_recirc_node) {
+        ovs_mutex_unlock(&mutex);
+        recirc_id_node_free(node);
+        return hash_recirc_node;
+    }
     for (;;) {
         /* Claim the next ID.  The ID space should be sparse enough for the
            allocation to succeed at the first try.  We do skip the first
