@@ -114,7 +114,7 @@ jhash_bytes(const void *p_, size_t n, uint32_t basis)
         uint32_t tmp[3];
 
         tmp[0] = tmp[1] = tmp[2] = 0;
-        memcpy(tmp, p, n);
+        memcpy(tmp, (const uint8_t *) p, n);
         a += tmp[0];
         b += tmp[1];
         c += tmp[2];

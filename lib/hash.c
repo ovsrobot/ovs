@@ -43,7 +43,7 @@ hash_bytes(const void *p_, size_t n, uint32_t basis)
     if (n) {
         uint32_t tmp = 0;
 
-        memcpy(&tmp, p, n);
+        memcpy(&tmp, (const uint8_t *) p, n);
         hash = hash_add(hash, tmp);
     }
 
