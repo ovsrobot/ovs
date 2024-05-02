@@ -262,8 +262,8 @@ FdrReasonStrings = [
     "Kill all flows condition detected",
     "Mask too wide - need narrower match",
     "No matching ofproto rules",
-    "Too expensive to revalidate",
     "Purged with user action",
+    "Too expensive to revalidate",
     "Flow state inconsistent after updates",
     "Flow translation error",
 ]
