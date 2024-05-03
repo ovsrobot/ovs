@@ -2011,6 +2011,10 @@ packet_tcp_complete_csum(struct dp_packet *p, bool inner)
         tcp_sz = dp_packet_l4_size(p);
     }
 
+    if (!tcp || !ip_hdr) {
+        return;
+    }
+
     if (!inner && dp_packet_hwol_is_outer_ipv6(p)) {
         is_v4 = false;
     } else if (!inner && dp_packet_hwol_is_outer_ipv4(p)) {
@@ -2058,7 +2062,7 @@ packet_udp_complete_csum(struct dp_packet *p, bool inner)
     }
 
     /* Skip csum calculation if the udp_csum is zero. */
-    if (!udp->udp_csum) {
+    if (!udp || !ip_hdr || !udp->udp_csum) {
         return;
     }
 
@@ -2107,6 +2111,10 @@ packet_sctp_complete_csum(struct dp_packet *p, bool inner)
     } else {
         sh = dp_packet_l4(p);
         tp_len = dp_packet_l4_size(p);
+    }
+
+    if (!sh) {
+        return;
     }
 
     put_16aligned_be32(&sh->sctp_csum, 0);
