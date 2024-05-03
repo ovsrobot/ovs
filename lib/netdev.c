@@ -1032,6 +1032,13 @@ netdev_push_header(const struct netdev *netdev,
                                  netdev_get_name(netdev));
                     continue;
                 }
+                if (packet->l3_ofs != UINT16_MAX) {
+                    packet->inner_l3_ofs = packet->l3_ofs + data->header_len;
+                }
+                if (packet->l4_ofs != UINT16_MAX) {
+                    packet->inner_l4_ofs = packet->l4_ofs + data->header_len;
+                }
+
                 dp_packet_ol_send_prepare(packet, 0);
             }
             netdev->netdev_class->push_header(netdev, packet, data);
