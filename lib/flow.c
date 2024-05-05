@@ -785,7 +785,7 @@ dump_invalid_packet(struct dp_packet *packet, const char *reason)
  *      present and the packet has at least the content used for the fields
  *      of interest for the flow, otherwise UINT16_MAX.
  */
-void
+bool
 miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
 {
     /* Add code to this function (or its callees) to extract new fields. */
@@ -803,6 +803,7 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
     uint8_t nw_frag, nw_tos, nw_ttl, nw_proto;
     uint8_t *ct_nw_proto_p = NULL;
     ovs_be16 ct_tp_src = 0, ct_tp_dst = 0;
+    bool rv = false;
 
     /* Metadata. */
     if (flow_tnl_dst_is_set(&md->tunnel)) {
@@ -1027,6 +1028,7 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                                     sizeof(uint64_t));
             }
         }
+        rv = true;
         goto out;
     }
 
@@ -1166,8 +1168,10 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
             }
         }
     }
+    rv = true;
  out:
     dst->map = mf.map;
+    return rv;
 }
 
 static ovs_be16
