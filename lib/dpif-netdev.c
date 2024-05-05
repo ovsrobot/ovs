@@ -8588,7 +8588,12 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
             }
         }
 
-        miniflow_extract(packet, &key->mf);
+        if (OVS_UNLIKELY(!miniflow_extract(packet, &key->mf))) {
+            dp_packet_delete(packet);
+            COVERAGE_INC(datapath_drop_rx_invalid_packet);
+            continue;
+        }
+
         key->len = 0; /* Not computed yet. */
         key->hash =
                 (md_is_valid == false)

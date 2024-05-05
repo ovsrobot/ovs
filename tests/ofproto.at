@@ -6627,11 +6627,11 @@ AT_CHECK([ovs-ofctl del-flows br0])
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 
 dnl send a proto 0 packet to try and poison the DP flow path
-AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:0b,dst=50:54:00:00:00:0c),eth_type(0x86dd),ipv6(src=2001:db8::1,dst=111:db8::3,proto=0,tclass=0,hlimit=64,frag=no)'])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 '50540000000c50540000000b86dd600000000024004020010db800000000000000000000000101110db80000000000000000000000033a000502000001008f00321b0000000103000000ff020000000000000000000000010003'])
 
 AT_CHECK([ovs-appctl dpctl/dump-flows], [0], [dnl
 flow-dump from the main thread:
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::3,proto=0,hlimit=0,frag=no), packets:0, bytes:0, used:never, actions:userspace(pid=0,controller(reason=2,dont_send=0,continuation=0,recirc_id=1,rule_cookie=0,controller_id=0,max_len=65535))
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::3,proto=58,hlimit=64,frag=no), packets:0, bytes:0, used:never, actions:set(ipv6(hlimit=63)),2
 ])
 
 dnl Send ICMP for mod nw_src and mod nw_dst
@@ -6655,8 +6655,8 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:
 
 AT_CHECK([ovs-appctl dpctl/dump-flows | sort], [0], [dnl
 flow-dump from the main thread:
-recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::3,proto=0,hlimit=0,frag=no), packets:0, bytes:0, used:never, actions:userspace(pid=0,controller(reason=2,dont_send=0,continuation=0,recirc_id=1,rule_cookie=0,controller_id=0,max_len=65535))
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::3,proto=1,hlimit=64,frag=no), packets:0, bytes:0, used:never, actions:set(ipv6(hlimit=63)),2
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::3,proto=58,hlimit=64,frag=no), packets:0, bytes:0, used:never, actions:set(ipv6(hlimit=63)),2
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::4,proto=1,hlimit=64,frag=no), packets:0, bytes:0, used:never, actions:set(ipv6(hlimit=8)),2
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::5,proto=1,tclass=0/0x3,frag=no), packets:0, bytes:0, used:never, actions:set(ipv6(tclass=0x2/0x3)),2
 recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x86dd),ipv6(dst=111:db8::6,proto=1,tclass=0/0xfc,frag=no), packets:0, bytes:0, used:never, actions:set(ipv6(tclass=0x40/0xfc)),2
