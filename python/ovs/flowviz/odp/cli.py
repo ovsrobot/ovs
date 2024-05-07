@@ -14,6 +14,7 @@
 
 import click
 from ovs.flowviz.main import maincli
+from ovs.flowviz.odp.html import HTMLTreeProcessor
 from ovs.flowviz.odp.tree import ConsoleTreeProcessor
 from ovs.flowviz.process import (
     ConsoleProcessor,
@@ -82,3 +83,12 @@ def tree(opts, heat_map):
     processor = ConsoleTreeProcessor(opts)
     processor.process()
     processor.print(heat_map)
+
+
+@datapath.command()
+@click.pass_obj
+def html(opts):
+    """Print the flows in an HTML list sorted by recirc_id."""
+    processor = HTMLTreeProcessor(opts)
+    processor.process()
+    processor.print()
