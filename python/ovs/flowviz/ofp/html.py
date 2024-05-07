@@ -24,6 +24,7 @@ class HTMLProcessor(OpenFlowFactory, FileProcessor):
 
     def __init__(self, opts):
         super().__init__(opts)
+        self.formatter = HTMLFormatter(self.opts)
         self.data = dict()
 
     def start_file(self, name, filename):
@@ -39,21 +40,38 @@ class HTMLProcessor(OpenFlowFactory, FileProcessor):
         self.tables[table].append(flow)
 
     def html(self):
-        html_obj = ""
+        bg = (
+            self.formatter.style.get("background").color
+            if self.formatter.style.get("background")
+            else "white"
+        )
+        fg = (
+            self.formatter.style.get("default").color
+            if self.formatter.style.get("default")
+            else "black"
+        )
+        html_obj = """
+        <style>
+        body {{
+            background-color: {bg};
+            color: {fg};
+        }}
+        </style>""".format(
+            bg=bg, fg=fg
+        )
         for name, tables in self.data.items():
             name = name.replace(" ", "_")
             html_obj += "<h1>{}</h1>".format(name)
             html_obj += "<div id=flow_list>"
             for table, flows in tables.items():
-                formatter = HTMLFormatter(self.opts)
 
                 def anchor(x):
                     return "#table_%s_%s" % (name, x.value["table"])
 
-                formatter.style.set_value_style(
+                self.formatter.style.set_value_style(
                     "resubmit",
                     HTMLStyle(
-                        formatter.style.get("value.resubmit"),
+                        self.formatter.style.get("value.resubmit").color,
                         anchor_gen=anchor,
                     ),
                 )
@@ -71,7 +89,7 @@ class HTMLProcessor(OpenFlowFactory, FileProcessor):
                         if result:
                             highlighted = result.kv
                     buf = HTMLBuffer()
-                    formatter.format_flow(buf, flow, highlighted)
+                    self.formatter.format_flow(buf, flow, highlighted)
                     html_obj += buf.text
                     html_obj += "</li>"
                 html_obj += "</ul>"

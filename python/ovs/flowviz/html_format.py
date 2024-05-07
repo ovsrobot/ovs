@@ -48,7 +48,9 @@ class HTMLBuffer(FlowBuffer):
         style = ' style="color:{}"'.format(color) if color else ""
         self._text += "<span{}>".format(style)
         if href:
-            self._text += "<a href={}>".format(href)
+            self._text += "<a href={} {}> ".format(
+                href, 'style="color:{}"'.format(color) if color else ""
+            )
         self._text += string
         if href:
             self._text += "</a>"
