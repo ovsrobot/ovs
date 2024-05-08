@@ -1,3 +1,4 @@
+
 /* Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016 Nicira, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -270,18 +271,20 @@ enum ukey_state {
 };
 #define N_UKEY_STATES (UKEY_DELETED + 1)
 
+/* Ukey delete reasons used by USDT probes.  Please keep in sync with the
+ * definition in utilities/usdt-scripts/flow_reval_monitor.py.  */
 enum flow_del_reason {
-    FDR_NONE = 0,           /* No deletion reason for the flow. */
-    FDR_AVOID_CACHING,      /* Flow deleted to avoid caching. */
-    FDR_BAD_ODP_FIT,        /* The flow had a bad ODP flow fit. */
-    FDR_FLOW_IDLE,          /* The flow went unused and was deleted. */
-    FDR_FLOW_LIMIT,         /* All flows being killed. */
-    FDR_FLOW_WILDCARDED,    /* The flow needed a narrower wildcard mask. */
-    FDR_NO_OFPROTO,         /* The flow didn't have an associated ofproto. */
-    FDR_PURGE,              /* User action caused flows to be killed. */
-    FDR_TOO_EXPENSIVE,      /* The flow was too expensive to revalidate. */
-    FDR_UPDATE_FAIL,        /* Flow state transition was unexpected. */
-    FDR_XLATION_ERROR,      /* There was an error translating the flow. */
+    FDR_NONE = 0,           /* No delete reason specified. */
+    FDR_AVOID_CACHING,      /* Cache avoidance flag set. */
+    FDR_BAD_ODP_FIT,        /* Bad ODP flow fit. */
+    FDR_FLOW_IDLE,          /* Flow idle timeout. */
+    FDR_FLOW_LIMIT,         /* Kill all flows condition reached. */
+    FDR_FLOW_WILDCARDED,    /* Flow needs a narrower wildcard mask. */
+    FDR_NO_OFPROTO,         /* Flow lacks ofproto dpif association. */
+    FDR_PURGE,              /* User requested flow deletion. */
+    FDR_TOO_EXPENSIVE,      /* Too expensive to revalidate. */
+    FDR_UPDATE_FAIL,        /* Datapath update failed. */
+    FDR_XLATION_ERROR,      /* Flow translation error. */
 };
 
 /* 'udpif_key's are responsible for tracking the little bit of state udpif
