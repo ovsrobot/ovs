@@ -109,6 +109,39 @@ User: 2001:db8:beef::14/128 MARK 14 dev br0 GW 2001:db8:cafe::1 SRC 2001:db8:caf
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([appctl - route/add with ipv4 via ipv6])
+AT_KEYWORDS([ovs_router])
+OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=dummy])
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 192.168.9.2/24], [0], [OK
+])
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 192.168.9.3/24], [0], [OK
+])
+
+# defualt pick the first IP, 192.168.9.2, as src
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.10/32 br0 fe80::920a:84ff:beef:9510], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.11/32 br0 fe80::920a:84ff:beef:9511 src=192.168.9.2], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.12/32 br0 fe80::920a:84ff:beef:9512 src=192.168.9.3], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.13/32 br0 fe80::920a:84ff:beef:9513 pkt_mark=13 src=192.168.9.3], [0], [OK
+])
+
+AT_CHECK([ovs-appctl ovs/route/show | grep User | grep beef | sort], [0], [dnl
+User: 192.168.9.10/32 dev br0 GW fe80::920a:84ff:beef:9510 SRC 192.168.9.2
+User: 192.168.9.11/32 dev br0 GW fe80::920a:84ff:beef:9511 SRC 192.168.9.2
+User: 192.168.9.12/32 dev br0 GW fe80::920a:84ff:beef:9512 SRC 192.168.9.3
+User: 192.168.9.13/32 MARK 13 dev br0 GW fe80::920a:84ff:beef:9513 SRC 192.168.9.3
+])
+
+# DST and SRC must be in the same subnet domain
+AT_CHECK([ovs-appctl ovs/route/add 192.168.10.12/32 br0 fe80::920a:84ff:beef:9512 src=192.168.9.3], [2], [], [dnl
+Error while inserting route.
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([appctl - route/lookup])
 AT_KEYWORDS([ovs_router])
 OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=dummy])

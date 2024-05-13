@@ -415,7 +415,6 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
     unsigned int plen;
     ovs_be32 src = 0;
     ovs_be32 gw = 0;
-    bool is_ipv6;
     ovs_be32 ip;
     int err;
     int i;
@@ -423,9 +422,8 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
     if (scan_ipv4_route(argv[1], &ip, &plen)) {
         in6_addr_set_mapped_ipv4(&ip6, ip);
         plen += 96;
-        is_ipv6 = false;
     } else if (scan_ipv6_route(argv[1], &ip6, &plen)) {
-        is_ipv6 = true;
+        ;
     } else {
         unixctl_command_reply_error(conn,
                                     "Invalid 'ip/plen' parameter");
@@ -438,21 +436,21 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
             continue;
         }
 
-        if (is_ipv6) {
-            if (ovs_scan(argv[i], "src="IPV6_SCAN_FMT, src6_s) &&
-                ipv6_parse(src6_s, &src6)) {
-                continue;
-            }
-            if (ipv6_parse(argv[i], &gw6)) {
-                continue;
-            }
-        } else {
-            if (ovs_scan(argv[i], "src="IP_SCAN_FMT, IP_SCAN_ARGS(&src))) {
-                continue;
-            }
-            if (ip_parse(argv[i], &gw)) {
-                continue;
-            }
+        if (ovs_scan(argv[i], "src="IPV6_SCAN_FMT, src6_s) &&
+            ipv6_parse(src6_s, &src6)) {
+            continue;
+        }
+
+        if (ipv6_parse(argv[i], &gw6)) {
+            continue;
+        }
+
+        if (ovs_scan(argv[i], "src="IP_SCAN_FMT, IP_SCAN_ARGS(&src))) {
+            continue;
+        }
+
+        if (ip_parse(argv[i], &gw)) {
+            continue;
         }
 
         unixctl_command_reply_error(conn,
