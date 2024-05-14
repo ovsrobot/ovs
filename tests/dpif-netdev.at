@@ -1091,3 +1091,29 @@ OVS_VSWITCHD_STOP(["dnl
 /Error: unknown miniflow extract implementation superstudy./d
 /Error: invalid study_pkt_cnt value: -pmd./d"])
 AT_CLEANUP
+
+AT_SETUP([datapath - Actions Autovalidator Fuzzy])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+AT_SKIP_IF([! $PYTHON3 $srcdir/genpkts.py 2000 > packets])
+
+OVS_VSWITCHD_START(add-port br0 p0 -- set Interface p0 type=dummy \
+                   -- add-port br0 p1 -- set Interface p1 type=dummy)
+
+AT_CHECK([ovs-appctl odp-execute/action-impl-set autovalidator], [0], [dnl
+Action implementation set to autovalidator.
+])
+
+AT_DATA([flows.txt], [dnl
+  in_port=p0,ip,actions=mod_nw_src=10.1.1.1,p1
+  in_port=p0,ipv6,actions=set_field:fc00::100->ipv6_src,p1
+])
+
+AT_CHECK([ovs-ofctl del-flows br0])
+AT_CHECK([ovs-ofctl -Oopenflow13 add-flows br0 flows.txt])
+
+cat packets | while read line; do
+  AT_CHECK([ovs-appctl netdev-dummy/receive p0 $line], [0], [ignore])
+done
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
