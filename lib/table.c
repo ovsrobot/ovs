@@ -523,7 +523,7 @@ table_print_json__(const struct table *table, const struct table_style *style,
     }
     if (table->timestamp) {
         json_object_put_nocopy(
-            json, "time",
+            json, xstrdup("time"),
             json_string_create_nocopy(table_format_timestamp__()));
     }
 
