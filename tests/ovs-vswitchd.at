@@ -281,3 +281,16 @@ AT_CHECK_UNQUOTED([ovs-appctl --format json --pretty version], [0], [dnl
   "reply-format": "plain"}])
 
 AT_CLEANUP
+
+AT_SETUP([ovs-vswitchd list-commands])
+OVS_VSWITCHD_START
+
+AT_CHECK([ovs-appctl list-commands], [0], [ignore])
+AT_CHECK([ovs-appctl --format json list-commands], [0], [stdout])
+# Check that ovs-appctl prints a single line without a trailing newline.
+AT_CHECK([wc -l stdout], [0], [0 stdout
+])
+# Check that ovs-appctl prints text which roughly looks like a JSON object.
+AT_CHECK([grep -E '^\{"autoattach/show-isid":.*\}$' stdout], [0], [ignore])
+
+AT_CLEANUP
