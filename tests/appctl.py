@@ -37,7 +37,7 @@ def connect_to_target(target):
     return client
 
 
-def reply_to_string(reply, fmt=ovs.util.OutputFormat.TEXT):
+def reply_to_string(reply, fmt=ovs.util.OutputFormat.TEXT, fmt_flags={}):
     if fmt == ovs.util.OutputFormat.TEXT:
         body = str(reply)
 
@@ -46,7 +46,7 @@ def reply_to_string(reply, fmt=ovs.util.OutputFormat.TEXT):
 
         return body
     else:
-        return ovs.json.to_string(reply)
+        return ovs.json.to_string(reply, **fmt_flags)
 
 
 def main():
@@ -65,13 +65,20 @@ def main():
                         help="Output format.", default="text",
                         choices=[fmt.name.lower()
                                  for fmt in ovs.util.OutputFormat])
+    parser.add_argument("--pretty", action="store_true",
+                        help="Format the output in a more readable fashion."
+                             " Requires: --format json.")
     args = parser.parse_args()
+
+    if args.format != ovs.util.OutputFormat.JSON.name.lower() and args.pretty:
+        ovs.util.ovs_fatal(0, "--pretty is supported with --format json only")
 
     signal_alarm(int(args.timeout) if args.timeout else None)
 
     ovs.vlog.Vlog.init()
     target = args.target
     format = ovs.util.OutputFormat[args.format.upper()]
+    format_flags = dict(pretty=True) if args.pretty else {}
     client = connect_to_target(target)
 
     if format != ovs.util.OutputFormat.TEXT:
@@ -96,7 +103,7 @@ def main():
         sys.exit(2)
     else:
         assert result is not None
-        sys.stdout.write(reply_to_string(result, format))
+        sys.stdout.write(reply_to_string(result, format, format_flags))
 
 
 if __name__ == '__main__':
