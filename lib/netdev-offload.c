@@ -638,7 +638,14 @@ netdev_ports_flow_dump_create(const char *dpif_type, int *ports, bool terse)
         }
     }
 
-    dumps = count ? xzalloc(sizeof *dumps * count) : NULL;
+    if (count == 0) {
+        *ports = 0;
+        ovs_rwlock_unlock(&port_to_netdev_rwlock);
+
+        return NULL;
+    }
+
+    dumps = xzalloc(sizeof *dumps * count);
 
     HMAP_FOR_EACH (data, portno_node, &port_to_netdev) {
         if (netdev_get_dpif_type(data->netdev) == dpif_type) {
