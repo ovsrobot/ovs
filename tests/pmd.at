@@ -112,6 +112,29 @@ dummy@ovs-dummy: hit:0 missed:0
     p0 1/1: (dummy-pmd: n_rxq=1, n_txq=1, numa_id=0)
 ])
 
+AT_CHECK([ovs-appctl --format json --pretty dpif/show], [0], [dnl
+[{
+  "dummy@ovs-dummy": {
+    "bridges": {
+      "br0": {
+        "br0": {
+          "config": {
+            },
+          "ofport": "65534",
+          "port_no": "100",
+          "type": "dummy-internal"},
+        "p0": {
+          "config": {
+            "n_rxq": "1",
+            "n_txq": "1",
+            "numa_id": "0"},
+          "ofport": "1",
+          "port_no": "1",
+          "type": "dummy-pmd"}}},
+    "stats": {
+      "n_hit": "0",
+      "n_missed": "0"}}}]])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 

@@ -5,6 +5,7 @@ Post-v3.3.0
        or 'text' (by default).
      * Added new option [--pretty] to print JSON output in a readable fashion.
      * 'list-commands' now supports output in JSON format.
+     * 'dpif/show' now supports output in JSON format.
    - Python:
      * Added support for different output formats like 'json' to appctl.py and
        Python's unixctl classes.
