@@ -3,6 +3,7 @@ Post-v3.3.0
    - ovs-appctl:
      * Added new option [-f|--format] to choose the output format, e.g. 'json'
        or 'text' (by default).
+     * Added new option [--pretty] to print JSON output in a readable fashion.
    - Python:
      * Added support for different output formats like 'json' to appctl.py and
        Python's unixctl classes.
