@@ -711,7 +711,7 @@ inet_open_passive(int style, const char *target, int default_port,
     struct sockaddr_storage ss;
     int fd = 0, error;
     unsigned int yes = 1;
-    bool dns_failure;
+    bool dns_failure = false;
 
     if (!inet_parse_passive(target, default_port, &ss, true, &dns_failure)) {
         if (dns_failure) {
