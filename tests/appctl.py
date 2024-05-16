@@ -37,6 +37,18 @@ def connect_to_target(target):
     return client
 
 
+def reply_to_string(reply, fmt=ovs.util.OutputFormat.TEXT):
+    if fmt == ovs.util.OutputFormat.TEXT:
+        body = str(reply)
+
+        if body and not body.endswith("\n"):
+            body += "\n"
+
+        return body
+    else:
+        return ovs.json.to_string(reply)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Python Implementation of"
                                      " ovs-appctl.")
@@ -49,30 +61,42 @@ def main():
                         help="Arguments to the command.")
     parser.add_argument("-T", "--timeout", metavar="SECS",
                         help="wait at most SECS seconds for a response")
+    parser.add_argument("-f", "--format", metavar="FMT",
+                        help="Output format.", default="text",
+                        choices=[fmt.name.lower()
+                                 for fmt in ovs.util.OutputFormat])
     args = parser.parse_args()
 
     signal_alarm(int(args.timeout) if args.timeout else None)
 
     ovs.vlog.Vlog.init()
     target = args.target
+    format = ovs.util.OutputFormat[args.format.upper()]
     client = connect_to_target(target)
+
+    if format != ovs.util.OutputFormat.TEXT:
+        err_no, error, _ = client.transact(
+            "set-options", ["--format", args.format])
+
+        if err_no:
+            ovs.util.ovs_fatal(err_no, "%s: transaction error" % target)
+        elif error is not None:
+            sys.stderr.write(reply_to_string(error))
+            ovs.util.ovs_error(0, "%s: server returned an error" % target)
+            sys.exit(2)
+
     err_no, error, result = client.transact(args.command, args.argv)
     client.close()
 
     if err_no:
         ovs.util.ovs_fatal(err_no, "%s: transaction error" % target)
     elif error is not None:
-        sys.stderr.write(error)
-        if error and not error.endswith("\n"):
-            sys.stderr.write("\n")
-
+        sys.stderr.write(reply_to_string(error))
         ovs.util.ovs_error(0, "%s: server returned an error" % target)
         sys.exit(2)
     else:
         assert result is not None
-        sys.stdout.write(result)
-        if result and not result.endswith("\n"):
-            sys.stdout.write("\n")
+        sys.stdout.write(reply_to_string(result, format))
 
 
 if __name__ == '__main__':
