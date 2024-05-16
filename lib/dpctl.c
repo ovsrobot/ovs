@@ -1366,12 +1366,11 @@ dpctl_del_flow_dpif(struct dpif *dpif, const char *key_s,
     struct ofpbuf mask; /* To be ignored. */
 
     ovs_u128 ufid;
-    bool ufid_generated;
-    bool ufid_present;
+    bool ufid_generated = false;
+    bool ufid_present = false;
     struct simap port_names;
     int n, error;
 
-    ufid_present = false;
     n = odp_ufid_from_string(key_s, &ufid);
     if (n < 0) {
         dpctl_error(dpctl_p, -n, "parsing flow ufid");
