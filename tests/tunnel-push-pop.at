@@ -1252,3 +1252,54 @@ hash(l4(0)),recirc(0x2)
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([tunnel_push_pop - VXLAN port padding])
+
+dnl Create bridge that has a MAC address.
+OVS_VSWITCHD_START([set bridge br0 datapath_type=dummy dnl
+                    -- set Interface br0 other-config:hwaddr=aa:55:aa:55:00:00])
+AT_CHECK([ovs-appctl vlog/set dpif_netdev:dbg])
+AT_CHECK([ovs-vsctl add-port br0 p8 dnl
+                    -- set Interface p8 type=dummy ofport_request=8])
+
+dnl Create another bridge.
+AT_CHECK([ovs-vsctl add-br ovs-tun0 -- set bridge ovs-tun0 datapath_type=dummy])
+
+dnl Add VXLAN port to this bridge.
+AT_CHECK([ovs-vsctl add-port ovs-tun0 tun0 dnl
+            -- set int tun0 type=vxlan \
+            options:remote_ip=10.0.0.11 options:key=123 ofport_request=2\
+            -- add-port ovs-tun0 p7 dnl
+            -- set interface p7 type=dummy ofport_request=7])
+
+dnl Set IP address and route for br0.
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 10.0.0.2/24], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 10.0.0.11/24 br0], [0], [OK
+])
+
+dnl Send an ARP reply to port p8 on br0, so that packets will be forwarded
+dnl to learned port.
+AT_CHECK([ovs-ofctl add-flow br0 action=normal])
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p8 'in_port(8),dnl
+   eth(src=aa:55:aa:66:00:00,dst=ff:ff:ff:ff:ff:ff),eth_type(0x0806),dnl
+   arp(sip=10.0.0.11,tip=10.0.0.2,op=2,sha=aa:55:aa:66:00:00,tha=00:00:00:00:00:00)'])
+
+AT_CHECK([ovs-vsctl -- set Interface p8 options:tx_pcap=p8.pcap])
+packet=50540000000a505400000009123
+dnl Source port is based on a packet hash, so it may differ depending on the
+dnl compiler flags and CPU type.  Masked with '....'.
+encap=aa55aa660000aa55aa55000008004500003200004000401134060a0000020a00000b....12bf001e0000080000000004c400
+
+dnl Output to tunnel from a ovs-tun0 internal port.
+dnl Checking that the packet arrived and it was correctly encapsulated.
+AT_CHECK([ovs-ofctl add-flow ovs-tun0 "in_port=LOCAL,actions=output:2"])
+AT_CHECK([ovs-appctl netdev-dummy/receive ovs-tun0 "${packet}4"])
+OVS_WAIT_UNTIL([test `ovs-pcap p8.pcap | grep -E "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" | wc -l` -ge 1])
+Sending again to exercise the non-miss upcall path.
+AT_CHECK([ovs-appctl netdev-dummy/receive ovs-tun0 "${packet}4"])
+OVS_WAIT_UNTIL([test `ovs-pcap p8.pcap | grep -E "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" | wc -l` -ge 2])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP

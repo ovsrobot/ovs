@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <linux/if_ether.h>
 
 #ifndef _WIN32
 #include <ifaddrs.h>
@@ -1007,8 +1008,16 @@ netdev_push_header(const struct netdev *netdev,
 {
     struct dp_packet *packet;
     size_t i, size = dp_packet_batch_size(batch);
+    uint8_t pad = 0;
 
     DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
+        /* adjust the packet to minimum ethernet frame len of 60 bytes */
+        if (OVS_UNLIKELY (data->tnl_type == OVS_VPORT_TYPE_VXLAN
+                    && dp_packet_is_eth (packet)
+                    && dp_packet_size (packet) < ETH_ZLEN)) {
+            pad = ETH_ZLEN - dp_packet_size (packet);
+            dp_packet_put_zeros (packet, pad);
+        }
         if (OVS_UNLIKELY(data->tnl_type != OVS_VPORT_TYPE_GENEVE &&
                          data->tnl_type != OVS_VPORT_TYPE_VXLAN &&
                          dp_packet_hwol_is_tso(packet))) {
