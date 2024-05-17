@@ -863,3 +863,60 @@ AT_CHECK([ovs-vsctl del-port br10 p1], [], [stdout], [stderr])
 OVS_DPDK_STOP_VSWITCHD
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl Add, ping and capture on a standard DPDK PHY port to check the padding.
+AT_SETUP([OVS-DPDK - DPDK port padding])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_PHY_SKIP()
+OVS_DPDK_START()
+
+dnl Add userspace bridge and attach it to OVS
+AT_CHECK([ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev])
+
+dnl create empty pcap files
+AT_CHECK([tcpdump -n -w /tmp/rx.pcap -c 1], [], [stdout], [stderr])
+AT_CHECK([tcpdump -n -w /tmp/tx.pcap -c 1], [], [stdout], [stderr])
+
+dnl Add libpcap-based DPDK phy port
+AT_CHECK([ovs-vsctl add-port br0 p8 -- set Interface p8 type=dpdk ofport_request=8 options:dpdk-devargs=$(cat DPDK_PCI_ADDR) options:dpdk-devargs="eth_pcap0,rx_pcap=/tmp/rx.pcap,tx_pcap=/tmp/tx.pcap"], [], [stdout], [stderr])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+dnl Set up namespace
+AT_CHECK([ip netns add at_ns0], [])
+on_exit 'ip netns del at_ns0'
+
+dnl Create a0 and afdp-a0 peer ports
+AT_CHECK([ip link add a0 type veth peer name afdp-a0], [])
+AT_CHECK([ip link set dev afdp-a0 up], [])
+
+dnl Add a0 to namespace
+AT_CHECK([ip link set a0 netns at_ns0], [])
+
+dnl Add afdp_a0 to namespace
+AT_CHECK([ovs-vsctl add-port br0 afdp-a0], [])
+AT_CHECK([ovs-vsctl show], [], [stdout])
+
+AT_CHECK([ovs-ofctl add-flow br0 'table=0,in_port=1 action=output:8'], [])
+AT_CHECK([ovs-ofctl dump-flows br0], [], [stdout])
+
+AT_CHECK([ip netns exec at_ns0 ip addr add 10.1.1.1/24 dev a0], [])
+AT_CHECK([ip netns exec at_ns0 ip link set a0 up], [])
+dnl ping unknown IP for ARP request of 42 bytes.
+AT_CHECK([ip netns exec at_ns0 ping 10.1.1.2 -c 1 2>&1 || true], [], [stdout], [stderr])
+
+dnl Output and capture on DPDK phy port from a afdp_a0 peer port.
+dnl Checking that the packet transmitted from DPDK phy port is correctly padded.
+OVS_WAIT_UNTIL([test `ovs-pcap /tmp/tx.pcap | grep -E "000000000000000000000000000000000000" | wc -l` -ge 3])
+
+dnl Clean up
+AT_CHECK([ovs-vsctl del-port br0 p8], [])
+AT_CHECK([ovs-vsctl del-port br0 afdp-a0], [])
+AT_CHECK([ovs-vsctl del-br br0], [])
+AT_CHECK([ip netns del at_ns0], [])
+AT_CHECK([rm -f /tmp/rx.pcap], [])
+AT_CHECK([rm -f /tmp/tx.pcap], [])
+dnl OVS_DPDK_STOP_VSWITCHD
+AT_CLEANUP
+dnl --------------------------------------------------------------------------

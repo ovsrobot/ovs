@@ -26,6 +26,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <linux/if.h>
+#include <linux/if_ether.h>
 
 #include <rte_bus.h>
 #include <rte_config.h>
@@ -2755,6 +2756,8 @@ netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
 {
     uint32_t nb_tx = 0;
     uint16_t nb_tx_prep = cnt;
+    uint8_t pad = 0;
+    char *data = NULL;
 
     nb_tx_prep = rte_eth_tx_prepare(dev->port_id, qid, pkts, cnt);
     if (nb_tx_prep != cnt) {
@@ -2765,6 +2768,24 @@ netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
                               "First invalid packet", pkts[nb_tx_prep]);
     }
 
+    while (nb_tx != nb_tx_prep) {
+        /* adjust the packet to minimum ethernet frame len of 60 bytes */
+        if (OVS_UNLIKELY (rte_pktmbuf_pkt_len (pkts[nb_tx]) < ETH_ZLEN)) {
+            pad = ETH_ZLEN - rte_pktmbuf_pkt_len (pkts[nb_tx]);
+            data = rte_pktmbuf_append (pkts[nb_tx], pad);
+            if (OVS_UNLIKELY (data == NULL)) {
+                VLOG_WARN_RL(&rl, "Mbuf appending failed to pad %d bytes", pad);
+                /* This packet has error, can't send it, so just free it */
+                rte_pktmbuf_free(pkts[nb_tx]);
+                nb_tx_prep -= 1;
+                continue;
+            }
+            memset (data, 0, pad);
+        }
+        nb_tx += 1;
+    }
+
+    nb_tx = 0;
     while (nb_tx != nb_tx_prep) {
         uint32_t ret;
 
