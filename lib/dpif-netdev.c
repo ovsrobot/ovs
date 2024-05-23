@@ -8255,12 +8255,13 @@ static inline void
 packet_batch_per_flow_init(struct packet_batch_per_flow *batch,
                            struct dp_netdev_flow *flow)
 {
-    flow->batch = batch;
-
-    batch->flow = flow;
-    dp_packet_batch_init(&batch->array);
-    batch->byte_count = 0;
-    batch->tcp_flags = 0;
+    if (dp_netdev_flow_ref(flow)) {
+        flow->batch = batch;
+        batch->flow = flow;
+        dp_packet_batch_init(&batch->array);
+        batch->byte_count = 0;
+        batch->tcp_flags = 0;
+    }
 }
 
 static inline void
@@ -8322,9 +8323,11 @@ packet_enqueue_to_flow_map(struct dp_packet *packet,
                            size_t index)
 {
     struct dp_packet_flow_map *map = &flow_map[index];
-    map->flow = flow;
-    map->packet = packet;
-    map->tcp_flags = tcp_flags;
+    if (dp_netdev_flow_ref(flow)) {
+        map->flow = flow;
+        map->packet = packet;
+        map->tcp_flags = tcp_flags;
+    }
 }
 
 /* SMC lookup function for a batch of packets.
@@ -8888,6 +8891,7 @@ dp_netdev_input__(struct dp_netdev_pmd_thread *pmd,
         }
         dp_netdev_queue_batches(map->packet, map->flow, map->tcp_flags,
                                 batches, &n_batches);
+        dp_netdev_flow_unref(map->flow);
      }
 
     /* All the flow batches need to be reset before any call to
@@ -8905,6 +8909,7 @@ dp_netdev_input__(struct dp_netdev_pmd_thread *pmd,
 
     for (i = 0; i < n_batches; i++) {
         packet_batch_per_flow_execute(&batches[i], pmd);
+        dp_netdev_flow_unref(batches[i].flow);
     }
 }
 
