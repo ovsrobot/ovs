@@ -57,6 +57,7 @@ COVERAGE_DEFINE(dumped_inconsistent_flow);
 COVERAGE_DEFINE(dumped_new_flow);
 COVERAGE_DEFINE(handler_duplicate_upcall);
 COVERAGE_DEFINE(revalidate_missed_dp_flow);
+COVERAGE_DEFINE(revalidate_missed_dp_flow_del);
 COVERAGE_DEFINE(ukey_dp_change);
 COVERAGE_DEFINE(ukey_invalid_stat_reset);
 COVERAGE_DEFINE(ukey_replace_contention);
@@ -278,6 +279,7 @@ enum flow_del_reason {
     FDR_BAD_ODP_FIT,        /* Bad ODP flow fit. */
     FDR_FLOW_IDLE,          /* Flow idle timeout. */
     FDR_FLOW_LIMIT,         /* Kill all flows condition reached. */
+    FDR_FLOW_STALE,         /* Flow stale detected. */
     FDR_FLOW_WILDCARDED,    /* Flow needs a narrower wildcard mask. */
     FDR_NO_OFPROTO,         /* Bridge not found. */
     FDR_PURGE,              /* User requested flow deletion. */
@@ -2557,6 +2559,10 @@ push_dp_ops(struct udpif *udpif, struct ukey_op *ops, size_t n_ops)
 
         if (op->dop.type != DPIF_OP_FLOW_DEL) {
             /* Only deleted flows need their stats pushed. */
+            if (op->dop.error) {
+                VLOG_WARN_RL(&rl, "push_dp_ops: error %d in op type %d, ukey "
+                             "%p", op->dop.error, op->dop.type, op->ukey);
+            }
             continue;
         }
 
@@ -3027,6 +3033,15 @@ revalidator_sweep__(struct revalidator *revalidator, bool purge)
                     del_reason = purge ? FDR_PURGE : FDR_UPDATE_FAIL;
                 } else if (!seq_mismatch) {
                     result = UKEY_KEEP;
+                } else if (!ukey->stats.used &&
+                           udpif_flow_time_delta(udpif, ukey) * 1000 >
+                           ofproto_max_idle) {
+                    COVERAGE_INC(revalidate_missed_dp_flow_del);
+                    VLOG_WARN_RL(&rl, "revalidator_sweep__: Remove stale ukey "
+                                 "%p delta %llus", ukey,
+                                 udpif_flow_time_delta(udpif, ukey));
+                    result = UKEY_DELETE;
+                    del_reason = FDR_FLOW_STALE;
                 } else {
                     struct dpif_flow_stats stats;
                     COVERAGE_INC(revalidate_missed_dp_flow);
