@@ -2439,7 +2439,9 @@ netdev_linux_read_definitions(struct netdev_linux *netdev,
     int error = 0;
 
     error = netdev_linux_read_stringset_info(netdev, &len);
-    if (error || !len) {
+    if (!len) {
+        return -EOPNOTSUPP;
+    } else if (error) {
         return error;
     }
     strings = xzalloc(sizeof *strings + len * ETH_GSTRING_LEN);
