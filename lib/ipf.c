@@ -1013,7 +1013,7 @@ ipf_purge_list_check(struct ipf *ipf, struct ipf_list *ipf_list,
 }
 
 /* Does the packet batch management and common accounting work associated
- * with 'ipf_send_completed_frags()' and 'ipf_send_expired_frags()'. */
+ * with 'ipf_send_completed_frags()'. */
 static bool
 ipf_send_frags_in_list(struct ipf *ipf, struct ipf_list *ipf_list,
                        struct dp_packet_batch *pb,
@@ -1078,8 +1078,7 @@ ipf_send_completed_frags(struct ipf *ipf, struct dp_packet_batch *pb,
  * a packet batch to be processed by the calling application, typically
  * conntrack. Also cleans up the list context when it is empty.*/
 static void
-ipf_send_expired_frags(struct ipf *ipf, struct dp_packet_batch *pb,
-                       long long now, bool v6)
+ipf_clean_expired_frags(struct ipf *ipf, long long now)
 {
     enum {
         /* Very conservative, due to DOS probability. */
@@ -1101,8 +1100,7 @@ ipf_send_expired_frags(struct ipf *ipf, struct dp_packet_batch *pb,
             break;
         }
 
-        if (ipf_send_frags_in_list(ipf, ipf_list, pb, IPF_FRAG_EXPIRY_LIST,
-                                   v6, now)) {
+        if (ipf_purge_list_check(ipf, ipf_list, now)) {
             ipf_expiry_list_clean(&ipf->frag_lists, ipf_list);
             lists_removed++;
         } else {
@@ -1253,7 +1251,7 @@ ipf_postprocess_conntrack(struct ipf *ipf, struct dp_packet_batch *pb,
         bool v6 = dl_type == htons(ETH_TYPE_IPV6);
         ipf_post_execute_reass_pkts(ipf, pb, v6);
         ipf_send_completed_frags(ipf, pb, now, v6);
-        ipf_send_expired_frags(ipf, pb, now, v6);
+        ipf_clean_expired_frags(ipf, now);
     }
 }
 
