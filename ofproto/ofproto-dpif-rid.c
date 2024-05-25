@@ -277,11 +277,42 @@ recirc_find_id(const struct frozen_state *target)
 uint32_t
 recirc_alloc_id_ctx(const struct frozen_state *state)
 {
+    ovs_assert(state->action_set_len <= state->ofpacts_len);
+    struct recirc_id_node *node = NULL;
+    struct recirc_id_node *find_node = NULL;
     uint32_t hash = frozen_state_hash(state);
-    struct recirc_id_node *node = recirc_ref_equal(state, hash);
-    if (!node) {
-        node = recirc_alloc_id__(state, hash);
+
+    node = xzalloc(sizeof *node);
+    node->hash = hash;
+    ovs_refcount_init(&node->refcount);
+    frozen_state_clone(CONST_CAST(struct frozen_state *, &node->state), state);
+
+    ovs_mutex_lock(&mutex);
+    find_node = recirc_ref_equal(state, hash);
+    if (find_node) {
+        ovs_mutex_unlock(&mutex);
+        recirc_id_node_free(node);
+        return find_node->id;
     }
+
+    for (;;) {
+        /* Claim the next ID.  The ID space should be sparse enough for the
+           allocation to succeed at the first try.  We do skip the first
+           RECIRC_POOL_STATIC_IDS IDs on the later rounds, though, as some of
+           the initial allocations may be for long term uses (like bonds). */
+        node->id = next_id++;
+        if (OVS_UNLIKELY(!node->id)) {
+            next_id = RECIRC_POOL_STATIC_IDS + 1;
+            node->id = next_id++;
+        }
+        /* Find if the id is free. */
+        if (OVS_LIKELY(!recirc_find__(node->id))) {
+            break;
+        }
+    }
+    cmap_insert(&id_map, &node->id_node, node->id);
+    cmap_insert(&metadata_map, &node->metadata_node, node->hash);
+    ovs_mutex_unlock(&mutex);
     return node->id;
 }
 
