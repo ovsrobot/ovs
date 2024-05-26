@@ -36,6 +36,9 @@ static PLIST_ENTRY ovsConntrackTable;
 static OVS_CT_THREAD_CTX ctThreadCtx;
 static PNDIS_RW_LOCK_EX *ovsCtBucketLock = NULL;
 static NDIS_SPIN_LOCK ovsCtZoneLock;
+static BOOLEAN ovsCtZoneLock_release = FALSE;
+static BOOLEAN OvsNatInitDone = FALSE;
+static BOOLEAN OvsConntrackCleanThreadExist = FALSE;
 static POVS_CT_ZONE_INFO zoneInfo = NULL;
 extern POVS_SWITCH_CONTEXT gOvsSwitchContext;
 static ULONG ctTotalEntries;
@@ -95,32 +98,44 @@ OvsInitConntrack(POVS_SWITCH_CONTEXT context)
         goto freeBucketLock;
     }
 
-    ObReferenceObjectByHandle(threadHandle, SYNCHRONIZE, NULL, KernelMode,
-                              &ctThreadCtx.threadObject, NULL);
+    OvsConntrackCleanThreadExist = FALSE;
+    ctThreadCtx.exit = 0;
+    status = ObReferenceObjectByHandle(threadHandle, SYNCHRONIZE, NULL, KernelMode,
+                                       &ctThreadCtx.threadObject, NULL);
     ZwClose(threadHandle);
     threadHandle = NULL;
+    if (!NT_SUCCESS(status)) {
+        ctThreadCtx.exit = 1;
+        KeSetEvent(&ctThreadCtx.event, 0, FALSE);
+        KeWaitForSingleObject(ctThreadCtx.threadObject, Executive,
+                               KernelMode, FALSE, NULL);
+        goto cleanupConntrack;
+    }
 
     zoneInfo = OvsAllocateMemoryWithTag(sizeof(OVS_CT_ZONE_INFO) *
                                         CT_MAX_ZONE, OVS_CT_POOL_TAG);
     if (zoneInfo == NULL) {
         status = STATUS_INSUFFICIENT_RESOURCES;
-        goto freeBucketLock;
+        goto cleanupConntrack;
     }
 
     NdisAllocateSpinLock(&ovsCtZoneLock);
+    ovsCtZoneLock_release = FALSE;
     defaultCtLimit = CT_MAX_ENTRIES;
     for (UINT32 i = 0; i < CT_MAX_ZONE; i++) {
         zoneInfo[i].entries = 0;
         zoneInfo[i].limit = defaultCtLimit;
     }
 
-    status = OvsNatInit();
-
-    if (status != STATUS_SUCCESS) {
-        OvsCleanupConntrack();
+    if (OvsNatInitDone == FALSE) {
+        status = OvsNatInit();
+        if (status != STATUS_SUCCESS) {
+            goto cleanupConntrack;
+        }
+        OvsNatInitDone = TRUE;
     }
+    OvsConntrackCleanThreadExist = TRUE;
     return STATUS_SUCCESS;
-
 freeBucketLock:
     for (UINT32 i = 0; i < numBucketLocks; i++) {
         if (ovsCtBucketLock[i] != NULL) {
@@ -132,6 +147,9 @@ freeBucketLock:
 freeTable:
     OvsFreeMemoryWithTag(ovsConntrackTable, OVS_CT_POOL_TAG);
     ovsConntrackTable = NULL;
+cleanupConntrack:
+    OvsCleanupConntrack();
+
     return status;
 }
 
@@ -144,35 +162,51 @@ freeTable:
 VOID
 OvsCleanupConntrack(VOID)
 {
-    ctThreadCtx.exit = 1;
-    KeSetEvent(&ctThreadCtx.event, 0, FALSE);
-    KeWaitForSingleObject(ctThreadCtx.threadObject, Executive,
-                          KernelMode, FALSE, NULL);
-    ObDereferenceObject(ctThreadCtx.threadObject);
-
+    if (OvsConntrackCleanThreadExist) {
+        ctThreadCtx.exit = 1;
+        KeSetEvent(&ctThreadCtx.event, 0, FALSE);
+        KeWaitForSingleObject(ctThreadCtx.threadObject, Executive,
+                              KernelMode, FALSE, NULL);
+        ObDereferenceObject(ctThreadCtx.threadObject);
+    }
     /* Force flush all entries before removing */
-    OvsCtFlush(0, NULL);
+    if (ovsConntrackTable) {
+       OvsCtFlush(0, NULL);
+    }
 
     if (ovsConntrackTable) {
         OvsFreeMemoryWithTag(ovsConntrackTable, OVS_CT_POOL_TAG);
         ovsConntrackTable = NULL;
     }
 
-    for (UINT32 i = 0; i < CT_HASH_TABLE_SIZE; i++) {
-        /* Disabling the uninitialized memory warning because it should
-         * always be initialized during OvsInitConntrack */
-#pragma warning(suppress: 6001)
-        if (ovsCtBucketLock[i] != NULL) {
-            NdisFreeRWLock(ovsCtBucketLock[i]);
+    if (ovsCtBucketLock) {
+        for (UINT32 i = 0; i < CT_HASH_TABLE_SIZE; i++) {
+            /* Disabling the uninitialized memory warning because it should
+             * always be initialized during OvsInitConntrack */
+        #pragma warning(suppress: 6001)
+            if (ovsCtBucketLock[i] != NULL) {
+               NdisFreeRWLock(ovsCtBucketLock[i]);
+            }
         }
     }
-    OvsFreeMemoryWithTag(ovsCtBucketLock, OVS_CT_POOL_TAG);
-    ovsCtBucketLock = NULL;
-    OvsNatCleanup();
-    NdisFreeSpinLock(&ovsCtZoneLock);
+
+    if (ovsCtBucketLock) {
+        OvsFreeMemoryWithTag(ovsCtBucketLock, OVS_CT_POOL_TAG);
+        ovsCtBucketLock = NULL;
+    }
+    if (OvsNatInitDone) {
+        OvsNatCleanup();
+        OvsNatInitDone = FALSE;
+    }
+    if (ovsCtZoneLock_release == FALSE) {
+       NdisFreeSpinLock(&ovsCtZoneLock);
+       ovsCtZoneLock_release = TRUE;
+    }
     if (zoneInfo) {
         OvsFreeMemoryWithTag(zoneInfo, OVS_CT_POOL_TAG);
+        zoneInfo = NULL;
     }
+    OvsConntrackCleanThreadExist = FALSE;
 }
 
 VOID
@@ -1520,6 +1554,7 @@ OvsConntrackEntryCleaner(PVOID data)
     LOCK_STATE_EX lockState;
     BOOLEAN success = TRUE;
 
+    OVS_LOG_INFO("Start the ConntrackEntry Cleaner Thread, context: %p", context);
     while (success) {
         if (context->exit) {
             break;
@@ -1541,6 +1576,7 @@ OvsConntrackEntryCleaner(PVOID data)
         KeWaitForSingleObject(&context->event, Executive, KernelMode,
                               FALSE, (LARGE_INTEGER *)&threadSleepTimeout);
     }
+    OVS_LOG_INFO("Terminating the OVS ConntrackEntry Cleaner system thread");
 
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
