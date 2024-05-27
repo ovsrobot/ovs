@@ -7142,7 +7142,8 @@ netdev_linux_prepend_vnet_hdr(struct dp_packet *b, int mtu)
     struct virtio_net_hdr v;
     struct virtio_net_hdr *vnet = &v;
 
-    if (dp_packet_hwol_is_tso(b)) {
+    if (dp_packet_hwol_is_tso(b)
+        && (dp_packet_hwol_is_ipv4(b) || dp_packet_hwol_tx_ipv6(b))) {
         uint16_t tso_segsz = dp_packet_get_tso_segsz(b);
         struct tcp_header *tcp = dp_packet_l4(b);
         struct tcp_header *inner_tcp = dp_packet_inner_l4(b);
