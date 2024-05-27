@@ -2656,6 +2656,7 @@ ctl_context_init(struct ctl_context *ctx, struct ctl_command *command,
                  struct ovsdb_symbol_table *symtab,
                  void (*invalidate_cache_cb)(struct ctl_context *))
 {
+    ds_init(&ctx->output);
     if (command) {
         ctl_context_init_command(ctx, command, false);
     }
