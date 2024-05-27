@@ -146,7 +146,8 @@ void sfl_receiver_tick(SFLReceiver *receiver)
     // if there are any samples to send, flush them now
     if(receiver->sampleCollector.numSamples > 0) sendSample(receiver);
     // check the timeout
-    if(receiver->sFlowRcvrTimeout && (u_int32_t)receiver->sFlowRcvrTimeout != 0xFFFFFFFF) {
+    if(receiver->sFlowRcvrTimeout
+       && receiver->sFlowRcvrTimeout != TIME_T_MAX) {
 	// count down one tick and reset if we reach 0
 	if(--receiver->sFlowRcvrTimeout == 0) reset(receiver);
     }

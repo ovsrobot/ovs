@@ -33,6 +33,9 @@ extern "C" {
 #define OVS_FORCE
 #endif
 
+/* Maximum time_t value. */
+#define TIME_T_MAX   (time_t)((1UL << ((sizeof(time_t) << 3) - 1)) - 1)
+
 /* The ovs_be<N> types indicate that an object is in big-endian, not
  * native-endian, byte order.  They are otherwise equivalent to uint<N>_t. */
 typedef uint16_t OVS_BITWISE ovs_be16;
