@@ -4957,7 +4957,7 @@ htb_parse_qdisc_details__(struct netdev *netdev, const struct smap *details,
 {
     hc->max_rate = smap_get_ullong(details, "max-rate", 0) / 8;
     if (!hc->max_rate) {
-        uint32_t current_speed;
+        uint32_t current_speed = 0;
         uint32_t max_speed OVS_UNUSED;
 
         netdev_linux_get_speed_locked(netdev_linux_cast(netdev),
@@ -5429,7 +5429,7 @@ hfsc_parse_qdisc_details__(struct netdev *netdev, const struct smap *details,
 {
     uint32_t max_rate = smap_get_ullong(details, "max-rate", 0) / 8;
     if (!max_rate) {
-        uint32_t current_speed;
+        uint32_t current_speed = 0;
         uint32_t max_speed OVS_UNUSED;
 
         netdev_linux_get_speed_locked(netdev_linux_cast(netdev),
