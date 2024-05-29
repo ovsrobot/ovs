@@ -3612,7 +3612,8 @@ tnl_route_lookup_flow(const struct xlate_ctx *ctx,
     }
 
     if (ipv6_addr_is_set(&gw) &&
-        (!IN6_IS_ADDR_V4MAPPED(&gw) || in6_addr_get_mapped_ipv4(&gw))) {
+        (!IN6_IS_ADDR_V4MAPPED(&gw) || in6_addr_get_mapped_ipv4(&gw)) &&
+        (!IN6_IS_ADDR_V4MAPPED(&dst) || IN6_IS_ADDR_V4MAPPED(&gw))) {
         *ip = gw;
     } else {
         *ip = dst;
