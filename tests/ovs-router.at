@@ -109,6 +109,57 @@ User: 2001:db8:beef::14/128 MARK 14 dev br0 GW 2001:db8:cafe::1 SRC 2001:db8:caf
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([appctl - route/add and del with ipv4 via ipv6])
+AT_KEYWORDS([ovs_router])
+OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=dummy])
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 192.168.9.2/24], [0], [OK
+])
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 192.168.9.3/24], [0], [OK
+])
+
+dnl defualt pick the first IP, 192.168.9.2, as src
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.10/32 br0 dnl
+fe80::920a:84ff:beef:9510], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.11/32 br0 dnl
+fe80::920a:84ff:beef:9511 src=192.168.9.2], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.12/32 br0 dnl
+fe80::920a:84ff:beef:9512 src=192.168.9.3], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/add 192.168.9.13/32 br0 dnl
+fe80::920a:84ff:beef:9513 pkt_mark=13 src=192.168.9.3], [0], [OK
+])
+
+AT_CHECK([ovs-appctl ovs/route/show | grep User | grep beef | sort], [0], [dnl
+User: 192.168.9.10/32 dev br0 GW fe80::920a:84ff:beef:9510 SRC 192.168.9.2
+User: 192.168.9.11/32 dev br0 GW fe80::920a:84ff:beef:9511 SRC 192.168.9.2
+User: 192.168.9.12/32 dev br0 GW fe80::920a:84ff:beef:9512 SRC 192.168.9.3
+User: 192.168.9.13/32 MARK 13 dev br0 GW fe80::920a:84ff:beef:9513 SRC 192.168.9.3
+])
+
+dnl DST and SRC can be in different domain
+AT_CHECK([ovs-appctl ovs/route/add 192.168.10.12/32 br0 dnl
+fe80::920a:84ff:face:9512 src=192.168.9.3], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/show | grep User | grep face | sort], [0], [dnl
+User: 192.168.10.12/32 dev br0 GW fe80::920a:84ff:face:9512 SRC 192.168.9.3
+])
+
+dnl Delete route
+AT_CHECK([ovs-appctl ovs/route/del 192.168.9.10/32], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/del 192.168.9.11/32], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/del 192.168.9.12/32], [0], [OK
+])
+AT_CHECK([ovs-appctl ovs/route/del 192.168.9.13/32 pkt_mark=13], [0], [OK
+])
+OVS_WAIT_UNTIL([test $(ovs-appctl ovs/route/show | grep -c '192.168.9.1') -eq 0 ])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([appctl - route/lookup])
 AT_KEYWORDS([ovs_router])
 OVS_VSWITCHD_START([add-port br0 p1 -- set Interface p1 type=dummy])
