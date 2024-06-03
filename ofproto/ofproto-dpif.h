@@ -118,6 +118,8 @@ rule_dpif_is_internal(const struct rule_dpif *rule)
 {
     return rule->up.table_id == TBL_INTERNAL;
 }
+
+void rule_dpif_format(const struct rule_dpif *, struct ds *);
 
 /* Groups. */
 
@@ -151,6 +153,8 @@ void group_dpif_credit_stats(struct group_dpif *,
 struct group_dpif *group_dpif_lookup(struct ofproto_dpif *,
                                      uint32_t group_id, ovs_version_t version,
                                      bool take_ref);
+void group_dpif_format(struct group_dpif *, struct ofputil_bucket *,
+                       struct ds *);
 
 
 /* Backers.

@@ -4457,6 +4457,27 @@ rule_set_recirc_id(struct rule *rule_, uint32_t id)
     ovs_mutex_unlock(&rule->up.mutex);
 }
 
+void
+rule_dpif_format(const struct rule_dpif *rule, struct ds *ds)
+{
+    const struct tun_table *tun_table = ofproto_get_tun_tab(rule->up.ofproto);
+    ds_put_format(ds, "cookie=0x%"PRIx64", table=%"PRIu8" ",
+                      ntohll(rule->up.flow_cookie),
+                      rule->up.table_id);
+
+    size_t rule_header_len = ds->length;
+    cls_rule_format(&rule->up.cr, tun_table, NULL, ds);
+    if (ds->length != rule_header_len) {
+        /* Only add comma if the match is non default. */
+        ds_put_char(ds, ',');
+    }
+
+    ds_put_cstr(ds, "actions=");
+    struct ofpact_format_params fp = { .s = ds };
+    ofpacts_format(rule->up.actions->ofpacts, rule->up.actions->ofpacts_len,
+                   &fp);
+}
+
 ovs_version_t
 ofproto_dpif_get_tables_version(struct ofproto_dpif *ofproto)
 {
@@ -5406,6 +5427,18 @@ group_dpif_lookup(struct ofproto_dpif *ofproto, uint32_t group_id,
     struct ofgroup *ofgroup = ofproto_group_lookup(&ofproto->up, group_id,
                                                    version, take_ref);
     return ofgroup ? group_dpif_cast(ofgroup) : NULL;
+}
+
+void
+group_dpif_format(struct group_dpif *group, struct ofputil_bucket *bucket,
+                  struct ds *ds)
+{
+    struct ofgroup *ofg = &group->up;
+
+    ofputil_format_group(ofg->group_id, ds);
+    ofputil_group_properties_format(&ofg->props, ds);
+    ds_put_char(ds, ',');
+    ofputil_bucket_format(bucket, ofg->type, OFP15_VERSION, NULL, NULL, ds);
 }
 
 /* Sends 'packet' out 'ofport'. If 'port' is a tunnel and that tunnel type

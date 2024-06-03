@@ -383,6 +383,9 @@ static void upcall_unixctl_disable_ufid(struct unixctl_conn *, int argc,
                                               const char *argv[], void *aux);
 static void upcall_unixctl_enable_ufid(struct unixctl_conn *, int argc,
                                              const char *argv[], void *aux);
+static void upcall_unixctl_dump_ufid_rules(struct unixctl_conn *, int argc,
+                                           const char *argv[], void *aux);
+
 static void upcall_unixctl_set_flow_limit(struct unixctl_conn *conn, int argc,
                                             const char *argv[], void *aux);
 static void upcall_unixctl_dump_wait(struct unixctl_conn *conn, int argc,
@@ -460,6 +463,8 @@ udpif_init(void)
                                  upcall_unixctl_disable_ufid, NULL);
         unixctl_command_register("upcall/enable-ufid", "", 0, 0,
                                  upcall_unixctl_enable_ufid, NULL);
+        unixctl_command_register("upcall/dump-ufid-rules", "UFID PMD-ID", 1, 2,
+                                 upcall_unixctl_dump_ufid_rules, NULL);
         unixctl_command_register("upcall/set-flow-limit", "flow-limit-number",
                                  1, 1, upcall_unixctl_set_flow_limit, NULL);
         unixctl_command_register("revalidator/wait", "", 0, 0,
@@ -2480,6 +2485,48 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
 }
 
 static void
+ukey_xcache_format(struct udpif *udpif, struct udpif_key *ukey, struct ds *ds)
+    OVS_REQUIRES(ukey->mutex)
+{
+    /* It only makes sense to format rules for ukeys that are (still)
+     * in use. */
+    if (ukey->state != UKEY_VISIBLE && ukey->state != UKEY_OPERATIONAL) {
+        return;
+    }
+
+    if (!ukey->xcache) {
+        populate_xcache(udpif, ukey, ukey->stats.tcp_flags);
+    }
+
+    struct ofpbuf entries = ukey->xcache->entries;
+    struct xc_entry *entry;
+
+    XC_ENTRY_FOR_EACH (entry, &entries) {
+        switch (entry->type) {
+        case XC_RULE:
+            rule_dpif_format(entry->rule, ds);
+            ds_put_char(ds, '\n');
+            break;
+        case XC_GROUP:
+            group_dpif_format(entry->group.group, entry->group.bucket, ds);
+            ds_put_char(ds, '\n');
+            break;
+        case XC_TABLE:
+        case XC_BOND:
+        case XC_NETDEV:
+        case XC_NETFLOW:
+        case XC_MIRROR:
+        case XC_LEARN:
+        case XC_NORMAL:
+        case XC_FIN_TIMEOUT:
+        case XC_TNL_NEIGH:
+        case XC_TUNNEL_HEADER:
+            break;
+        }
+    }
+}
+
+static void
 delete_op_init__(struct udpif *udpif, struct ukey_op *op,
                  const struct dpif_flow *flow)
 {
@@ -3218,6 +3265,46 @@ upcall_unixctl_enable_ufid(struct unixctl_conn *conn, int argc OVS_UNUSED,
     atomic_store_relaxed(&enable_ufid, true);
     unixctl_command_reply(conn, "Datapath dumping tersely using UFID enabled "
                                 "for supported datapaths");
+}
+
+static void
+upcall_unixctl_dump_ufid_rules(struct unixctl_conn *conn, int argc,
+                               const char *argv[], void *aux OVS_UNUSED)
+{
+    unsigned int pmd_id = PMD_ID_NULL;
+    const char *key_s = argv[1];
+    ovs_u128 ufid;
+
+    if (odp_ufid_from_string(key_s, &ufid) <= 0) {
+        unixctl_command_reply_error(conn, "failed to parse ufid");
+        return;
+    }
+
+    if (argc == 3) {
+        const char *pmd_str = argv[2];
+        if (!ovs_scan(pmd_str, "pmd=%d", &pmd_id)) {
+            unixctl_command_reply_error(conn,
+                                        "Invalid pmd argument format. "
+                                        "Expecting 'pmd=PMD-ID'");
+            return;
+        }
+    }
+
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    struct udpif *udpif;
+
+    LIST_FOR_EACH (udpif, list_node, &all_udpifs) {
+        struct udpif_key *ukey = ukey_lookup(udpif, &ufid, pmd_id);
+        if (!ukey) {
+            continue;
+        }
+
+        ovs_mutex_lock(&ukey->mutex);
+        ukey_xcache_format(udpif, ukey, &ds);
+        ovs_mutex_unlock(&ukey->mutex);
+    }
+    unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
 }
 
 /* Set the flow limit.

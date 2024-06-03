@@ -140,6 +140,10 @@ strip_ufid () {
     s/ufid:[[-0-9a-f]]* //'
 }
 
+match_ufid () {
+    grep -oE 'ufid:[[-0-9a-f]]+' | sort -u
+}
+
 # Strips packets: and bytes: from output
 strip_stats () {
     sed 's/packets:[[0-9]]*/packets:0/

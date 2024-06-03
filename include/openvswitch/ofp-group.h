@@ -70,6 +70,11 @@ struct ofputil_bucket *ofputil_bucket_find(const struct ovs_list *,
 bool ofputil_bucket_check_duplicate_id(const struct ovs_list *);
 struct ofputil_bucket *ofputil_bucket_list_front(const struct ovs_list *);
 struct ofputil_bucket *ofputil_bucket_list_back(const struct ovs_list *);
+void ofputil_bucket_format(const struct ofputil_bucket *,
+                           enum ofp11_group_type, enum ofp_version,
+                           const struct ofputil_port_map *,
+                           const struct ofputil_table_map *,
+                           struct ds *);
 
 static inline bool
 ofputil_bucket_has_liveness(const struct ofputil_bucket *bucket)
@@ -88,6 +93,8 @@ struct ofputil_group_props {
 void ofputil_group_properties_destroy(struct ofputil_group_props *);
 void ofputil_group_properties_copy(struct ofputil_group_props *to,
                                    const struct ofputil_group_props *from);
+void ofputil_group_properties_format(const struct ofputil_group_props *,
+                                     struct ds *);
 /* Protocol-independent group_mod. */
 struct ofputil_group_mod {
     uint16_t command;             /* One of OFPGC15_*. */

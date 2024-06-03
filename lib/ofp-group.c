@@ -58,14 +58,16 @@ ofputil_group_from_string(const char *s, uint32_t *group_idp)
     return true;
 }
 
-/* Appends to 's' a string representation of the OpenFlow group ID 'group_id'.
- * Most groups' string representation is just the number, but for special
- * groups, e.g. OFPG_ALL, it is the name, e.g. "ALL". */
+/* Appends to 's' a string representation of the OpenFlow group. 'group_id'.
+ * Most groups' string representation is just 'group_id=' followed by the ID,
+ * but for special groups, e.g. OFPG_ALL, the ID is replaced by the name,
+ * e.g. "ALL". */
 void
 ofputil_format_group(uint32_t group_id, struct ds *s)
 {
     char name[MAX_GROUP_NAME_LEN + 1];
 
+    ds_put_cstr(s, "group_id=");
     ofputil_group_to_string(group_id, name, sizeof name);
     ds_put_cstr(s, name);
 }
@@ -297,7 +299,7 @@ ofputil_group_desc_request_format(struct ds *string,
                                    const struct ofp_header *oh)
 {
     uint32_t group_id = ofputil_decode_group_desc_request(oh);
-    ds_put_cstr(string, " group_id=");
+    ds_put_cstr(string, " ");
     ofputil_format_group(group_id, string);
 
     return 0;
@@ -585,7 +587,7 @@ ofputil_group_stats_request_format(struct ds *string,
         return error;
     }
 
-    ds_put_cstr(string, " group_id=");
+    ds_put_cstr(string, " ");
     ofputil_format_group(group_id, string);
     return 0;
 }
@@ -1526,6 +1528,31 @@ ofputil_group_properties_destroy(struct ofputil_group_props *gp)
     free(gp->fields.values);
 }
 
+void
+ofputil_group_properties_format(const struct ofputil_group_props *gp,
+                                struct ds *ds)
+{
+    if (!gp->selection_method[0]) {
+        return;
+    }
+
+    ds_put_format(ds, ",selection_method=%s", gp->selection_method);
+    if (gp->selection_method_param) {
+        ds_put_format(ds, ",selection_method_param=%"PRIu64,
+                      gp->selection_method_param);
+    }
+
+    size_t n = bitmap_count1(gp->fields.used.bm, MFF_N_IDS);
+    if (n == 1) {
+        ds_put_cstr(ds, ",fields=");
+        oxm_format_field_array(ds, &gp->fields);
+    } else if (n > 1) {
+        ds_put_cstr(ds, ",fields(");
+        oxm_format_field_array(ds, &gp->fields);
+        ds_put_char(ds, ')');
+    }
+}
+
 static enum ofperr
 parse_group_prop_ntr_selection_method(struct ofpbuf *payload,
                                       enum ofp11_group_type group_type,
@@ -1813,6 +1840,37 @@ ofp_print_bucket_id(struct ds *s, const char *label, uint32_t bucket_id,
     ds_put_char(s, ',');
 }
 
+void
+ofputil_bucket_format(const struct ofputil_bucket *bucket,
+                      enum ofp11_group_type type, enum ofp_version ofp_version,
+                      const struct ofputil_port_map *port_map,
+                      const struct ofputil_table_map *table_map,
+                      struct ds *s)
+{
+    ds_put_cstr(s, "bucket=");
+
+    ofp_print_bucket_id(s, "bucket_id:", bucket->bucket_id, ofp_version);
+    if (bucket->weight != (type == OFPGT11_SELECT ? 1 : 0)) {
+        ds_put_format(s, "weight:%"PRIu16",", bucket->weight);
+    }
+    if (bucket->watch_port != OFPP_NONE) {
+        ds_put_cstr(s, "watch_port:");
+        ofputil_format_port(bucket->watch_port, port_map, s);
+        ds_put_char(s, ',');
+    }
+    if (bucket->watch_group != OFPG_ANY) {
+        ds_put_format(s, "watch_group:%"PRIu32",", bucket->watch_group);
+    }
+
+    ds_put_cstr(s, "actions=");
+    struct ofpact_format_params fp = {
+        .port_map = port_map,
+        .table_map = table_map,
+        .s = s,
+    };
+    ofpacts_format(bucket->ofpacts, bucket->ofpacts_len, &fp);
+}
+
 static void
 ofp_print_group(struct ds *s, uint32_t group_id, uint8_t type,
                 const struct ovs_list *p_buckets,
@@ -1831,23 +1889,7 @@ ofp_print_group(struct ds *s, uint32_t group_id, uint8_t type,
         ds_put_format(s, ",type=%s", type_str[type > 4 ? 4 : type]);
     }
 
-    if (props->selection_method[0]) {
-        ds_put_format(s, ",selection_method=%s", props->selection_method);
-        if (props->selection_method_param) {
-            ds_put_format(s, ",selection_method_param=%"PRIu64,
-                          props->selection_method_param);
-        }
-
-        size_t n = bitmap_count1(props->fields.used.bm, MFF_N_IDS);
-        if (n == 1) {
-            ds_put_cstr(s, ",fields=");
-            oxm_format_field_array(s, &props->fields);
-        } else if (n > 1) {
-            ds_put_cstr(s, ",fields(");
-            oxm_format_field_array(s, &props->fields);
-            ds_put_char(s, ')');
-        }
-    }
+    ofputil_group_properties_format(props, s);
 
     if (!p_buckets) {
         return;
@@ -1856,28 +1898,8 @@ ofp_print_group(struct ds *s, uint32_t group_id, uint8_t type,
     ds_put_char(s, ',');
 
     LIST_FOR_EACH (bucket, list_node, p_buckets) {
-        ds_put_cstr(s, "bucket=");
-
-        ofp_print_bucket_id(s, "bucket_id:", bucket->bucket_id, ofp_version);
-        if (bucket->weight != (type == OFPGT11_SELECT ? 1 : 0)) {
-            ds_put_format(s, "weight:%"PRIu16",", bucket->weight);
-        }
-        if (bucket->watch_port != OFPP_NONE) {
-            ds_put_cstr(s, "watch_port:");
-            ofputil_format_port(bucket->watch_port, port_map, s);
-            ds_put_char(s, ',');
-        }
-        if (bucket->watch_group != OFPG_ANY) {
-            ds_put_format(s, "watch_group:%"PRIu32",", bucket->watch_group);
-        }
-
-        ds_put_cstr(s, "actions=");
-        struct ofpact_format_params fp = {
-            .port_map = port_map,
-            .table_map = table_map,
-            .s = s,
-        };
-        ofpacts_format(bucket->ofpacts, bucket->ofpacts_len, &fp);
+        ofputil_bucket_format(bucket, type, ofp_version,
+                              port_map, table_map, s);
         ds_put_char(s, ',');
     }
 
