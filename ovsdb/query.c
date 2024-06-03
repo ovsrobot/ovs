@@ -21,32 +21,116 @@
 #include "condition.h"
 #include "row.h"
 #include "table.h"
+#include "transaction.h"
+
+static bool
+ovsdb_query_index(struct ovsdb_table *table,
+                  const struct ovsdb_condition *cnd,
+                  const struct ovsdb_row **out)
+{
+    for (size_t idx = 0; idx < table->schema->n_indexes; idx++) {
+        const struct ovsdb_column_set *index = &table->schema->indexes[idx];
+        struct hmap_node *node;
+        size_t matches = 0;
+        uint32_t hash = 0;
+
+        if (index->n_columns != cnd->n_clauses) {
+            continue;
+        }
+
+        /* The conditions may not be in the same order as the index. */
+        for (size_t c = 0; c < cnd->n_clauses; c++) {
+            const struct ovsdb_clause *cnd_cls = &cnd->clauses[c];
+
+            if (cnd_cls->function != OVSDB_F_EQ) {
+                return false;
+            }
+
+            for (size_t i = 0; i < index->n_columns; i++) {
+                const struct ovsdb_column *idx_col = index->columns[i];
+
+                if (cnd_cls->index == idx_col->index) {
+                    hash = ovsdb_datum_hash(&cnd_cls->arg, &idx_col->type,
+                                            hash);
+                    matches++;
+                    break;
+                }
+            }
+
+            /* If none of the indexed columns match, continue to the next
+             * index. */
+            if (matches == c) {
+                break;
+            }
+        }
+
+        if (matches != cnd->n_clauses) {
+            continue;
+        }
+
+        for (node = hmap_first_with_hash(&table->indexes[idx], hash); node;
+             node = hmap_next_with_hash(node)) {
+            struct ovsdb_row *irow = ovsdb_row_from_index_node(node, table,
+                                                               idx);
+
+            for (size_t c = 0; c < cnd->n_clauses; c++) {
+                const struct ovsdb_clause *cnd_cls = &cnd->clauses[c];
+
+                if (!ovsdb_datum_equals(&cnd_cls->arg,
+                                        &irow->fields[cnd_cls->index],
+                                        &cnd_cls->column->type)) {
+                    irow = NULL;
+                    break;
+                }
+            }
+
+            if (irow) {
+                *out = irow;
+                return true;
+            }
+        }
+
+        /* In the case that there was a matching index but no matching row, the
+         * index check is still considered to be a success. */
+        return true;
+    }
+    return false;
+}
 
 void
 ovsdb_query(struct ovsdb_table *table, const struct ovsdb_condition *cnd,
             bool (*output_row)(const struct ovsdb_row *, void *aux), void *aux)
 {
+    const struct ovsdb_row *row = NULL;
+
     if (cnd->n_clauses > 0
         && cnd->clauses[0].column->index == OVSDB_COL_UUID
         && cnd->clauses[0].function == OVSDB_F_EQ) {
         /* Optimize the case where the query has a clause of the form "uuid ==
          * <some-uuid>", since we have an index on UUID. */
-        const struct ovsdb_row *row;
 
         row = ovsdb_table_get_row(table, &cnd->clauses[0].arg.keys[0].uuid);
         if (row && row->table == table &&
             ovsdb_condition_match_every_clause(row, cnd)) {
             output_row(row, aux);
         }
-    } else {
-        /* Linear scan. */
-        const struct ovsdb_row *row;
+        return;
+    }
 
-        HMAP_FOR_EACH_SAFE (row, hmap_node, &table->rows) {
-            if (ovsdb_condition_match_every_clause(row, cnd) &&
-                !output_row(row, aux)) {
-                break;
-            }
+    /* Index check. */
+    if (ovsdb_query_index(table, cnd, &row)) {
+        if (row) {
+            output_row(row, aux);
+            return;
+        }
+        return;
+    }
+
+    /* Linear scan. */
+    HMAP_FOR_EACH_SAFE (row, hmap_node, &table->rows) {
+        if (ovsdb_condition_match_every_clause(row, cnd) &&
+            !output_row(row, aux)) {
+            break;
         }
     }
 }

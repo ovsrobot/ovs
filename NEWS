@@ -9,6 +9,9 @@ Post-v3.3.0
      https://github.com/openvswitch/ovs.git
    - DPDK:
      * OVS validated with DPDK 23.11.1.
+   - OVSDB:
+     * Added support to lookup rows based on arbitrary indexes, instead of
+       only UUID indexes.
 
 
 v3.3.0 - 16 Feb 2024
