@@ -3086,6 +3086,48 @@ ofproto_rule_unref(struct rule *rule)
     }
 }
 
+void
+ofproto_rule_stats_ds(struct rule *rule, struct ds *results,
+                      bool offload_stats)
+{
+    struct pkt_stats stats;
+    const struct rule_actions *actions;
+    long long int created, used;
+
+    rule->ofproto->ofproto_class->rule_get_stats(rule, &stats, &used);
+
+    ovs_mutex_lock(&rule->mutex);
+    actions = rule_get_actions(rule);
+    created = rule->created;
+    ovs_mutex_unlock(&rule->mutex);
+
+    if (rule->flow_cookie != 0) {
+        ds_put_format(results, "cookie=0x%"PRIx64", ",
+                      ntohll(rule->flow_cookie));
+    }
+    if (rule->table_id != 0) {
+        ds_put_format(results, "table_id=%"PRIu8", ", rule->table_id);
+    }
+    ds_put_format(results, "duration=%llds, ", (time_msec() - created) / 1000);
+    ds_put_format(results, "n_packets=%"PRIu64", ", stats.n_packets);
+    ds_put_format(results, "n_bytes=%"PRIu64", ", stats.n_bytes);
+    if (offload_stats) {
+        ds_put_format(results, "n_offload_packets=%"PRIu64", ",
+                      stats.n_offload_packets);
+        ds_put_format(results, "n_offload_bytes=%"PRIu64", ",
+                      stats.n_offload_bytes);
+    }
+    cls_rule_format(&rule->cr, ofproto_get_tun_tab(rule->ofproto), NULL,
+                    results);
+    ds_put_char(results, ',');
+
+    ds_put_cstr(results, "actions=");
+    struct ofpact_format_params fp = { .s = results };
+    ofpacts_format(actions->ofpacts, actions->ofpacts_len, &fp);
+
+    ds_put_cstr(results, "\n");
+}
+
 static void
 remove_rule_rcu__(struct rule *rule)
     OVS_REQUIRES(ofproto_mutex)
@@ -4844,47 +4886,6 @@ handle_flow_stats_request(struct ofconn *ofconn,
     return 0;
 }
 
-static void
-flow_stats_ds(struct ofproto *ofproto, struct rule *rule, struct ds *results,
-              bool offload_stats)
-{
-    struct pkt_stats stats;
-    const struct rule_actions *actions;
-    long long int created, used;
-
-    rule->ofproto->ofproto_class->rule_get_stats(rule, &stats, &used);
-
-    ovs_mutex_lock(&rule->mutex);
-    actions = rule_get_actions(rule);
-    created = rule->created;
-    ovs_mutex_unlock(&rule->mutex);
-
-    if (rule->flow_cookie != 0) {
-        ds_put_format(results, "cookie=0x%"PRIx64", ",
-                      ntohll(rule->flow_cookie));
-    }
-    if (rule->table_id != 0) {
-        ds_put_format(results, "table_id=%"PRIu8", ", rule->table_id);
-    }
-    ds_put_format(results, "duration=%llds, ", (time_msec() - created) / 1000);
-    ds_put_format(results, "n_packets=%"PRIu64", ", stats.n_packets);
-    ds_put_format(results, "n_bytes=%"PRIu64", ", stats.n_bytes);
-    if (offload_stats) {
-        ds_put_format(results, "n_offload_packets=%"PRIu64", ",
-                      stats.n_offload_packets);
-        ds_put_format(results, "n_offload_bytes=%"PRIu64", ",
-                      stats.n_offload_bytes);
-    }
-    cls_rule_format(&rule->cr, ofproto_get_tun_tab(ofproto), NULL, results);
-    ds_put_char(results, ',');
-
-    ds_put_cstr(results, "actions=");
-    struct ofpact_format_params fp = { .s = results };
-    ofpacts_format(actions->ofpacts, actions->ofpacts_len, &fp);
-
-    ds_put_cstr(results, "\n");
-}
-
 /* Adds a pretty-printed description of all flows to 'results', including
  * hidden flows (e.g., set up by in-band control). */
 void
@@ -4897,7 +4898,7 @@ ofproto_get_all_flows(struct ofproto *p, struct ds *results,
         struct rule *rule;
 
         CLS_FOR_EACH (rule, cr, &table->cls) {
-            flow_stats_ds(p, rule, results, offload_stats);
+            ofproto_rule_stats_ds(rule, results, offload_stats);
         }
     }
 }

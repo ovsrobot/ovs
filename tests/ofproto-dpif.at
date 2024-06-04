@@ -12136,3 +12136,50 @@ AT_CHECK([test 1 = `ovs-ofctl parse-pcap p2-tx.pcap | wc -l`])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([ofproto-dpif - dump-ufid-rules])
+OVS_VSWITCHD_START(
+[add-port br0 p1 \
+   -- set bridge br0 datapath-type=dummy \
+   -- set interface p1 type=dummy-pmd \
+   -- add-port br0 p2 \
+   -- set interface p2 type=dummy-pmd \
+   -- add-port br0 p3 \
+   -- set interface p3 type=dummy-pmd
+], [], [], [DUMMY_NUMA])
+
+dnl Add some OpenFlow rules and groups.
+AT_DATA([groups.txt], [dnl
+ group_id=1,type=select,selection_method=dp_hash,bucket=bucket_id:0,weight:100,actions=ct(commit,table=2,nat(dst=20.0.0.2))
+ group_id=2,type=all,bucket=resubmit(,3),bucket=resubmit(,4)
+])
+AT_DATA([flows.txt], [dnl
+table=0,priority=100,cookie=0x12345678,in_port=p1,ip,nw_dst=10.0.0.2,actions=resubmit(,1)
+table=1,priority=200,actions=group:1
+table=2,actions=group:2
+table=3,actions=p2
+table=4,actions=p3
+])
+AT_CHECK([ovs-ofctl add-groups br0 groups.txt])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 'ipv4(src=10.0.0.1,dst=10.0.0.2,proto=6),tcp(src=1,dst=2)'])
+
+OVS_WAIT_UNTIL_EQUAL([ovs-appctl dpctl/dump-flows | sed 's/.*core: [[0-9]]*//' | sort], [
+recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(dst=10.0.0.2,frag=no), packets:0, bytes:0, used:never, actions:hash(l4(0)),recirc(0x1)
+recirc_id(0x1),dp_hash(0xfbe73382/0xf),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:ct(commit,nat(dst=20.0.0.2)),recirc(0x2)
+recirc_id(0x2),in_port(1),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:2,3])
+
+ufids=$(ovs-appctl dpctl/dump-flows -m | match_ufid)
+AT_CHECK([for ufid in $ufids; do ovs-appctl upcall/dump-ufid-rules $ufid pmd=0; done | sort], [0], [dnl
+cookie=0x12345678, duration=0s, n_packets=1, n_bytes=118, n_offload_packets=0, n_offload_bytes=0, priority=100,ip,in_port=3,nw_dst=10.0.0.2,actions=resubmit(,1)
+group_id=1,selection_method=dp_hash,bucket=bucket_id:0,weight:100,actions=ct(commit,table=2,nat(dst=20.0.0.2))
+group_id=2,bucket=bucket_id:0,actions=resubmit(,3),bucket=bucket_id:1,actions=resubmit(,4)
+table_id=1, duration=0s, n_packets=1, n_bytes=118, n_offload_packets=0, n_offload_bytes=0, priority=200,actions=group:1
+table_id=2, duration=0s, n_packets=1, n_bytes=118, n_offload_packets=0, n_offload_bytes=0, ,actions=group:2
+table_id=3, duration=0s, n_packets=1, n_bytes=118, n_offload_packets=0, n_offload_bytes=0, ,actions=output:1
+table_id=4, duration=0s, n_packets=1, n_bytes=118, n_offload_packets=0, n_offload_bytes=0, ,actions=output:2
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
