@@ -1033,9 +1033,15 @@ OvsProcessConntrackEntry(OvsForwardingContext *fwdCtx,
             } else {
                 POVS_CT_ENTRY parentEntry;
                 parentEntry = OvsCtRelatedLookup(ctx->key, currentTime);
-                entry->parent = parentEntry;
-                if (parentEntry != NULL) {
-                    state |= OVS_CS_F_RELATED;
+                if (((layers->isIPv6 && key->ipv6Key.nwProto == IPPROTO_UDP) ||
+                    (!(layers->isIPv6) && key->ipKey.nwProto == IPPROTO_UDP)) &&
+                    (parentEntry == entry)) {
+                    /* Do nothing here, it would deadlock for invalid tftp packet*/
+                } else {
+                   entry->parent = parentEntry;
+                   if (parentEntry != NULL) {
+                       state |= OVS_CS_F_RELATED;
+                   }
                 }
             }
         }
