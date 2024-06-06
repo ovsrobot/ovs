@@ -678,46 +678,43 @@ OvsGetTcpHeader(PNET_BUFFER_LIST nbl,
                 VOID *storage,
                 UINT32 *tcpPayloadLen)
 {
-    IPHdr *ipHdr;
-    IPv6Hdr *ipv6Hdr;
-    TCPHdr *tcp;
+    IPv6Hdr ipv6HdrStorage;
+    IPHdr ipHdrStorage;
+    const IPv6Hdr *ipv6Hdr;
+    const IPHdr *ipHdr;
+    const TCPHdr *tcp;
     VOID *dest = storage;
     uint16_t ipv6ExtLength = 0;
 
     if (layers->isIPv6) {
-        ipv6Hdr = NdisGetDataBuffer(NET_BUFFER_LIST_FIRST_NB(nbl),
-                                    layers->l4Offset + sizeof(TCPHdr),
-                                    NULL, 1, 0);
+        ipv6Hdr = OvsGetPacketBytes(nbl, sizeof *ipv6Hdr,
+                                    layers->l3Offset, &ipv6HdrStorage);
         if (ipv6Hdr == NULL) {
             return NULL;
         }
 
-        tcp = (TCPHdr *)((PCHAR)ipv6Hdr + layers->l4Offset);
-        ipv6Hdr = (IPv6Hdr *)((PCHAR)ipv6Hdr + layers->l3Offset);
-        if (tcp->doff * 4 >= sizeof *tcp) {
-            NdisMoveMemory(dest, tcp, sizeof(TCPHdr));
-            ipv6ExtLength = layers->l4Offset - layers->l3Offset - sizeof(IPv6Hdr);
-            *tcpPayloadLen = (ntohs(ipv6Hdr->payload_len) - ipv6ExtLength - TCP_HDR_LEN(tcp));
-            return storage;
+        tcp = OvsGetTcp(nbl, layers->l4Offset, dest);
+        if (tcp == NULL) {
+            return NULL;
         }
+
+        ipv6ExtLength = layers->l4Offset - layers->l3Offset - sizeof(IPv6Hdr);
+        *tcpPayloadLen = (ntohs(ipv6Hdr->payload_len) - ipv6ExtLength - TCP_HDR_LEN(tcp));
     } else {
-        ipHdr = NdisGetDataBuffer(NET_BUFFER_LIST_FIRST_NB(nbl),
-                                  layers->l4Offset + sizeof(TCPHdr),
-                                  NULL, 1 /*no align*/, 0);
+        ipHdr = OvsGetIp(nbl, layers->l3Offset, &ipHdrStorage);
         if (ipHdr == NULL) {
             return NULL;
         }
 
-        ipHdr = (IPHdr *)((PCHAR)ipHdr + layers->l3Offset);
-        tcp = (TCPHdr *)((PCHAR)ipHdr + ipHdr->ihl * 4);
-
-        if (tcp->doff * 4 >= sizeof *tcp) {
-            NdisMoveMemory(dest, tcp, sizeof(TCPHdr));
-            *tcpPayloadLen = TCP_DATA_LENGTH(ipHdr, tcp);
-            return storage;
+        tcp = OvsGetTcp(nbl, layers->l4Offset, dest);
+        if (tcp == NULL) {
+            return NULL;
         }
+
+        *tcpPayloadLen = TCP_DATA_LENGTH(ipHdr, tcp);
     }
-    return NULL;
+
+    return storage;
 }
 
 static UINT8
