@@ -6804,7 +6804,7 @@ reconfigure_datapath(struct dp_netdev *dp)
             if (port->txq_requested_mode == TXQ_REQ_MODE_HASH &&
                 netdev_n_txq(port->netdev) > 1) {
                 port->txq_mode = TXQ_MODE_XPS_HASH;
-            } else if (netdev_n_txq(port->netdev) < wanted_txqs) {
+            } else if (netdev_n_txq(port->netdev) < wanted_txqs && netdev_is_pmd(port->netdev)) {
                 port->txq_mode = TXQ_MODE_XPS;
             } else {
                 port->txq_mode = TXQ_MODE_STATIC;
