@@ -271,10 +271,12 @@ enum ofperr
 ofpprop_parse_u128(const struct ofpbuf *property, ovs_u128 *value)
 {
     ovs_be128 *p = property->msg;
+    ovs_be128 aligned;
     if (ofpbuf_msgsize(property) != sizeof *p) {
         return OFPERR_OFPBPC_BAD_LEN;
     }
-    *value = ntoh128(*p);
+    memcpy(&aligned, p, sizeof aligned);
+    *value = ntoh128(aligned);
     return 0;
 }
 
