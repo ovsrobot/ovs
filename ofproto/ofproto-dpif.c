@@ -5407,6 +5407,30 @@ group_dpif_lookup(struct ofproto_dpif *ofproto, uint32_t group_id,
                                                    version, take_ref);
     return ofgroup ? group_dpif_cast(ofgroup) : NULL;
 }
+
+void
+group_dpif_format(struct group_dpif *group, struct ofputil_bucket *bucket,
+                  struct ds *ds)
+{
+    struct ofgroup *ofg = &group->up;
+
+    ofputil_format_group(ofg->group_id, ds);
+    ofputil_group_properties_format(&ofg->props, ds);
+    ds_put_char(ds, ',');
+
+    if (bucket) {
+        ofputil_bucket_format(bucket, ofg->type, OFP15_VERSION,
+                              NULL, NULL, ds);
+    } else {
+        LIST_FOR_EACH (bucket, list_node, &ofg->buckets) {
+            ofputil_bucket_format(bucket, ofg->type, OFP15_VERSION,
+                                  NULL, NULL, ds);
+            ds_put_char(ds, ',');
+        }
+    }
+    ds_chomp(ds, ',');
+    ds_put_char(ds, '\n');
+}
 
 /* Sends 'packet' out 'ofport'. If 'port' is a tunnel and that tunnel type
  * supports a notion of an OAM flag, sets it if 'oam' is true.
