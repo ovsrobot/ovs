@@ -40,6 +40,7 @@ static POVS_CT_ZONE_INFO zoneInfo = NULL;
 extern POVS_SWITCH_CONTEXT gOvsSwitchContext;
 static ULONG ctTotalEntries;
 static ULONG defaultCtLimit;
+static BOOLEAN OvsNatInitDone = FALSE;
 
 static __inline OvsCtFlush(UINT16 zone, struct ovs_key_ct_tuple_ipv4 *tuple);
 static __inline NDIS_STATUS
@@ -114,10 +115,13 @@ OvsInitConntrack(POVS_SWITCH_CONTEXT context)
         zoneInfo[i].limit = defaultCtLimit;
     }
 
-    status = OvsNatInit();
-
-    if (status != STATUS_SUCCESS) {
-        OvsCleanupConntrack();
+    if (OvsNatInitDone == FALSE) {
+        status = OvsNatInit();
+        if (status != STATUS_SUCCESS) {
+            OvsCleanupConntrack();
+            return status;
+        }
+        OvsNatInitDone = TRUE;
     }
     return STATUS_SUCCESS;
 
@@ -168,10 +172,14 @@ OvsCleanupConntrack(VOID)
     }
     OvsFreeMemoryWithTag(ovsCtBucketLock, OVS_CT_POOL_TAG);
     ovsCtBucketLock = NULL;
-    OvsNatCleanup();
+    if (OvsNatInitDone) {
+        OvsNatCleanup();
+        OvsNatInitDone = FALSE;
+    }
     NdisFreeSpinLock(&ovsCtZoneLock);
     if (zoneInfo) {
         OvsFreeMemoryWithTag(zoneInfo, OVS_CT_POOL_TAG);
+        zoneInfo = NULL;
     }
 }
 
@@ -1520,6 +1528,8 @@ OvsConntrackEntryCleaner(PVOID data)
     LOCK_STATE_EX lockState;
     BOOLEAN success = TRUE;
 
+    OVS_LOG_INFO("Start the OVS ConntrackEntry Cleaner system thread,"
+                 " context: %p", context);
     while (success) {
         if (context->exit) {
             break;
@@ -1541,6 +1551,7 @@ OvsConntrackEntryCleaner(PVOID data)
         KeWaitForSingleObject(&context->event, Executive, KernelMode,
                               FALSE, (LARGE_INTEGER *)&threadSleepTimeout);
     }
+    OVS_LOG_INFO("Terminate the OVS ConntrackEntry Cleaner system thread");
 
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
