@@ -119,7 +119,7 @@ OvsInitConntrack(POVS_SWITCH_CONTEXT context)
     if (status != STATUS_SUCCESS) {
         OvsCleanupConntrack();
     }
-    return STATUS_SUCCESS;
+    return status;
 
 freeBucketLock:
     for (UINT32 i = 0; i < numBucketLocks; i++) {
@@ -172,6 +172,7 @@ OvsCleanupConntrack(VOID)
     NdisFreeSpinLock(&ovsCtZoneLock);
     if (zoneInfo) {
         OvsFreeMemoryWithTag(zoneInfo, OVS_CT_POOL_TAG);
+        zoneInfo = NULL;
     }
 }
 
@@ -1520,6 +1521,8 @@ OvsConntrackEntryCleaner(PVOID data)
     LOCK_STATE_EX lockState;
     BOOLEAN success = TRUE;
 
+    OVS_LOG_INFO("Start the OVS ConntrackEntry Cleaner system thread,"
+                 " context: %p", context);
     while (success) {
         if (context->exit) {
             break;
@@ -1541,6 +1544,7 @@ OvsConntrackEntryCleaner(PVOID data)
         KeWaitForSingleObject(&context->event, Executive, KernelMode,
                               FALSE, (LARGE_INTEGER *)&threadSleepTimeout);
     }
+    OVS_LOG_INFO("Terminate the OVS ConntrackEntry Cleaner system thread");
 
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
