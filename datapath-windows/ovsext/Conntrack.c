@@ -94,16 +94,28 @@ OvsInitConntrack(POVS_SWITCH_CONTEXT context)
     if (status != STATUS_SUCCESS) {
         goto freeBucketLock;
     }
-
-    ObReferenceObjectByHandle(threadHandle, SYNCHRONIZE, NULL, KernelMode,
-                              &ctThreadCtx.threadObject, NULL);
+    ctThreadCtx.exit = 0;
+    status = ObReferenceObjectByHandle(threadHandle, SYNCHRONIZE, NULL, KernelMode,
+                                       &ctThreadCtx.threadObject, NULL);
     ZwClose(threadHandle);
     threadHandle = NULL;
 
+    if (!NT_SUCCESS(status)) {
+        ctThreadCtx.exit = 1;
+        KeSetEvent(&ctThreadCtx.event, 0, FALSE);
+        KeWaitForSingleObject(ctThreadCtx.threadObject, Executive,
+                               KernelMode, FALSE, NULL);
+        goto freeBucketLock;
+    }
     zoneInfo = OvsAllocateMemoryWithTag(sizeof(OVS_CT_ZONE_INFO) *
                                         CT_MAX_ZONE, OVS_CT_POOL_TAG);
     if (zoneInfo == NULL) {
         status = STATUS_INSUFFICIENT_RESOURCES;
+        ctThreadCtx.exit = 1;
+        KeSetEvent(&ctThreadCtx.event, 0, FALSE);
+        KeWaitForSingleObject(ctThreadCtx.threadObject, Executive,
+                               KernelMode, FALSE, NULL);
+        ObDereferenceObject(ctThreadCtx.threadObject);
         goto freeBucketLock;
     }
 
@@ -119,7 +131,7 @@ OvsInitConntrack(POVS_SWITCH_CONTEXT context)
     if (status != STATUS_SUCCESS) {
         OvsCleanupConntrack();
     }
-    return STATUS_SUCCESS;
+    return status;
 
 freeBucketLock:
     for (UINT32 i = 0; i < numBucketLocks; i++) {
@@ -172,6 +184,7 @@ OvsCleanupConntrack(VOID)
     NdisFreeSpinLock(&ovsCtZoneLock);
     if (zoneInfo) {
         OvsFreeMemoryWithTag(zoneInfo, OVS_CT_POOL_TAG);
+        zoneInfo = NULL;
     }
 }
 
@@ -1520,6 +1533,8 @@ OvsConntrackEntryCleaner(PVOID data)
     LOCK_STATE_EX lockState;
     BOOLEAN success = TRUE;
 
+    OVS_LOG_INFO("Start the OVS ConntrackEntry Cleaner system thread,"
+                 " context: %p", context);
     while (success) {
         if (context->exit) {
             break;
@@ -1541,6 +1556,7 @@ OvsConntrackEntryCleaner(PVOID data)
         KeWaitForSingleObject(&context->event, Executive, KernelMode,
                               FALSE, (LARGE_INTEGER *)&threadSleepTimeout);
     }
+    OVS_LOG_INFO("Terminate the OVS ConntrackEntry Cleaner system thread");
 
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
