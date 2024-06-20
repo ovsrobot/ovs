@@ -34,6 +34,7 @@ extern "C" {
  */
 #define UUID_LEN 36
 #define UUID_FMT "%08x-%04x-%04x-%04x-%04x%08x"
+#define UUID_ROW_FMT "row%08x_%04x_%04x_%04x_%04x%08x"
 #define UUID_ARGS(UUID)                             \
     ((unsigned int) ((UUID)->parts[0])),            \
     ((unsigned int) ((UUID)->parts[1] >> 16)),      \
