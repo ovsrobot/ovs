@@ -81,6 +81,7 @@ struct json *json_boolean_create(bool);
 struct json *json_string_create(const char *);
 struct json *json_string_create_nocopy(char *);
 struct json *json_serialized_object_create(const struct json *);
+struct json *json_serialized_object_create_from_string(const char *);
 struct json *json_integer_create(long long int);
 struct json *json_real_create(double);
 

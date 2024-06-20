@@ -197,6 +197,9 @@ struct json *ovsdb_datum_to_json(const struct ovsdb_datum *,
                                  const struct ovsdb_type *);
 struct json *ovsdb_datum_to_json_deep(const struct ovsdb_datum *,
                                       const struct ovsdb_type *);
+void ovsdb_datum_to_json_ds(const struct ovsdb_datum *,
+                            const struct ovsdb_type *,
+                            struct ds *);
 
 char *ovsdb_datum_from_string(struct ovsdb_datum *,
                               const struct ovsdb_type *, const char *,

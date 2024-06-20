@@ -492,6 +492,45 @@ ovsdb_atom_to_json__(const union ovsdb_atom *atom, enum ovsdb_atomic_type type,
     }
 }
 
+/* Serializes 'atom', of the specified 'type', into 'ds' in JSON format.
+ *
+ * Refer to RFC 7047 for the format of the JSON that this function produces. */
+static void
+ovsdb_atom_to_json_ds(const union ovsdb_atom *atom,
+                      enum ovsdb_atomic_type type, struct ds *ds)
+{
+    switch (type) {
+    case OVSDB_TYPE_VOID:
+        OVS_NOT_REACHED();
+
+    case OVSDB_TYPE_INTEGER:
+        ds_put_format(ds, "%ld", atom->integer);
+        return;
+
+    case OVSDB_TYPE_REAL:
+        ds_put_format(ds, "%.*g", DBL_DIG, atom->real);
+        return;
+
+    case OVSDB_TYPE_BOOLEAN:
+        ds_put_cstr(ds, atom->boolean ? "true" : "false");
+        return;
+
+    case OVSDB_TYPE_STRING:
+        json_to_ds(atom->s, JSSF_SORT, ds);
+        return;
+
+    case OVSDB_TYPE_UUID:
+        ds_put_cstr(ds, "[\"uuid\",\"");
+        ds_put_format(ds, UUID_FMT, UUID_ARGS(&atom->uuid));
+        ds_put_cstr(ds, "\"]");
+        return;
+
+    case OVSDB_N_TYPES:
+    default:
+        OVS_NOT_REACHED();
+    }
+}
+
 struct json *
 ovsdb_atom_to_json(const union ovsdb_atom *atom, enum ovsdb_atomic_type type)
 {
@@ -1445,6 +1484,23 @@ ovsdb_base_to_json(const union ovsdb_atom *atom,
     }
 }
 
+static void
+ovsdb_base_to_json_ds(const union ovsdb_atom *atom,
+                      const struct ovsdb_base_type *base,
+                      bool use_row_names,
+                      struct ds *ds)
+{
+    if (!use_row_names
+        || base->type != OVSDB_TYPE_UUID
+        || !base->uuid.refTableName) {
+        ovsdb_atom_to_json_ds(atom, base->type, ds);
+    } else {
+        ds_put_cstr(ds, "[\"named-uuid\",\"");
+        ds_put_format(ds, UUID_ROW_FMT, UUID_ARGS(&atom->uuid));
+        ds_put_cstr(ds, "\"]");
+    }
+}
+
 static struct json *
 ovsdb_datum_to_json__(const struct ovsdb_datum *datum,
                       const struct ovsdb_type *type,
@@ -1482,6 +1538,47 @@ ovsdb_datum_to_json__(const struct ovsdb_datum *datum,
     }
 }
 
+static void
+ovsdb_datum_to_json_ds__(const struct ovsdb_datum *datum,
+                         const struct ovsdb_type *type,
+                         bool use_row_names,
+                         struct ds *ds)
+{
+    if (ovsdb_type_is_map(type)) {
+        size_t i;
+
+        ds_put_cstr(ds, "[\"map\",[");
+        for (i = 0; i < datum->n; i++) {
+            if (i != 0) {
+                ds_put_char(ds, ',');
+            }
+            ds_put_char(ds, '[');
+            ovsdb_base_to_json_ds(&datum->keys[i], &type->key,
+                                  use_row_names, ds);
+            ds_put_char(ds, ',');
+            ovsdb_base_to_json_ds(&datum->values[i], &type->value,
+                                  use_row_names, ds);
+            ds_put_char(ds, ']');
+        }
+        ds_put_cstr(ds, "]]");
+    } else if (datum->n == 1) {
+        ovsdb_base_to_json_ds(&datum->keys[0], &type->key,
+                              use_row_names, ds);
+    } else {
+        size_t i;
+
+        ds_put_cstr(ds, "[\"set\",[");
+        for (i = 0; i < datum->n; i++) {
+            if (i != 0) {
+                ds_put_char(ds, ',');
+            }
+            ovsdb_base_to_json_ds(&datum->keys[i], &type->key,
+                                  use_row_names, ds);
+        }
+        ds_put_cstr(ds, "]]");
+    }
+}
+
 /* Converts 'datum', of the specified 'type', to JSON format, and returns the
  * JSON.  The caller is responsible for freeing the returned JSON.
  *
@@ -1507,6 +1604,14 @@ ovsdb_datum_to_json_with_row_names(const struct ovsdb_datum *datum,
                                    const struct ovsdb_type *type)
 {
     return ovsdb_datum_to_json__(datum, type, true, true);
+}
+
+void
+ovsdb_datum_to_json_ds(const struct ovsdb_datum *datum,
+                       const struct ovsdb_type *type,
+                       struct ds *ds)
+{
+    ovsdb_datum_to_json_ds__(datum, type, false, ds);
 }
 
 static const char *
