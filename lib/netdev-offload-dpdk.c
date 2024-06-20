@@ -791,6 +791,17 @@ dump_flow_action(struct ds *s, struct ds *s_extra,
             ds_put_format(s, "port %"PRIu16" ", ntohs(set_tp->port));
         }
         ds_put_cstr(s, "/ ");
+    } else if (actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP ||
+               actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV6_DSCP) {
+        const struct rte_flow_action_set_dscp *set_dscp = actions->conf;
+        char *dirstr = actions->type == RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP
+                       ? "set_ipv4_dscp " : "set_ipv6_dscp ";
+
+        ds_put_cstr(s, dirstr);
+        if (set_dscp) {
+            ds_put_format(s, "dscp_value %d ", set_dscp->dscp);
+        }
+        ds_put_cstr(s, "/ ");
     } else if (actions->type == RTE_FLOW_ACTION_TYPE_OF_PUSH_VLAN) {
         const struct rte_flow_action_of_push_vlan *of_push_vlan =
             actions->conf;
@@ -1835,7 +1846,10 @@ add_set_flow_action__(struct flow_actions *actions,
         if (is_all_zeros(mask, size)) {
             return 0;
         }
-        if (!is_all_ones(mask, size)) {
+        if (!is_all_ones(mask, size) &&
+            /* set dscp need patial mask */
+            attr != RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP &&
+            attr != RTE_FLOW_ACTION_TYPE_SET_IPV6_DSCP) {
             VLOG_DBG_RL(&rl, "Partial mask is not supported");
             return -1;
         }
@@ -1912,6 +1926,7 @@ parse_set_actions(struct flow_actions *actions,
             add_set_flow_action(ipv4_src, RTE_FLOW_ACTION_TYPE_SET_IPV4_SRC);
             add_set_flow_action(ipv4_dst, RTE_FLOW_ACTION_TYPE_SET_IPV4_DST);
             add_set_flow_action(ipv4_ttl, RTE_FLOW_ACTION_TYPE_SET_TTL);
+            add_set_flow_action(ipv4_tos, RTE_FLOW_ACTION_TYPE_SET_IPV4_DSCP);
 
             if (mask && !is_all_zeros(mask, sizeof *mask)) {
                 VLOG_DBG_RL(&rl, "Unsupported IPv4 set action");
@@ -1924,6 +1939,8 @@ parse_set_actions(struct flow_actions *actions,
             add_set_flow_action(ipv6_src, RTE_FLOW_ACTION_TYPE_SET_IPV6_SRC);
             add_set_flow_action(ipv6_dst, RTE_FLOW_ACTION_TYPE_SET_IPV6_DST);
             add_set_flow_action(ipv6_hlimit, RTE_FLOW_ACTION_TYPE_SET_TTL);
+            add_set_flow_action(ipv6_tclass,
+                                RTE_FLOW_ACTION_TYPE_SET_IPV6_DSCP);
 
             if (mask && !is_all_zeros(mask, sizeof *mask)) {
                 VLOG_DBG_RL(&rl, "Unsupported IPv6 set action");
