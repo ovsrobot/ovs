@@ -2582,14 +2582,8 @@ char *
 ovsdb_data_row_name(const struct uuid *uuid)
 {
     char *name;
-    char *p;
 
-    name = xasprintf("row"UUID_FMT, UUID_ARGS(uuid));
-    for (p = name; *p != '\0'; p++) {
-        if (*p == '-') {
-            *p = '_';
-        }
-    }
+    name = xasprintf(UUID_ROW_FMT, UUID_ARGS(uuid));
 
     return name;
 }
