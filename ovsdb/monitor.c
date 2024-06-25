@@ -25,6 +25,7 @@
 #include "openvswitch/json.h"
 #include "json.h"
 #include "jsonrpc.h"
+#include "ovsdb-data.h"
 #include "ovsdb-error.h"
 #include "ovsdb-parser.h"
 #include "ovsdb.h"
@@ -197,14 +198,15 @@ enum ovsdb_monitor_row_type {
     OVSDB_MONITOR_ROW
 };
 
-typedef struct json *
+typedef bool
 (*compose_row_update_cb_func)
     (const struct ovsdb_monitor_table *mt,
      const struct ovsdb_monitor_session_condition * condition,
      enum ovsdb_monitor_row_type row_type,
      const void *,
      bool initial, unsigned long int *changed,
-     size_t n_columns);
+     size_t n_columns,
+     struct ds *);
 
 static void ovsdb_monitor_destroy(struct ovsdb_monitor *);
 static struct ovsdb_monitor_change_set * ovsdb_monitor_add_change_set(
@@ -963,28 +965,27 @@ ovsdb_monitor_row_skip_update(const struct ovsdb_monitor_table *mt,
     return false;
 }
 
-/* Returns JSON for a <row-update> (as described in RFC 7047) for 'row' within
- * 'mt', or NULL if no row update should be sent.
+/* Serializes a <row-update> (as described in RFC 7047) for 'row' within
+ * 'mt' into 'ds'. Returns true unless no row update should be sent.
  *
- * The caller should specify 'initial' as true if the returned JSON is going to
- * be used as part of the initial reply to a "monitor" request, false if it is
- * going to be used as part of an "update" notification.
+ * The caller should specify 'initial' as true if the serialized JSON is
+ * going to be used as part of the initial reply to a "monitor" request,
+ * false if it is going to be used as part of an "update" notification.
  *
  * 'changed' must be a scratch buffer for internal use that is at least
  * bitmap_n_bytes(n_columns) bytes long. */
-static struct json *
+static bool
 ovsdb_monitor_compose_row_update(
     const struct ovsdb_monitor_table *mt,
     const struct ovsdb_monitor_session_condition *condition OVS_UNUSED,
     enum ovsdb_monitor_row_type row_type OVS_UNUSED,
     const void *_row,
     bool initial, unsigned long int *changed,
-    size_t n_columns OVS_UNUSED)
+    size_t n_columns OVS_UNUSED,
+    struct ds *ds)
 {
     const struct ovsdb_monitor_row *row = _row;
     enum ovsdb_monitor_selection type;
-    struct json *old_json, *new_json;
-    struct json *row_json;
     size_t i;
 
     ovs_assert(row_type == OVSDB_MONITOR_ROW);
@@ -992,65 +993,95 @@ ovsdb_monitor_compose_row_update(
     if (ovsdb_monitor_row_skip_update(mt, row_type, row->old,
                                       row->new, type, changed,
                                       mt->n_columns)) {
-        return NULL;
+        return false;
     }
 
-    row_json = json_object_create();
-    old_json = new_json = NULL;
+    ds_put_char(ds, '{');
+
+    bool has_old = false;
     if (type & (OJMS_DELETE | OJMS_MODIFY)) {
-        old_json = json_object_create();
-        json_object_put(row_json, "old", old_json);
+        ds_put_cstr(ds, "\"old\":{");
+
+        has_old = true;
+        bool empty = true;
+        for (i = 0; i < mt->n_monitored_columns; i++) {
+            const struct ovsdb_monitor_column *c = &mt->columns[i];
+
+            if (!c->monitored || !(type & c->select))  {
+                /* We don't care about this type of change for this
+                * particular column (but we will care about it for some
+                * other column). */
+                continue;
+            }
+
+            if (type == OJMS_DELETE || bitmap_is_set(changed, i)) {
+                if (!empty) {
+                    ds_put_char(ds, ',');
+                }
+                empty = false;
+
+                json_string_escape(c->column->name, ds);
+                ds_put_char(ds, ':');
+                ovsdb_datum_to_json_ds(&row->old[i], &c->column->type, ds);
+            }
+        }
+        ds_put_char(ds, '}');
     }
+
     if (type & (OJMS_INITIAL | OJMS_INSERT | OJMS_MODIFY)) {
-        new_json = json_object_create();
-        json_object_put(row_json, "new", new_json);
+        if (has_old) {
+            ds_put_char(ds, ',');
+        }
+        ds_put_cstr(ds, "\"new\":{");
+
+        bool empty = true;
+        for (i = 0; i < mt->n_monitored_columns; i++) {
+            const struct ovsdb_monitor_column *c = &mt->columns[i];
+
+            if (!c->monitored || !(type & c->select))  {
+                /* We don't care about this type of change for this
+                * particular column (but we will care about it for some
+                * other column). */
+                continue;
+            }
+
+            if (!empty) {
+                ds_put_char(ds, ',');
+            }
+            empty = false;
+
+            json_string_escape(c->column->name, ds);
+            ds_put_char(ds, ':');
+            ovsdb_datum_to_json_ds(&row->new[i], &c->column->type, ds);
+        }
+        ds_put_char(ds, '}');
     }
-    for (i = 0; i < mt->n_monitored_columns; i++) {
-        const struct ovsdb_monitor_column *c = &mt->columns[i];
+    ds_put_char(ds, '}');
 
-        if (!c->monitored || !(type & c->select))  {
-            /* We don't care about this type of change for this
-             * particular column (but we will care about it for some
-             * other column). */
-            continue;
-        }
-
-        if ((type == OJMS_MODIFY && bitmap_is_set(changed, i))
-            || type == OJMS_DELETE) {
-            json_object_put(old_json, c->column->name,
-                            ovsdb_datum_to_json(&row->old[i],
-                                                &c->column->type));
-        }
-        if (type & (OJMS_INITIAL | OJMS_INSERT | OJMS_MODIFY)) {
-            json_object_put(new_json, c->column->name,
-                            ovsdb_datum_to_json(&row->new[i],
-                                                &c->column->type));
-        }
-    }
-
-    return row_json;
+    return true;
 }
 
-/* Returns JSON for a <row-update2> (as described in ovsdb-server(1) mapage)
- * for 'row' within * 'mt', or NULL if no row update should be sent.
+/* Serializes a <row-update2> (as described in ovsdb-server(1) mapage)
+ * for 'row' within * 'mt' into 'ds'.
+ * Returns true unless no row update should be sent.
  *
- * The caller should specify 'initial' as true if the returned JSON is
+ * The caller should specify 'initial' as true if the serialized JSON is
  * going to be used as part of the initial reply to a "monitor_cond" request,
  * false if it is going to be used as part of an "update2" notification.
  *
  * 'changed' must be a scratch buffer for internal use that is at least
  * bitmap_n_bytes(n_columns) bytes long. */
-static struct json *
+static bool
 ovsdb_monitor_compose_row_update2(
     const struct ovsdb_monitor_table *mt,
     const struct ovsdb_monitor_session_condition *condition,
     enum ovsdb_monitor_row_type row_type,
     const void *_row,
     bool initial, unsigned long int *changed,
-    size_t n_columns)
+    size_t n_columns,
+    struct ds *ds)
 {
     enum ovsdb_monitor_selection type;
-    struct json *row_update2, *diff_json;
     const struct ovsdb_datum *old, *new;
     size_t i;
 
@@ -1065,15 +1096,18 @@ ovsdb_monitor_compose_row_update2(
                                                    row_type, old, new);
     if (ovsdb_monitor_row_skip_update(mt, row_type, old, new, type, changed,
                                       n_columns)) {
-        return NULL;
+        return false;
     }
 
-    row_update2 = json_object_create();
+    ds_put_char(ds, '{');
     if (type == OJMS_DELETE) {
-        json_object_put(row_update2, "delete", json_null_create());
+        ds_put_cstr(ds, "\"delete\":null");
     } else {
-        diff_json = json_object_create();
         const char *op;
+        op = type == OJMS_INITIAL ? "initial"
+                                  : type == OJMS_MODIFY ? "modify" : "insert";
+        ds_put_format(ds, "\"%s\":{", op);
+        bool empty = true;
 
         for (i = 0; i < mt->n_monitored_columns; i++) {
             const struct ovsdb_monitor_column *c = &mt->columns[i];
@@ -1085,33 +1119,43 @@ ovsdb_monitor_compose_row_update2(
                 continue;
             }
 
-            if (type == OJMS_MODIFY) {
-                struct ovsdb_datum diff;
+            struct ovsdb_datum diff;
+            const struct ovsdb_datum *column_update = NULL;
 
+            if (type == OJMS_MODIFY) {
                 if (!bitmap_is_set(changed, i)) {
                     continue;
                 }
 
-                ovsdb_datum_diff(&diff ,&old[index], &new[index],
+                ovsdb_datum_diff(&diff, &old[index], &new[index],
                                         &c->column->type);
-                json_object_put(diff_json, c->column->name,
-                                ovsdb_datum_to_json(&diff, &c->column->type));
-                ovsdb_datum_destroy(&diff, &c->column->type);
+                column_update = &diff;
             } else {
-                if (!ovsdb_datum_is_default(&new[index], &c->column->type)) {
-                    json_object_put(diff_json, c->column->name,
-                                    ovsdb_datum_to_json(&new[index],
-                                                        &c->column->type));
+                if (ovsdb_datum_is_default(&new[index], &c->column->type)) {
+                    continue;
                 }
+
+                column_update = &new[index];
+            }
+
+            if (!empty) {
+                ds_put_char(ds, ',');
+            }
+            empty = false;
+            json_string_escape(c->column->name, ds);
+            ds_put_char(ds, ':');
+            ovsdb_datum_to_json_ds(column_update, &c->column->type, ds);
+
+            if (type == OJMS_MODIFY) {
+                ovsdb_datum_destroy(&diff, &c->column->type);
             }
         }
 
-        op = type == OJMS_INITIAL ? "initial"
-                                  : type == OJMS_MODIFY ? "modify" : "insert";
-        json_object_put(row_update2, op, diff_json);
+        ds_put_char(ds, '}');
     }
+    ds_put_char(ds, '}');
 
-    return row_update2;
+    return true;
 }
 
 static size_t
@@ -1166,6 +1210,8 @@ ovsdb_monitor_compose_update(
     size_t max_columns = ovsdb_monitor_max_columns(dbmon);
     unsigned long int *changed = xmalloc(bitmap_n_bytes(max_columns));
 
+    struct ds ds;
+    ds_init(&ds);
     json = NULL;
     struct ovsdb_monitor_change_set_for_table *mcst;
     LIST_FOR_EACH (mcst, list_in_change_set, &mcs->change_set_for_tables) {
@@ -1176,16 +1222,24 @@ ovsdb_monitor_compose_update(
         HMAP_FOR_EACH_SAFE (row, hmap_node, &mcst->rows) {
             cooperative_multitasking_yield();
 
-            struct json *row_json;
-            row_json = (*row_update)(mt, condition, OVSDB_MONITOR_ROW, row,
-                                     initial, changed, mcst->n_columns);
-            if (row_json) {
+            bool have_update;
+            have_update = (*row_update)(mt, condition, OVSDB_MONITOR_ROW, row,
+                                        initial, changed, mcst->n_columns,
+                                        &ds);
+            if (have_update) {
+                struct json *row_json;
+                /* row_json content is only used for serialization */
+                row_json =
+                    json_serialized_object_create_from_string(ds_cstr_ro(&ds));
+                ds_clear(&ds);
+
                 ovsdb_monitor_add_json_row(&json, mt->table->schema->name,
                                            &table_json, row_json,
                                            &row->uuid);
             }
         }
     }
+    ds_destroy(&ds);
     free(changed);
 
     return json;
@@ -1200,6 +1254,9 @@ ovsdb_monitor_compose_cond_change_update(
     struct json *json = NULL;
     size_t max_columns = ovsdb_monitor_max_columns(dbmon);
     unsigned long int *changed = xmalloc(bitmap_n_bytes(max_columns));
+
+    struct ds ds;
+    ds_init(&ds);
 
     SHASH_FOR_EACH (node, &dbmon->tables) {
         struct ovsdb_condition *old_condition, *new_condition, *diff_condition;
@@ -1219,15 +1276,21 @@ ovsdb_monitor_compose_cond_change_update(
 
         /* Iterate over all rows in table */
         HMAP_FOR_EACH (row, hmap_node, &mt->table->rows) {
-            struct json *row_json;
-
             cooperative_multitasking_yield();
 
-            row_json = ovsdb_monitor_compose_row_update2(mt, condition,
-                                                         OVSDB_ROW, row,
-                                                         false, changed,
-                                                         mt->n_columns);
-            if (row_json) {
+            bool have_update;
+            have_update = ovsdb_monitor_compose_row_update2(mt, condition,
+                                                            OVSDB_ROW, row,
+                                                            false, changed,
+                                                            mt->n_columns,
+                                                            &ds);
+            if (have_update) {
+                struct json *row_json;
+                /* row_json content is only used for serialization */
+                row_json =
+                    json_serialized_object_create_from_string(ds_cstr_ro(&ds));
+                ds_clear(&ds);
+
                 ovsdb_monitor_add_json_row(&json, mt->table->schema->name,
                                            &table_json, row_json,
                                            ovsdb_row_get_uuid(row));
@@ -1235,6 +1298,7 @@ ovsdb_monitor_compose_cond_change_update(
         }
         ovsdb_monitor_table_condition_updated(mt, condition);
     }
+    ds_destroy(&ds);
     free(changed);
 
     return json;
