@@ -127,7 +127,9 @@ static void json_parser_input(struct json_parser *, struct json_token *);
 
 static void json_error(struct json_parser *p, const char *format, ...)
     OVS_PRINTF_FORMAT(2, 3);
-
+
+static void json_serialize_string(const char *, struct ds *);
+
 const char *
 json_type_to_string(enum json_type type)
 {
@@ -987,11 +989,7 @@ exit:
 void
 json_string_escape(const char *in, struct ds *out)
 {
-    struct json json = {
-        .type = JSON_STRING,
-        .string = CONST_CAST(char *, in),
-    };
-    json_to_ds(&json, 0, out);
+    json_serialize_string(in, out);
 }
 
 static void
@@ -1572,7 +1570,6 @@ static void json_serialize_object(const struct shash *object,
                                   struct json_serializer *);
 static void json_serialize_array(const struct json_array *,
                                  struct json_serializer *);
-static void json_serialize_string(const char *, struct ds *);
 
 /* Converts 'json' to a string in JSON format, encoded in UTF-8, and returns
  * that string.  The caller is responsible for freeing the returned string,
