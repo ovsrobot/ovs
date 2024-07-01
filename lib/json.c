@@ -200,6 +200,14 @@ json_serialized_object_create(const struct json *src)
 }
 
 struct json *
+json_serialized_object_create_from_string(const char *s)
+{
+    struct json *json = json_create(JSON_SERIALIZED_OBJECT);
+    json->string = xstrdup(s);
+    return json;
+}
+
+struct json *
 json_serialized_object_create_with_yield(const struct json *src)
 {
     struct json *json = json_create(JSON_SERIALIZED_OBJECT);
