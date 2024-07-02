@@ -1192,13 +1192,23 @@ bond_shift_load(struct bond_entry *hash, struct bond_member *to)
     struct bond *bond = from->bond;
     uint64_t delta = hash->tx_bytes;
 
-    VLOG_INFO("bond %s: shift %"PRIu64"kB of load (with hash %"PRIdPTR") "
-              "from %s to %s (now carrying %"PRIu64"kB and "
-              "%"PRIu64"kB load, respectively)",
-              bond->name, delta / 1024, hash - bond->hash,
-              from->name, to->name,
-              (from->tx_bytes - delta) / 1024,
-              (to->tx_bytes + delta) / 1024);
+    if (delta >= 1024) {
+        VLOG_INFO("bond %s: shift %"PRIu64"kB of load (with hash %"PRIdPTR") "
+                "from %s to %s (now carrying %"PRIu64"kB and "
+                "%"PRIu64"kB load, respectively)",
+                bond->name, delta / 1024, hash - bond->hash,
+                from->name, to->name,
+                (from->tx_bytes - delta) / 1024,
+                (to->tx_bytes + delta) / 1024);
+    } else {
+        VLOG_INFO("bond %s: shift %"PRIu64"B of load (with hash %"PRIdPTR") "
+                "from %s to %s (now carrying %"PRIu64"kB and "
+                "%"PRIu64"kB load, respectively)",
+                bond->name, delta, hash - bond->hash,
+                from->name, to->name,
+                (from->tx_bytes - delta) / 1024,
+                (to->tx_bytes + delta) / 1024);
+    }
 
     /* Shift load away from 'from' to 'to'. */
     from->tx_bytes -= delta;
