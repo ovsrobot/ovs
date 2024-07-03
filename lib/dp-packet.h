@@ -176,6 +176,8 @@ struct dp_packet {
     ovs_be32 packet_type;          /* Packet type as defined in OpenFlow */
     uint16_t csum_start;           /* Position to start checksumming from. */
     uint16_t csum_offset;          /* Offset to place checksum. */
+    uint16_t inner_l2_pad_size;    /* Detected inner l2 padding size.
+                                    * Padding is non-pullable. */
     union {
         struct pkt_metadata md;
         uint64_t data[DP_PACKET_CONTEXT_SIZE / 8];
@@ -209,7 +211,10 @@ static inline void *dp_packet_eth(const struct dp_packet *);
 static inline void dp_packet_reset_offsets(struct dp_packet *);
 static inline void dp_packet_reset_offload(struct dp_packet *);
 static inline uint16_t dp_packet_l2_pad_size(const struct dp_packet *);
+static inline uint16_t dp_packet_inner_l2_pad_size(const struct dp_packet *);
 static inline void dp_packet_set_l2_pad_size(struct dp_packet *, uint16_t);
+static inline void dp_packet_set_inner_l2_pad_size(struct dp_packet *,
+                                                   uint16_t);
 static inline void *dp_packet_l2_5(const struct dp_packet *);
 static inline void dp_packet_set_l2_5(struct dp_packet *, void *);
 static inline void *dp_packet_l3(const struct dp_packet *);
@@ -435,6 +440,7 @@ static inline void
 dp_packet_reset_offsets(struct dp_packet *b)
 {
     b->l2_pad_size = 0;
+    b->inner_l2_pad_size = 0;
     b->l2_5_ofs = UINT16_MAX;
     b->l3_ofs = UINT16_MAX;
     b->l4_ofs = UINT16_MAX;
@@ -448,11 +454,24 @@ dp_packet_l2_pad_size(const struct dp_packet *b)
     return b->l2_pad_size;
 }
 
+static inline uint16_t
+dp_packet_inner_l2_pad_size(const struct dp_packet *b)
+{
+    return b->inner_l2_pad_size;
+}
+
 static inline void
 dp_packet_set_l2_pad_size(struct dp_packet *b, uint16_t pad_size)
 {
     ovs_assert(pad_size <= dp_packet_size(b));
     b->l2_pad_size = pad_size;
+}
+
+static inline void
+dp_packet_set_inner_l2_pad_size(struct dp_packet *b, uint16_t pad_size)
+{
+    ovs_assert(pad_size <= dp_packet_size(b));
+    b->inner_l2_pad_size = pad_size;
 }
 
 static inline void *
@@ -543,7 +562,7 @@ dp_packet_inner_l4_size(const struct dp_packet *b)
     return OVS_LIKELY(b->inner_l4_ofs != UINT16_MAX)
            ? (const char *) dp_packet_tail(b)
            - (const char *) dp_packet_inner_l4(b)
-           - dp_packet_l2_pad_size(b)
+           - dp_packet_inner_l2_pad_size(b)
            : 0;
 }
 

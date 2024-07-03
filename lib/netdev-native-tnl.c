@@ -156,6 +156,7 @@ netdev_tnl_push_ip_header(struct dp_packet *packet, const void *header,
     struct eth_header *eth;
     struct ip_header *ip;
     struct ovs_16aligned_ip6_hdr *ip6;
+    uint16_t l2_pad_size;
 
     eth = dp_packet_push_uninit(packet, size);
     *ip_tot_size = dp_packet_size(packet) - sizeof (struct eth_header);
@@ -163,7 +164,9 @@ netdev_tnl_push_ip_header(struct dp_packet *packet, const void *header,
     memcpy(eth, header, size);
     /* The encapsulated packet has type Ethernet. Adjust dp_packet. */
     packet->packet_type = htonl(PT_ETH);
+    l2_pad_size = dp_packet_l2_pad_size(packet);
     dp_packet_reset_offsets(packet);
+    dp_packet_set_inner_l2_pad_size(packet, l2_pad_size);
     packet->l3_ofs = sizeof (struct eth_header);
 
     if (netdev_tnl_is_header_ipv6(header)) {
