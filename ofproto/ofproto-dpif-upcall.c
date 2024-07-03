@@ -278,6 +278,7 @@ enum flow_del_reason {
     FDR_BAD_ODP_FIT,        /* Bad ODP flow fit. */
     FDR_FLOW_IDLE,          /* Flow idle timeout. */
     FDR_FLOW_LIMIT,         /* Kill all flows condition reached. */
+    FDR_FLOW_NO_STATS_IDLE, /* Flow idled out without receiving statistics. */
     FDR_FLOW_WILDCARDED,    /* Flow needs a narrower wildcard mask. */
     FDR_NO_OFPROTO,         /* Bridge not found. */
     FDR_PURGE,              /* User requested flow deletion. */
@@ -2450,7 +2451,14 @@ revalidate_ukey(struct udpif *udpif, struct udpif_key *ukey,
         log_unexpected_stats_jump(ukey, stats);
     }
 
-    if (need_revalidate) {
+    if (!ukey->stats.used
+        && ukey->created < udpif->dpif->current_ms - ofproto_max_idle) {
+        /* If the flow has a 'used' value of 0, meaning no stats were received
+         * for this flow, and the configured idle time has elapsed, it might
+         * indicates a stale flow (i.e., a flow without an installed datapath
+         * rule). In this case, it is safe to mark this ukey for deletion. */
+        *del_reason = FDR_FLOW_NO_STATS_IDLE;
+    } else if (need_revalidate) {
         if (should_revalidate(udpif, ukey, push.n_packets)) {
             if (!ukey->xcache) {
                 ukey->xcache = xlate_cache_new();
