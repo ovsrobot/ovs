@@ -2361,6 +2361,7 @@ mirror_packet(struct xlate_ctx *ctx, struct xbundle *xbundle,
                                 ctx->xin->resubmit_stats->n_packets,
                                 ctx->xin->resubmit_stats->n_bytes);
         }
+
         if (ctx->xin->xcache) {
             struct xc_entry *entry;
 
@@ -6013,6 +6014,19 @@ xlate_sample_action(struct xlate_ctx *ctx,
         *data = htonl(os->obs_point_id);
 
         compose_args.psample = &psample;
+
+        if (ctx->xin->resubmit_stats) {
+            dpif_lsample_credit_stats(lsample,
+                                      os->collector_set_id,
+                                      ctx->xin->resubmit_stats);
+        }
+        if (ctx->xin->xcache) {
+            struct xc_entry *entry;
+
+            entry = xlate_cache_add_entry(ctx->xin->xcache, XC_LSAMPLE);
+            entry->lsample.lsample = dpif_lsample_ref(lsample);
+            entry->lsample.collector_set_id = os->collector_set_id;
+        }
     }
 
     if (!compose_args.userspace && !compose_args.psample) {
