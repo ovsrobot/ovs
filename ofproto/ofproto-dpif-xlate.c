@@ -5909,6 +5909,44 @@ xlate_fin_timeout(struct xlate_ctx *ctx,
     }
 }
 
+static uint32_t
+ofpact_sample_get_domain(struct xlate_ctx *ctx,
+                         const struct ofpact_sample *os)
+{
+    if (os->obs_domain_src.field) {
+        union mf_subvalue *value = xmalloc(sizeof *value);
+        uint32_t obs_domain_id;
+
+        memset(value, 0xff, sizeof *value);
+        obs_domain_id = mf_get_subfield(&os->obs_domain_src, &ctx->xin->flow);
+        mf_write_subfield_flow(&os->obs_domain_src, value, &ctx->wc->masks);
+
+        free(value);
+        return obs_domain_id;
+    } else {
+        return os->obs_domain_imm;
+    }
+}
+
+static uint32_t
+ofpact_sample_get_point(struct xlate_ctx *ctx,
+                         const struct ofpact_sample *os)
+{
+    if (os->obs_point_src.field) {
+        union mf_subvalue *value = xmalloc(sizeof *value);
+        uint32_t obs_point_id;
+
+        memset(value, 0xff, sizeof *value);
+        obs_point_id = mf_get_subfield(&os->obs_point_src, &ctx->xin->flow);
+        mf_write_subfield_flow(&os->obs_point_src, value, &ctx->wc->masks);
+
+        free(value);
+        return obs_point_id;
+    } else {
+        return os->obs_point_imm;
+    }
+}
+
 static void
 xlate_fill_ipfix_sample(struct xlate_ctx *ctx,
                         const struct ofpact_sample *os,
@@ -5975,8 +6013,10 @@ xlate_fill_ipfix_sample(struct xlate_ctx *ctx,
     userspace->cookie.ofproto_uuid = ctx->xbridge->ofproto->uuid;
     userspace->cookie.flow_sample.probability = os->probability;
     userspace->cookie.flow_sample.collector_set_id = os->collector_set_id;
-    userspace->cookie.flow_sample.obs_domain_id = os->obs_domain_id;
-    userspace->cookie.flow_sample.obs_point_id = os->obs_point_id;
+    userspace->cookie.flow_sample.obs_domain_id =
+        ofpact_sample_get_domain(ctx, os);
+    userspace->cookie.flow_sample.obs_point_id =
+        ofpact_sample_get_point(ctx, os);
     userspace->cookie.flow_sample.output_odp_port = output_odp_port;
     userspace->cookie.flow_sample.direction = os->direction;
     userspace->include_actions = false;
@@ -5987,7 +6027,8 @@ xlate_sample_action(struct xlate_ctx *ctx,
                     const struct ofpact_sample *os,
                     bool last)
 {
-    uint8_t cookie_buf[sizeof(os->obs_domain_id) + sizeof(os->obs_point_id)];
+    uint8_t cookie_buf[sizeof(os->obs_domain_imm) +
+                       sizeof(os->obs_point_imm)];
     struct dpif_lsample *lsample = ctx->xbridge->lsample;
     struct dpif_ipfix *ipfix = ctx->xbridge->ipfix;
     struct compose_sample_args compose_args = {};
@@ -6018,12 +6059,12 @@ xlate_sample_action(struct xlate_ctx *ctx,
         ofpbuf_use_stub(&psample.cookie, cookie_buf, sizeof cookie_buf);
 
         data = ofpbuf_put_uninit(&psample.cookie,
-                                 sizeof(os->obs_domain_id));
-        *data = htonl(os->obs_domain_id);
+                                 sizeof(os->obs_domain_imm));
+        *data = htonl(ofpact_sample_get_domain(ctx, os));
 
         data = ofpbuf_put_uninit(&psample.cookie,
-                                 sizeof(os->obs_point_id));
-        *data = htonl(os->obs_point_id);
+                                 sizeof(os->obs_point_imm));
+        *data = htonl(ofpact_sample_get_point(ctx, os));
 
         compose_args.psample = &psample;
 
