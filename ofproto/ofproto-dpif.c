@@ -6432,7 +6432,8 @@ display_support_field(const char *name,
 static bool
 dpif_set_support(struct dpif_backer_support *rt_support,
                  struct dpif_backer_support *bt_support,
-                 const char *name, const char *value, struct ds *ds)
+                 const char *name, const char *value, bool force,
+                 struct ds *ds)
 {
     struct shash all_fields = SHASH_INITIALIZER(&all_fields);
     struct dpif_support_field *field;
@@ -6484,8 +6485,8 @@ dpif_set_support(struct dpif_backer_support *rt_support,
 
     if (field->type == DPIF_SUPPORT_FIELD_bool) {
         if (!strcasecmp(value, "true")) {
-            if (*(bool *)field->bt_ptr) {
-                *(bool *)field->rt_ptr = true;
+            if (*(bool *) field->bt_ptr || force) {
+                *(bool *) field->rt_ptr = true;
                 changed = true;
             } else {
                 ds_put_cstr(ds, "Can not enable features not supported by the datapth");
@@ -6720,21 +6721,36 @@ ofproto_unixctl_dpif_set_dp_features(struct unixctl_conn *conn,
                                      void *aux OVS_UNUSED)
 {
     struct ds ds = DS_EMPTY_INITIALIZER;
-    const char *br = argv[1];
+    struct ofproto_dpif *ofproto;
+    bool changed, force = false;
     const char *name, *value;
-    struct ofproto_dpif *ofproto = ofproto_dpif_lookup_by_name(br);
-    bool changed;
+    const char *br = NULL;
 
+    if (!strcmp(argv[1], "--force")) {
+        force = true;
+        if (argc > 2) {
+            br = argv[2];
+            name = argc > 3 ? argv[3] : NULL;
+            value = argc > 4 ? argv[4] : NULL;
+        } else {
+            unixctl_command_reply_error(conn, "bridge not specified");
+            return;
+        }
+    } else {
+        br = argv[1];
+        name = argc > 2 ? argv[2] : NULL;
+        value = argc > 3 ? argv[3] : NULL;
+    }
+
+    ofproto = ofproto_dpif_lookup_by_name(br);
     if (!ofproto) {
         unixctl_command_reply_error(conn, "no such bridge");
         return;
     }
 
-    name = argc > 2 ? argv[2] : NULL;
-    value = argc > 3 ? argv[3] : NULL;
     changed = dpif_set_support(&ofproto->backer->rt_support,
                                &ofproto->backer->bt_support,
-                               name, value, &ds);
+                               name, value, force, &ds);
     if (changed) {
         xlate_set_support(ofproto, &ofproto->backer->rt_support);
         udpif_flush(ofproto->backer->udpif);
@@ -6777,7 +6793,8 @@ ofproto_unixctl_init(void)
     unixctl_command_register("dpif/dump-flows",
                              "[-m] [--names | --no-names] bridge", 1, INT_MAX,
                              ofproto_unixctl_dpif_dump_flows, NULL);
-    unixctl_command_register("dpif/set-dp-features", "bridge", 1, 3 ,
+    unixctl_command_register("dpif/set-dp-features",
+                             "[--force] bridge [feature] [value]", 1, 4 ,
                              ofproto_unixctl_dpif_set_dp_features, NULL);
 }
 
