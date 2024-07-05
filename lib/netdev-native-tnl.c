@@ -161,6 +161,17 @@ netdev_tnl_push_ip_header(struct dp_packet *packet, const void *header,
     *ip_tot_size = dp_packet_size(packet) - sizeof (struct eth_header);
 
     memcpy(eth, header, size);
+
+    /* The prepended header may cause TSO marked packets to exceed the intended
+     * MTU on segmentation. */
+    if (dp_packet_hwol_is_tso(packet)) {
+        uint16_t tso_segsz = dp_packet_get_tso_segsz(packet);
+        if (tso_segsz > size) {
+            tso_segsz -= size;
+            dp_packet_set_tso_segsz(packet, tso_segsz);
+        }
+    }
+
     /* The encapsulated packet has type Ethernet. Adjust dp_packet. */
     packet->packet_type = htonl(PT_ETH);
     dp_packet_reset_offsets(packet);
