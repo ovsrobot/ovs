@@ -8153,6 +8153,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     uint64_t action_set_stub[1024 / 8];
     uint64_t frozen_actions_stub[1024 / 8];
     uint64_t actions_stub[256 / 8];
+    size_t sample_actions_len = 0;
     struct ofpbuf scratch_actions = OFPBUF_STUB_INITIALIZER(actions_stub);
     struct xlate_ctx ctx = {
         .xin = xin,
@@ -8412,7 +8413,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
             user_cookie_offset = compose_sflow_action(&ctx);
             compose_ipfix_action(&ctx, ODPP_NONE);
         }
-        size_t sample_actions_len = ctx.odp_actions->size;
+        sample_actions_len = ctx.odp_actions->size;
         bool ecn_drop = !tnl_process_ecn(flow);
 
         if (!ecn_drop
@@ -8575,7 +8576,7 @@ exit:
     }
 
     /* Install drop action if datapath supports explicit drop action. */
-    if (xin->odp_actions && !xin->odp_actions->size &&
+    if (xin->odp_actions && xin->odp_actions->size == sample_actions_len &&
         ovs_explicit_drop_action_supported(ctx.xbridge->ofproto)) {
         put_drop_action(xin->odp_actions, ctx.error);
     }
