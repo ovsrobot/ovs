@@ -16,6 +16,12 @@ Post-v3.3.0
        per interface 'options:dpdk-lsc-interrupt' to 'false'.
    - Python:
      * Added custom transaction support to the Idl via add_op().
+   - ovs-vsctl:
+     * Added a new filter column in the Mirror table which can be used to
+       apply filters to mirror ports.
+   - ovs-tcpdump:
+     * Added command line parameter --filter to enable filtering the packets
+       that are captured by tcpdump.
 
 
 v3.3.0 - 16 Feb 2024
