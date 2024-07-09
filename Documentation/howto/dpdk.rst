@@ -395,10 +395,11 @@ Supported actions for hardware offload are:
 - Output.
 - Drop.
 - Modification of Ethernet (mod_dl_src/mod_dl_dst).
-- Modification of IPv4 (mod_nw_src/mod_nw_dst/mod_nw_ttl).
+- Modification of IPv4 (mod_nw_src/mod_nw_dst/mod_nw_ttl/mod_nw_tos).
 - Modification of TCP/UDP (mod_tp_src/mod_tp_dst).
 - VLAN Push/Pop (push_vlan/pop_vlan).
-- Modification of IPv6 (set_field:<ADDR>->ipv6_src/ipv6_dst/mod_nw_ttl).
+- Modification of IPv6 (set_field:<ADDR>->ipv6_src/ipv6_dst/
+mod_nw_ttl/mod_nw_tos).
 - Clone/output (tnl_push and output) for encapsulating over a tunnel.
 - Tunnel pop, for packets received on physical ports.
 
