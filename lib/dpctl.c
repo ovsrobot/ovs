@@ -739,7 +739,6 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
             }
             error = netdev_get_stats(netdev, &s);
             if (!error) {
-                netdev_close(netdev);
                 print_stat(dpctl_p, "    RX packets:", s.rx_packets);
                 print_stat(dpctl_p, " errors:", s.rx_errors);
                 print_stat(dpctl_p, " dropped:", s.rx_dropped);
@@ -770,6 +769,7 @@ show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
                 dpctl_print(dpctl_p, ", could not retrieve stats (%s)",
                             ovs_strerror(error));
             }
+            netdev_close(netdev);
         }
         dpif_port_destroy(&dpif_port);
     }
