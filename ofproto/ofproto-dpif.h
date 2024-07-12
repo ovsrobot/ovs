@@ -151,6 +151,8 @@ void group_dpif_credit_stats(struct group_dpif *,
 struct group_dpif *group_dpif_lookup(struct ofproto_dpif *,
                                      uint32_t group_id, ovs_version_t version,
                                      bool take_ref);
+void group_dpif_format(struct ds *, struct group_dpif *,
+                       struct ofputil_bucket *);
 
 
 /* Backers.

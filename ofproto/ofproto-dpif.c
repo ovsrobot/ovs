@@ -5408,6 +5408,17 @@ group_dpif_lookup(struct ofproto_dpif *ofproto, uint32_t group_id,
                                                    version, take_ref);
     return ofgroup ? group_dpif_cast(ofgroup) : NULL;
 }
+
+void
+group_dpif_format(struct ds *ds, struct group_dpif *group,
+                  struct ofputil_bucket *bucket)
+{
+    struct ofgroup *ofg = &group->up;
+
+    ofputil_group_format(ds, ofg->group_id, ofg->type,
+                         bucket, &ofg->buckets, &ofg->props, OFP15_VERSION,
+                         false, NULL, NULL);
+}
 
 /* Sends 'packet' out 'ofport'. If 'port' is a tunnel and that tunnel type
  * supports a notion of an OAM flag, sets it if 'oam' is true.
