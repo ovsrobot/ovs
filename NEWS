@@ -7,6 +7,8 @@ Post-v3.3.0
        or 'text' (by default).
      * Added new option [--pretty] to print JSON output in a readable fashion.
      * 'dpif/show' and 'list-commands' now support output in JSON format.
+     * Added a new command 'lsample/show' that shows packet and byte statistics
+       of local sample exporter.
    - Userspace datapath:
      * Conntrack now supports 'random' flag for selecting ports in a range
        while natting and 'persistent' flag for selection of the IP address
