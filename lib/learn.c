@@ -167,6 +167,7 @@ learn_execute(const struct ofpact_learn *learn, const struct flow *flow,
                 if (ofp_to_u16(port) < ofp_to_u16(OFPP_MAX)
                     || port == OFPP_IN_PORT
                     || port == OFPP_FLOOD
+                    || port == OFPP_TABLE
                     || port == OFPP_LOCAL
                     || port == OFPP_ALL) {
                     ofpact_put_OUTPUT(ofpacts)->port = port;
