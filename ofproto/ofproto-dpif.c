@@ -1820,6 +1820,7 @@ construct(struct ofproto *ofproto_)
     ofproto->change_seq = 0;
     ofproto->ams_seq = seq_create();
     ofproto->ams_seqno = seq_read(ofproto->ams_seq);
+    ofproto->explicit_sampled_drops = false;
 
 
     SHASH_FOR_EACH_SAFE (node, &init_ofp_ports) {
@@ -2091,6 +2092,11 @@ run(struct ofproto *ofproto_)
                 }
             }
         }
+    }
+
+    if (ofproto->explicit_sampled_drops != ofproto_explicit_sampled_drops) {
+        ofproto->explicit_sampled_drops = ofproto_explicit_sampled_drops;
+        ofproto->backer->need_revalidate = REV_RECONFIGURE;
     }
     return 0;
 }
