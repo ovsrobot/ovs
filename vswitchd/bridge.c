@@ -889,7 +889,9 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
     ofproto_set_threads(
         smap_get_int(&ovs_cfg->other_config, "n-handler-threads", 0),
         smap_get_int(&ovs_cfg->other_config, "n-revalidator-threads", 0));
-
+    ofproto_set_explicit_sampled_drops(
+        smap_get_bool(&ovs_cfg->other_config, "explicit-sampled-drops",
+                      OFPROTO_EXPLICIT_SAMPLED_DROPS_DEFAULT));
     /* Destroy "struct bridge"s, "struct port"s, and "struct iface"s according
      * to 'ovs_cfg', with only very minimal configuration otherwise.
      *
