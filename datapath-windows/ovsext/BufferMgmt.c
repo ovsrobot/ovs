@@ -1110,12 +1110,14 @@ GetIpHeaderInfo(PNET_BUFFER_LIST curNbl,
     IPHdr *ipHdr;
     IPv6Hdr *ipv6Hdr;
     PNET_BUFFER curNb;
+    CHAR tempBuf[MAX_IP_HEADER_LEN];
 
     curNb = NET_BUFFER_LIST_FIRST_NB(curNbl);
     ASSERT(NET_BUFFER_NEXT_NB(curNb) == NULL);
+    NdisZeroMemory(tempBuf, MAX_IP_HEADER_LEN);
     eth = (EthHdr *)NdisGetDataBuffer(curNb,
                                       hdrInfo->l4Offset,
-                                      NULL, 1, 0);
+                                      (PVOID)tempBuf, 1, 0);
     if (eth == NULL) {
         return NDIS_STATUS_INVALID_PACKET;
     }
