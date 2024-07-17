@@ -153,12 +153,14 @@ OvsIpv4Reassemble(POVS_SWITCH_CONTEXT switchContext,
     PNET_BUFFER_LIST newNbl = NULL;
     UINT16 ipHdrLen, packetHeader;
     UINT32 packetLen;
+    CHAR tempBuf[MAX_IPV4_HLEN];
 
     curNb = NET_BUFFER_LIST_FIRST_NB(*curNbl);
     ASSERT(NET_BUFFER_NEXT_NB(curNb) == NULL);
 
+    NdisZeroMemory(tempBuf, MAX_IPV4_HLEN);
     eth = (EthHdr*)NdisGetDataBuffer(curNb, layers->l4Offset,
-                                     NULL, 1, 0);
+                                     (PVOID)tempBuf, 1, 0);
     if (eth == NULL) {
         return NDIS_STATUS_INVALID_PACKET;
     }
@@ -253,12 +255,14 @@ OvsProcessIpv4Fragment(POVS_SWITCH_CONTEXT switchContext,
     POVS_IPFRAG_ENTRY entry;
     POVS_FRAGMENT_LIST fragStorage;
     LOCK_STATE_EX htLockState;
+    CHAR tempBuf[MAX_IPV4_HLEN];
 
     curNb = NET_BUFFER_LIST_FIRST_NB(*curNbl);
     ASSERT(NET_BUFFER_NEXT_NB(curNb) == NULL);
 
+    NdisZeroMemory(tempBuf, MAX_IPV4_HLEN);
     eth = (EthHdr*)NdisGetDataBuffer(curNb, layers->l4Offset,
-                                     NULL, 1, 0);
+                                     (PVOID)tempBuf, 1, 0);
     if (eth == NULL) {
         return NDIS_STATUS_INVALID_PACKET;
     }

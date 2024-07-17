@@ -1110,12 +1110,22 @@ GetIpHeaderInfo(PNET_BUFFER_LIST curNbl,
     IPHdr *ipHdr;
     IPv6Hdr *ipv6Hdr;
     PNET_BUFFER curNb;
+    CHAR tempBuf[MAX_IPV4_HLEN];
 
     curNb = NET_BUFFER_LIST_FIRST_NB(curNbl);
     ASSERT(NET_BUFFER_NEXT_NB(curNb) == NULL);
-    eth = (EthHdr *)NdisGetDataBuffer(curNb,
-                                      hdrInfo->l4Offset,
-                                      NULL, 1, 0);
+
+    if (hdrInfo->isIPv6) {
+        eth = (EthHdr *)NdisGetDataBuffer(curNb,
+                                          hdrInfo->l4Offset,
+                                          NULL, 1, 0);
+    } else {
+        NdisZeroMemory(tempBuf, MAX_IPV4_HLEN);
+        eth = (EthHdr *)NdisGetDataBuffer(curNb,
+                                          hdrInfo->l4Offset,
+                                          (PVOID)tempBuf, 1, 0);
+    }
+
     if (eth == NULL) {
         return NDIS_STATUS_INVALID_PACKET;
     }
