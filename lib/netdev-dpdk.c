@@ -4664,10 +4664,14 @@ netdev_dpdk_get_mempool_info(struct unixctl_conn *conn,
         ovs_mutex_lock(&dev->mutex);
         ovs_mutex_lock(&dpdk_mp_mutex);
 
-        rte_mempool_dump(stream, dev->dpdk_mp->mp);
-        fprintf(stream, "    count: avail (%u), in use (%u)\n",
-                rte_mempool_avail_count(dev->dpdk_mp->mp),
-                rte_mempool_in_use_count(dev->dpdk_mp->mp));
+        if (dev->dpdk_mp) {
+            rte_mempool_dump(stream, dev->dpdk_mp->mp);
+            fprintf(stream, "    count: avail (%u), in use (%u)\n",
+                    rte_mempool_avail_count(dev->dpdk_mp->mp),
+                    rte_mempool_in_use_count(dev->dpdk_mp->mp));
+        } else {
+            fprintf(stream, "    Not allocated\n");
+        }
 
         ovs_mutex_unlock(&dpdk_mp_mutex);
         ovs_mutex_unlock(&dev->mutex);
