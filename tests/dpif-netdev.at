@@ -807,6 +807,30 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
 AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
 AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
+
+dnl Test with IP optional fields in a valid packet.
+optpkt=dnl
+["aaaaaaaaaaaabbbbbbbbbbbb0800"]dnl
+["4f000044abab00004001eeee0a0000010a000002"]dnl
+["07270c010203040a00000300000000"]dnl
+["00000000000000000000000000000000"]dnl
+["00000000000000000008003e2fb6d00000"]
+
+dnl IP header is indicates optional fields but doesn't contain any
+microgram="aaaaaaaaaaaabbbbbbbbbbbb08004f000044abab00004001eeee0a0000010a000002"
+
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_ip_csum=true])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_ip_csum_set_good=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${optpkt}])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${microgram}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+dnl The first packet has a checksum and the second doesn't
+AT_CHECK_UNQUOTED([tail -n 2 p2.pcap.txt], [0], [dnl
+[aaaaaaaaaaaabbbbbbbbbbbb08004f000044abab00004001dd2e0a000001c0a80101]dnl
+[07270c010203040a0000030000000000000000000000000000000000000000000000]dnl
+[00000000000008003e2fb6d00000]
+[aaaaaaaaaaaabbbbbbbbbbbb08004f000044abab00004001eeee0a0000010a000002]
+])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
