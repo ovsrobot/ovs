@@ -1394,7 +1394,7 @@ dp_packet_ip_set_header_csum(struct dp_packet *p, bool inner)
 
     ovs_assert(ip);
     ip->ip_csum = 0;
-    ip->ip_csum = csum(ip, sizeof *ip);
+    ip->ip_csum = csum(ip, IP_IHL(ip->ip_ihl_ver) * 4);
 }
 
 /* Returns 'true' if the packet 'p' has good integrity and the
