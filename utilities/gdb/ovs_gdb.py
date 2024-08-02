@@ -37,6 +37,7 @@
 #    - ovs_dump_udpif_keys {<udpif_name>|<udpif_address>} {short}
 #    - ovs_show_fdb {[<bridge_name>] {dbg} {hash}}
 #    - ovs_show_upcall {dbg}
+#    - ovs_dump_conntrack_conns <struct conntrack *>
 #
 #  Example:
 #    $ gdb $(which ovs-vswitchd) $(pidof ovs-vswitchd)
@@ -1549,6 +1550,45 @@ class CmdDumpPackets(gdb.Command):
 
         return packet
 
+#
+# Implements the GDB "ovs_dump_conntrack_conns" command
+#
+class CmdDumpDpConntrackConn(gdb.Command):
+    """Dump all connections in a conntrack set
+    Usage:
+      ovs_dump_conntrack_conns <struct conntrack *>
+
+      <struct conntrack *> : Pointer to conntrack
+
+    Example dumping all <struct conn> connections:
+
+    (gdb) ovs_dump_ofpacts actions actions_len
+    (struct conn *) 0x7f4094016960
+    (struct conn *) 0x7f4094045b30
+    (struct conn *) 0x7f409406fa80
+    (struct conn *) 0x7f4094081360
+    """
+    def __init__(self):
+        super(CmdDumpDpConntrackConn, self).__init__(
+            "ovs_dump_conntrack_conns",
+            gdb.COMMAND_DATA)
+
+    @staticmethod
+    def display_single_conn(conn, indent=0):
+        indent = " " * indent
+        print("{}(struct conn *) {} ".format(indent, conn))
+
+    def invoke(self, arg, from_tty):
+        arg_list = gdb.string_to_argv(arg)
+        if len(arg_list) != 1:
+            print("usage: ovs_dump_conntrack_conns "
+                  "<struct conntrack *>")
+            return
+        ct = gdb.parse_and_eval(arg_list[0]).cast(
+            gdb.lookup_type('struct conntrack').pointer())
+        for node in ForEachCMAP(ct["conns"], "struct conn", "cm_node"):
+            self.display_single_conn(node)
+
 
 #
 # Initialize all GDB commands
@@ -1571,3 +1611,4 @@ CmdDumpSmap()
 CmdDumpUdpifKeys()
 CmdShowFDB()
 CmdShowUpcall()
+CmdDumpDpConntrackConn()
