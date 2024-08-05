@@ -1106,24 +1106,24 @@ GetIpHeaderInfo(PNET_BUFFER_LIST curNbl,
                 const POVS_PACKET_HDR_INFO hdrInfo,
                 UINT32 *hdrSize)
 {
-    EthHdr *eth;
-    IPHdr *ipHdr;
-    IPv6Hdr *ipv6Hdr;
-    PNET_BUFFER curNb;
-
-    curNb = NET_BUFFER_LIST_FIRST_NB(curNbl);
-    ASSERT(NET_BUFFER_NEXT_NB(curNb) == NULL);
-    eth = (EthHdr *)NdisGetDataBuffer(curNb,
-                                      hdrInfo->l4Offset,
-                                      NULL, 1, 0);
-    if (eth == NULL) {
-        return NDIS_STATUS_INVALID_PACKET;
-    }
-
     if (hdrInfo->isIPv6) {
-        ipv6Hdr = (IPv6Hdr *)((PCHAR)eth + hdrInfo->l3Offset);
         *hdrSize = (UINT32)(hdrInfo->l4Offset);
     } else {
+        EthHdr *eth;
+        IPHdr *ipHdr;
+        CHAR tempBuf[MAX_IPV4_PKT_HDR_LEN];
+        PNET_BUFFER curNb;
+
+        curNb = NET_BUFFER_LIST_FIRST_NB(curNbl);
+        ASSERT(NET_BUFFER_NEXT_NB(curNb) == NULL);
+
+        NdisZeroMemory(tempBuf, MAX_IPV4_PKT_HDR_LEN);
+        eth = (EthHdr *)NdisGetDataBuffer(curNb,
+                                          hdrInfo->l4Offset,
+                                          (PVOID)tempBuf, 1, 0);
+        if (eth == NULL) {
+           return NDIS_STATUS_INVALID_PACKET;
+        }
         ipHdr = (IPHdr *)((PCHAR)eth + hdrInfo->l3Offset);
         *hdrSize = (UINT32)(hdrInfo->l3Offset + (ipHdr->ihl * 4));
     }

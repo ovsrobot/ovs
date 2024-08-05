@@ -2414,6 +2414,14 @@ OvsDoExecuteActions(POVS_SWITCH_CONTEXT switchContext,
             }
 
             PNET_BUFFER_LIST oldNbl = ovsFwdCtx.curNbl;
+            if (layers->value != 0 && layers->isIPv4 && layers->l7Offset != 0) {
+                PUINT8 bufferStart = NULL;
+                bufferStart = OvsGetHeaderBySize(&ovsFwdCtx, layers->l7Offset);
+                if (!bufferStart) {
+                    dropReason = L"OVS-Netbuf reallocated failed";
+                    goto dropit;
+                }
+            }
             status = OvsExecuteConntrackAction(&ovsFwdCtx, key,
                                                (const PNL_ATTR)a);
             if (status != NDIS_STATUS_SUCCESS) {

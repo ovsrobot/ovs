@@ -683,6 +683,7 @@ OvsGetTcpHeader(PNET_BUFFER_LIST nbl,
     TCPHdr *tcp;
     VOID *dest = storage;
     uint16_t ipv6ExtLength = 0;
+    CHAR tempBuf[MAX_IPV4_PKT_HDR_LEN];
 
     if (layers->isIPv6) {
         ipv6Hdr = NdisGetDataBuffer(NET_BUFFER_LIST_FIRST_NB(nbl),
@@ -701,9 +702,10 @@ OvsGetTcpHeader(PNET_BUFFER_LIST nbl,
             return storage;
         }
     } else {
+        NdisZeroMemory(tempBuf, MAX_IPV4_PKT_HDR_LEN);
         ipHdr = NdisGetDataBuffer(NET_BUFFER_LIST_FIRST_NB(nbl),
                                   layers->l4Offset + sizeof(TCPHdr),
-                                  NULL, 1 /*no align*/, 0);
+                                  (PVOID)tempBuf, 1 /*no align*/, 0);
         if (ipHdr == NULL) {
             return NULL;
         }

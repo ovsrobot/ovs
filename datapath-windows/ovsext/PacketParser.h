@@ -18,6 +18,7 @@
 #define __PACKET_PARSER_H_ 1
 
 #define MIN_IPV4_HLEN 20
+#define MAX_IPV4_PKT_HDR_LEN (ETH_MAX_HEADER_LEN + MAX_IPV4_HLEN)
 
 #include "precomp.h"
 #include "NetProto.h"
