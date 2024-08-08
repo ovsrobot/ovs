@@ -726,6 +726,50 @@ dp_packet_set_tso_segsz(struct dp_packet *p, uint16_t s)
 {
     p->mbuf.tso_segsz = s;
 }
+
+static inline uint16_t
+dp_packet_get_total_length(struct dp_packet *p)
+{
+    struct rte_ether_hdr *eth_hdr;
+    struct rte_vlan_hdr *vlan_hdr;
+    struct rte_ipv4_hdr *ipv4_hdr;
+    struct rte_ipv6_hdr *ipv6_hdr;
+    uint16_t ether_type;
+    void *packet_data;
+    uint8_t vlan_count = 0;
+
+    packet_data = dp_packet_data(p);
+    eth_hdr = CONST_CAST(struct rte_ether_hdr *, packet_data);
+    ether_type = rte_be_to_cpu_16(eth_hdr->ether_type);
+    packet_data = CONST_CAST(char *, packet_data)
+                  + sizeof(struct rte_ether_hdr);
+
+    while (ether_type == RTE_ETHER_TYPE_VLAN) {
+        vlan_hdr = CONST_CAST(struct rte_vlan_hdr *, packet_data);
+        ether_type = rte_be_to_cpu_16(vlan_hdr->eth_proto);
+        packet_data = CONST_CAST(char *, packet_data)
+                     + sizeof(struct rte_vlan_hdr);
+        vlan_count++;
+    }
+
+    switch (ether_type) {
+    case RTE_ETHER_TYPE_IPV4:
+        ipv4_hdr = CONST_CAST(struct rte_ipv4_hdr *, packet_data);
+        return (rte_be_to_cpu_16(ipv4_hdr->total_length)
+                + sizeof(struct rte_ether_hdr)
+                + (vlan_count * sizeof(struct rte_vlan_hdr)));
+
+    case RTE_ETHER_TYPE_IPV6:
+        ipv6_hdr = CONST_CAST(struct rte_ipv6_hdr *, packet_data);
+        return (rte_be_to_cpu_16(ipv6_hdr->payload_len)
+                + sizeof(struct rte_ipv6_hdr)
+                + sizeof(struct rte_ether_hdr)
+                + (vlan_count * sizeof(struct rte_vlan_hdr)));
+
+    default:
+        return UINT16_MAX;
+    }
+}
 #else /* DPDK_NETDEV */
 
 static inline void
@@ -792,6 +836,12 @@ static inline void
 dp_packet_set_tso_segsz(struct dp_packet *p, uint16_t s)
 {
     p->tso_segsz = s;
+}
+
+static inline uint16_t
+dp_packet_get_total_length(struct dp_packet *b OVS_UNUSED)
+{
+    return UINT16_MAX;
 }
 #endif /* DPDK_NETDEV */
 
@@ -1008,6 +1058,25 @@ dp_packet_batch_reset_cutlen(struct dp_packet_batch *batch)
             dp_packet_reset_cutlen(packet);
         }
         batch->trunc = false;
+    }
+}
+
+static inline void
+dp_packet_cut_l2_pad(struct dp_packet_batch *batch)
+{
+    struct dp_packet *packet;
+    int total_len;
+    int padding_length;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+        if (dp_packet_size(packet) == 64) {
+            total_len = dp_packet_get_total_length(packet);
+            if (UINT16_MAX != total_len) {
+                padding_length = dp_packet_size(packet) - total_len;
+                dp_packet_set_size(packet, dp_packet_size(packet)
+                                   - padding_length);
+            }
+        }
     }
 }
 

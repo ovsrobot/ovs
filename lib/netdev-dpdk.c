@@ -2982,6 +2982,7 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
 
     batch->count = nb_rx;
     dp_packet_batch_init_packet_fields(batch);
+    dp_packet_cut_l2_pad(batch);
 
     if (qfill) {
         if (nb_rx == NETDEV_MAX_BURST) {
