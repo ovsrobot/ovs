@@ -441,10 +441,33 @@ create_db () {
 
 backup_db () {
     # Back up the old version.
-    version=`ovsdb_tool db-version "$DB_FILE"`
-    cksum=`ovsdb_tool db-cksum "$DB_FILE" | awk '{print $1}'`
-    backup=$DB_FILE.backup$version-$cksum
+    if test ! -e "$DB_FILE"; then
+        return 0
+    elif ovsdb_tool db-is-standalone "$DB_FILE" 2>/dev/null; then
+        version=`ovsdb_tool db-version "$DB_FILE"`
+        cksum=`ovsdb_tool db-cksum "$DB_FILE" | awk '{print $1}'`
+        backup=$DB_FILE.backup$version-$cksum
+    else
+        # Support for clsutered databases
+        backup=`mktemp -q $DB_FILE.XXXXXXXXXX`
+    fi
     action "Backing up database to $backup" cp "$DB_FILE" "$backup" || return 1
+}
+
+validate_db () {
+    # Returns 0 if $DB_FILE is present and at least has a db name.
+    # Returns 1 if $DB_FILE is not present.
+    DB_FILE="$1"
+
+    if test ! -e "$DB_FILE"; then
+        return 1
+    elif ! ovsdb_tool db-name "$DB_FILE" >/dev/null 2>&1; then
+        backup_db "$DB_FILE"
+        rm -f "$DB_FILE"
+        return 1
+    fi
+
+    return 0
 }
 
 upgrade_db () {
@@ -452,7 +475,7 @@ upgrade_db () {
     DB_SCHEMA="$2"
 
     schemaver=`ovsdb_tool schema-version "$DB_SCHEMA"`
-    if test ! -e "$DB_FILE"; then
+    if ! validate_db "$DB_FILE"; then
         log_warning_msg "$DB_FILE does not exist"
         install_dir `dirname $DB_FILE`
         create_db "$DB_FILE" "$DB_SCHEMA"
@@ -513,7 +536,7 @@ create_cluster () {
       election_timer_arg="--election-timer=$ELECTION_TIMER_MS"
     fi
 
-    if test ! -e "$DB_FILE"; then
+    if ! validate_db "$DB_FILE"; then
         action "Creating cluster database $DB_FILE" ovsdb_tool $election_timer_arg create-cluster "$DB_FILE" "$DB_SCHEMA" "$LOCAL_ADDR"
     elif ovsdb_tool db-is-standalone "$DB_FILE"; then
         # Convert standalone database to clustered.
@@ -530,7 +553,7 @@ join_cluster() {
     LOCAL_ADDR="$3"
     REMOTE_ADDR="$4"
 
-    if test -e "$DB_FILE" && ovsdb_tool db-is-standalone "$DB_FILE"; then
+    if validate_db "$DB_FILE" && ovsdb_tool db-is-standalone "$DB_FILE"; then
         backup_db || return 1
         rm $DB_FILE
     fi

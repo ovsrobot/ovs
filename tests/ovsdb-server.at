@@ -105,6 +105,65 @@ AT_CHECK([uuidfilt output], [0],
 ]], [])
 AT_CLEANUP
 
+AT_SETUP([truncated database recreated])
+AT_KEYWORDS([ovsdb unix])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+ordinal_schema > schema
+
+dnl Loading ovs-lib resets our PATH, save a copy and then restore.
+_PATH=$PATH
+. ovs-lib
+PATH=$_PATH
+
+dnl Check that DB is recreated when schema corrupted.
+echo 'x' > db
+AT_CHECK([upgrade_db db schema], [0], [stdout], [ignore])
+AT_CHECK([grep -c "db does not exist\|Creating empty database db" stdout], [0], [2
+])
+AT_CHECK([validate_db db], [0])
+
+AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
+'["ordinals",
+  {"op": "insert",
+   "table": "ordinals",
+   "row": {"number": 1, "name": "one"}}]'
+]])
+AT_CHECK([ovsdb-server --remote=punix:socket db --run="sh txnfile"], [0], [stdout], [stderr])
+
+dnl Check that DB is not recreated on corrupted log. This is similar to the previous test but
+dnl includes a mid-operation upgrade.
+echo 'xxx' >> db
+AT_CHECK([upgrade_db db schema], [0], [], [ignore])
+
+dnl Validate that the db can now be used.
+AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
+'["ordinals",
+  {"op": "select",
+   "table": "ordinals",
+   "where": []}]'
+]])
+AT_CHECK([ovsdb-server --remote=punix:socket db --run="sh txnfile"], [0], [stdout], [stderr])
+AT_CHECK([grep 'syntax error: db: parse error.* in header line "xxx"' stderr], [0], [ignore])
+cat stdout >> output
+AT_CHECK([uuidfilt output], [0],
+  [[[{"rows":[{"_uuid":["uuid","<0>"],"_version":["uuid","<1>"],"name":"one","number":1}]}]
+]], [])
+
+dnl Validate then create and join cluster.
+echo 'x' > db
+AT_CHECK([create_cluster db schema tcp:1.1.1.1:1111 1000], [0], [stdout], [])
+AT_CHECK([grep -Ec 'Backing up database|Creating cluster database db' stdout], [0], [2
+])
+AT_CHECK([validate_db db], [0])
+
+dnl Join a cluster with a corrupted db.
+echo 'x' > db
+AT_CHECK([join_cluster db schema tcp:1.1.1.1:1111 tcp:2.2.2.2:2222], [0], [stdout], [])
+AT_CHECK([grep -Ec 'Backing up database|Joining db to cluster' stdout], [0], [2
+])
+AT_CHECK([validate_db db], [0])
+AT_CLEANUP
+
 AT_SETUP([truncating database log with bad transaction])
 AT_KEYWORDS([ovsdb server positive unix])
 AT_SKIP_IF([test "$IS_WIN32" = "yes"])
