@@ -233,6 +233,7 @@ nl_sock_create(int protocol, struct nl_sock **sockp)
 
     /* Obtain pid assigned by kernel. */
     local_size = sizeof local;
+    local.nl_family = AF_UNSPEC;
     if (getsockname(sock->fd, (struct sockaddr *) &local, &local_size) < 0) {
         VLOG_ERR("getsockname: %s", ovs_strerror(errno));
         goto error;
