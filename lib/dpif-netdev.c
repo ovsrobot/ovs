@@ -900,8 +900,8 @@ pmd_info_show_rxq(struct ds *reply, struct dp_netdev_pmd_thread *pmd,
     if (pmd->core_id != NON_PMD_CORE_ID) {
         struct rxq_poll *list;
         size_t n_rxq;
-        uint64_t total_pmd_cycles = 0;
-        uint64_t busy_pmd_cycles = 0;
+        double total_pmd_cycles = 0;
+        double busy_pmd_cycles = 0;
         uint64_t total_rxq_proc_cycles = 0;
         unsigned int intervals;
 
@@ -930,7 +930,7 @@ pmd_info_show_rxq(struct ds *reply, struct dp_netdev_pmd_thread *pmd,
         for (int i = 0; i < n_rxq; i++) {
             struct dp_netdev_rxq *rxq = list[i].rxq;
             const char *name = netdev_rxq_get_name(rxq->rx);
-            uint64_t rxq_proc_cycles = 0;
+            double rxq_proc_cycles = 0;
 
             rxq_proc_cycles = get_interval_values(rxq->cycles_intrvl,
                                                   &rxq->intrvl_idx,
@@ -942,9 +942,8 @@ pmd_info_show_rxq(struct ds *reply, struct dp_netdev_pmd_thread *pmd,
                                         ? "(enabled) " : "(disabled)");
             ds_put_format(reply, "  pmd usage: ");
             if (total_pmd_cycles) {
-                ds_put_format(reply, "%2"PRIu64"",
-                              rxq_proc_cycles * 100 / total_pmd_cycles);
-                ds_put_cstr(reply, " %");
+                ds_put_format(reply, "%2.0f %%",
+                              (rxq_proc_cycles * 100) / total_pmd_cycles);
             } else {
                 ds_put_format(reply, "%s", "NOT AVAIL");
             }
@@ -954,13 +953,14 @@ pmd_info_show_rxq(struct ds *reply, struct dp_netdev_pmd_thread *pmd,
         if (n_rxq > 0) {
             ds_put_cstr(reply, "  overhead: ");
             if (total_pmd_cycles) {
-                uint64_t overhead_cycles = 0;
+                double overhead_cycles = 0;
 
                 if (total_rxq_proc_cycles < busy_pmd_cycles) {
                     overhead_cycles = busy_pmd_cycles - total_rxq_proc_cycles;
                 }
-                ds_put_format(reply, "%2"PRIu64" %%",
-                              overhead_cycles * 100 / total_pmd_cycles);
+
+                ds_put_format(reply, "%2.0f %%",
+                              (overhead_cycles * 100) / total_pmd_cycles);
             } else {
                 ds_put_cstr(reply, "NOT AVAIL");
             }
