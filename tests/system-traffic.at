@@ -5460,6 +5460,7 @@ CHECK_CONNTRACK()
 CHECK_CONNTRACK_LOCAL_STACK()
 OVS_TRAFFIC_VSWITCHD_START()
 
+IPTABLES_CT([br0])
 ADD_NAMESPACES(at_ns0)
 
 AT_CHECK([ip addr add dev br0 "10.1.1.1/24"])
@@ -5509,6 +5510,7 @@ CHECK_CONNTRACK()
 CHECK_CONNTRACK_LOCAL_STACK()
 OVS_TRAFFIC_VSWITCHD_START()
 
+IPTABLES_CT([br0])
 ADD_NAMESPACES(at_ns0)
 
 AT_CHECK([ip addr add dev br0 "10.1.1.1/24"])
@@ -8396,6 +8398,7 @@ AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
 AT_CHECK([ovs-ofctl add-flow br-underlay "priority=100,ct_state=+trk,actions=ct_clear,resubmit(,0)"])
 AT_CHECK([ovs-ofctl add-flow br-underlay "priority=10,actions=normal"])
 
+IPTABLES_CT([br0])
 ADD_NAMESPACES(at_ns0)
 
 dnl Set up underlay link from host into the namespace using veth pair.

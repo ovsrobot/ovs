@@ -366,3 +366,8 @@ dnl Add a rule to always accept the traffic.
 m4_define([IPTABLES_ACCEPT],
   [AT_CHECK([iptables -I INPUT 1 -i $1 -j ACCEPT])
    on_exit 'iptables -D INPUT 1 -i $1'])
+
+dnl Required to let conntrack start tracking the packets outside ovs
+m4_define([IPTABLES_CT],
+  [AT_CHECK([iptables -t raw -I OUTPUT 1 -o $1 -j CT])
+   on_exit 'iptables -t raw -D OUTPUT 1'])
