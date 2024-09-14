@@ -4692,6 +4692,102 @@ out:
     netdev_close(netdev);
 }
 
+static void
+netdev_dpdk_show_port_xstats(struct unixctl_conn *conn,
+                           uint16_t port_id, struct ds * ports_xstats)
+{
+    char *response = NULL;
+    struct rte_eth_xstat_name *xstats_names;
+    uint64_t *values;
+    int len, ret, j;
+    static const char *nic_stats_border = "########################";
+
+    if (!rte_eth_dev_is_valid_port(port_id)) {
+        return;
+    }
+
+    len = rte_eth_xstats_get_names_by_id(port_id, NULL, 0, NULL);
+    if (len < 0) {
+        response = xasprintf("Cannot get xstats count\n");
+        goto err;
+    }
+    values = xmalloc(sizeof(*values) * len);
+    if (values == NULL) {
+        response = xasprintf("Cannot allocate memory for xstats\n");
+        goto err;
+    }
+
+    xstats_names = xmalloc(sizeof(struct rte_eth_xstat_name) * len);
+    if (xstats_names == NULL) {
+        response = xasprintf("Cannot allocate memory for xstat"
+                             " names\n");
+        free(values);
+        goto err;
+    }
+    if (len != rte_eth_xstats_get_names_by_id(port_id, xstats_names,
+                                              len, NULL)) {
+        response = xasprintf("Cannot get xstat names\n");
+        free(values);
+        free(xstats_names);
+        goto err;
+    }
+
+    ds_put_format(ports_xstats, "###### NIC extended statistics for"
+                  " port %-2d #########\n", port_id);
+    ds_put_format(ports_xstats, "%s############################\n",
+                  nic_stats_border);
+    ret = rte_eth_xstats_get_by_id(port_id, NULL, values, len);
+    if (ret < 0 || ret > len) {
+        response = xasprintf("Cannot get xstats\n");
+        free(values);
+        free(xstats_names);
+        goto err;
+    }
+
+    for (j = 0; j < len; j++) {
+        ds_put_format(ports_xstats, "%s: %"PRIu64"\n",
+                      xstats_names[j].name, values[j]);
+    }
+
+    ds_put_format(ports_xstats, "%s############################\n",
+                  nic_stats_border);
+
+    free(values);
+    free(xstats_names);
+    return;
+err:
+    unixctl_command_reply_error(conn, response);
+    free(response);
+}
+
+static void
+netdev_dpdk_show_xstats(struct unixctl_conn *conn, int argc,
+                   const char *argv[], void *aux OVS_UNUSED)
+{
+    int i;
+    struct ds ports_xstats = DS_EMPTY_INITIALIZER;
+    struct netdev *netdev = NULL;
+
+    if (argc == 2) {
+        netdev = netdev_from_name(argv[1]);
+        if (!netdev || !is_dpdk_class(netdev->netdev_class)) {
+            unixctl_command_reply_error(conn, "Not a DPDK Interface");
+            goto xstats;
+        }
+        struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+        netdev_dpdk_show_port_xstats(conn, dev->port_id,
+                                     &ports_xstats);
+    } else {
+        for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
+            netdev_dpdk_show_port_xstats(conn, i, &ports_xstats);
+        }
+    }
+    unixctl_command_reply(conn, ds_cstr(&ports_xstats));
+xstats:
+    ds_destroy(&ports_xstats);
+    netdev_close(netdev);
+}
+
 /*
  * Set virtqueue flags so that we do not receive interrupts.
  */
@@ -5163,6 +5259,10 @@ netdev_dpdk_class_init(void)
         unixctl_command_register("netdev-dpdk/get-mempool-info",
                                  "[netdev]", 0, 1,
                                  netdev_dpdk_get_mempool_info, NULL);
+
+        unixctl_command_register("netdev-dpdk/show-xstats",
+                                 "[netdev]", 0, 1,
+                                 netdev_dpdk_show_xstats, NULL);
 
         netdev_dpdk_reset_seq = seq_create();
         netdev_dpdk_last_reset_seq = seq_read(netdev_dpdk_reset_seq);
