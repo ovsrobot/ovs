@@ -1690,8 +1690,32 @@ netdev_linux_tap_batch_send(struct netdev *netdev_, int mtu,
 
         size = dp_packet_size(packet);
         do {
-            retval = write(netdev->tap_fd, dp_packet_data(packet), size);
-            error = retval < 0 ? errno : 0;
+            if (dp_packet_nb_segs(packet) > 1) {
+                int data_size = 0;
+                struct dp_packet *tmp_packet = packet;
+                void *buf = NULL;
+
+                while (tmp_packet) {
+                    data_size += dp_packet_data_size(tmp_packet);
+                    tmp_packet = dp_packet_next(tmp_packet);
+                }
+
+                buf = xmalloc(data_size);
+                data_size = 0;
+                while (packet) {
+                    memcpy(buf + data_size,
+                           dp_packet_data(packet),
+                           dp_packet_data_size(packet));
+                    data_size += dp_packet_data_size(packet);
+                    packet = dp_packet_next(packet);
+                }
+                retval = write(netdev->tap_fd, buf, data_size);
+                error = retval < 0 ? errno : 0;
+                free(buf);
+            } else {
+                retval = write(netdev->tap_fd, dp_packet_data(packet), size);
+                error = retval < 0 ? errno : 0;
+            }
         } while (error == EINTR);
 
         if (error) {

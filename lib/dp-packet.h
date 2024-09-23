@@ -699,6 +699,24 @@ dp_packet_size(const struct dp_packet *b)
     return b->mbuf.pkt_len;
 }
 
+static inline uint16_t
+dp_packet_nb_segs(const struct dp_packet *b)
+{
+    return b->mbuf.nb_segs;
+}
+
+static inline uint16_t
+dp_packet_data_size(const struct dp_packet *b)
+{
+    return b->mbuf.data_len;
+}
+
+static inline  struct dp_packet *
+dp_packet_next(const struct dp_packet *b )
+{
+    return (struct dp_packet *)(b->mbuf.next);
+}
+
 static inline void
 dp_packet_set_size(struct dp_packet *b, uint32_t v)
 {
@@ -774,6 +792,27 @@ dp_packet_set_base(struct dp_packet *b, void *d)
 
 static inline uint32_t
 dp_packet_size(const struct dp_packet *b)
+{
+    return b->size_;
+}
+
+static inline uint16_t
+dp_packet_nb_segs(const struct dp_packet *b)
+{
+    return 1;
+}
+
+static inline  struct dp_packet *
+dp_packet_next(const struct dp_packet *b )
+{
+    return NULL;
+}
+
+/*
+   only for compile
+*/
+static inline uint16_t
+dp_packet_data_size(const struct dp_packet *b)
 {
     return b->size_;
 }
