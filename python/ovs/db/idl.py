@@ -1351,7 +1351,7 @@ class Row(object):
         else:
             return atom
 
-    def __getattr__(self, column_name):
+    def get_column(self, column_name, uuid_to_row):
         assert self._changes is not None
         assert self._mutations is not None
 
@@ -1392,7 +1392,7 @@ class Row(object):
                     datum = data.Datum.from_python(column.type, dlist,
                                                    _row_to_uuid)
                 elif column.type.is_map():
-                    dmap = datum.to_python(self._uuid_to_row)
+                    dmap = datum.to_python(uuid_to_row)
                     if inserts is not None:
                         dmap.update(inserts)
                     if removes is not None:
@@ -1409,7 +1409,10 @@ class Row(object):
                 else:
                     datum = inserts
 
-        return datum.to_python(self._uuid_to_row)
+        return datum.to_python(uuid_to_row)
+
+    def __getattr__(self, column_name):
+        return self.get_column(column_name, self._uuid_to_row)
 
     def __setattr__(self, column_name, value):
         assert self._changes is not None
