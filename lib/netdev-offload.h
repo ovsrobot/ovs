@@ -46,11 +46,11 @@ struct ovs_action_push_tnl;
 
 /* Offload-capable (HW) netdev information */
 struct netdev_hw_info {
-    bool oor;		/* Out of Offload Resources ? */
-    atomic_bool miss_api_supported;  /* hw_miss_packet_recover() supported.*/
-    int offload_count;  /* Pending (non-offloaded) flow count */
-    int pending_count;  /* Offloaded flow count */
-    OVSRCU_TYPE(void *) offload_data; /* Offload metadata. */
+    bool oor;				/* Out of Offload Resources ? */
+    atomic_bool miss_api_supported;	/* hw_miss_packet_recover() supported.*/
+    int offload_count;			/* Offloaded flow count */
+    int pending_count;			/* Pending (non-offloaded) flow count */
+    OVSRCU_TYPE(void *) offload_data;	/* Offload metadata. */
 };
 
 enum hw_info_type {
