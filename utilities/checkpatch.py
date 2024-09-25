@@ -28,6 +28,7 @@ __errors = 0
 __warnings = 0
 empty_return_check_state = 0
 print_file_name = None
+check_authors_file = False
 checking_file = False
 total_line = 0
 colors = False
@@ -977,6 +978,21 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
                                       "who are not authors or co-authors or "
                                       "committers: %s"
                                       % ", ".join(extra_sigs))
+
+                if check_authors_file or author:
+                    m = re.search(r'<(.*?)>', author)
+                    if m:
+                        try:
+                            with open("AUTHORS.rst", "r") as file:
+                                file_content = file.read()
+                                pattern = r'\b' + re.escape(m.group(1)) + r'\b'
+                                if re.search(pattern, file_content) is None:
+                                    print_error("Author '%s' is not in the "
+                                    "AUTHORS.rst file!" % author)
+                        except FileNotFoundError:
+                            print_error("Can't open AUTHORS.rst file in "
+                                        "current path!")
+
             elif is_committer.match(line):
                 committer = is_committer.match(line).group(2)
             elif is_author.match(line):
@@ -1067,6 +1083,7 @@ Input options:
 
 Check options:
 -h|--help                      This help message
+-a|--check-authors-file        Check AUTHORS file for existense of author
 -b|--skip-block-whitespace     Skips the if/while/for whitespace tests
 -l|--skip-leading-whitespace   Skips the leading whitespace test
 -q|--quiet                     Only print error and warning information
@@ -1138,9 +1155,10 @@ if __name__ == '__main__':
                                           sys.argv[1:])
         n_patches = int(numeric_options[-1][1:]) if numeric_options else 0
 
-        optlist, args = getopt.getopt(args, 'bhlstfSq',
+        optlist, args = getopt.getopt(args, 'abhlstfSq',
                                       ["check-file",
                                        "help",
+                                       "check-authors-file",
                                        "skip-block-whitespace",
                                        "skip-leading-whitespace",
                                        "skip-signoff-lines",
@@ -1157,6 +1175,8 @@ if __name__ == '__main__':
         if o in ("-h", "--help"):
             usage()
             sys.exit(0)
+        elif o in ("-a", "--check-authors-file"):
+            check_authors_file = True
         elif o in ("-b", "--skip-block-whitespace"):
             skip_block_whitespace_check = True
         elif o in ("-l", "--skip-leading-whitespace"):
