@@ -1,6 +1,9 @@
 Post-v3.4.0
 --------------------
-
+    - Python:
+      * Added tool called "ovs-flowviz" capable of parsing OpenFlow
+        and datapath flow dumps and displaying them in several different
+        formats.
 
 v3.4.0 - 15 Aug 2024
 --------------------
