@@ -70,7 +70,8 @@ Testing is also important:
 
 If you are using GitHub, then you may utilize the GitHub Actions CI build
 systems.  They will run some of the above tests automatically
-when you push changes to your repository.
+when you push changes to your repository.  See the "Continuous Integration"
+section in :doc:`/topics/testing` for details on continuous integration.
 
 Email Subject
 -------------

@@ -545,3 +545,108 @@ Once you are done with experimenting you can tear down setup with::
 
 Sometimes deployment of Proof of Concept may fail, if, for example, VMs
 don't have network reachability to the Internet.
+
+
+Continuous Integration
+----------------------
+
+The Open vSwitch project can make use of multiple public and hosted
+CI services to help developers ensure their patches don't introduce
+additional regressions.  Each service requires different forms of
+configuration, and for the supported services the configuration
+file(s) to automatically build Open vSwitch with various build
+configurations and run the testsuites is/are provided in the
+repostiory.  For example, the GitHub Actions builds will be performed
+with gcc, clang, sparse, including DPDK, etc. with the -Werror
+compiler flag included.  Therefore, the build will fail if a new
+warning gets introduced by a change.
+
+Each ci system uses a different method of enablement, but most are available
+from the GitHub settings page.  By default, Open vSwitch includes a GitHub
+actions running configuration, and this will automatically email the repository
+owner.
+
+Currently, Open vSwitch project enables the following public CI services along
+with the appropriate configuration settings::
+
+ - AppVeyor: appveyor.yml
+ - Cirrus-CI: .cirrus.yml
+ - GitHub Actions: .github/workflows
+
+GitHub Actions is available without any additional configuration.
+
+Additionally, as each patch is posted to the mailing list, the public CI
+machinery will run additional tests on the patches and report results.
+
+Public report / Private lab hybrid testing
+------------------------------------------
+
+The Open vSwitch project makes use of the ozlabs patchwork instance
+to track patch status and management.  This patch tracking tool
+provides information to maintainers on the state of patches proposed
+for Open vSwitch.  The CI process for Open vSwitch makes use of the
+checks feature of the ozlabs patchwork instance.  These allow developers
+and maintainers to see what tests have been run, and report pass / fail
+criteria.
+
+In order to know that a patch or series is ready for testing, the
+Open vSwitch project makes use of the "0-day Robot", which is a hosted
+jenkins instance running the pw-ci_ scripts.  These can monitor a
+running patchwork instance for new patches and submit the patch details
+to other build systems, like jenkins.
+
+Once a patch is tested, it would be good to report the results. To this
+end, the Open vSwitch "0-day Robot" will accept emails sent to
+ovs-build@openvswitch.org formatted in the correct way to be reflected
+on this page.  This allows any lab to contribute to the testing and
+validation of patches.  Note that the ovs-build list participation
+requires subscribing the reporting email account to the list.
+
+To report a test status to a particular patch, send exactly one email to
+the mailing formatted as such::
+
+  From: your email <address@server.com>
+  To: ovs-build@openvswitch.org
+  Date: Mon, 28 Jun 2021 00:00:00 +0000
+  Subject: |STATUS| pwPATCHID commit subject
+
+  Test-Label: your-robot-or-test-name
+  Test-Status: STATUS
+  http://patchwork.ozlabs.org/api/patches/PATCHID/
+
+  _ONE LINE DESCRIPTION_
+
+  Addtional details
+
+In the above example, the STATUS is one of "success" "warning" "fail" depending
+on the outcome of the test.  This value is case-sensitive.  PATCHID should be
+the patch for which the test was executed, and ONE LINE DESCRIPTION should be a
+simple one line result description, ex: "robot-test: success"
+
+It is strongly recommended that if the patch is reporting a failure case, one
+of the patch authors is cc'd as well.  Please try to keep the details of a
+pass or fail to smallest amount that includes useful data.  For example, if
+a build log can be hosted in a publicly viewable way, then please include a
+URL rather than the entire build log.  If that isn't possible, try to parse
+the test logs and include a small snippet with the relevent details.  Always
+also try to publish what the test is running - that can help developers to
+recreate failures themselves.
+
+Example for success::
+
+  From: 0-Day Robot <robot@bytheb.org>
+  To: ovs-build@openvswitch.org
+  Date: Fri, 25 Jun 2021 14:30:37 +0400
+  Subject: |success| pw1497375 [ovs-dev] [PATCH v2] checkpatch: Ignore macro definitions of FOR_EACH
+
+  Test-Label: github-robot
+  Test-Status: success
+  http://patchwork.ozlabs.org/api/patches/1497375/
+
+  _github build: passed_
+  Build URL: https://github.com/ovsrobot/ovs/actions/runs/972188336
+
+If possible, please also try to support the ``recheck-request`` feature that
+the "0-day Robot" currently supports.
+
+.. _pw-ci: https://github.com/ovsrobot/pw-ci
