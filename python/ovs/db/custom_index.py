@@ -11,7 +11,7 @@ try:
 except ImportError:
     from ovs.compat import sortedcontainers
 
-from ovs.db import data
+from ovs.db import data, idl
 
 OVSDB_INDEX_ASC = "ASC"
 OVSDB_INDEX_DESC = "DESC"
@@ -43,7 +43,7 @@ class MultiColumnIndex(object):
 
     def _cmp(self, a, b):
         for col, direction, key in self.columns:
-            aval, bval = key(a), key(b)
+            aval, bval = idl._row_to_uuid(key(a)), idl._row_to_uuid(key(b))
             if aval == bval:
                 continue
             result = (aval > bval) - (aval < bval)
@@ -53,7 +53,8 @@ class MultiColumnIndex(object):
     def index_entry_from_row(self, row):
         return row._table.rows.IndexEntry(
             uuid=row.uuid,
-            **{c.column: getattr(row, c.column) for c in self.columns})
+            **{c.column: row.get_column(c.column, self._uuid_to_uuid)
+                for c in self.columns})
 
     def add(self, row):
         if not all(hasattr(row, col.column) for col in self.columns):
@@ -75,6 +76,13 @@ class MultiColumnIndex(object):
 
     def __iter__(self):
         return iter(r._table.rows[r.uuid] for r in self.values)
+
+    # For indexing we do not want to resolve the references as we cannot
+    # ensure that the referenced table is already filled, the uuid is
+    # sufficient for the index.
+    @staticmethod
+    def _uuid_to_uuid(atom, base):
+        return atom
 
 
 class IndexedRows(DictBase, object):
