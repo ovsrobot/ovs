@@ -200,6 +200,13 @@ static const struct rte_vhost_device_ops virtio_net_device_ops =
     .destroy_connection = destroy_connection,
 };
 
+/* Information used for postponed vhost driver unregistering. */
+struct vhost_unregister_info {
+    char *vhost_id;
+    char *name;
+    bool is_server;
+};
+
 /* Custom software stats for dpdk ports */
 struct netdev_dpdk_sw_stats {
     /* No. of retries when unable to transmit. */
@@ -1801,13 +1808,42 @@ netdev_dpdk_destruct(struct netdev *netdev)
 /* rte_vhost_driver_unregister() can call back destroy_device(), which will
  * try to acquire 'dpdk_mutex' and possibly 'dev->mutex'.  To avoid a
  * deadlock, none of the mutexes must be held while calling this function. */
-static int
-dpdk_vhost_driver_unregister(struct netdev_dpdk *dev OVS_UNUSED,
-                             char *vhost_id)
+static void
+dpdk_vhost_driver_unregister(struct vhost_unregister_info *vhost_info)
     OVS_EXCLUDED(dpdk_mutex)
-    OVS_EXCLUDED(dev->mutex)
 {
-    return rte_vhost_driver_unregister(vhost_id);
+    char *vhost_id = vhost_info->vhost_id;
+    char *name = vhost_info->name;
+
+    if (rte_vhost_driver_unregister(vhost_id)) {
+        VLOG_ERR("%s: Unable to unregister vhost driver for socket '%s'.\n",
+                 name, vhost_id);
+    } else if (vhost_info->is_server) {
+        /* OVS server mode - remove this socket from list for deletion */
+        fatal_signal_remove_file_to_unlink(vhost_id);
+    }
+    free(vhost_id);
+    free(name);
+    free(vhost_info);
+}
+
+/* Postpone calling rte_vhost_driver_unregister() so it is not called from the
+ * main thread otherwise it may deadlock with a device notification calling
+ * destroy_device(). i.e. rte_vhost_driver_unregister() from main thread
+ * blocks waiting for destroy_device() to complete, destroy_device() blocks
+ * waiting for main thread to quiesce. */
+static void
+dpdk_vhost_driver_unregister_postpone(const char *vhost_id, const char *name,
+                                      bool is_server)
+{
+    struct vhost_unregister_info *vhost_info;
+
+    vhost_info = xmalloc(sizeof *vhost_info);
+    vhost_info->vhost_id = xstrdup(vhost_id);
+    vhost_info->name = xstrdup(name);
+    vhost_info->is_server = is_server;
+
+    ovsrcu_postpone(dpdk_vhost_driver_unregister, vhost_info);
 }
 
 static void
@@ -1836,18 +1872,13 @@ netdev_dpdk_vhost_destruct(struct netdev *netdev)
     ovs_mutex_unlock(&dpdk_mutex);
 
     if (!vhost_id) {
-        goto out;
+        free(vhost_id);
+        return;
     }
 
-    if (dpdk_vhost_driver_unregister(dev, vhost_id)) {
-        VLOG_ERR("%s: Unable to unregister vhost driver for socket '%s'.\n",
-                 netdev->name, vhost_id);
-    } else if (!(dev->vhost_driver_flags & RTE_VHOST_USER_CLIENT)) {
-        /* OVS server mode - remove this socket from list for deletion */
-        fatal_signal_remove_file_to_unlink(vhost_id);
-    }
-out:
-    free(vhost_id);
+    dpdk_vhost_driver_unregister_postpone(vhost_id, netdev_get_name(netdev),
+                                          !(dev->vhost_driver_flags
+                                          & RTE_VHOST_USER_CLIENT));
 }
 
 static void
@@ -6284,7 +6315,10 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
     ovs_mutex_unlock(&dev->mutex);
 
     if (unregister) {
-        dpdk_vhost_driver_unregister(dev, vhost_id);
+        dpdk_vhost_driver_unregister_postpone(vhost_id,
+                                              netdev_get_name(netdev),
+                                              !(dev->vhost_driver_flags
+                                              & RTE_VHOST_USER_CLIENT));
     }
 
     ovs_mutex_lock(&dev->mutex);
