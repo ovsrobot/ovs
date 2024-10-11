@@ -5,6 +5,8 @@ Post-v3.4.0
        that does not have a specific value defined, rather than being
        treated as a global value, aligning the behavior with that of
        the kernel datapath.
+   - DPDK:
+     * OVS validated with DPDK 23.11.2.
 
 
 v3.4.0 - 15 Aug 2024
