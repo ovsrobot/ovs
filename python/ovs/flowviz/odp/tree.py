@@ -14,6 +14,7 @@
 
 import sys
 
+from rich import box
 from rich.style import Style
 from rich.console import Group
 from rich.panel import Panel
@@ -30,6 +31,21 @@ from ovs.flowviz.console import (
 )
 from ovs.flowviz.process import (
     FileProcessor,
+)
+
+
+TreeBox = box.Box(
+    """\
+╮   
+|  |
+|  |
+|  |
+|  |
+|  |
+|  |
+└   
+""",  # noqa: W291
+    ascii=True,
 )
 
 
@@ -453,7 +469,15 @@ class ConsoleTreeProcessor(FileProcessor):
         if self.ofconsole.style:
             recirc_style = self.recirc_style_gen(hex(node.recirc))
         else:
-            recirc_style = None
+            recirc_style = Style(color="default")
+
+        visible_blocks = list(node.visible_blocks())
+
+        # If there is only one node with this recirc_id, don't create
+        # an extra nesting level, just print the node.
+        if len(visible_blocks) == 1:
+            self.print_block(visible_blocks[0], parent, recirc_style)
+            return
 
         node_text = Text(
             "[recirc_id({}) in_port({})]".format(
@@ -462,13 +486,14 @@ class ConsoleTreeProcessor(FileProcessor):
             style=recirc_style,
         )
         console_node = parent.add(
-            Panel.fit(node_text), guide_style=recirc_style
+            Panel(node_text, box=TreeBox, border_style=recirc_style),
+            guide_style=recirc_style
         )
 
-        for block in node.visible_blocks():
-            self.print_block(block, console_node)
+        for block in visible_blocks:
+            self.print_block(block, console_node, recirc_style)
 
-    def print_block(self, block, parent):
+    def print_block(self, block, parent, style):
         # Print the flow matches and the statistics.
         flow_text = []
         omit_first = {
@@ -495,18 +520,14 @@ class ConsoleTreeProcessor(FileProcessor):
         act_buf.append_extra("actions: ", Style(bold=(self.style is not None)))
 
         self.ofconsole.format_flow(act_buf, block.flows[0].flow, omitted=omit)
+        flow_text.append(act_buf.text)
 
         flows_node = parent.add(
-            Panel(Group(*flow_text)), guide_style=Style(color="default")
-        )
-        action_node = flows_node.add(
-            Panel.fit(
-                act_buf.text, border_style="green" if self.style else "default"
-            ),
-            guide_style=Style(color="default"),
+            Panel(Group(*flow_text), box=TreeBox, border_style=style),
+            guide_style=style
         )
 
         # Nested to the action, print the next recirc nodes.
         for node in block.next_recirc_nodes:
             if node.visible:
-                self.print_recirc_node(action_node, node)
+                self.print_recirc_node(flows_node, node)

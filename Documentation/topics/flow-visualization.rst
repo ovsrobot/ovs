@@ -201,49 +201,37 @@ For example:
 ::
 
   Datapath Flows (logical)
-  └── ╭────────────────────────────────╮
-      │ [recirc_id(0x0) in_port(eth0)] │
-      ╰────────────────────────────────╯
-      └── ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-          │ recirc_id(0),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),eth(src=0a:58:0a:84:00:07,dst=22:a1:5d:dc:95:50),eth_type(0x0800),ipv4(src=10.132.0.7,dst=1 │
-          │ 0.128.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:4924, bytes:468961,                                                                                                   │
-          │ recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:01),eth_type(......),ipv4(src=10.132.0.7,dst=1 │
-          │ 0.0.0.0/255.255.128.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=32768/0x8000,dst=0/0), packets:711, bytes:114236,                                                                                                         │
-          │ recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:14),eth_type(......),ipv4(src=10.132.0.7,dst=1 │
-          │ 0.128.0.0/255.128.0.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=4096/0xf000,dst=0/0), packets:140, bytes:114660,                                                                                                          │
-          │ recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:22),eth_type(......),ipv4(src=10.132.0.7,dst=1 │
-          │ 0.128.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:1, bytes:66,                                                                                                          │
-          │ recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:09),eth_type(......),ipv4(src=10.132.0.7,dst=1 │
-          │ 0.128.0.0/255.128.0.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=4096/0xf000,dst=0/0), packets:0, bytes:0,                                                                                                                 │
-          ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-          └── ╭───────────────────────────────────────╮
-              │ actions: ct(zone=32,nat),recirc(0xc1) │
-              ╰───────────────────────────────────────╯
-              └── ╭─────────────────────────────────╮
-                  │ [recirc_id(0xc1) in_port(eth0)] │
-                  ╰─────────────────────────────────╯
-                  ├── ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-                  │   │ recirc_id(0xc1),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0xf),ct_label(0/0),eth(src=0a:58:0a:84:00:07,dst=22:a1:5d:dc:95:50),eth_type(0x0800),ip │
-                  │   │ v4(src=0.0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:4924, bytes:468961,                                                                  │
-                  │   ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-                  │   └── ╭───────────────────────────────────────╮
-                  │       │ actions: ct(zone=14,nat),recirc(0xc2) │
-                  │       ╰───────────────────────────────────────╯
-                  │       └── ╭─────────────────────────────────╮
-                  │           │ [recirc_id(0xc2) in_port(eth0)] │
-                  │           ╰─────────────────────────────────╯
-                  │           └── ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-                  │               │ recirc_id(0xc2),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0x1),ct_label(0/0),eth(src=00:00:00:00:00:00/00:00:00:00:00:00,dst=00:00:00 │
-                  │               │ :00:00:00/01:00:00:00:00:00),eth_type(0x0800),ipv4(src=0.0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=0/0,tos=0/0,ttl=0/0,frag=no), packets:4924, bytes:468961,                                        │
-                  │               ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-                  │               └── ╭──────────────────────╮
-                  │                   │ actions: ovn-k8s-mp0 │
-                  │                   ╰──────────────────────╯
-                  ├── ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-                  │   │ recirc_id(0xc1),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0xf),ct_label(0/0),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:14),eth_type(0x0800),ip │
-                  │   │ v4(src=0.0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=4096/0xf000,dst=0/0), packets:140, bytes:114660                                                                          │
-                  │   ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
+  └── ╮
+      | recirc_id(0),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),eth(src=0a:58:0a:84:00:07,dst=22:a1:5d:dc:95:50),eth_type(0x0800),ipv4(src=10.132.0.7,dst=10.12 |
+      | 8.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:4924, bytes:468961,                                                                                                           |
+      | recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:01),eth_type(......),ipv4(src=10.132.0.7,dst=10.0. |
+      | 0.0/255.255.128.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=32768/0x8000,dst=0/0), packets:711, bytes:114236,                                                                                                                 |
+      | recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:14),eth_type(......),ipv4(src=10.132.0.7,dst=10.12 |
+      | 8.0.0/255.128.0.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=4096/0xf000,dst=0/0), packets:140, bytes:114660,                                                                                                                  |
+      | recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:22),eth_type(......),ipv4(src=10.132.0.7,dst=10.12 |
+      | 8.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:1, bytes:66,                                                                                                                  |
+      | recirc_id(0),dp_hash(...),skb_priority(...),in_port(eth0),skb_mark(...),ct_state(...),ct_zone(...),ct_mark(...),ct_label(...),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:09),eth_type(......),ipv4(src=10.132.0.7,dst=10.12 |
+      | 8.0.0/255.128.0.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=4096/0xf000,dst=0/0), packets:0, bytes:0,                                                                                                                         |
+      | actions: ct(zone=32,nat),recirc(0xc1)                                                                                                                                                                                         |
+      └
+      └── ╮
+          | [recirc_id(0xc1) in_port(eth0)]                                                                                                                                                                                           |
+          └
+          ├── ╮
+          │   | recirc_id(0xc1),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0xf),ct_label(0/0),eth(src=0a:58:0a:84:00:07,dst=22:a1:5d:dc:95:50),eth_type(0x0800),ipv4(src=0 |
+          │   | .0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:4924, bytes:468961,                                                                                  |
+          │   | actions: ct(zone=14,nat),recirc(0xc2)                                                                                                                                                                                 |
+          │   └
+          │   └──
+          │       | recirc_id(0xc2),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0x1),ct_label(0/0),eth(src=00:00:00:00:00:00/00:00:00:00:00:00,dst=00:00:00:00:00:00/01:00: |
+          │       | 00:00:00:00),eth_type(0x0800),ipv4(src=0.0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=0/0,tos=0/0,ttl=0/0,frag=no), packets:4924, bytes:468961,                                                                        |
+          │       | actions: ovn-k8s-mp0                                                                                                                                                                                              |
+          │       └
+          ├── ╮
+          │   | recirc_id(0xc1),dp_hash(0/0),skb_priority(0/0),in_port(eth0),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0xf),ct_label(0/0),eth(src=0a:58:0a:84:00:07,dst=0a:58:0a:84:00:14),eth_type(0x0800),ipv4(src=0 |
+          │   | .0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=17,tos=0/0,ttl=0/0,frag=no),udp(src=4096/0xf000,dst=0/0), packets:140, bytes:114660                                                                                          |
+          │   | actions: ct(zone=14,nat),drop                                                                                                                                                                                         |
+          │   └
 
 The above shows a part of a bigger tree with an initial block of flows
 at ``recirc_id(0)`` which match on different destination Ethernet
