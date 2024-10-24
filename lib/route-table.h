@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "openvswitch/types.h"
+#include "openvswitch/ofpbuf.h"
 
 struct route_data {
     /* Copied from struct rtmsg. */
@@ -55,6 +55,7 @@ uint64_t route_table_get_change_seq(void);
 void route_table_init(void);
 void route_table_run(void);
 void route_table_wait(void);
+int route_table_parse(struct ofpbuf *buf, void *change_);
 bool route_table_fallback_lookup(const struct in6_addr *ip6_dst,
                                  char name[],
                                  struct in6_addr *gw6);
