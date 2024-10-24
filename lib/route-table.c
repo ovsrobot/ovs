@@ -207,6 +207,107 @@ route_table_reset(void)
     }
 }
 
+static bool
+route_table_add_nexthop(struct route_table_msg *change,
+                        bool ipv4,
+                        struct nlattr *nl_gw,
+                        uint32_t ifindex)
+{
+    ovs_assert(change->rd.n_nexthops < MAX_ROUTE_DATA_NEXTHOP);
+
+    struct route_data_nexthop *nh = &change->rd.nexthops[
+            change->rd.n_nexthops];
+
+    if (nl_gw) {
+        if (ipv4) {
+            ovs_be32 gw;
+            gw = nl_attr_get_be32(nl_gw);
+            in6_addr_set_mapped_ipv4(&nh->rta_gw, gw);
+        } else {
+            nh->rta_gw = nl_attr_get_in6_addr(nl_gw);
+        }
+    }
+
+    if (ifindex && !if_indextoname(ifindex, nh->ifname)) {
+        int error = errno;
+
+        VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
+                    ifindex, ovs_strerror(error));
+        if (error == ENXIO) {
+            change->relevant = false;
+        } else {
+            return 0;
+        }
+    }
+    change->rd.n_nexthops++;
+    return 1;
+}
+
+
+/* The following function uses the RTNH defines of rtnetlink.h
+ * As these rely on casts from char * to struct rtnexthop * clang will issue
+ * a warning about alignment even though the defines will ensure that the data
+ * is alligned. */
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-align"
+#endif
+
+static bool
+route_table_parse_multipath(struct route_table_msg *change,
+                            struct nlattr *multipath,
+                            bool ipv4)
+{
+    static const struct nl_policy policy[] = {
+        [RTA_GATEWAY] = { .type = NL_A_U32, .optional = true },
+    };
+
+    static const struct nl_policy policy6[] = {
+        [RTA_GATEWAY] = { .type = NL_A_IPV6, .optional = true },
+    };
+
+    struct nlattr *attrs[ARRAY_SIZE(policy)];
+
+    size_t len = RTA_PAYLOAD((struct rtattr *) multipath);
+    struct rtnexthop *rtnh = RTA_DATA(multipath);
+
+    while (len >= sizeof(*rtnh) && len >= rtnh->rtnh_len &&
+           change->rd.n_nexthops < MAX_ROUTE_DATA_NEXTHOP) {
+
+        bool parsed;
+
+        struct ofpbuf buf;
+        ofpbuf_use_const(&buf, RTNH_DATA(rtnh),
+                         rtnh->rtnh_len - sizeof(*rtnh));
+        if (ipv4) {
+            parsed = nl_policy_parse(&buf, 0, policy, attrs,
+                                     ARRAY_SIZE(policy));
+        } else {
+            parsed = nl_policy_parse(&buf, 0, policy6, attrs,
+                                     ARRAY_SIZE(policy6));
+        }
+
+        if (!parsed) {
+            VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
+            return 0;
+        }
+
+        if (!route_table_add_nexthop(change, ipv4, attrs[RTA_GATEWAY],
+                                     rtnh->rtnh_ifindex)) {
+            return 0;
+        }
+
+        len -= RTNH_ALIGN(rtnh->rtnh_len);
+        rtnh = RTNH_NEXT(rtnh);
+    }
+
+    return 1;
+}
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
 /* Return RTNLGRP_IPV4_ROUTE or RTNLGRP_IPV6_ROUTE on success, 0 on parse
  * error. */
 int
@@ -223,6 +324,7 @@ route_table_parse(struct ofpbuf *buf, void *change_)
         [RTA_PREFSRC] = { .type = NL_A_U32, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -233,6 +335,7 @@ route_table_parse(struct ofpbuf *buf, void *change_)
         [RTA_PREFSRC] = { .type = NL_A_IPV6, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -255,7 +358,6 @@ route_table_parse(struct ofpbuf *buf, void *change_)
     if (parsed) {
         const struct nlmsghdr *nlmsg;
         uint32_t table_id;
-        int rta_oif;      /* Output interface index. */
 
         nlmsg = buf->data;
 
@@ -289,21 +391,6 @@ route_table_parse(struct ofpbuf *buf, void *change_)
         change->rd.local = rtm->rtm_type == RTN_LOCAL;
         change->rd.plen = rtm->rtm_dst_len;
         change->rd.rtm_protocol = rtm->rtm_protocol;
-        if (attrs[RTA_OIF]) {
-            rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
-
-            if (!if_indextoname(rta_oif, change->rd.ifname)) {
-                int error = errno;
-
-                VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
-                            rta_oif, ovs_strerror(error));
-                if (error == ENXIO) {
-                    change->relevant = false;
-                } else {
-                    return 0;
-                }
-            }
-        }
 
         if (attrs[RTA_DST]) {
             if (ipv4) {
@@ -326,20 +413,27 @@ route_table_parse(struct ofpbuf *buf, void *change_)
                     nl_attr_get_in6_addr(attrs[RTA_PREFSRC]);
             }
         }
-        if (attrs[RTA_GATEWAY]) {
-            if (ipv4) {
-                ovs_be32 gw;
-                gw = nl_attr_get_be32(attrs[RTA_GATEWAY]);
-                in6_addr_set_mapped_ipv4(&change->rd.rta_gw, gw);
-            } else {
-                change->rd.rta_gw = nl_attr_get_in6_addr(attrs[RTA_GATEWAY]);
-            }
-        }
         if (attrs[RTA_MARK]) {
             change->rd.mark = nl_attr_get_u32(attrs[RTA_MARK]);
         }
         if (attrs[RTA_PRIORITY]) {
             change->rd.rta_priority = nl_attr_get_u32(attrs[RTA_PRIORITY]);
+        }
+
+        if (attrs[RTA_GATEWAY] || attrs[RTA_OIF]) {
+            uint32_t ifindex = 0;
+            if (attrs[RTA_OIF]) {
+                ifindex = nl_attr_get_u32(attrs[RTA_OIF]);
+            }
+            if (!route_table_add_nexthop(change, ipv4, attrs[RTA_GATEWAY],
+                                         ifindex)) {
+                return 0;
+            }
+        } else if (attrs[RTA_MULTIPATH]) {
+            if (!route_table_parse_multipath(change,
+                                             attrs[RTA_MULTIPATH], ipv4)) {
+                return 0;
+            }
         }
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
@@ -367,8 +461,8 @@ route_table_handle_msg(const struct route_table_msg *change,
         const struct route_data *rd = &change->rd;
 
         ovs_router_insert(rd->mark, &rd->rta_dst, rd->rtm_dst_len,
-                          rd->local, rd->ifname, &rd->rta_gw,
-                          &rd->rta_prefsrc);
+                          rd->local, rd->nexthops[0].ifname,
+                          &rd->nexthops[0].rta_gw, &rd->rta_prefsrc);
     }
 }
 

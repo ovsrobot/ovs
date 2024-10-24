@@ -26,6 +26,13 @@
 
 #include "openvswitch/ofpbuf.h"
 
+#define MAX_ROUTE_DATA_NEXTHOP 8
+
+struct route_data_nexthop {
+    struct in6_addr rta_gw;
+    char ifname[IFNAMSIZ]; /* Interface name. */
+};
+
 struct route_data {
     /* Copied from struct rtmsg. */
     unsigned char rtm_dst_len;
@@ -34,13 +41,14 @@ struct route_data {
     /* Extracted from Netlink attributes. */
     struct in6_addr rta_dst; /* 0 if missing. */
     struct in6_addr rta_prefsrc; /* 0 if missing. */
-    struct in6_addr rta_gw;
-    char ifname[IFNAMSIZ]; /* Interface name. */
     uint32_t mark;
     uint32_t rta_table_id; /* 0 if missing. */
     unsigned char plen;
     unsigned char rtm_protocol;
     uint32_t rta_priority;
+
+    size_t n_nexthops;
+    struct route_data_nexthop nexthops[MAX_ROUTE_DATA_NEXTHOP];
 };
 
 /* A digested version of a route message sent down by the kernel to indicate
