@@ -17,6 +17,7 @@
 #include <config.h>
 #include "netlink-socket.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -25,6 +26,7 @@
 #include <unistd.h>
 #include "coverage.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/shash.h"
 #include "hash.h"
 #include "openvswitch/hmap.h"
 #include "netlink.h"
@@ -94,6 +96,7 @@ struct nl_sock {
     uint32_t pid;
     int protocol;
     unsigned int rcvbuf;        /* Receive buffer size (SO_RCVBUF). */
+    char *netns;
 };
 
 /* Compile-time limit on iovecs, so that we can allocate a maximum-size array
@@ -106,7 +109,7 @@ struct nl_sock {
  * Initialized by nl_sock_create(). */
 static int max_iovs;
 
-static int nl_pool_alloc(int protocol, struct nl_sock **sockp);
+static int nl_pool_alloc(const char *, int protocol, struct nl_sock **sockp);
 static void nl_pool_release(struct nl_sock *);
 
 /* Creates a new netlink socket for the given netlink 'protocol'
@@ -145,6 +148,7 @@ nl_sock_create(int protocol, struct nl_sock **sockp)
 
     *sockp = NULL;
     sock = xmalloc(sizeof *sock);
+    sock->netns = NULL;
 
 #ifdef _WIN32
     sock->overlapped.hEvent = NULL;
@@ -294,6 +298,7 @@ nl_sock_destroy(struct nl_sock *sock)
 #else
         close(sock->fd);
 #endif
+        free(sock->netns);
         free(sock);
     }
 }
@@ -1152,6 +1157,9 @@ nl_sock_drain(struct nl_sock *sock)
  * Netlink socket created with the given 'protocol', and initializes 'dump' to
  * reflect the state of the operation.
  *
+ * The dump runs in the specified 'netns'. If 'netns' is NULL the current will
+ * be used.
+ *
  * 'request' must contain a Netlink message.  Before sending the message,
  * nlmsg_len will be finalized to match request->size, and nlmsg_pid will be
  * set to the Netlink socket's pid.  NLM_F_DUMP and NLM_F_ACK will be set in
@@ -1165,13 +1173,14 @@ nl_sock_drain(struct nl_sock *sock)
  * The caller must eventually destroy 'request'.
  */
 void
-nl_dump_start(struct nl_dump *dump, int protocol, const struct ofpbuf *request)
+nl_dump_start(const char *netns, struct nl_dump *dump, int protocol,
+              const struct ofpbuf *request)
 {
     nl_msg_nlmsghdr(request)->nlmsg_flags |= NLM_F_DUMP | NLM_F_ACK;
 
     ovs_mutex_init(&dump->mutex);
     ovs_mutex_lock(&dump->mutex);
-    dump->status = nl_pool_alloc(protocol, &dump->sock);
+    dump->status = nl_pool_alloc(netns, protocol, &dump->sock);
     if (!dump->status) {
         dump->status = nl_sock_send__(dump->sock, request,
                                       nl_sock_allocate_seq(dump->sock, 1),
@@ -1725,39 +1734,95 @@ struct nl_pool {
     int n;
 };
 
+struct nl_ns_pool {
+    struct nl_pool pools[MAX_LINKS];
+};
+
 static struct ovs_mutex pool_mutex = OVS_MUTEX_INITIALIZER;
-static struct nl_pool pools[MAX_LINKS] OVS_GUARDED_BY(pool_mutex);
+static struct shash pools OVS_GUARDED_BY(pool_mutex) =
+                                SHASH_INITIALIZER(&pools);
 
 static int
-nl_pool_alloc(int protocol, struct nl_sock **sockp)
+nl_sock_ns_create(const char *netns, int protocol, struct nl_sock **sockp) {
+    int ret, ns_fd, ns_default_fd, err;
+    if (netns) {
+        ns_default_fd = open("/proc/self/ns/net", O_RDONLY);
+        if (ns_default_fd < 0) {
+            VLOG_ERR("something wrong when opening self net fd, %d\n",
+                     errno);
+            return -errno;
+        }
+        char *netns_path = xasprintf("/var/run/netns/%s", netns);
+        ns_fd = open(netns_path, O_RDONLY);
+        free(netns_path);
+        if (ns_fd < 0) {
+            VLOG_ERR("something wrong when opening other net fd, %d\n",
+                     errno);
+            return -errno;
+        }
+        err = setns(ns_fd, CLONE_NEWNET);
+        if (err < 0) {
+            VLOG_ABORT("something wrong during setns to target, %d\n",
+                       errno);
+        }
+        close(ns_fd);
+    }
+    ret = nl_sock_create(protocol, sockp);
+    if (netns) {
+        err = setns(ns_default_fd, CLONE_NEWNET);
+        if (err < 0) {
+            VLOG_ABORT("something wrong during setns to home, %d\n",
+                       errno);
+        }
+        close(ns_default_fd);
+        if (*sockp) {
+            (*sockp)->netns = xstrdup(netns);
+        }
+    }
+    return ret;
+}
+
+static int
+nl_pool_alloc(const char *netns, int protocol, struct nl_sock **sockp)
 {
     struct nl_sock *sock = NULL;
     struct nl_pool *pool;
 
-    ovs_assert(protocol >= 0 && protocol < ARRAY_SIZE(pools));
+    ovs_assert(protocol >= 0 && protocol < MAX_LINKS);
 
     ovs_mutex_lock(&pool_mutex);
-    pool = &pools[protocol];
-    if (pool->n > 0) {
-        sock = pool->socks[--pool->n];
+    const char * netns_name = netns ? netns : "";
+
+    struct nl_ns_pool *ns_pools = shash_find_data(&pools, netns_name);
+    if (ns_pools) {
+        pool = &ns_pools->pools[protocol];
+        if (pool->n > 0) {
+            sock = pool->socks[--pool->n];
+        }
+
+        if (sock) {
+            ovs_mutex_unlock(&pool_mutex);
+            *sockp = sock;
+            return 0;
+        }
     }
     ovs_mutex_unlock(&pool_mutex);
-
-    if (sock) {
-        *sockp = sock;
-        return 0;
-    } else {
-        return nl_sock_create(protocol, sockp);
-    }
+    return nl_sock_ns_create(netns, protocol, sockp);
 }
 
 static void
 nl_pool_release(struct nl_sock *sock)
 {
     if (sock) {
-        struct nl_pool *pool = &pools[sock->protocol];
+        const char * netns_name = sock->netns ? sock->netns : "";
 
         ovs_mutex_lock(&pool_mutex);
+        struct nl_ns_pool *ns_pools = shash_find_data(&pools, netns_name);
+        if (!ns_pools) {
+            ns_pools = xzalloc(sizeof(*ns_pools));
+            shash_add(&pools, netns_name, ns_pools);
+        }
+        struct nl_pool *pool = &ns_pools->pools[sock->protocol];
         if (pool->n < ARRAY_SIZE(pool->socks)) {
             pool->socks[pool->n++] = sock;
             sock = NULL;
@@ -1771,6 +1836,9 @@ nl_pool_release(struct nl_sock *sock)
 /* Sends 'request' to the kernel on a Netlink socket for the given 'protocol'
  * (e.g. NETLINK_ROUTE or NETLINK_GENERIC) and waits for a response.  If
  * successful, returns 0.  On failure, returns a positive errno value.
+ *
+ * The 'request' is send in the specified netns. If 'netns' is NULL the current
+ * namespace is used.
  *
  * If 'replyp' is nonnull, then on success '*replyp' is set to the kernel's
  * reply, which the caller is responsible for freeing with ofpbuf_delete(), and
@@ -1810,13 +1878,13 @@ nl_pool_release(struct nl_sock *sock)
  *         needs to be idempotent.
  */
 int
-nl_transact(int protocol, const struct ofpbuf *request,
+nl_transact(const char *netns, int protocol, const struct ofpbuf *request,
             struct ofpbuf **replyp)
 {
     struct nl_sock *sock;
     int error;
 
-    error = nl_pool_alloc(protocol, &sock);
+    error = nl_pool_alloc(netns, protocol, &sock);
     if (error) {
         if (replyp) {
             *replyp = NULL;
@@ -1851,13 +1919,13 @@ nl_transact(int protocol, const struct ofpbuf *request,
  * nl_transact() for some caveats.
  */
 void
-nl_transact_multiple(int protocol,
+nl_transact_multiple(const char *netns, int protocol,
                      struct nl_transaction **transactions, size_t n)
 {
     struct nl_sock *sock;
     int error;
 
-    error = nl_pool_alloc(protocol, &sock);
+    error = nl_pool_alloc(netns, protocol, &sock);
     if (!error) {
         nl_sock_transact_multiple(sock, transactions, n);
         nl_pool_release(sock);

@@ -144,7 +144,7 @@ nl_ct_dump_start(struct nl_ct_dump_state **statep, const uint16_t *zone,
     if (zone) {
         nl_msg_put_be16(&state->buf, CTA_ZONE, htons(*zone));
     }
-    nl_dump_start(&state->dump, NETLINK_NETFILTER, &state->buf);
+    nl_dump_start(NULL, &state->dump, NETLINK_NETFILTER, &state->buf);
     ofpbuf_clear(&state->buf);
 
     /* Buckets to store connections are not used. */
@@ -236,7 +236,7 @@ nl_ct_flush(void)
     nl_msg_put_nfgenmsg(&buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
                         IPCTNL_MSG_CT_DELETE, NLM_F_REQUEST);
 
-    err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+    err = nl_transact(NULL, NETLINK_NETFILTER, &buf, NULL);
     ofpbuf_uninit(&buf);
 
     /* Expectations are flushed automatically, because they do not
@@ -260,7 +260,7 @@ nl_ct_flush_tuple(const struct ct_dpif_tuple *tuple, uint16_t zone)
         err = EOPNOTSUPP;
         goto out;
     }
-    err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+    err = nl_transact(NULL, NETLINK_NETFILTER, &buf, NULL);
 out:
     ofpbuf_uninit(&buf);
     return err;
@@ -278,7 +278,7 @@ nl_ct_flush_zone_with_cta_zone(uint16_t flush_zone)
                         IPCTNL_MSG_CT_DELETE, NLM_F_REQUEST);
     nl_msg_put_be16(&buf, CTA_ZONE, htons(flush_zone));
 
-    err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+    err = nl_transact(NULL, NETLINK_NETFILTER, &buf, NULL);
     ofpbuf_uninit(&buf);
 
     return err;
@@ -340,7 +340,7 @@ nl_ct_flush_zone(uint16_t flush_zone)
     nl_msg_put_nfgenmsg(&buf, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK,
                         IPCTNL_MSG_CT_GET, NLM_F_REQUEST);
     nl_msg_put_be16(&buf, CTA_ZONE, htons(flush_zone));
-    nl_dump_start(&dump, NETLINK_NETFILTER, &buf);
+    nl_dump_start(NULL, &dump, NETLINK_NETFILTER, &buf);
     ofpbuf_clear(&buf);
 
     for (;;) {
@@ -374,7 +374,7 @@ nl_ct_flush_zone(uint16_t flush_zone)
                           attrs[CTA_TUPLE_ORIG]->nla_len - NLA_HDRLEN);
         nl_msg_put_unspec(&delete, CTA_ID, attrs[CTA_ID] + 1,
                           attrs[CTA_ID]->nla_len - NLA_HDRLEN);
-        nl_transact(NETLINK_NETFILTER, &delete, NULL);
+        nl_transact(NULL, NETLINK_NETFILTER, &delete, NULL);
         ofpbuf_clear(&delete);
     }
 
@@ -1101,7 +1101,7 @@ nl_ct_set_timeout_policy(const struct nl_ct_timeout_policy *nl_tp)
     }
     nl_msg_end_nested(&buf, offset);
 
-    int err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+    int err = nl_transact(NULL, NETLINK_NETFILTER, &buf, NULL);
     ofpbuf_uninit(&buf);
     return err;
 }
@@ -1116,7 +1116,7 @@ nl_ct_get_timeout_policy(const char *tp_name,
     nl_msg_put_nfgenmsg(&request, 0, AF_UNSPEC, NFNL_SUBSYS_CTNETLINK_TIMEOUT,
                         IPCTNL_MSG_TIMEOUT_GET, NLM_F_REQUEST | NLM_F_ACK);
     nl_msg_put_string(&request, CTA_TIMEOUT_NAME, tp_name);
-    int err = nl_transact(NETLINK_NETFILTER, &request, &reply);
+    int err = nl_transact(NULL, NETLINK_NETFILTER, &request, &reply);
     if (err) {
         goto out;
     }
@@ -1139,7 +1139,7 @@ nl_ct_del_timeout_policy(const char *tp_name)
                         IPCTNL_MSG_TIMEOUT_DELETE, NLM_F_REQUEST | NLM_F_ACK);
 
     nl_msg_put_string(&buf, CTA_TIMEOUT_NAME, tp_name);
-    int err = nl_transact(NETLINK_NETFILTER, &buf, NULL);
+    int err = nl_transact(NULL, NETLINK_NETFILTER, &buf, NULL);
     ofpbuf_uninit(&buf);
     return err;
 }
@@ -1162,7 +1162,7 @@ nl_ct_timeout_policy_dump_start(
                         IPCTNL_MSG_TIMEOUT_GET,
                         NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP);
 
-    nl_dump_start(&state->dump, NETLINK_NETFILTER, &request);
+    nl_dump_start(NULL, &state->dump, NETLINK_NETFILTER, &request);
     ofpbuf_uninit(&request);
     ofpbuf_init(&state->buf, NL_DUMP_BUFSIZE);
     return 0;

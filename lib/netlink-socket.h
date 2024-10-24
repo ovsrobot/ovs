@@ -251,9 +251,10 @@ struct nl_transaction {
 };
 
 /* Transactions without an allocated socket. */
-int nl_transact(int protocol, const struct ofpbuf *request,
+int nl_transact(const char *netns, int protocol, const struct ofpbuf *request,
                 struct ofpbuf **replyp);
-void nl_transact_multiple(int protocol, struct nl_transaction **, size_t n);
+void nl_transact_multiple(const char *netns, int protocol,
+                          struct nl_transaction **, size_t n);
 
 /* Table dumping. */
 #define NL_DUMP_BUFSIZE         4096
@@ -270,7 +271,7 @@ struct nl_dump {
     struct ovs_mutex mutex;     /* Protects 'status', synchronizes recv(). */
 };
 
-void nl_dump_start(struct nl_dump *, int protocol,
+void nl_dump_start(const char *netns, struct nl_dump *dump, int protocol,
                    const struct ofpbuf *request);
 bool nl_dump_next(struct nl_dump *, struct ofpbuf *reply, struct ofpbuf *buf);
 int nl_dump_done(struct nl_dump *);

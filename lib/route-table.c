@@ -156,7 +156,7 @@ route_table_wait(void)
 }
 
 static bool
-route_table_dump_one_table(unsigned char id)
+route_table_dump_one_table(const char *netns, unsigned char id)
 {
     uint64_t reply_stub[NL_DUMP_BUFSIZE / 8];
     struct ofpbuf request, reply, buf;
@@ -172,7 +172,7 @@ route_table_dump_one_table(unsigned char id)
     rq_msg->rtm_family = AF_UNSPEC;
     rq_msg->rtm_table = id;
 
-    nl_dump_start(&dump, NETLINK_ROUTE, &request);
+    nl_dump_start(netns, &dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
 
     ofpbuf_use_stub(&buf, reply_stub, sizeof reply_stub);
@@ -212,7 +212,7 @@ route_table_reset(void)
     COVERAGE_INC(route_table_dump);
 
     for (size_t i = 0; i < ARRAY_SIZE(tables); i++) {
-        if (!route_table_dump_one_table(tables[i])) {
+        if (!route_table_dump_one_table(NULL, tables[i])) {
             /* Got unfiltered reply, no need to dump further. */
             break;
         }

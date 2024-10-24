@@ -158,7 +158,7 @@ rtnl_transact(uint32_t type, uint32_t flags, const char *name,
     ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
     nl_msg_put_string(&request, IFLA_IFNAME, name);
 
-    err = nl_transact(NETLINK_ROUTE, &request, reply);
+    err = nl_transact(NULL, NETLINK_ROUTE, &request, reply);
     ofpbuf_uninit(&request);
 
     return err;
@@ -342,7 +342,7 @@ rtnl_set_mtu(const char *name, uint32_t mtu, struct ofpbuf *request)
     nl_msg_put_string(request, IFLA_IFNAME, name);
     nl_msg_put_u32(request, IFLA_MTU, mtu);
 
-    return nl_transact(NETLINK_ROUTE, request, NULL);
+    return nl_transact(NULL, NETLINK_ROUTE, request, NULL);
 }
 
 static int
@@ -425,7 +425,7 @@ dpif_netlink_rtnl_create(const struct netdev_tunnel_config *tnl_cfg,
     nl_msg_end_nested(&request, infodata_off);
     nl_msg_end_nested(&request, linkinfo_off);
 
-    err = nl_transact(NETLINK_ROUTE, &request, NULL);
+    err = nl_transact(NULL, NETLINK_ROUTE, &request, NULL);
     if (!err && (type == OVS_VPORT_TYPE_GRE ||
                  type == OVS_VPORT_TYPE_IP6GRE)) {
         /* Work around a bug in kernel GRE driver, which ignores IFLA_MTU in

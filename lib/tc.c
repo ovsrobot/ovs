@@ -244,7 +244,7 @@ static void request_from_tcf_id(struct tcf_id *id, uint16_t eth_type,
 int
 tc_transact(struct ofpbuf *request, struct ofpbuf **replyp)
 {
-    int error = nl_transact(NETLINK_ROUTE, request, replyp);
+    int error = nl_transact(NULL, NETLINK_ROUTE, request, replyp);
     ofpbuf_uninit(request);
     return error;
 }
@@ -2349,7 +2349,7 @@ tc_dump_flower_start(struct tcf_id *id, struct nl_dump *dump, bool terse)
         nl_msg_put_unspec(&request, TCA_DUMP_FLAGS, &dump_flags,
                           sizeof dump_flags);
     }
-    nl_dump_start(dump, NETLINK_ROUTE, &request);
+    nl_dump_start(NULL, dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
 
     return 0;
@@ -2361,7 +2361,7 @@ tc_dump_tc_chain_start(struct tcf_id *id, struct nl_dump *dump)
     struct ofpbuf request;
 
     request_from_tcf_id(id, 0, RTM_GETCHAIN, NLM_F_DUMP, &request);
-    nl_dump_start(dump, NETLINK_ROUTE, &request);
+    nl_dump_start(NULL, dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
 
     return 0;
@@ -2380,7 +2380,7 @@ tc_dump_tc_action_start(char *name, struct nl_dump *dump)
     nl_msg_end_nested(&request, offset);
     nl_msg_end_nested(&request, root_offset);
 
-    nl_dump_start(dump, NETLINK_ROUTE, &request);
+    nl_dump_start(NULL, dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
 
     return 0;

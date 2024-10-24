@@ -1348,7 +1348,7 @@ dpif_netlink_port_dump_start__(const struct dpif_netlink *dpif,
 
     buf = ofpbuf_new(1024);
     dpif_netlink_vport_to_ofpbuf(&request, buf);
-    nl_dump_start(dump, NETLINK_GENERIC, buf);
+    nl_dump_start(NULL, dump, NETLINK_GENERIC, buf);
     ofpbuf_delete(buf);
 }
 
@@ -1682,7 +1682,7 @@ dpif_netlink_flow_dump_create(const struct dpif *dpif_, bool terse,
 
         buf = ofpbuf_new(1024);
         dpif_netlink_flow_to_ofpbuf(&request, buf);
-        nl_dump_start(&dump->nl_dump, NETLINK_GENERIC, buf);
+        nl_dump_start(NULL, &dump->nl_dump, NETLINK_GENERIC, buf);
         ofpbuf_delete(buf);
     }
     atomic_init(&dump->status, 0);
@@ -2141,7 +2141,7 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
     for (i = 0; i < n_ops; i++) {
         txnsp[i] = &auxes[i].txn;
     }
-    nl_transact_multiple(NETLINK_GENERIC, txnsp, n_ops);
+    nl_transact_multiple(NULL, NETLINK_GENERIC, txnsp, n_ops);
 
     for (i = 0; i < n_ops; i++) {
         struct op_auxdata *aux = &auxes[i];
@@ -3391,7 +3391,7 @@ dpif_netlink_ct_set_limits(struct dpif *dpif OVS_UNUSED,
     }
     nl_msg_end_nested(request, opt_offset);
 
-    int err = nl_transact(NETLINK_GENERIC, request, NULL);
+    int err = nl_transact(NULL, NETLINK_GENERIC, request, NULL);
     ofpbuf_delete(request);
     return err;
 }
@@ -3476,7 +3476,7 @@ dpif_netlink_ct_get_limits(struct dpif *dpif OVS_UNUSED,
     }
 
     struct ofpbuf *reply;
-    int err = nl_transact(NETLINK_GENERIC, request, &reply);
+    int err = nl_transact(NULL, NETLINK_GENERIC, request, &reply);
     if (err) {
         goto out;
     }
@@ -3520,7 +3520,7 @@ dpif_netlink_ct_del_limits(struct dpif *dpif OVS_UNUSED,
         nl_msg_end_nested(request, opt_offset);
     }
 
-    int err = nl_transact(NETLINK_GENERIC, request, NULL);
+    int err = nl_transact(NULL, NETLINK_GENERIC, request, NULL);
 
     ofpbuf_delete(request);
     return err;
@@ -4066,7 +4066,7 @@ dpif_netlink_meter_transact(struct ofpbuf *request, struct ofpbuf **replyp,
                             const struct nl_policy *reply_policy,
                             struct nlattr **a, size_t size_a)
 {
-    int error = nl_transact(NETLINK_GENERIC, request, replyp);
+    int error = nl_transact(NULL, NETLINK_GENERIC, request, replyp);
     ofpbuf_uninit(request);
 
     if (error) {
@@ -4818,7 +4818,7 @@ dpif_netlink_vport_transact(const struct dpif_netlink_vport *request,
 
     request_buf = ofpbuf_new(1024);
     dpif_netlink_vport_to_ofpbuf(request, request_buf);
-    error = nl_transact(NETLINK_GENERIC, request_buf, bufp);
+    error = nl_transact(NULL, NETLINK_GENERIC, request_buf, bufp);
     ofpbuf_delete(request_buf);
 
     if (reply) {
@@ -4969,7 +4969,7 @@ dpif_netlink_dp_dump_start(struct nl_dump *dump)
 
     buf = ofpbuf_new(1024);
     dpif_netlink_dp_to_ofpbuf(&request, buf);
-    nl_dump_start(dump, NETLINK_GENERIC, buf);
+    nl_dump_start(NULL, dump, NETLINK_GENERIC, buf);
     ofpbuf_delete(buf);
 }
 
@@ -4990,7 +4990,7 @@ dpif_netlink_dp_transact(const struct dpif_netlink_dp *request,
 
     request_buf = ofpbuf_new(1024);
     dpif_netlink_dp_to_ofpbuf(request, request_buf);
-    error = nl_transact(NETLINK_GENERIC, request_buf, bufp);
+    error = nl_transact(NULL, NETLINK_GENERIC, request_buf, bufp);
     ofpbuf_delete(request_buf);
 
     if (reply) {
@@ -5223,7 +5223,7 @@ dpif_netlink_flow_transact(struct dpif_netlink_flow *request,
 
     request_buf = ofpbuf_new(1024);
     dpif_netlink_flow_to_ofpbuf(request, request_buf);
-    error = nl_transact(NETLINK_GENERIC, request_buf, bufp);
+    error = nl_transact(NULL, NETLINK_GENERIC, request_buf, bufp);
     ofpbuf_delete(request_buf);
 
     if (reply) {

@@ -3358,7 +3358,7 @@ start_queue_dump(const struct netdev *netdev, struct queue_dump_state *state)
         return false;
     }
     tcmsg->tcm_parent = 0;
-    nl_dump_start(&state->dump, NETLINK_ROUTE, &request);
+    nl_dump_start(NULL, &state->dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
 
     ofpbuf_init(&state->buf, NL_DUMP_BUFSIZE);
@@ -6722,7 +6722,7 @@ get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
                         RTM_GETLINK, NLM_F_REQUEST);
     ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
     nl_msg_put_string(&request, IFLA_IFNAME, netdev_get_name(netdev_));
-    error = nl_transact(NETLINK_ROUTE, &request, &reply);
+    error = nl_transact(NULL, NETLINK_ROUTE, &request, &reply);
     ofpbuf_uninit(&request);
     if (error) {
         return error;
@@ -6858,7 +6858,7 @@ netdev_linux_update_via_netlink(struct netdev_linux *netdev)
 
     nl_msg_put_u32(&request, IFLA_EXT_MASK, RTEXT_FILTER_SKIP_STATS);
 
-    error = nl_transact(NETLINK_ROUTE, &request, &reply);
+    error = nl_transact(NULL, NETLINK_ROUTE, &request, &reply);
     ofpbuf_uninit(&request);
     if (error) {
         ofpbuf_delete(reply);
