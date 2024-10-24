@@ -41,7 +41,8 @@ typedef void nln_notify_func(const void *change, void *aux);
  */
 typedef int nln_parse_func(struct ofpbuf *buf, void *change);
 
-struct nln *nln_create(int protocol, nln_parse_func *, void *change);
+struct nln *nln_create(const char *netns, int protocol,
+                       nln_parse_func *, void *change);
 void nln_destroy(struct nln *);
 struct nln_notifier *nln_notifier_create(struct nln *, int multicast_group,
                                          nln_notify_func *, void *aux);

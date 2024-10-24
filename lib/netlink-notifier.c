@@ -38,6 +38,7 @@ struct nln {
     bool has_run;                /* Guard for run and wait functions. */
 
     /* Passed in by nln_create(). */
+    char *netns;                 /* The network namespace. */
     int protocol;                /* Protocol passed to nl_sock_create(). */
     nln_parse_func *parse;       /* Message parsing function. */
     void *change;                /* Change passed to parse. */
@@ -58,12 +59,16 @@ struct nln_notifier {
  * Incoming messages will be parsed with 'parse' which will be passed 'change'
  * as an argument. */
 struct nln *
-nln_create(int protocol, nln_parse_func *parse, void *change)
+nln_create(const char *netns, int protocol, nln_parse_func *parse,
+           void *change)
 {
     struct nln *nln;
 
     nln = xzalloc(sizeof *nln);
     nln->notify_sock = NULL;
+    if (netns) {
+        nln->netns = xstrdup(netns);
+    }
     nln->protocol = protocol;
     nln->parse = parse;
     nln->change = change;
@@ -84,6 +89,7 @@ nln_destroy(struct nln *nln)
     if (nln) {
         ovs_assert(ovs_list_is_empty(&nln->all_notifiers));
         nl_sock_destroy(nln->notify_sock);
+        free(nln->netns);
         free(nln);
     }
 }
@@ -106,7 +112,7 @@ nln_notifier_create(struct nln *nln, int multicast_group, nln_notify_func *cb,
     if (!nln->notify_sock) {
         struct nl_sock *sock;
 
-        error = nl_sock_create(nln->protocol, &sock);
+        error = nl_sock_ns_create(nln->netns, nln->protocol, &sock);
         if (error) {
             VLOG_WARN("could not create netlink socket: %s",
                       ovs_strerror(error));

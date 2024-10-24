@@ -80,7 +80,7 @@ test_nl_ct_monitor(struct ovs_cmdl_context *ctx OVS_UNUSED)
 
     unsigned i;
 
-    nln = nln_create(NETLINK_NETFILTER, event_parse, &change);
+    nln = nln_create(NULL, NETLINK_NETFILTER, event_parse, &change);
 
     for (i = 0; i < ARRAY_SIZE(groups); i++) {
         notifiers[i] = nln_notifier_create(nln, groups[i], event_print, NULL);

@@ -255,6 +255,7 @@ int nl_transact(const char *netns, int protocol, const struct ofpbuf *request,
                 struct ofpbuf **replyp);
 void nl_transact_multiple(const char *netns, int protocol,
                           struct nl_transaction **, size_t n);
+int nl_sock_ns_create(const char *netns, int protocol, struct nl_sock **sockp);
 
 /* Table dumping. */
 #define NL_DUMP_BUFSIZE         4096

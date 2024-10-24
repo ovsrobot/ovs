@@ -110,7 +110,8 @@ route_table_init(void)
     ovs_assert(!route6_notifier);
 
     ovs_router_init();
-    nln = nln_create(NETLINK_ROUTE, route_table_parse, &rtmsg);
+    nln = nln_create(NULL, NETLINK_ROUTE,
+                     route_table_parse, &rtmsg);
 
     route_notifier =
         nln_notifier_create(nln, RTNLGRP_IPV4_ROUTE,
