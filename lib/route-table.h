@@ -30,6 +30,7 @@
 
 struct route_data_nexthop {
     struct in6_addr rta_gw;
+    uint32_t ifindex;
     char ifname[IFNAMSIZ]; /* Interface name. */
 };
 

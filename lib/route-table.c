@@ -228,6 +228,7 @@ route_table_add_nexthop(struct route_table_msg *change,
         }
     }
 
+    nh->ifindex = ifindex;
     if (ifindex && !if_indextoname(ifindex, nh->ifname)) {
         int error = errno;
 
