@@ -38,7 +38,8 @@ NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 10.1.1.2 | FORMAT_PING], [0], 
 ])
 
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
@@ -3504,10 +3505,12 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 dnl HTTP requests from p2->p3 should work fine.
-NS_CHECK_EXEC([at_ns2], [wget 10.1.1.4 -t 3 -T 1 --retry-connrefused -v -o wget1.log])
+NS_CHECK_EXEC([at_ns2],
+  [curl 10.1.1.4 --retry 3 --max-time 1 --retry-connrefused -v >curl1.log 2>&1])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
@@ -3552,7 +3555,8 @@ NS_CHECK_EXEC([at_ns0],
   [28])
 
 dnl For the second pair, we allow packets from invalid connections, so it works.
-NS_CHECK_EXEC([at_ns2], [wget 10.1.1.4 -t 3 -T 1 --retry-connrefused -v -o wget1.log])
+NS_CHECK_EXEC([at_ns2],
+  [curl 10.1.1.4 --retry 3 --max-time 1 --retry-connrefused -v >curl1.log 2>&1])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
@@ -3588,7 +3592,8 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -3636,7 +3641,8 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=4097,protoinfo=(state=<cleared>)
@@ -3679,7 +3685,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,dnl
@@ -3705,7 +3712,8 @@ AT_CHECK([ovs-ofctl mod-flows br0 dnl
 dnl Wait for a flow flush as some datapaths (read TC) might take time to clear.
 AT_CHECK([ovs-appctl revalidator/wait], [0])
 
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-flows --names filter=in_port=ovs-p0 dnl
               | grep "+trk" | grep -q "ct_zone(0xf)" ], [0], [])
@@ -3739,7 +3747,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,dnl
@@ -3757,7 +3766,8 @@ AT_CHECK([ovs-ofctl mod-flows br0 'priority=100,ct_state=-trk,tcp,in_port="ovs-p
 dnl Wait for a flow flush as some datapaths (read TC) might take time to clear.
 AT_CHECK([ovs-appctl revalidator/wait], [0])
 
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-flows --names filter=in_port=ovs-p0 dnl
               | grep "+trk" | sed 's/0xffff000f\/0xffff/0xf\/0xffff/' dnl
@@ -3805,7 +3815,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br1 flows-br1.txt])
 
 dnl HTTP requests from p0->p1 should work fine.
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
@@ -3834,10 +3845,12 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 dnl (again) HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -3876,10 +3889,12 @@ AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 dnl (again) HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -3921,7 +3936,8 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),mark=1,protoinfo=(state=<cleared>)
 ])
@@ -3964,7 +3980,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),mark=3,protoinfo=(state=<cleared>)
@@ -4003,7 +4020,8 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),mark=1,protoinfo=(state=<cleared>)
 ])
@@ -4050,7 +4068,8 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 dnl HTTP requests from p2->p3 should fail due to network failure.
 dnl Try 3 times, in 1 second intervals.
@@ -4087,7 +4106,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),labels=0x200000001,protoinfo=(state=<cleared>)
@@ -4125,7 +4145,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,mark=3,labels=0x200000001,protoinfo=(state=<cleared>)
@@ -5463,7 +5484,8 @@ OVS_START_L7([at_ns0], [http])
 OVS_START_L7([at_ns1], [http])
 
 dnl HTTP requests from ns0->ns1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>)
 ])
@@ -5506,7 +5528,9 @@ OVS_START_L7([at_ns0], [http6])
 OVS_START_L7([at_ns1], [http6])
 
 dnl HTTP requests from ns0->ns1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget http://[[fc00::2]] -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl http://[[fc00::2]] --retry 3 --max-time 1 --retry-connrefused \
+    -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(fc00::2)], [0], [dnl
 tcp,orig=(src=fc00::1,dst=fc00::2,sport=<cleared>,dport=<cleared>),reply=(src=fc00::2,dst=fc00::1,sport=<cleared>,dport=<cleared>),protoinfo=(state=<cleared>)
@@ -5555,10 +5579,12 @@ OVS_START_L7([at_ns1], [http])
 OVS_START_L7([at_ns3], [http])
 
 dnl HTTP requests from p0->p1 should work fine.
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 dnl HTTP requests from p2->p3 should work fine.
-NS_CHECK_EXEC([at_ns2], [wget 10.1.1.4 -t 3 -T 1 --retry-connrefused -v -o wget1.log])
+NS_CHECK_EXEC([at_ns2],
+  [curl 10.1.1.4 --retry 3 --max-time 1 --retry-connrefused -v >curl1.log 2>&1])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
@@ -5599,10 +5625,12 @@ AT_CHECK([ping -q -c 3 -i 0.3 -W 2 10.1.1.2 | FORMAT_PING], [0], [dnl
 OVS_START_L7([at_ns0], [http])
 
 dnl HTTP requests from root namespace to p0 should work fine.
-AT_CHECK([wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+AT_CHECK([curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused \
+  -v >curl0.log 2>&1])
 
-dnl (again) HTTP requests from root namespace to  p0 should work fine.
-AT_CHECK([wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+dnl (again) HTTP requests from root namespace to p0 should work fine.
+AT_CHECK([curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused \
+  -v >curl1.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | grep "zone"], [0], [dnl
 icmp,orig=(src=10.1.1.1,dst=10.1.1.2,id=<cleared>,type=8,code=0),reply=(src=10.1.1.2,dst=10.1.1.1,id=<cleared>,type=0,code=0),zone=1
@@ -5672,10 +5700,12 @@ AT_CHECK([ping -q -c 3 -i 0.3 -W 2 10.1.1.2 | FORMAT_PING], [0], [dnl
 OVS_START_L7([at_ns0], [http])
 
 dnl HTTP requests from root namespace to p0 should work fine.
-AT_CHECK([wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+AT_CHECK([curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused \
+  -v >curl0.log 2>&1])
 
 dnl (again) HTTP requests from root namespace to p0 should work fine.
-AT_CHECK([wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+AT_CHECK([curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused \
+  -v >curl1.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | grep "zone"], [0], [dnl
 icmp,orig=(src=10.1.1.1,dst=10.1.1.2,id=<cleared>,type=8,code=0),reply=(src=10.1.1.2,dst=10.1.1.1,id=<cleared>,type=0,code=0),zone=1
@@ -6572,7 +6602,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
 dnl HTTP requests from p0->p1 should work fine.
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 5 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | sed -e 's/dst=10.1.1.2[[45]][[0-9]]/dst=10.1.1.2XX/' | uniq], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.2XX,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -6662,7 +6693,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
 dnl HTTP requests from p0->p1 should work fine.
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 5 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | sed -e 's/dst=10.1.1.2[[45]][[0-9]]/dst=10.1.1.2XX/' | uniq], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.2XX,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -6826,7 +6858,8 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
 dnl HTTP requests from p0->p1 should work fine.
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 5 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2) | sed -e 's/dst=10.1.1.2[[45]][[0-9]]/dst=10.1.1.2XX/' | uniq], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.2XX,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -6920,14 +6953,16 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
 dnl Should work with the virtual IP address through NAT
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.64 -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.64 --retry 5 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.64)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.64,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
 ])
 
 dnl Should work with the assigned IP address as well
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -6958,7 +6993,9 @@ table=2,in_port=1,ip,ct_mark=0xac,ct_label=0xac,actions=2
 ])
 AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
-NS_CHECK_EXEC([at_ns0], [wget http://172.1.1.2:8080 -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl http://172.1.1.2:8080 --retry 5 --max-time 1 --retry-connrefused \
+    -v >curl0.log 2>&1])
 
 dnl - make sure only dst nat has been performed
 AT_CHECK([ovs-appctl dpctl/dump-conntrack |  FORMAT_CT(10.1.1.240)], [0], [dnl
@@ -7016,14 +7053,16 @@ AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
 
 dnl Should work with the virtual IP address through NAT
 OVS_START_L7([at_ns1], [http])
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.64 -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.64 --retry 5 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.64)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.64,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
 ])
 
 dnl Should work with the assigned IP address as well
-NS_CHECK_EXEC([at_ns0], [wget 10.1.1.2 -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl 10.1.1.2 --retry 3 --max-time 1 --retry-connrefused -v >curl0.log 2>&1])
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(10.1.1.2)], [0], [dnl
 tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=10.1.1.2,dst=10.1.1.1,sport=<cleared>,dport=<cleared>),zone=1,protoinfo=(state=<cleared>)
@@ -7847,7 +7886,9 @@ OVS_WAIT_UNTIL([ip netns exec at_ns0 ping6 -c 1 fc00::2])
 dnl HTTP requests from ns0->ns1 should work fine.
 OVS_START_L7([at_ns1], [http6])
 
-NS_CHECK_EXEC([at_ns0], [wget http://[[fc00::2]] -t 3 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl http://[[fc00::2]] --retry 3 --max-time 1 --retry-connrefused \
+    -v >curl0.log 2>&1])
 
 dnl HTTP requests from ns1->ns0 should fail due to network failure.
 dnl Try 3 times, in 1 second intervals.
@@ -7892,7 +7933,10 @@ NS_CHECK_EXEC([at_ns0], [ping6 -q -c 3 -i 0.3 -W 2 fc00::240 | FORMAT_PING], [0]
 
 dnl Should work with the virtual IP address through NAT
 OVS_START_L7([at_ns1], [http6])
-NS_CHECK_EXEC([at_ns0], [wget http://[[fc00::240]] -t 5 -T 1 --retry-connrefused -v -o wget0.log])
+NS_CHECK_EXEC([at_ns0],
+  [curl http://[[fc00::240]] --retry 5 --max-time 1 --retry-connrefused \
+    -v >curl0.log 2>&1])
+
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(fc00::1)], [0], [dnl
 icmpv6,orig=(src=fc00::1,dst=fc00::240,id=<cleared>,type=128,code=0),reply=(src=fc00::2,dst=fc00::1,id=<cleared>,type=129,code=0),zone=1
@@ -8309,7 +8353,9 @@ on_exit 'ovs-appctl dpif/dump-flows br0'
 dnl Should work with the virtual IP address through NAT
 for i in $(seq 1 50); do
     echo Request $i
-    NS_CHECK_EXEC([at_ns1], [wget 10.1.1.64 -t 5 -T 1 --retry-connrefused -v -o wget$i.log])
+    NS_CHECK_EXEC([at_ns1],
+      [curl 10.1.1.64 --retry 5 --max-time 1 --retry-connrefused \
+        -v >curl$i.log 2>&1])
 done
 
 dnl Each server should have at least one connection.
