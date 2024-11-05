@@ -477,8 +477,9 @@ udpif_init(void)
                                  upcall_unixctl_pause, NULL);
         unixctl_command_register("revalidator/resume", NULL, 0, 0,
                                  upcall_unixctl_resume, NULL);
-        unixctl_command_register("ofproto/detrace", "UFID [pmd=PMD-ID]", 1, 2,
-                                 upcall_unixctl_ofproto_detrace, NULL);
+        unixctl_command_register("ofproto/detrace",
+                                 "[--populate-cache] UFID [pmd=PMD-ID]",
+                                 1, 3, upcall_unixctl_ofproto_detrace, NULL);
         ovsthread_once_done(&once);
     }
 }
@@ -3339,22 +3340,34 @@ upcall_unixctl_ofproto_detrace(struct unixctl_conn *conn, int argc,
                                const char *argv[], void *aux OVS_UNUSED)
 {
     unsigned int pmd_id = NON_PMD_CORE_ID;
-    const char *key_s = argv[1];
     ovs_u128 ufid;
+    int arg = 1;
 
+    bool populate_cache = false;
+    if (!strcmp(argv[arg], "--populate-cache")) {
+        populate_cache = true;
+        arg++;
+    }
+
+    const char *key_s = argv[arg++];
     if (odp_ufid_from_string(key_s, &ufid) <= 0) {
         unixctl_command_reply_error(conn, "failed to parse ufid");
         return;
     }
 
-    if (argc == 3) {
-        const char *pmd_str = argv[2];
+    if (arg < argc) {
+        const char *pmd_str = argv[arg++];
         if (!ovs_scan(pmd_str, "pmd=%d", &pmd_id)) {
             unixctl_command_reply_error(conn,
                                         "Invalid pmd argument format. "
                                         "Expecting 'pmd=PMD-ID'");
             return;
         }
+    }
+
+    if (arg != argc) {
+        unixctl_command_reply_error(conn, "Invalid arguments.");
+        return;
     }
 
     struct ds ds = DS_EMPTY_INITIALIZER;
@@ -3369,8 +3382,9 @@ upcall_unixctl_ofproto_detrace(struct unixctl_conn *conn, int argc,
         ovs_mutex_lock(&ukey->mutex);
         /* It only makes sense to format rules for ukeys that are (still)
          * in use. */
-        if ((ukey->state == UKEY_VISIBLE || ukey->state == UKEY_OPERATIONAL)
-            && ukey->xcache) {
+        if ((ukey->state == UKEY_VISIBLE || ukey->state == UKEY_OPERATIONAL) &&
+            (ukey->xcache || (populate_cache &&
+            !populate_xcache(udpif, ukey, ukey->stats.tcp_flags)))) {
             xlate_xcache_format(&ds, ukey->xcache);
         }
         ovs_mutex_unlock(&ukey->mutex);
