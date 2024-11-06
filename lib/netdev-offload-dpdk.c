@@ -1684,6 +1684,22 @@ parse_flow_match(struct netdev *netdev,
         consumed_masks->tp_dst = 0;
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_ICMP, spec, mask, NULL);
+    } else if (proto == IPPROTO_ICMPV6) {
+        struct rte_flow_item_icmp6 *spec, *mask;
+
+        spec = xzalloc(sizeof *spec);
+        mask = xzalloc(sizeof *mask);
+
+        spec->type = (uint8_t) ntohs(match->flow.tp_src);
+        spec->code = (uint8_t) ntohs(match->flow.tp_dst);
+
+        mask->type = (uint8_t) ntohs(match->wc.masks.tp_src);
+        mask->code = (uint8_t) ntohs(match->wc.masks.tp_dst);
+
+        consumed_masks->tp_src = 0;
+        consumed_masks->tp_dst = 0;
+
+        add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_ICMP6, spec, mask, NULL);
     }
 
     add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_END, NULL, NULL, NULL);
