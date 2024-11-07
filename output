@@ -1,0 +1,283 @@
+
+ping 172.31.4.66
+PING 172.31.4.66 (172.31.4.66) 56(84) bytes of data.
+64 bytes from 172.31.4.66: icmp_seq=1 ttl=60 time=7.09 ms
+64 bytes from 172.31.4.66: icmp_seq=2 ttl=60 time=6.49 ms
+64 bytes from 172.31.4.66: icmp_seq=3 ttl=60 time=6.98 ms
+64 bytes from 172.31.4.66: icmp_seq=4 ttl=60 time=7.08 ms
+64 bytes from 172.31.4.66: icmp_seq=5 ttl=60 time=7.59 ms
+
+--- 172.31.4.66 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 802ms
+rtt min/avg/max/mdev = 6.497/7.049/7.592/0.356 ms
+ping 172.31.4.67
+PING 172.31.4.67 (172.31.4.67) 56(84) bytes of data.
+64 bytes from 172.31.4.67: icmp_seq=1 ttl=60 time=6.47 ms
+64 bytes from 172.31.4.67: icmp_seq=2 ttl=60 time=7.16 ms
+64 bytes from 172.31.4.67: icmp_seq=3 ttl=60 time=7.48 ms
+64 bytes from 172.31.4.67: icmp_seq=4 ttl=60 time=6.51 ms
+64 bytes from 172.31.4.67: icmp_seq=5 ttl=60 time=7.64 ms
+
+--- 172.31.4.67 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 810ms
+rtt min/avg/max/mdev = 6.470/7.053/7.641/0.486 ms
+ping 172.31.2.83
+PING 172.31.2.83 (172.31.2.83) 56(84) bytes of data.
+64 bytes from 172.31.2.83: icmp_seq=1 ttl=60 time=7.51 ms
+64 bytes from 172.31.2.83: icmp_seq=2 ttl=60 time=7.61 ms
+64 bytes from 172.31.2.83: icmp_seq=3 ttl=60 time=6.59 ms
+64 bytes from 172.31.2.83: icmp_seq=4 ttl=60 time=6.95 ms
+64 bytes from 172.31.2.83: icmp_seq=5 ttl=60 time=6.50 ms
+
+--- 172.31.2.83 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 803ms
+rtt min/avg/max/mdev = 6.507/7.037/7.615/0.469 ms
+ping 172.31.2.85
+PING 172.31.2.85 (172.31.2.85) 56(84) bytes of data.
+64 bytes from 172.31.2.85: icmp_seq=1 ttl=60 time=7.47 ms
+64 bytes from 172.31.2.85: icmp_seq=2 ttl=60 time=8.01 ms
+64 bytes from 172.31.2.85: icmp_seq=3 ttl=60 time=6.00 ms
+64 bytes from 172.31.2.85: icmp_seq=4 ttl=60 time=5.86 ms
+64 bytes from 172.31.2.85: icmp_seq=5 ttl=60 time=7.54 ms
+
+--- 172.31.2.85 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 809ms
+rtt min/avg/max/mdev = 5.863/6.981/8.014/0.874 ms
+ping 172.20.36.15
+PING 172.20.36.15 (172.20.36.15) 56(84) bytes of data.
+64 bytes from 172.20.36.15: icmp_seq=1 ttl=61 time=6.83 ms
+64 bytes from 172.20.36.15: icmp_seq=2 ttl=61 time=5.86 ms
+64 bytes from 172.20.36.15: icmp_seq=3 ttl=61 time=7.33 ms
+64 bytes from 172.20.36.15: icmp_seq=4 ttl=61 time=6.39 ms
+64 bytes from 172.20.36.15: icmp_seq=5 ttl=61 time=6.29 ms
+
+--- 172.20.36.15 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 806ms
+rtt min/avg/max/mdev = 5.862/6.545/7.338/0.510 ms
+ping 172.20.36.14
+PING 172.20.36.14 (172.20.36.14) 56(84) bytes of data.
+64 bytes from 172.20.36.14: icmp_seq=1 ttl=61 time=7.32 ms
+64 bytes from 172.20.36.14: icmp_seq=2 ttl=61 time=6.35 ms
+64 bytes from 172.20.36.14: icmp_seq=3 ttl=61 time=7.55 ms
+64 bytes from 172.20.36.14: icmp_seq=4 ttl=61 time=6.63 ms
+64 bytes from 172.20.36.14: icmp_seq=5 ttl=61 time=5.19 ms
+
+--- 172.20.36.14 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 808ms
+rtt min/avg/max/mdev = 5.190/6.611/7.556/0.840 ms
+ping 172.20.36.13
+PING 172.20.36.13 (172.20.36.13) 56(84) bytes of data.
+64 bytes from 172.20.36.13: icmp_seq=1 ttl=61 time=7.53 ms
+64 bytes from 172.20.36.13: icmp_seq=2 ttl=61 time=7.48 ms
+64 bytes from 172.20.36.13: icmp_seq=3 ttl=61 time=7.38 ms
+64 bytes from 172.20.36.13: icmp_seq=4 ttl=61 time=7.14 ms
+64 bytes from 172.20.36.13: icmp_seq=5 ttl=61 time=6.91 ms
+
+--- 172.20.36.13 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 807ms
+rtt min/avg/max/mdev = 6.913/7.292/7.536/0.237 ms
+ping 172.20.36.12
+PING 172.20.36.12 (172.20.36.12) 56(84) bytes of data.
+64 bytes from 172.20.36.12: icmp_seq=1 ttl=61 time=21.2 ms
+64 bytes from 172.20.36.12: icmp_seq=2 ttl=61 time=7.15 ms
+64 bytes from 172.20.36.12: icmp_seq=3 ttl=61 time=7.50 ms
+64 bytes from 172.20.36.12: icmp_seq=4 ttl=61 time=7.44 ms
+64 bytes from 172.20.36.12: icmp_seq=5 ttl=61 time=6.20 ms
+
+--- 172.20.36.12 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 813ms
+rtt min/avg/max/mdev = 6.205/9.911/21.246/5.687 ms
+ping 172.20.36.11
+PING 172.20.36.11 (172.20.36.11) 56(84) bytes of data.
+64 bytes from 172.20.36.11: icmp_seq=1 ttl=61 time=22.9 ms
+64 bytes from 172.20.36.11: icmp_seq=2 ttl=61 time=6.45 ms
+64 bytes from 172.20.36.11: icmp_seq=3 ttl=61 time=5.94 ms
+64 bytes from 172.20.36.11: icmp_seq=4 ttl=61 time=6.92 ms
+64 bytes from 172.20.36.11: icmp_seq=5 ttl=61 time=6.69 ms
+
+--- 172.20.36.11 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 804ms
+rtt min/avg/max/mdev = 5.946/9.796/22.965/6.592 ms
+ping 172.20.36.10
+PING 172.20.36.10 (172.20.36.10) 56(84) bytes of data.
+64 bytes from 172.20.36.10: icmp_seq=1 ttl=61 time=7.99 ms
+64 bytes from 172.20.36.10: icmp_seq=2 ttl=61 time=7.91 ms
+64 bytes from 172.20.36.10: icmp_seq=3 ttl=61 time=5.96 ms
+64 bytes from 172.20.36.10: icmp_seq=4 ttl=61 time=6.32 ms
+64 bytes from 172.20.36.10: icmp_seq=5 ttl=61 time=7.67 ms
+
+--- 172.20.36.10 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 804ms
+rtt min/avg/max/mdev = 5.969/7.175/7.994/0.855 ms
+ping 10.2.1.113
+PING 10.2.1.113 (10.2.1.113) 56(84) bytes of data.
+64 bytes from 10.2.1.113: icmp_seq=1 ttl=61 time=7.63 ms
+64 bytes from 10.2.1.113: icmp_seq=2 ttl=61 time=7.12 ms
+64 bytes from 10.2.1.113: icmp_seq=3 ttl=61 time=6.97 ms
+64 bytes from 10.2.1.113: icmp_seq=4 ttl=61 time=6.71 ms
+64 bytes from 10.2.1.113: icmp_seq=5 ttl=61 time=7.50 ms
+
+--- 10.2.1.113 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 823ms
+rtt min/avg/max/mdev = 6.718/7.193/7.638/0.342 ms
+ping 172.20.19.48
+PING 172.20.19.48 (172.20.19.48) 56(84) bytes of data.
+
+--- 172.20.19.48 ping statistics ---
+5 packets transmitted, 0 received, 100% packet loss, time 818ms
+
+========================================Ping <<<FAILED>>> 172.20.19.48
+ping 172.20.19.49
+PING 172.20.19.49 (172.20.19.49) 56(84) bytes of data.
+64 bytes from 172.20.19.49: icmp_seq=1 ttl=61 time=6.41 ms
+64 bytes from 172.20.19.49: icmp_seq=2 ttl=61 time=6.22 ms
+64 bytes from 172.20.19.49: icmp_seq=3 ttl=61 time=6.74 ms
+64 bytes from 172.20.19.49: icmp_seq=4 ttl=61 time=6.31 ms
+64 bytes from 172.20.19.49: icmp_seq=5 ttl=61 time=6.65 ms
+
+--- 172.20.19.49 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 809ms
+rtt min/avg/max/mdev = 6.220/6.469/6.740/0.223 ms
+ping 172.20.19.50
+PING 172.20.19.50 (172.20.19.50) 56(84) bytes of data.
+64 bytes from 172.20.19.50: icmp_seq=1 ttl=61 time=7.40 ms
+64 bytes from 172.20.19.50: icmp_seq=2 ttl=61 time=6.09 ms
+64 bytes from 172.20.19.50: icmp_seq=3 ttl=61 time=6.56 ms
+64 bytes from 172.20.19.50: icmp_seq=4 ttl=61 time=6.86 ms
+64 bytes from 172.20.19.50: icmp_seq=5 ttl=61 time=6.37 ms
+
+--- 172.20.19.50 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 814ms
+rtt min/avg/max/mdev = 6.099/6.661/7.403/0.453 ms
+ping 172.20.19.51
+PING 172.20.19.51 (172.20.19.51) 56(84) bytes of data.
+64 bytes from 172.20.19.51: icmp_seq=1 ttl=61 time=5.70 ms
+64 bytes from 172.20.19.51: icmp_seq=2 ttl=61 time=6.66 ms
+64 bytes from 172.20.19.51: icmp_seq=3 ttl=61 time=5.64 ms
+64 bytes from 172.20.19.51: icmp_seq=4 ttl=61 time=7.74 ms
+64 bytes from 172.20.19.51: icmp_seq=5 ttl=61 time=6.50 ms
+
+--- 172.20.19.51 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 810ms
+rtt min/avg/max/mdev = 5.647/6.452/7.741/0.764 ms
+ping 172.20.19.52
+PING 172.20.19.52 (172.20.19.52) 56(84) bytes of data.
+64 bytes from 172.20.19.52: icmp_seq=1 ttl=61 time=6.34 ms
+64 bytes from 172.20.19.52: icmp_seq=2 ttl=61 time=5.97 ms
+64 bytes from 172.20.19.52: icmp_seq=3 ttl=61 time=6.04 ms
+64 bytes from 172.20.19.52: icmp_seq=4 ttl=61 time=7.61 ms
+64 bytes from 172.20.19.52: icmp_seq=5 ttl=61 time=7.58 ms
+
+--- 172.20.19.52 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 807ms
+rtt min/avg/max/mdev = 5.972/6.710/7.618/0.741 ms
+ping 172.20.19.53
+PING 172.20.19.53 (172.20.19.53) 56(84) bytes of data.
+64 bytes from 172.20.19.53: icmp_seq=1 ttl=61 time=6.37 ms
+64 bytes from 172.20.19.53: icmp_seq=2 ttl=61 time=8.20 ms
+64 bytes from 172.20.19.53: icmp_seq=3 ttl=61 time=6.49 ms
+64 bytes from 172.20.19.53: icmp_seq=4 ttl=61 time=6.36 ms
+64 bytes from 172.20.19.53: icmp_seq=5 ttl=61 time=6.76 ms
+
+--- 172.20.19.53 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 807ms
+rtt min/avg/max/mdev = 6.365/6.842/8.208/0.698 ms
+ping 172.20.19.54
+PING 172.20.19.54 (172.20.19.54) 56(84) bytes of data.
+64 bytes from 172.20.19.54: icmp_seq=1 ttl=61 time=6.93 ms
+64 bytes from 172.20.19.54: icmp_seq=2 ttl=61 time=7.35 ms
+64 bytes from 172.20.19.54: icmp_seq=3 ttl=61 time=6.66 ms
+64 bytes from 172.20.19.54: icmp_seq=4 ttl=61 time=7.50 ms
+64 bytes from 172.20.19.54: icmp_seq=5 ttl=61 time=7.64 ms
+
+--- 172.20.19.54 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 808ms
+rtt min/avg/max/mdev = 6.661/7.220/7.647/0.383 ms
+ping 172.20.36.18
+PING 172.20.36.18 (172.20.36.18) 56(84) bytes of data.
+64 bytes from 172.20.36.18: icmp_seq=1 ttl=61 time=7.60 ms
+64 bytes from 172.20.36.18: icmp_seq=2 ttl=61 time=7.96 ms
+64 bytes from 172.20.36.18: icmp_seq=3 ttl=61 time=7.85 ms
+64 bytes from 172.20.36.18: icmp_seq=4 ttl=61 time=7.77 ms
+64 bytes from 172.20.36.18: icmp_seq=5 ttl=61 time=5.56 ms
+
+--- 172.20.36.18 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 806ms
+rtt min/avg/max/mdev = 5.560/7.351/7.960/0.909 ms
+ping 172.20.36.17
+PING 172.20.36.17 (172.20.36.17) 56(84) bytes of data.
+64 bytes from 172.20.36.17: icmp_seq=1 ttl=61 time=6.93 ms
+64 bytes from 172.20.36.17: icmp_seq=2 ttl=61 time=7.47 ms
+64 bytes from 172.20.36.17: icmp_seq=3 ttl=61 time=7.49 ms
+64 bytes from 172.20.36.17: icmp_seq=4 ttl=61 time=7.85 ms
+64 bytes from 172.20.36.17: icmp_seq=5 ttl=61 time=5.88 ms
+
+--- 172.20.36.17 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 811ms
+rtt min/avg/max/mdev = 5.889/7.129/7.851/0.685 ms
+ping 172.20.36.16
+PING 172.20.36.16 (172.20.36.16) 56(84) bytes of data.
+64 bytes from 172.20.36.16: icmp_seq=1 ttl=61 time=7.74 ms
+64 bytes from 172.20.36.16: icmp_seq=2 ttl=61 time=6.08 ms
+64 bytes from 172.20.36.16: icmp_seq=3 ttl=61 time=6.97 ms
+64 bytes from 172.20.36.16: icmp_seq=4 ttl=61 time=7.25 ms
+64 bytes from 172.20.36.16: icmp_seq=5 ttl=61 time=7.45 ms
+
+--- 172.20.36.16 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 806ms
+rtt min/avg/max/mdev = 6.084/7.102/7.746/0.578 ms
+ping 172.20.36.19
+PING 172.20.36.19 (172.20.36.19) 56(84) bytes of data.
+64 bytes from 172.20.36.19: icmp_seq=1 ttl=61 time=6.85 ms
+64 bytes from 172.20.36.19: icmp_seq=2 ttl=61 time=5.59 ms
+64 bytes from 172.20.36.19: icmp_seq=3 ttl=61 time=6.29 ms
+64 bytes from 172.20.36.19: icmp_seq=4 ttl=61 time=7.21 ms
+64 bytes from 172.20.36.19: icmp_seq=5 ttl=61 time=6.38 ms
+
+--- 172.20.36.19 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 805ms
+rtt min/avg/max/mdev = 5.593/6.468/7.213/0.558 ms
+ping 172.20.36.20
+PING 172.20.36.20 (172.20.36.20) 56(84) bytes of data.
+64 bytes from 172.20.36.20: icmp_seq=1 ttl=61 time=5.69 ms
+64 bytes from 172.20.36.20: icmp_seq=2 ttl=61 time=7.77 ms
+64 bytes from 172.20.36.20: icmp_seq=3 ttl=61 time=7.53 ms
+64 bytes from 172.20.36.20: icmp_seq=4 ttl=61 time=6.20 ms
+64 bytes from 172.20.36.20: icmp_seq=5 ttl=61 time=6.60 ms
+
+--- 172.20.36.20 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 816ms
+rtt min/avg/max/mdev = 5.698/6.763/7.771/0.787 ms
+ping 10.2.1.114
+PING 10.2.1.114 (10.2.1.114) 56(84) bytes of data.
+64 bytes from 10.2.1.114: icmp_seq=1 ttl=61 time=8.08 ms
+64 bytes from 10.2.1.114: icmp_seq=2 ttl=61 time=8.19 ms
+64 bytes from 10.2.1.114: icmp_seq=3 ttl=61 time=7.67 ms
+64 bytes from 10.2.1.114: icmp_seq=4 ttl=61 time=7.55 ms
+64 bytes from 10.2.1.114: icmp_seq=5 ttl=61 time=7.56 ms
+
+--- 10.2.1.114 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 809ms
+rtt min/avg/max/mdev = 7.558/7.814/8.198/0.284 ms
+ping 172.31.2.45
+PING 172.31.2.45 (172.31.2.45) 56(84) bytes of data.
+64 bytes from 172.31.2.45: icmp_seq=1 ttl=60 time=8.11 ms
+64 bytes from 172.31.2.45: icmp_seq=2 ttl=60 time=7.57 ms
+64 bytes from 172.31.2.45: icmp_seq=3 ttl=60 time=5.96 ms
+64 bytes from 172.31.2.45: icmp_seq=4 ttl=60 time=7.20 ms
+64 bytes from 172.31.2.45: icmp_seq=5 ttl=60 time=8.06 ms
+
+--- 172.31.2.45 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 810ms
+rtt min/avg/max/mdev = 5.963/7.384/8.110/0.786 ms
+ping 10.2.1.100
+PING 10.2.1.100 (10.2.1.100) 56(84) bytes of data.
+64 bytes from 10.2.1.100: icmp_seq=1 ttl=251 time=8.48 ms
+64 bytes from 10.2.1.100: icmp_seq=2 ttl=251 time=7.37 ms
+64 bytes from 10.2.1.100: icmp_seq=3 ttl=251 time=7.74 ms
+64 bytes from 10.2.1.100: icmp_seq=4 ttl=251 time=8.41 ms
+64 bytes from 10.2.1.100: icmp_seq=5 ttl=251 time=8.45 ms
+
+--- 10.2.1.100 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 809ms
+rtt min/avg/max/mdev = 7.376/8.096/8.486/0.457 ms
