@@ -2506,6 +2506,9 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
         VLOG_INFO("Max Tx retries for vhost device '%s' set to %d",
                   netdev_get_name(netdev), max_tx_retries);
     }
+
+    dpdk_set_rxq_config(dev, args);
+
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
@@ -6298,6 +6301,7 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
         uint64_t virtio_unsup_features = 0;
         uint64_t vhost_flags = 0;
         bool enable_tso;
+        int nr_qp;
 
         enable_tso = userspace_tso_enabled()
                      && dev->virtio_features_state & OVS_VIRTIO_F_CLEAN;
@@ -6368,6 +6372,14 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
         if (err) {
             VLOG_ERR("rte_vhost_driver_disable_features failed for "
                      "vhost user client port: %s\n", dev->up.name);
+            goto unlock;
+        }
+
+        nr_qp = MAX(dev->requested_n_rxq, dev->requested_n_txq);
+        err = rte_vhost_driver_set_max_queue_num(dev->vhost_id, nr_qp);
+        if (err) {
+            VLOG_ERR("rte_vhost_driver_set_max_queue_num failed for "
+                    "vhost-user client port: %s\n", dev->up.name);
             goto unlock;
         }
 
