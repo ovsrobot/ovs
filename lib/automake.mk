@@ -124,25 +124,6 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dp-packet-gso.c \
 	lib/dp-packet-gso.h \
 	lib/dpdk.h \
-	lib/dpif-netdev-extract-study.c \
-	lib/dpif-netdev-lookup.h \
-	lib/dpif-netdev-lookup.c \
-	lib/dpif-netdev-lookup-autovalidator.c \
-	lib/dpif-netdev-lookup-generic.c \
-	lib/dpif-netdev.c \
-	lib/dpif-netdev.h \
-	lib/dpif-netdev-private-dfc.c \
-	lib/dpif-netdev-private-dfc.h \
-	lib/dpif-netdev-private-dpcls.h \
-	lib/dpif-netdev-private-dpif.c \
-	lib/dpif-netdev-private-dpif.h \
-	lib/dpif-netdev-private-extract.c \
-	lib/dpif-netdev-private-extract.h \
-	lib/dpif-netdev-private-flow.h \
-	lib/dpif-netdev-private-thread.h \
-	lib/dpif-netdev-private.h \
-	lib/dpif-netdev-perf.c \
-	lib/dpif-netdev-perf.h \
 	lib/dpif-provider.h \
 	lib/dpif.c \
 	lib/dpif.h \
@@ -695,3 +676,33 @@ EXTRA_DIST += lib/meta-flow.xml
 lib_libopenvswitch_la_SOURCES += \
     lib/dpif-plugin.c \
     lib/dpif-plugin.h
+
+lib_LTLIBRARIES += lib/dpif-netdev.la
+lib_dpif_netdev_la_LDFLAGS = -shared -module \
+        $(OVS_LTINFO) \
+        $(AM_LDFLAGS)
+lib_dpif_netdev_la_LIBADD = lib/libopenvswitch.la
+lib_dpif_netdev_la_SOURCES = \
+    lib/dpdk.h \
+    lib/dpif-netdev-extract-study.c \
+    lib/dpif-netdev-lookup.h \
+    lib/dpif-netdev-lookup.c \
+    lib/dpif-netdev-lookup-autovalidator.c \
+    lib/dpif-netdev-lookup-generic.c \
+    lib/dpif-netdev.c \
+    lib/dpif-netdev.h \
+    lib/dpif-netdev-private-dfc.c \
+    lib/dpif-netdev-private-dfc.h \
+    lib/dpif-netdev-private-dpcls.h \
+    lib/dpif-netdev-private-dpif.c \
+    lib/dpif-netdev-private-dpif.h \
+    lib/dpif-netdev-private-extract.c \
+    lib/dpif-netdev-private-extract.h \
+    lib/dpif-netdev-private-flow.h \
+    lib/dpif-netdev-private-thread.h \
+    lib/dpif-netdev-private.h \
+    lib/dpif-netdev-perf.c \
+    lib/dpif-netdev-perf.h \
+    lib/netdev-dpdk.c \
+    lib/netdev-dpdk.h \
+    lib/netdev-offload-dpdk.c

@@ -19,6 +19,7 @@
 #include "dpif-netdev-private.h"
 #include "dpif-netdev-private-dfc.h"
 
+#include "dpif-plugin.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -10601,3 +10602,7 @@ dpcls_lookup(struct dpcls *cls, const struct netdev_flow_key *keys[],
     }
     return false;
 }
+
+struct dpif_plugin dpif_netdev_plugin = {
+    .plugin_class = &dpif_netdev_class,
+};
