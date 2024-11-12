@@ -686,6 +686,8 @@ struct dpif_class {
 
     /* Set cache size. */
     int (*cache_set_size)(struct dpif *dpif, uint32_t level, uint32_t size);
+
+    bool (*is_userspace)(void);
 };
 
 extern const struct dpif_class dpif_netlink_class;

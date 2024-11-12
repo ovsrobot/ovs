@@ -1946,6 +1946,12 @@ log_flow_get_message(const struct dpif *dpif,
     }
 }
 
+static bool
+dpif_is_netdev(const struct dpif *dpif)
+{
+    return dpif->dpif_class->is_userspace && dpif->dpif_class->is_userspace();
+}
+
 bool
 dpif_supports_tnl_push_pop(const struct dpif *dpif)
 {

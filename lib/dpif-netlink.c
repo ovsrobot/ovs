@@ -4589,6 +4589,7 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_cache_get_name,
     dpif_netlink_cache_get_size,
     dpif_netlink_cache_set_size,
+    NULL,
 };
 
 static int
