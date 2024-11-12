@@ -115,6 +115,7 @@ dpif_is_tap_port(const char *type)
 static void
 dp_register_dynamic_provider(const char *provider)
 {
+    const struct dpif_class *dpif_class;
     struct dpif_plugin *p;
 
     VLOG_INFO("Look for dp provider '%s'", provider);
@@ -122,6 +123,14 @@ dp_register_dynamic_provider(const char *provider)
     if (!p) {
         return;
     }
+
+    dpif_class = p->plugin_class;
+    if (dpif_class->class_version != dpif_class_version) {
+        VLOG_INFO("Version mismatch for dp %s: 0x%x, require 0x%x.", dpif_class->type,
+                  dpif_class->class_version, dpif_class_version);
+        return;
+    }
+
     VLOG_INFO("Register dp provider '%s'", provider);
     dp_register_provider(p->plugin_class);
 }
