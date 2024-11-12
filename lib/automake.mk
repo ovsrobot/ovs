@@ -691,3 +691,7 @@ lib/ovs-fields.7: $(srcdir)/build-aux/extract-ofp-fields include/openvswitch/met
             $(srcdir)/lib/meta-flow.xml > $@.tmp
 	$(AM_V_at)mv $@.tmp $@
 EXTRA_DIST += lib/meta-flow.xml
+
+lib_libopenvswitch_la_SOURCES += \
+    lib/dpif-plugin.c \
+    lib/dpif-plugin.h

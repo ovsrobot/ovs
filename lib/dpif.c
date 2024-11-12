@@ -27,6 +27,7 @@
 #include "dp-packet.h"
 #include "dpctl.h"
 #include "dpif-netdev.h"
+#include "dpif-plugin.h"
 #include "flow.h"
 #include "netdev-offload.h"
 #include "netdev-provider.h"
@@ -113,6 +114,20 @@ dpif_is_tap_port(const char *type)
 }
 
 static void
+dp_register_dynamic_provider(const char *provider)
+{
+    struct dpif_plugin *p;
+
+    VLOG_INFO("Look for dp provider '%s'", provider);
+    p = dp_plugin_get(provider);
+    if (!p) {
+        return;
+    }
+    VLOG_INFO("Register dp provider '%s'", provider);
+    dp_register_provider(p->plugin_class);
+}
+
+static void
 dp_initialize(void)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
@@ -129,6 +144,8 @@ dp_initialize(void)
         for (i = 0; i < ARRAY_SIZE(base_dpif_classes); i++) {
             dp_register_provider(base_dpif_classes[i]);
         }
+
+        dp_register_dynamic_provider("netdev");
 
         ovsthread_once_done(&once);
     }

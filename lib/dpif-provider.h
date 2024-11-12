@@ -22,6 +22,9 @@
  * exposed over OpenFlow as a single switch.  Datapaths and the collections of
  * ports that they contain may be fixed or dynamic. */
 
+#include <config.h>
+#include "lib/ct-dpif.h"
+#include "dpif.h"
 #include "openflow/openflow.h"
 #include "dpif.h"
 #include "util.h"
