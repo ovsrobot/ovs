@@ -1,3 +1,8 @@
+v3.4.0 - 12 Nov 2024
+---------------------
+    - Add support for ICMPV6 offload.
+
+
 Post-v3.4.0
 --------------------
    - Userspace datapath:
