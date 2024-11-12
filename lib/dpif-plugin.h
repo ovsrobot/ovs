@@ -21,12 +21,17 @@
 extern "C" {
 #endif
 
+struct smap;
+
 struct dpif_plugin {
     struct dpif_plugin *next;
     const char *id;
 
     const void *plugin_class;
+    void (*bridge_init)(const struct smap *ovs_other_config);
 };
+
+void foreach_plugin_call_bridge_init(const struct smap *ovs_other_config);
 
 struct dpif_plugin *dp_plugin_get(const char *str);
 

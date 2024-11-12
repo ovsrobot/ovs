@@ -29,6 +29,16 @@ VLOG_DEFINE_THIS_MODULE(dpif_plugin);
 static void *BODY;      /* cached handle dlopen(NULL) */
 static struct dpif_plugin *dpif_plugin_list;
 
+void foreach_plugin_call_bridge_init(const struct smap *ovs_other_config) {
+    struct dpif_plugin *p;
+
+    for (p = dpif_plugin_list; p; p = p->next) {
+        if (p->bridge_init) {
+            p->bridge_init(ovs_other_config);
+        }
+    }
+}
+
 static struct dpif_plugin *
 any_plugin_get(const char *prefix, const char *str)
 {

@@ -19,6 +19,7 @@
 #include <inttypes.h>
 #include <stdlib.h>
 
+#include "lib/dpif-plugin.h"
 #include "async-append.h"
 #include "bfd.h"
 #include "bitmap.h"
@@ -3400,6 +3401,7 @@ bridge_run(void)
         netdev_set_flow_api_enabled(&cfg->other_config);
         dpdk_init(&cfg->other_config);
         userspace_tso_init(&cfg->other_config);
+        foreach_plugin_call_bridge_init(&cfg->other_config);
     }
 
     /* Initialize the ofproto library.  This only needs to run once, but
