@@ -108,6 +108,10 @@ struct dpif_ipf_status {
    unsigned int nfrag_max;
 };
 
+/* The version should be increased for any change to the
+ * datapath interface class structure. */
+static const unsigned int dpif_class_version = 1234;
+
 /* Datapath interface class structure, to be defined by each implementation of
  * a datapath interface.
  *
@@ -124,6 +128,11 @@ struct dpif_class {
      * One of the providers should supply a "system" type, since this is
      * the type assumed if no type is specified when opening a dpif. */
     const char *type;
+
+    /* Should match dpif_class_version.
+     * External dpif classed compiled elsewhere expected to set a version
+     * matching the implemented class. */
+    unsigned int class_version;
 
     /* If 'true', datapath ports should be destroyed on ofproto destruction.
      *

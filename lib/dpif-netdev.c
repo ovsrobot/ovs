@@ -9996,6 +9996,7 @@ dpif_netdev_is_userspace(void)
 
 const struct dpif_class dpif_netdev_class = {
     "netdev",
+    dpif_class_version,
     true,                       /* cleanup_required */
     true,                       /* synced_dp_layers */
     dpif_netdev_init,
