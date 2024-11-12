@@ -43,7 +43,7 @@ dummy_enable(const char *arg)
     }
 
     netdev_dummy_register(level);
-    dpif_dummy_register(level);
+//    dpif_dummy_register(level);
     timeval_dummy_register();
     ofpact_dummy_enable();
 }
