@@ -421,6 +421,7 @@ enum dpdk_hw_ol_features {
     NETDEV_TX_GENEVE_TNL_TSO_OFFLOAD = 1 << 9,
     NETDEV_TX_OUTER_IP_CKSUM_OFFLOAD = 1 << 10,
     NETDEV_TX_OUTER_UDP_CKSUM_OFFLOAD = 1 << 11,
+    NETDEV_TX_GRE_TNL_TSO_OFFLOAD = 1 << 12,
 };
 
 enum dpdk_rx_steer_flags {
@@ -1084,6 +1085,8 @@ netdev_dpdk_update_netdev_flags(struct netdev_dpdk *dev)
                                    NETDEV_TX_OFFLOAD_TCP_TSO);
     netdev_dpdk_update_netdev_flag(dev, NETDEV_TX_VXLAN_TNL_TSO_OFFLOAD,
                                    NETDEV_TX_VXLAN_TNL_TSO);
+    netdev_dpdk_update_netdev_flag(dev, NETDEV_TX_GRE_TNL_TSO_OFFLOAD,
+                                   NETDEV_TX_GRE_TNL_TSO);
     netdev_dpdk_update_netdev_flag(dev, NETDEV_TX_GENEVE_TNL_TSO_OFFLOAD,
                                    NETDEV_TX_GENEVE_TNL_TSO);
     netdev_dpdk_update_netdev_flag(dev, NETDEV_TX_OUTER_IP_CKSUM_OFFLOAD,
@@ -1150,6 +1153,10 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev, int n_rxq, int n_txq)
 
     if (dev->hw_ol_features & NETDEV_TX_GENEVE_TNL_TSO_OFFLOAD) {
         conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO;
+    }
+
+    if (dev->hw_ol_features & NETDEV_TX_GRE_TNL_TSO_OFFLOAD) {
+        conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_GRE_TNL_TSO;
     }
 
     if (dev->hw_ol_features & NETDEV_TX_OUTER_IP_CKSUM_OFFLOAD) {
@@ -1422,6 +1429,13 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
             dev->hw_ol_features |= NETDEV_TX_GENEVE_TNL_TSO_OFFLOAD;
         } else {
             VLOG_WARN("%s: Tx Geneve tunnel TSO offload is not supported.",
+                      netdev_get_name(&dev->up));
+        }
+
+        if (info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_GRE_TNL_TSO) {
+            dev->hw_ol_features |= NETDEV_TX_GRE_TNL_TSO_OFFLOAD;
+        } else {
+            VLOG_WARN("%s: Tx GRE tunnel TSO offload is not supported.",
                       netdev_get_name(&dev->up));
         }
     }

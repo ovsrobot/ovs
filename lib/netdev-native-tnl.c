@@ -174,7 +174,8 @@ netdev_tnl_push_ip_header(struct dp_packet *packet, const void *header,
         packet->l4_ofs = dp_packet_size(packet) - *ip_tot_size;
 
         if (dp_packet_hwol_is_tunnel_geneve(packet) ||
-            dp_packet_hwol_is_tunnel_vxlan(packet)) {
+            dp_packet_hwol_is_tunnel_vxlan(packet) ||
+            dp_packet_hwol_is_tunnel_gre(packet)) {
             dp_packet_hwol_set_tx_outer_ipv6(packet);
         } else {
             dp_packet_hwol_set_tx_ipv6(packet);
@@ -187,7 +188,8 @@ netdev_tnl_push_ip_header(struct dp_packet *packet, const void *header,
         ip->ip_tot_len = htons(*ip_tot_size);
         /* Postpone checksum to when the packet is pushed to the port. */
         if (dp_packet_hwol_is_tunnel_geneve(packet) ||
-            dp_packet_hwol_is_tunnel_vxlan(packet)) {
+            dp_packet_hwol_is_tunnel_vxlan(packet) ||
+            dp_packet_hwol_is_tunnel_gre(packet)) {
             dp_packet_hwol_set_tx_outer_ipv4(packet);
             dp_packet_hwol_set_tx_outer_ipv4_csum(packet);
         } else {
@@ -510,8 +512,12 @@ netdev_gre_push_header(const struct netdev *netdev,
                        const struct ovs_action_push_tnl *data)
 {
     struct netdev_vport *dev = netdev_vport_cast(netdev);
+    uint16_t l3_ofs = packet->l3_ofs;
+    uint16_t l4_ofs = packet->l4_ofs;
     struct gre_base_hdr *greh;
     int ip_tot_size;
+
+    dp_packet_hwol_set_tunnel_gre(packet);
 
     greh = netdev_tnl_push_ip_header(packet, data->header, data->header_len,
                                      &ip_tot_size, 0);
@@ -527,6 +533,13 @@ netdev_gre_push_header(const struct netdev *netdev,
         ovs_16aligned_be32 *seq_opt =
             ALIGNED_CAST(ovs_16aligned_be32 *, (char *)greh + seq_ofs);
         put_16aligned_be32(seq_opt, htonl(atomic_count_inc(&dev->gre_seqno)));
+    }
+
+    if (l3_ofs != UINT16_MAX) {
+        packet->inner_l3_ofs = l3_ofs + data->header_len;
+    }
+    if (l4_ofs != UINT16_MAX) {
+        packet->inner_l4_ofs = l4_ofs + data->header_len;
     }
 }
 
