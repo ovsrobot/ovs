@@ -831,14 +831,10 @@ check_condition(const struct ovsdb_idl_table_class *table,
         } else {
             struct ovsdb_datum a;
 
+            ovsdb_datum_init_empty(&a);
             if (found) {
                 a.n = 1;
                 a.keys = &have_datum->values[idx];
-                a.values = NULL;
-            } else {
-                a.n = 0;
-                a.keys = NULL;
-                a.values = NULL;
             }
 
             retval = evaluate_relop(&a, &b, &type, operator);
