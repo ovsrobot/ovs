@@ -15,6 +15,9 @@ Post-v3.4.0
        that does not have a specific value defined, rather than being
        treated as a global value, aligning the behavior with that of
        the kernel datapath.
+     * Packets marked for TSO and egressing on an interface which doesn't
+       support that feature will now be segmented in software, even when
+       tunnel encapsulated.
    - Linux TC offload:
      * Add support for matching tunnel flags if the kernel supports it.
      * Add support for the "Don't Fragment" (DF) flag in the encap action,
