@@ -463,12 +463,14 @@ struct dp_netdev_rxq {
 enum txq_req_mode {
     TXQ_REQ_MODE_THREAD,
     TXQ_REQ_MODE_HASH,
+    TXQ_REQ_MODE_HASH_PER_THREAD
 };
 
 enum txq_mode {
     TXQ_MODE_STATIC,
     TXQ_MODE_XPS,
     TXQ_MODE_XPS_HASH,
+    TXQ_MODE_XPS_HASH_PER_THREAD
 };
 
 /* A port in a netdev-based datapath. */
@@ -5410,6 +5412,8 @@ dpif_netdev_port_set_config(struct dpif *dpif, odp_port_t port_no,
 
     if (nullable_string_is_equal(tx_steering_mode, "hash")) {
         txq_mode = TXQ_REQ_MODE_HASH;
+    } else if (nullable_string_is_equal(tx_steering_mode, "hash-per-thread")) {
+        txq_mode = TXQ_REQ_MODE_HASH_PER_THREAD;
     } else {
         txq_mode = TXQ_REQ_MODE_THREAD;
     }
@@ -5541,7 +5545,42 @@ dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
     output_cnt = dp_packet_batch_size(&p->output_pkts);
     ovs_assert(output_cnt > 0);
 
-    if (p->port->txq_mode == TXQ_MODE_XPS_HASH) {
+    int pmd_cnt = cmap_count(&pmd->dp->poll_threads);
+    if (p->port->txq_mode == TXQ_MODE_XPS_HASH_PER_THREAD) {
+        int n_txq = netdev_n_txq(p->port->netdev);
+        /* for example 6 txq, ovs has 4 pmd
+        * pmd0 alloc txq 0,4 pmdid=0
+        * pmd1 alloc txq 1,5 pmdid=1
+        * pmd2 alloc txq 2   pmdid=2
+        * pmd3 alloc txq 3   pmdid=3*/
+        int ntxq_this_thread = n_txq / pmd_cnt + (pmd->pmd_id <
+                                (n_txq % pmd_cnt) ? 1 : 0);
+
+        /* Re-batch per txq based on packet hash. */
+        DP_PACKET_BATCH_FOR_EACH (j, packet, &p->output_pkts) {
+            uint32_t hash;
+
+            if (OVS_LIKELY(dp_packet_rss_valid(packet))) {
+                hash = dp_packet_get_rss_hash(packet);
+            } else {
+                struct flow flow;
+
+                flow_extract(packet, &flow);
+                hash = flow_hash_5tuple(&flow, 0);
+            }
+            dp_packet_batch_add(&p->txq_pkts[hash % ntxq_this_thread], packet);
+        }
+
+        /* Flush batches of each Tx queues. */
+        for (i = 0; i < ntxq_this_thread; i++) {
+            if (dp_packet_batch_is_empty(&p->txq_pkts[i])) {
+                continue;
+            }
+            tx_qid = i * pmd_cnt + pmd->pmd_id;
+            netdev_send(p->port->netdev, tx_qid, &p->txq_pkts[i], true);
+            dp_packet_batch_init(&p->txq_pkts[i]);
+        }
+    } else if (p->port->txq_mode == TXQ_MODE_XPS_HASH) {
         int n_txq = netdev_n_txq(p->port->netdev);
 
         /* Re-batch per txq based on packet hash. */
@@ -6724,6 +6763,24 @@ pmd_remove_stale_ports(struct dp_netdev *dp,
     ovs_mutex_unlock(&pmd->port_mutex);
 }
 
+static enum txq_mode get_current_txq_mode(struct dp_netdev_port *port,
+                                        int wanted_txqs)
+{
+    /* With a single queue, there is no point in using hash mode. */
+    if (port->txq_requested_mode == TXQ_REQ_MODE_HASH &&
+        netdev_n_txq(port->netdev) > 1) {
+        port->txq_mode = TXQ_MODE_XPS_HASH;
+    } else if (port->txq_requested_mode == TXQ_REQ_MODE_HASH_PER_THREAD &&
+        netdev_n_txq(port->netdev) >= wanted_txqs) {
+        return TXQ_MODE_XPS_HASH_PER_THREAD;
+    }
+    else if (netdev_n_txq(port->netdev) < wanted_txqs) {
+        port->txq_mode = TXQ_MODE_XPS;
+    } else {
+        port->txq_mode = TXQ_MODE_STATIC;
+    }
+}
+
 /* Must be called each time a port is added/removed or the cmask changes.
  * This creates and destroys pmd threads, reconfigures ports, opens their
  * rxqs and assigns all rxqs/txqs to pmd threads. */
@@ -6764,11 +6821,7 @@ reconfigure_datapath(struct dp_netdev *dp)
      * unnecessary.  */
     HMAP_FOR_EACH (port, node, &dp->ports) {
         if (netdev_is_reconf_required(port->netdev)
-            || ((port->txq_mode == TXQ_MODE_XPS)
-                != (netdev_n_txq(port->netdev) < wanted_txqs))
-            || ((port->txq_mode == TXQ_MODE_XPS_HASH)
-                != (port->txq_requested_mode == TXQ_REQ_MODE_HASH
-                    && netdev_n_txq(port->netdev) > 1))) {
+            || port->txq_mode != get_current_txq_mode(port, wanted_txqs)) {
             port->need_reconfigure = true;
         }
     }
@@ -6802,15 +6855,7 @@ reconfigure_datapath(struct dp_netdev *dp)
             seq_change(dp->port_seq);
             port_destroy(port);
         } else {
-            /* With a single queue, there is no point in using hash mode. */
-            if (port->txq_requested_mode == TXQ_REQ_MODE_HASH &&
-                netdev_n_txq(port->netdev) > 1) {
-                port->txq_mode = TXQ_MODE_XPS_HASH;
-            } else if (netdev_n_txq(port->netdev) < wanted_txqs) {
-                port->txq_mode = TXQ_MODE_XPS;
-            } else {
-                port->txq_mode = TXQ_MODE_STATIC;
-            }
+            port->txq_mode = get_current_txq_mode(port, wanted_txqs);
         }
     }
 
@@ -8066,7 +8111,8 @@ dp_netdev_add_port_tx_to_pmd(struct dp_netdev_pmd_thread *pmd,
     tx->flush_time = 0LL;
     dp_packet_batch_init(&tx->output_pkts);
 
-    if (tx->port->txq_mode == TXQ_MODE_XPS_HASH) {
+    if (tx->port->txq_mode == TXQ_MODE_XPS_HASH ||
+        tx->port->txq_mode == TXQ_MODE_XPS_HASH_PER_THREAD) {
         int i, n_txq = netdev_n_txq(tx->port->netdev);
 
         tx->txq_pkts = xzalloc(n_txq * sizeof *tx->txq_pkts);
