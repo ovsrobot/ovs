@@ -229,6 +229,7 @@ struct dp_netdev_pmd_thread {
 
     /* Next time when PMD should try RCU quiescing. */
     long long next_rcu_quiesce;
+    uint32_t pmd_id;                     /* pmd id of this pmd thread. */
 };
 
 #ifdef  __cplusplus
