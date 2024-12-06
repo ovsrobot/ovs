@@ -19,6 +19,7 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -152,6 +153,11 @@ typedef uint16_t dpdk_port_t;
 #define VHOST_ENQ_RETRY_MAX 32
 /* Legacy default value for vhost tx retries. */
 #define VHOST_ENQ_RETRY_DEF 8
+
+/* VDUSE-only, ignore for Vhost-user */
+#define VHOST_MAX_QUEUE_PAIRS_MIN 1
+#define VHOST_MAX_QUEUE_PAIRS_DEF VHOST_MAX_QUEUE_PAIRS_MIN
+#define VHOST_MAX_QUEUE_PAIRS_MAX 128
 
 #define IF_NAME_SZ (PATH_MAX > IFNAMSIZ ? PATH_MAX : IFNAMSIZ)
 
@@ -496,6 +502,9 @@ struct netdev_dpdk {
         bool vhost_reconfigured;
 
         atomic_uint8_t vhost_tx_retries_max;
+
+        /* Ignored by DPDK for Vhost-user backends, only for VDUSE */
+        uint32_t vhost_max_queue_pairs;
 
         /* Flags for virtio features recovery mechanism. */
         uint8_t virtio_features_state;
@@ -1609,6 +1618,8 @@ vhost_common_construct(struct netdev *netdev)
 
     atomic_init(&dev->vhost_tx_retries_max, VHOST_ENQ_RETRY_DEF);
 
+    dev->vhost_max_queue_pairs = VHOST_MAX_QUEUE_PAIRS_DEF;
+
     return common_construct(netdev, DPDK_ETH_PORT_ID_INVALID,
                             DPDK_DEV_VHOST, socket_id);
 }
@@ -2491,6 +2502,7 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
     const char *path;
     int max_tx_retries, cur_max_tx_retries;
+    uint32_t max_queue_pairs;
 
     ovs_mutex_lock(&dev->mutex);
     if (!(dev->vhost_driver_flags & RTE_VHOST_USER_CLIENT)) {
@@ -2498,6 +2510,15 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
         if (!nullable_string_is_equal(path, dev->vhost_id)) {
             free(dev->vhost_id);
             dev->vhost_id = nullable_xstrdup(path);
+
+            max_queue_pairs = smap_get_int(args, "vhost-max-queue-pairs",
+                                           VHOST_MAX_QUEUE_PAIRS_DEF);
+            if (max_queue_pairs < VHOST_MAX_QUEUE_PAIRS_MIN
+                || max_queue_pairs > VHOST_MAX_QUEUE_PAIRS_MAX) {
+                max_queue_pairs = VHOST_MAX_QUEUE_PAIRS_DEF;
+            }
+            dev->vhost_max_queue_pairs = max_queue_pairs;
+
             netdev_request_reconfigure(netdev);
         }
     }
@@ -2514,6 +2535,7 @@ netdev_dpdk_vhost_client_set_config(struct netdev *netdev,
         VLOG_INFO("Max Tx retries for vhost device '%s' set to %d",
                   netdev_get_name(netdev), max_tx_retries);
     }
+
     ovs_mutex_unlock(&dev->mutex);
 
     return 0;
@@ -6397,6 +6419,14 @@ netdev_dpdk_vhost_client_reconfigure(struct netdev *netdev)
         if (err) {
             VLOG_ERR("rte_vhost_driver_disable_features failed for "
                      "vhost user client port: %s\n", dev->up.name);
+            goto unlock;
+        }
+
+        err = rte_vhost_driver_set_max_queue_num(dev->vhost_id,
+                                                 dev->vhost_max_queue_pairs);
+        if (err) {
+            VLOG_ERR("rte_vhost_driver_set_max_queue_num failed for "
+                    "vhost-user client port: %s\n", dev->up.name);
             goto unlock;
         }
 
