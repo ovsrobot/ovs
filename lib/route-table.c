@@ -51,6 +51,7 @@ COVERAGE_DEFINE(route_table_dump);
 struct route_data_nexthop {
     struct ovs_list nexthop_node;
 
+    sa_family_t family;
     struct in6_addr addr;
     char ifname[IFNAMSIZ]; /* Interface name. */
 };
@@ -272,6 +273,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_PREFSRC] = { .type = NL_A_U32, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
+        [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -282,6 +284,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_PREFSRC] = { .type = NL_A_IPV6, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
+        [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -377,7 +380,24 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         if (attrs[RTA_PRIORITY]) {
             change->rd.rta_priority = nl_attr_get_u32(attrs[RTA_PRIORITY]);
         }
+        if (attrs[RTA_VIA]) {
+            const struct rtvia *rtvia = nl_attr_get(attrs[RTA_VIA]);
+            rdnh->family = rtvia->rtvia_family;
+            ovs_be32 addr;
 
+            switch (rdnh->family) {
+            case AF_INET:
+                memcpy(&addr, rtvia->rtvia_addr, sizeof(ovs_be32));
+                in6_addr_set_mapped_ipv4(&rdnh->addr, addr);
+                break;
+            case AF_INET6:
+                memcpy(&rdnh->addr, rtvia->rtvia_addr, sizeof rdnh->addr);
+                break;
+            default:
+                VLOG_DBG_RL(&rl, "No address family in via attribute.");
+                goto error_out;
+            }
+        }
         ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
