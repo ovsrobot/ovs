@@ -32,6 +32,7 @@
 #include "netlink.h"
 #include "netlink-notifier.h"
 #include "netlink-socket.h"
+#include "openvswitch/list.h"
 #include "openvswitch/ofpbuf.h"
 #include "ovs-router.h"
 #include "packets.h"
@@ -47,7 +48,16 @@ VLOG_DEFINE_THIS_MODULE(route_table);
 
 COVERAGE_DEFINE(route_table_dump);
 
+struct route_data_nexthop {
+    struct ovs_list nexthop_node;
+
+    struct in6_addr addr;
+    char ifname[IFNAMSIZ]; /* Interface name. */
+};
+
 struct route_data {
+    struct ovs_list nexthops;
+
     /* Copied from struct rtmsg. */
     unsigned char rtm_dst_len;
     unsigned char rtm_protocol;
@@ -56,12 +66,11 @@ struct route_data {
     /* Extracted from Netlink attributes. */
     struct in6_addr rta_dst; /* 0 if missing. */
     struct in6_addr rta_prefsrc; /* 0 if missing. */
-    struct in6_addr rta_gw;
-    char ifname[IFNAMSIZ]; /* Interface name. */
     uint32_t mark;
     uint32_t rta_table_id; /* 0 if missing. */
     uint32_t rta_priority; /* 0 if missing. */
 };
+
 
 /* A digested version of a route message sent down by the kernel to indicate
  * that a route has changed. */
@@ -95,6 +104,25 @@ static void route_map_clear(void);
 static void name_table_init(void);
 static void name_table_change(const struct rtnetlink_change *, void *);
 
+static void
+route_data_init(struct route_data *rd)
+{
+    memset(rd, 0, sizeof *rd);
+    *rd = (struct route_data) {
+        .nexthops = OVS_LIST_INITIALIZER(&rd->nexthops),
+    };
+}
+
+static void
+route_data_destroy(struct route_data *rd)
+{
+    struct route_data_nexthop *rdnh;
+
+    LIST_FOR_EACH_POP (rdnh, nexthop_node, &rd->nexthops) {
+        free(rdnh);
+    }
+}
+
 uint64_t
 route_table_get_change_seq(void)
 {
@@ -111,6 +139,8 @@ route_table_init(void)
     ovs_assert(!nln);
     ovs_assert(!route_notifier);
     ovs_assert(!route6_notifier);
+
+    route_data_init(&rtmsg.rd);
 
     ovs_router_init();
     nln = nln_create(NETLINK_ROUTE, route_table_parse, &rtmsg);
@@ -191,6 +221,7 @@ route_table_dump_one_table(unsigned char id)
             }
             route_table_handle_msg(&msg);
         }
+        route_data_destroy(&msg.rd);
     }
     ofpbuf_uninit(&buf);
     nl_dump_done(&dump);
@@ -230,6 +261,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                     const struct rtmsg *rtm, void *change_)
 {
     struct route_table_msg *change = change_;
+    struct route_data_nexthop *rdnh = NULL;
     bool parsed, ipv4 = false;
 
     static const struct nl_policy policy[] = {
@@ -268,8 +300,10 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
 
     if (parsed) {
         int rta_oif;      /* Output interface index. */
+        rdnh = xzalloc(sizeof *rdnh);
 
         memset(change, 0, sizeof *change);
+        route_data_init(&change->rd);
         change->relevant = true;
 
         if (rtm->rtm_scope == RT_SCOPE_NOWHERE) {
@@ -290,10 +324,11 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         change->rd.rtm_dst_len = rtm->rtm_dst_len + (ipv4 ? 96 : 0);
         change->rd.rtm_protocol = rtm->rtm_protocol;
         change->rd.local = rtm->rtm_type == RTN_LOCAL;
+
         if (attrs[RTA_OIF]) {
             rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
 
-            if (!if_indextoname(rta_oif, change->rd.ifname)) {
+            if (!if_indextoname(rta_oif, rdnh->ifname)) {
                 int error = errno;
 
                 VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
@@ -301,7 +336,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                 if (error == ENXIO) {
                     change->relevant = false;
                 } else {
-                    return 0;
+                    goto error_out;
                 }
             }
         }
@@ -331,9 +366,9 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
             if (ipv4) {
                 ovs_be32 gw;
                 gw = nl_attr_get_be32(attrs[RTA_GATEWAY]);
-                in6_addr_set_mapped_ipv4(&change->rd.rta_gw, gw);
+                in6_addr_set_mapped_ipv4(&rdnh->addr, gw);
             } else {
-                change->rd.rta_gw = nl_attr_get_in6_addr(attrs[RTA_GATEWAY]);
+                rdnh->addr = nl_attr_get_in6_addr(attrs[RTA_GATEWAY]);
             }
         }
         if (attrs[RTA_MARK]) {
@@ -342,13 +377,21 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         if (attrs[RTA_PRIORITY]) {
             change->rd.rta_priority = nl_attr_get_u32(attrs[RTA_PRIORITY]);
         }
+
+        ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
-        return 0;
+        goto error_out;
     }
 
     /* Success. */
     return ipv4 ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE;
+
+error_out:
+    if (rdnh) {
+        free (rdnh);
+    }
+    return 0;
 }
 
 static int
@@ -389,10 +432,13 @@ route_table_handle_msg(const struct route_table_msg *change)
 {
     if (change->relevant && change->nlmsg_type == RTM_NEWROUTE) {
         const struct route_data *rd = &change->rd;
+        const struct route_data_nexthop *rdnh;
 
-        ovs_router_insert(rd->mark, &rd->rta_dst, rd->rtm_dst_len,
-                          rd->local, rd->ifname, &rd->rta_gw,
-                          &rd->rta_prefsrc);
+        LIST_FOR_EACH (rdnh, nexthop_node, &rd->nexthops) {
+            ovs_router_insert(rd->mark, &rd->rta_dst, rd->rtm_dst_len,
+                              rd->local, rdnh->ifname, &rdnh->addr,
+                              &rd->rta_prefsrc);
+        }
     }
 }
 
