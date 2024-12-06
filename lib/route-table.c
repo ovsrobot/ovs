@@ -256,6 +256,18 @@ route_table_reset(void)
 
 /* Return RTNLGRP_IPV4_ROUTE or RTNLGRP_IPV6_ROUTE on success, 0 on parse
  * error. */
+#define ROUTE_TABLE_PARSE_IF_INDEXTONAME(IFINDEX, IFNAME)                   \
+            if (!if_indextoname(IFINDEX, IFNAME)) {                         \
+                int error = errno;                                          \
+                                                                            \
+                VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",   \
+                            IFINDEX, ovs_strerror(error));                  \
+                if (error == ENXIO) {                                       \
+                    change->relevant = false;                               \
+                } else {                                                    \
+                    goto error_out;                                         \
+                }                                                           \
+            }
 static int
 route_table_parse__(struct ofpbuf *buf, size_t ofs,
                     const struct nlmsghdr *nlmsg,
@@ -274,6 +286,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -285,6 +298,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -330,18 +344,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
 
         if (attrs[RTA_OIF]) {
             rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
-
-            if (!if_indextoname(rta_oif, rdnh->ifname)) {
-                int error = errno;
-
-                VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
-                            rta_oif, ovs_strerror(error));
-                if (error == ENXIO) {
-                    change->relevant = false;
-                } else {
-                    goto error_out;
-                }
-            }
+            ROUTE_TABLE_PARSE_IF_INDEXTONAME(rta_oif, rdnh->ifname);
         }
 
         if (attrs[RTA_DST]) {
@@ -396,6 +399,44 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
             default:
                 VLOG_DBG_RL(&rl, "No address family in via attribute.");
                 goto error_out;
+            }
+        }
+        if (attrs[RTA_MULTIPATH]) {
+            const struct nlattr *nla;
+            size_t left;
+
+            NL_NESTED_FOR_EACH (nla, left, attrs[RTA_MULTIPATH]) {
+                struct route_table_msg mp_change;
+                struct rtnexthop *rtnh;
+                struct ofpbuf mp_buf;
+                int rc;
+
+                route_data_init(&mp_change.rd);
+                ofpbuf_use_data(&mp_buf, nla, nla->nla_len);
+                rtnh = ofpbuf_try_pull(&mp_buf, sizeof *rtnh);
+                if (!rtnh) {
+                    VLOG_DBG_RL(&rl, "Got short message while parsing "
+                                     "multipath attribute.");
+                    goto error_out;
+                }
+
+                rc = route_table_parse__(&mp_buf, 0,
+                                         nlmsg, rtm, &mp_change);
+
+                if (rc == RTNLGRP_IPV4_ROUTE
+                        || rc == RTNLGRP_IPV6_ROUTE) {
+                    struct route_data_nexthop *mp_rdnh;
+                    LIST_FOR_EACH (mp_rdnh, nexthop_node,
+                                   &mp_change.rd.nexthops) {
+                        ROUTE_TABLE_PARSE_IF_INDEXTONAME(rtnh->rtnh_ifindex,
+                                                         mp_rdnh->ifname);
+                    }
+                    ovs_list_push_back_all(&change->rd.nexthops,
+                                           &mp_change.rd.nexthops);
+                } else {
+                    route_data_destroy(&mp_change.rd);
+                    goto error_out;
+                }
             }
         }
         ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
