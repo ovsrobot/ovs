@@ -32,6 +32,7 @@
 #include "netlink.h"
 #include "netlink-notifier.h"
 #include "netlink-socket.h"
+#include "openvswitch/list.h"
 #include "openvswitch/ofpbuf.h"
 #include "ovs-router.h"
 #include "packets.h"
@@ -47,7 +48,16 @@ VLOG_DEFINE_THIS_MODULE(route_table);
 
 COVERAGE_DEFINE(route_table_dump);
 
+struct route_data_nexthop {
+    struct ovs_list nexthop_node;
+
+    struct in6_addr addr;
+    char ifname[IFNAMSIZ]; /* Interface name. */
+};
+
 struct route_data {
+    struct ovs_list nexthops;
+
     /* Copied from struct rtmsg. */
     unsigned char rtm_dst_len;
     unsigned char rtm_protocol;
@@ -56,8 +66,6 @@ struct route_data {
     /* Extracted from Netlink attributes. */
     struct in6_addr rta_dst; /* 0 if missing. */
     struct in6_addr rta_prefsrc; /* 0 if missing. */
-    struct in6_addr rta_gw;
-    char ifname[IFNAMSIZ]; /* Interface name. */
     uint32_t mark;
     uint32_t rta_table_id; /* 0 if missing. */
     uint32_t rta_priority; /* 0 if missing. */
@@ -80,6 +88,7 @@ static uint64_t rt_change_seq;
 
 static struct nln *nln = NULL;
 static struct route_table_msg rtmsg;
+static struct route_data_nexthop rdnh_single;
 static struct nln_notifier *route_notifier = NULL;
 static struct nln_notifier *route6_notifier = NULL;
 static struct nln_notifier *name_notifier = NULL;
@@ -89,11 +98,23 @@ static bool route_table_valid = false;
 static void route_table_reset(void);
 static void route_table_handle_msg(const struct route_table_msg *);
 static int route_table_parse(struct ofpbuf *, void *change);
-static void route_table_change(const struct route_table_msg *, void *);
+static void route_table_change(struct route_table_msg *, void *);
 static void route_map_clear(void);
 
 static void name_table_init(void);
 static void name_table_change(const struct rtnetlink_change *, void *);
+
+static void
+route_data_destroy(struct route_data *rd)
+{
+    struct route_data_nexthop *rdnh;
+
+    LIST_FOR_EACH_POP (rdnh, nexthop_node, &rd->nexthops) {
+        if (rdnh && rdnh != &rdnh_single) {
+            free(rdnh);
+        }
+    }
+}
 
 uint64_t
 route_table_get_change_seq(void)
@@ -190,6 +211,7 @@ route_table_dump_one_table(unsigned char id)
                 filtered = false;
             }
             route_table_handle_msg(&msg);
+            route_data_destroy(&msg.rd);
         }
     }
     ofpbuf_uninit(&buf);
@@ -230,6 +252,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                     const struct rtmsg *rtm, void *change_)
 {
     struct route_table_msg *change = change_;
+    struct route_data_nexthop *rdnh = NULL;
     bool parsed, ipv4 = false;
 
     static const struct nl_policy policy[] = {
@@ -270,6 +293,9 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         int rta_oif;      /* Output interface index. */
 
         memset(change, 0, sizeof *change);
+        ovs_list_init(&change->rd.nexthops);
+        memset(&rdnh_single, 0, sizeof *rdnh);
+        rdnh = &rdnh_single;
         change->relevant = true;
 
         if (rtm->rtm_scope == RT_SCOPE_NOWHERE) {
@@ -293,7 +319,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         if (attrs[RTA_OIF]) {
             rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
 
-            if (!if_indextoname(rta_oif, change->rd.ifname)) {
+            if (!if_indextoname(rta_oif, rdnh->ifname)) {
                 int error = errno;
 
                 VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
@@ -301,7 +327,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                 if (error == ENXIO) {
                     change->relevant = false;
                 } else {
-                    return 0;
+                    goto error_out;
                 }
             }
         }
@@ -331,9 +357,9 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
             if (ipv4) {
                 ovs_be32 gw;
                 gw = nl_attr_get_be32(attrs[RTA_GATEWAY]);
-                in6_addr_set_mapped_ipv4(&change->rd.rta_gw, gw);
+                in6_addr_set_mapped_ipv4(&rdnh->addr, gw);
             } else {
-                change->rd.rta_gw = nl_attr_get_in6_addr(attrs[RTA_GATEWAY]);
+                rdnh->addr = nl_attr_get_in6_addr(attrs[RTA_GATEWAY]);
             }
         }
         if (attrs[RTA_MARK]) {
@@ -342,13 +368,20 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         if (attrs[RTA_PRIORITY]) {
             change->rd.rta_priority = nl_attr_get_u32(attrs[RTA_PRIORITY]);
         }
+        ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
-        return 0;
+        goto error_out;
     }
 
     /* Success. */
     return ipv4 ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE;
+
+error_out:
+    if (rdnh && rdnh != &rdnh_single) {
+        free (rdnh);
+    }
+    return 0;
 }
 
 static int
@@ -374,13 +407,16 @@ route_table_standard_table(uint32_t table_id)
 }
 
 static void
-route_table_change(const struct route_table_msg *change OVS_UNUSED,
+route_table_change(struct route_table_msg *change,
                    void *aux OVS_UNUSED)
 {
     if (!change
         || (change->relevant
             && route_table_standard_table(change->rd.rta_table_id))) {
         route_table_valid = false;
+    }
+    if (change && !ovs_list_is_empty(&change->rd.nexthops)) {
+        route_data_destroy(&change->rd);
     }
 }
 
@@ -389,10 +425,13 @@ route_table_handle_msg(const struct route_table_msg *change)
 {
     if (change->relevant && change->nlmsg_type == RTM_NEWROUTE) {
         const struct route_data *rd = &change->rd;
+        const struct route_data_nexthop *rdnh;
 
-        ovs_router_insert(rd->mark, &rd->rta_dst, rd->rtm_dst_len,
-                          rd->local, rd->ifname, &rd->rta_gw,
-                          &rd->rta_prefsrc);
+        LIST_FOR_EACH (rdnh, nexthop_node, &rd->nexthops) {
+            ovs_router_insert(rd->mark, &rd->rta_dst, rd->rtm_dst_len,
+                              rd->local, rdnh->ifname, &rdnh->addr,
+                              &rd->rta_prefsrc);
+        }
     }
 }
 
