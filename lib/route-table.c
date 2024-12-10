@@ -48,38 +48,6 @@ VLOG_DEFINE_THIS_MODULE(route_table);
 
 COVERAGE_DEFINE(route_table_dump);
 
-struct route_data_nexthop {
-    struct ovs_list nexthop_node;
-
-    sa_family_t family;
-    struct in6_addr addr;
-    char ifname[IFNAMSIZ]; /* Interface name. */
-};
-
-struct route_data {
-    struct ovs_list nexthops;
-
-    /* Copied from struct rtmsg. */
-    unsigned char rtm_dst_len;
-    unsigned char rtm_protocol;
-    bool local;
-
-    /* Extracted from Netlink attributes. */
-    struct in6_addr rta_dst; /* 0 if missing. */
-    struct in6_addr rta_prefsrc; /* 0 if missing. */
-    uint32_t mark;
-    uint32_t rta_table_id; /* 0 if missing. */
-    uint32_t rta_priority; /* 0 if missing. */
-};
-
-/* A digested version of a route message sent down by the kernel to indicate
- * that a route has changed. */
-struct route_table_msg {
-    bool relevant;        /* Should this message be processed? */
-    int nlmsg_type;       /* e.g. RTM_NEWROUTE, RTM_DELROUTE. */
-    struct route_data rd; /* Data parsed from this message. */
-};
-
 static struct ovs_mutex route_table_mutex = OVS_MUTEX_INITIALIZER;
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
 
@@ -98,14 +66,13 @@ static bool route_table_valid = false;
 
 static void route_table_reset(void);
 static void route_table_handle_msg(const struct route_table_msg *, void *);
-static int route_table_parse(struct ofpbuf *, void *change);
 static void route_table_change(struct route_table_msg *, void *);
 static void route_map_clear(void);
 
 static void name_table_init(void);
 static void name_table_change(const struct rtnetlink_change *, void *);
 
-static void
+void
 route_data_destroy(struct route_data *rd)
 {
     struct route_data_nexthop *rdnh;
@@ -180,7 +147,7 @@ route_table_wait(void)
     ovs_mutex_unlock(&route_table_mutex);
 }
 
-static bool
+bool
 route_table_dump_one_table(
     uint32_t id,
     void (*handle_msg)(const struct route_table_msg *, void *),
@@ -423,7 +390,7 @@ error_out:
     return 0;
 }
 
-static int
+int
 route_table_parse(struct ofpbuf *buf, void *change_)
 {
     struct rtmsg *rtm;
