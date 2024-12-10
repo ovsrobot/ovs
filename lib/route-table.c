@@ -97,7 +97,7 @@ static struct nln_notifier *name_notifier = NULL;
 static bool route_table_valid = false;
 
 static void route_table_reset(void);
-static void route_table_handle_msg(const struct route_table_msg *);
+static void route_table_handle_msg(const struct route_table_msg *, void *);
 static int route_table_parse(struct ofpbuf *, void *change);
 static void route_table_change(struct route_table_msg *, void *);
 static void route_map_clear(void);
@@ -181,7 +181,10 @@ route_table_wait(void)
 }
 
 static bool
-route_table_dump_one_table(uint32_t id)
+route_table_dump_one_table(
+    uint32_t id,
+    void (*handle_msg)(const struct route_table_msg *, void *),
+    void *data)
 {
     uint64_t reply_stub[NL_DUMP_BUFSIZE / 8];
     struct ofpbuf request, reply, buf;
@@ -213,7 +216,7 @@ route_table_dump_one_table(uint32_t id)
             if (!(nlmsghdr->nlmsg_flags & NLM_F_DUMP_FILTERED)) {
                 filtered = false;
             }
-            route_table_handle_msg(&msg);
+            (*handle_msg)(&msg, data);
             route_data_destroy(&msg.rd);
         }
     }
@@ -240,7 +243,8 @@ route_table_reset(void)
     COVERAGE_INC(route_table_dump);
 
     for (size_t i = 0; i < ARRAY_SIZE(tables); i++) {
-        if (!route_table_dump_one_table(tables[i])) {
+        if (!route_table_dump_one_table(tables[i],
+                                        route_table_handle_msg, NULL)) {
             /* Got unfiltered reply, no need to dump further. */
             break;
         }
@@ -456,7 +460,8 @@ route_table_change(struct route_table_msg *change,
 }
 
 static void
-route_table_handle_msg(const struct route_table_msg *change)
+route_table_handle_msg(const struct route_table_msg *change,
+                       void *data OVS_UNUSED)
 {
     if (change->relevant && change->nlmsg_type == RTM_NEWROUTE) {
         const struct route_data *rd = &change->rd;
