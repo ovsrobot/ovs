@@ -222,8 +222,8 @@ route_table_reset(void)
  * error. */
 static int
 route_table_parse__(struct ofpbuf *buf, size_t ofs,
-                    const struct nlmsghdr *nlmsg,
-                    const struct rtmsg *rtm, void *change_)
+                    const struct nlmsghdr *nlmsg, const struct rtmsg *rtm,
+                    const struct rtnexthop *rtnh, void *change_)
 {
     struct route_table_msg *change = change_;
     struct route_data_nexthop *rdnh = NULL;
@@ -238,6 +238,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -249,6 +250,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_UNSPEC, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -270,8 +272,8 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
 
         memset(change, 0, sizeof *change);
         ovs_list_init(&change->rd.nexthops);
-        memset(&rdnh_single, 0, sizeof *rdnh);
-        rdnh = &rdnh_single;
+        rdnh = rtnh ? xmalloc(sizeof *rdnh) : &rdnh_single;
+        memset(rdnh, 0, sizeof *rdnh);
         change->relevant = true;
 
         if (rtm->rtm_scope == RT_SCOPE_NOWHERE) {
@@ -292,8 +294,9 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         change->rd.rtm_dst_len = rtm->rtm_dst_len + (ipv4 ? 96 : 0);
         change->rd.rtm_protocol = rtm->rtm_protocol;
         change->rd.local = rtm->rtm_type == RTN_LOCAL;
-        if (attrs[RTA_OIF]) {
-            rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
+        if (attrs[RTA_OIF] || rtnh) {
+            rta_oif = rtnh
+                ? rtnh->rtnh_ifindex : nl_attr_get_u32(attrs[RTA_OIF]);
 
             if (!if_indextoname(rta_oif, rdnh->ifname)) {
                 int error = errno;
@@ -374,7 +377,38 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                 goto error_out;
             }
         }
-        ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
+        if (!attrs[RTA_MULTIPATH]) {
+            ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
+        } else {
+            if (rtnh) {
+                VLOG_DBG_RL(&rl, "Unexpected nested RTA_MULTIPATH attribute.");
+                goto error_out;
+            }
+            const struct nlattr *nla;
+            size_t left;
+
+            NL_NESTED_FOR_EACH (nla, left, attrs[RTA_MULTIPATH]) {
+                struct route_table_msg mp_change;
+                struct rtnexthop *mp_rtnh;
+                struct ofpbuf mp_buf;
+
+                ofpbuf_use_data(&mp_buf, nla, nla->nla_len);
+                mp_rtnh = ofpbuf_try_pull(&mp_buf, sizeof *mp_rtnh);
+                if (!mp_rtnh) {
+                    VLOG_DBG_RL(&rl, "Got short message while parsing "
+                                "multipath attribute.");
+                    goto error_out;
+                }
+
+                if (!route_table_parse__(&mp_buf, 0, nlmsg, rtm, mp_rtnh,
+                                         &mp_change)) {
+                    goto error_out;
+                }
+                ovs_list_push_back_all(&change->rd.nexthops,
+                                       &mp_change.rd.nexthops);
+            }
+        }
+        /* Add any additional RTA attribute processing before RTA_MULTIPATH. */
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
         goto error_out;
@@ -387,6 +421,7 @@ error_out:
     if (rdnh && rdnh != &rdnh_single) {
         free (rdnh);
     }
+    route_data_destroy(&change->rd);
     return 0;
 }
 
@@ -400,7 +435,7 @@ route_table_parse(struct ofpbuf *buf, void *change_)
     rtm = ofpbuf_at(buf, NLMSG_HDRLEN, sizeof *rtm);
 
     return route_table_parse__(buf, NLMSG_HDRLEN + sizeof *rtm,
-                               nlmsg, rtm, change_);
+                               nlmsg, rtm, NULL, change_);
 }
 
 static bool

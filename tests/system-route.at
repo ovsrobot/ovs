@@ -44,6 +44,36 @@ Cached: 192.168.10.13/32 dev br0 GW 192.168.9.1 SRC 192.168.9.3])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ovs-route - add system route with multiple nexthop - ipv4])
+AT_KEYWORDS([route])
+OVS_TRAFFIC_VSWITCHD_START()
+
+dnl Create tap ports.
+AT_CHECK([ip tuntap add name p1-route mode tap])
+AT_CHECK([ip link set p1-route up])
+on_exit 'ip link del p1-route'
+AT_CHECK([ip tuntap add name p2-route mode tap])
+AT_CHECK([ip link set p2-route up])
+on_exit 'ip link del p2-route'
+
+AT_CHECK([ip addr add 192.168.42.10/24 dev p1-route], [0], [stdout])
+AT_CHECK([ip addr add 192.168.51.10/24 dev p2-route], [0], [stdout])
+AT_CHECK([ip route add 172.16.42.0/24 nexthop via 192.168.42.1 dev p1-route nexthop via 192.168.51.1 dev p2-route], [0], [stdout])
+
+dnl NOTE(fnordahl): At the time of this writing, it is expected that only the
+dnl                 second route will be stored in ovs-router.
+OVS_WAIT_UNTIL_EQUAL([ovs-appctl ovs/route/show | grep -E '172.16.42.0/24' | sort], [dnl
+Cached: 172.16.42.0/24 dev p2-route GW 192.168.51.1 SRC 192.168.51.10])
+
+dnl Confirm that both nexthops are available when using the route-table library
+dnl directly.
+OVS_WAIT_UNTIL_EQUAL([ovstest test-lib-route-table-dump | grep 172.16.42.0.*nexthop | sort], [dnl
+    rta_dst: ::ffff:172.16.42.0 nexthop family: 0 addr: ::ffff:192.168.42.1 ifname: p1-route
+    rta_dst: ::ffff:172.16.42.0 nexthop family: 0 addr: ::ffff:192.168.51.1 ifname: p2-route])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ovs-route - add system route with src - ipv6])
 AT_KEYWORDS([route])
 OVS_TRAFFIC_VSWITCHD_START()
@@ -65,6 +95,36 @@ Cached: fc00:db8:beef::13/128 dev br0 GW fc00:db8:cafe::1 SRC fc00:db8:cafe::2])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ovs-route - add system route with multiple nexthop - ipv6])
+AT_KEYWORDS([route])
+OVS_TRAFFIC_VSWITCHD_START()
+
+dnl Create tap ports.
+AT_CHECK([ip tuntap add name p1-route mode tap])
+AT_CHECK([ip link set p1-route up])
+on_exit 'ip link del p1-route'
+AT_CHECK([ip tuntap add name p2-route mode tap])
+AT_CHECK([ip link set p2-route up])
+on_exit 'ip link del p2-route'
+
+AT_CHECK([ip -6 addr add fc00:db8:dead::10/64 dev p1-route], [0], [stdout])
+AT_CHECK([ip -6 addr add fc00:db8:beef::10/64 dev p2-route], [0], [stdout])
+AT_CHECK([ip -6 route add fc00:db8:cafe::/64 nexthop via fc00:db8:dead::1 dev p1-route nexthop via fc00:db8:beef::1 dev p2-route], [0], [stdout])
+
+dnl NOTE(fnordahl): At the time of this writing, it is expected that only the
+dnl                 second route will be stored in ovs-router.
+OVS_WAIT_UNTIL_EQUAL([ovs-appctl ovs/route/show | grep -E 'fc00:db8:cafe::/64' | sort], [dnl
+Cached: fc00:db8:cafe::/64 dev p2-route GW fc00:db8:beef::1 SRC fc00:db8:beef::10])
+
+dnl Confirm that both nexthops are available when using the route-table library
+dnl directly.
+OVS_WAIT_UNTIL_EQUAL([ovstest test-lib-route-table-dump | grep fc00:db8:cafe::.*nexthop | sort], [dnl
+    rta_dst: fc00:db8:cafe:: nexthop family: 0 addr: fc00:db8:beef::1 ifname: p2-route
+    rta_dst: fc00:db8:cafe:: nexthop family: 0 addr: fc00:db8:dead::1 ifname: p1-route])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ovs-route - add system route - ipv4 via ipv6 nexthop])
 AT_KEYWORDS([route])
 OVS_TRAFFIC_VSWITCHD_START()
@@ -79,6 +139,36 @@ AT_CHECK([ovs-appctl revalidator/wait])
 
 OVS_WAIT_UNTIL_EQUAL([ovs-appctl ovs/route/show | grep -E '192.168.10.12/32' | sort], [dnl
 Cached: 192.168.10.12/32 dev br0 GW fe80::253:ff:fe00:51 SRC fe80::253:ff:fe00:42])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([ovs-route - add system route - ipv4 via multiple ipv6 nexthop])
+AT_KEYWORDS([route])
+OVS_TRAFFIC_VSWITCHD_START()
+
+dnl Create tap ports.
+AT_CHECK([ip tuntap add name p1-route mode tap])
+AT_CHECK([ip link set p1-route up])
+on_exit 'ip link del p1-route'
+AT_CHECK([ip tuntap add name p2-route mode tap])
+AT_CHECK([ip link set p2-route up])
+on_exit 'ip link del p2-route'
+
+AT_CHECK([ip -6 addr add fc00:db8:dead::10/64 dev p1-route], [0], [stdout])
+AT_CHECK([ip -6 addr add fc00:db8:beef::10/64 dev p2-route], [0], [stdout])
+AT_CHECK([ip route add 172.16.42.0/24 nexthop via inet6 fc00:db8:dead::1 dev p1-route nexthop via inet6 fc00:db8:beef::1 dev p2-route], [0], [stdout])
+
+dnl NOTE(fnordahl): At the time of this writing, it is expected that only the
+dnl                 second route will be stored in ovs-router.
+OVS_WAIT_UNTIL_EQUAL([ovs-appctl ovs/route/show | grep -E '172.16.42.0/24' | sort], [dnl
+Cached: 172.16.42.0/24 dev p2-route GW fc00:db8:beef::1 SRC fc00:db8:beef::10])
+
+dnl Confirm that both nexthops are available when using the route-table library
+dnl directly.
+OVS_WAIT_UNTIL_EQUAL([ovstest test-lib-route-table-dump | grep 172.16.42.0.*nexthop | sort], [dnl
+    rta_dst: ::ffff:172.16.42.0 nexthop family: 10 addr: fc00:db8:beef::1 ifname: p2-route
+    rta_dst: ::ffff:172.16.42.0 nexthop family: 10 addr: fc00:db8:dead::1 ifname: p1-route])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
@@ -147,4 +237,25 @@ dnl Check that routes were removed from OVS.
 OVS_WAIT_UNTIL([test $(ovs-appctl ovs/route/show | grep -c 'p1-route') -eq 0 ])
 
 OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([route-table - exported functions work for netlink-notifier])
+AT_KEYWORDS([route])
+
+dnl Create tap ports.
+AT_CHECK([ip tuntap add name p1-route mode tap])
+AT_CHECK([ip link set p1-route up])
+on_exit 'ip link del p1-route'
+AT_CHECK([ip tuntap add name p2-route mode tap])
+AT_CHECK([ip link set p2-route up])
+on_exit 'ip link del p2-route'
+
+AT_CHECK([ip -6 addr add fc00:db8:dead::10/64 dev p1-route], [0], [stdout])
+AT_CHECK([ip -6 addr add fc00:db8:beef::10/64 dev p2-route], [0], [stdout])
+
+AT_CHECK([ovstest test-lib-route-table-monitor 'ip route add 172.16.42.0/24 nexthop via inet6 fc00:db8:dead::1 dev p1-route nexthop via inet6 fc00:db8:beef::1 dev p2-route'| grep 172.16.42.0.*nexthop | sort], [0], [dnl
+    rta_dst: ::ffff:172.16.42.0 nexthop family: 10 addr: fc00:db8:beef::1 ifname: p2-route
+    rta_dst: ::ffff:172.16.42.0 nexthop family: 10 addr: fc00:db8:dead::1 ifname: p1-route
+])
+
 AT_CLEANUP
