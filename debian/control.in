@@ -50,6 +50,7 @@ Depends:
 Suggests:
  ethtool,
  openvswitch-doc,
+ python3-openvswitch (= ${binary:Version}),
 Breaks:
  openvswitch-switch (<< 2.13~),
 Replaces:
