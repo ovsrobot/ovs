@@ -819,6 +819,7 @@ min_attr_len(enum nl_attr_type type)
     case NL_A_IPV6: return 16;
     case NL_A_NESTED: return 0;
     case NL_A_LL_ADDR: return 6; /* ETH_ALEN */
+    case NL_A_RTA_VIA: return 6; /* rtvia header + AF_INET address */
     case N_NL_ATTR_TYPES: default: OVS_NOT_REACHED();
     }
 }
@@ -840,6 +841,7 @@ max_attr_len(enum nl_attr_type type)
     case NL_A_IPV6: return 16;
     case NL_A_NESTED: return SIZE_MAX;
     case NL_A_LL_ADDR: return 20; /* INFINIBAND_ALEN */
+    case NL_A_RTA_VIA: return 18; /* rtvia header + AF_INET6 address */
     case N_NL_ATTR_TYPES: default: OVS_NOT_REACHED();
     }
 }
