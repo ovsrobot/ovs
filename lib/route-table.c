@@ -222,8 +222,9 @@ route_table_reset(void)
 
 static int
 route_table_parse__(struct ofpbuf *buf, size_t ofs,
-                    const struct nlmsghdr *nlmsg,
-                    const struct rtmsg *rtm, struct route_table_msg *change)
+                    const struct nlmsghdr *nlmsg, const struct rtmsg *rtm,
+                    const struct rtnexthop *rtnh,
+                    struct route_table_msg *change)
 {
     struct route_data_nexthop *rdnh = NULL;
     bool parsed, ipv4 = false;
@@ -237,6 +238,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_RTA_VIA, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -248,6 +250,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_RTA_VIA, .optional = true },
+        [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -271,9 +274,11 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
 
         /* ovs_list_init / ovs_list_insert does not allocate any memory */
         ovs_list_init(&change->rd.nexthops);
-        rdnh = &change->rd._primary_next_hop;
-        rdnh->family = rtm->rtm_family;
-        ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
+        rdnh = rtnh ? xzalloc(sizeof *rdnh) : &change->rd._primary_next_hop;
+        if (!attrs[RTA_MULTIPATH]) {
+            rdnh->family = rtm->rtm_family;
+            ovs_list_insert(&change->rd.nexthops, &rdnh->nexthop_node);
+        }
 
         change->relevant = true;
 
@@ -295,8 +300,9 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         change->rd.rtm_dst_len = rtm->rtm_dst_len;
         change->rd.rtm_protocol = rtm->rtm_protocol;
         change->rd.rtn_local = rtm->rtm_type == RTN_LOCAL;
-        if (attrs[RTA_OIF]) {
-            rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
+        if (attrs[RTA_OIF] || rtnh) {
+            rta_oif = rtnh
+                ? rtnh->rtnh_ifindex : nl_attr_get_u32(attrs[RTA_OIF]);
 
             if (!if_indextoname(rta_oif, rdnh->ifname)) {
                 int error = errno;
@@ -384,6 +390,37 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                 goto error_out;
             }
         }
+        if (attrs[RTA_MULTIPATH]) {
+            const struct nlattr *nla;
+            size_t left;
+
+            if (rtnh) {
+                VLOG_DBG_RL(&rl, "Unexpected nested RTA_MULTIPATH attribute.");
+                goto error_out;
+            }
+
+            NL_NESTED_FOR_EACH (nla, left, attrs[RTA_MULTIPATH]) {
+                struct route_table_msg mp_change;
+                struct rtnexthop *mp_rtnh;
+                struct ofpbuf mp_buf;
+
+                ofpbuf_use_data(&mp_buf, nla, nla->nla_len);
+                mp_rtnh = ofpbuf_try_pull(&mp_buf, sizeof *mp_rtnh);
+                if (!mp_rtnh) {
+                    VLOG_DBG_RL(&rl, "Got short message while parsing "
+                                "multipath attribute.");
+                    goto error_out;
+                }
+
+                if (!route_table_parse__(&mp_buf, 0, nlmsg, rtm, mp_rtnh,
+                                         &mp_change)) {
+                    goto error_out;
+                }
+                ovs_list_push_back_all(&change->rd.nexthops,
+                                       &mp_change.rd.nexthops);
+            }
+        }
+        /* Add any additional RTA attribute processing before RTA_MULTIPATH. */
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
         goto error_out;
@@ -417,7 +454,7 @@ route_table_parse(struct ofpbuf *buf, void *change)
     rtm = ofpbuf_at(buf, NLMSG_HDRLEN, sizeof *rtm);
 
     return route_table_parse__(buf, NLMSG_HDRLEN + sizeof *rtm,
-                               nlmsg, rtm, change);
+                               nlmsg, rtm, NULL, change);
 }
 
 static bool
@@ -448,7 +485,7 @@ route_table_handle_msg(const struct route_table_msg *change,
                        void *aux OVS_UNUSED)
 {
     if (change->relevant && change->nlmsg_type == RTM_NEWROUTE
-            && ovs_list_is_singleton(&change->rd.nexthops)) {
+            && !ovs_list_is_empty(&change->rd.nexthops)) {
         const struct route_data *rd = &change->rd;
         const struct route_data_nexthop *rdnh;
 
