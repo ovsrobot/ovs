@@ -67,6 +67,7 @@ struct ovs_router_entry {
     uint8_t plen;
     uint8_t priority;
     bool local;
+    bool is_user;
     uint32_t mark;
 };
 
@@ -255,7 +256,7 @@ out:
 }
 
 static int
-ovs_router_insert__(uint32_t mark, uint8_t priority, bool local,
+ovs_router_insert__(uint32_t mark, uint8_t priority, bool local, bool is_user,
                     const struct in6_addr *ip6_dst,
                     uint8_t plen, const char output_bridge[],
                     const struct in6_addr *gw,
@@ -281,6 +282,7 @@ ovs_router_insert__(uint32_t mark, uint8_t priority, bool local,
     p->plen = plen;
     p->local = local;
     p->priority = priority;
+    p->is_user = is_user;
 
     if (ipv6_addr_is_set(ip6_src)) {
         p->src_addr = *ip6_src;
@@ -325,7 +327,7 @@ ovs_router_insert(uint32_t mark, const struct in6_addr *ip_dst, uint8_t plen,
 {
     if (use_system_routing_table) {
         uint8_t priority = local ? plen + 64 : plen;
-        ovs_router_insert__(mark, priority, local, ip_dst, plen,
+        ovs_router_insert__(mark, priority, local, false, ip_dst, plen,
                             output_bridge, gw, prefsrc);
     }
 }
@@ -340,7 +342,7 @@ ovs_router_force_insert(uint32_t mark, const struct in6_addr *ip_dst,
 {
     uint8_t priority = local ? plen + 64 : plen;
 
-    ovs_router_insert__(mark, priority, local, ip_dst, plen,
+    ovs_router_insert__(mark, priority, local, false, ip_dst, plen,
                         output_bridge, gw, prefsrc);
 }
 
@@ -467,8 +469,8 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
         in6_addr_set_mapped_ipv4(&src6, src);
     }
 
-    err = ovs_router_insert__(mark, plen + 32, false, &ip6, plen, argv[2],
-                              &gw6, &src6);
+    err = ovs_router_insert__(mark, plen, false, true, &ip6, plen,
+                              argv[2], &gw6, &src6);
     if (err) {
         unixctl_command_reply_error(conn, "Error while inserting route.");
     } else {
@@ -499,7 +501,7 @@ ovs_router_del(struct unixctl_conn *conn, int argc OVS_UNUSED,
         }
     }
 
-    if (rt_entry_delete(mark, plen + 32, &ip6, plen)) {
+    if (rt_entry_delete(mark, plen, &ip6, plen)) {
         unixctl_command_reply(conn, "OK");
         seq_change(tnl_conf_seq);
     } else {
@@ -517,11 +519,7 @@ ovs_router_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
     ds_put_format(&ds, "Route Table:\n");
     CLS_FOR_EACH(rt, cr, &cls) {
         uint8_t plen;
-        if (rt->priority == rt->plen || rt->local) {
-            ds_put_format(&ds, "Cached: ");
-        } else {
-            ds_put_format(&ds, "User: ");
-        }
+        ds_put_format(&ds, rt->is_user ? "User: " : "Cached: ");
         ipv6_format_mapped(&rt->nw_addr, &ds);
         plen = rt->plen;
         if (IN6_IS_ADDR_V4MAPPED(&rt->nw_addr)) {
