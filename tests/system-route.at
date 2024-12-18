@@ -92,6 +92,8 @@ Cached: 10.0.0.17/32 dev p1-route SRC 10.0.0.17 local
 Cached: 10.0.0.18/32 dev p1-route SRC 10.0.0.17])
 
 dnl Add a route to a custom routing table and check that OVS doesn't cache it.
+AT_CHECK([ovs-appctl revalidator/wait])
+AT_CHECK([ovs-appctl coverage/read-counter route_table_dump > expout], [0])
 AT_CHECK([ip route add 10.0.0.19/32 dev p1-route table 42])
 AT_CHECK([ip route show table 42 | grep 'p1-route' | grep -q '10.0.0.19'])
 dnl Give the main thread a chance to act.
@@ -102,6 +104,7 @@ Cached: 10.0.0.0/24 dev p1-route SRC 10.0.0.17
 Cached: 10.0.0.17/32 dev p1-route SRC 10.0.0.17 local
 Cached: 10.0.0.18/32 dev p1-route SRC 10.0.0.17
 ])
+AT_CHECK([ovs-appctl coverage/read-counter route_table_dump], [0], [expout])
 
 dnl Delete a route from the main table and check that OVS removes the route
 dnl from the cache.
