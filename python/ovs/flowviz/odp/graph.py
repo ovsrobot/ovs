@@ -14,16 +14,27 @@
 
 """ Defines a Datapath Graph using graphviz. """
 import colorsys
-import graphviz
+import os
 import random
+import sys
 
 from ovs.flowviz.odp.html import HTMLTree, HTMLFormatter
 from ovs.flowviz.odp.tree import FlowTree
 from ovs.flowviz.process import FileProcessor
 
+try:
+    import graphviz
+except ImportError:
+    graphviz = None
+
 
 class GraphProcessor(FileProcessor):
     def __init__(self, opts):
+        if graphviz is None:
+            print("ERROR: The graph sub-command depends on the graphviz "
+                  "Python library, which does not appear to be installed.",
+                  file=sys.stderr)
+            sys.exit(os.EX_UNAVAILABLE)
         super().__init__(opts, "odp")
 
     def start_file(self, name, filename):
