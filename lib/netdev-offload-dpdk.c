@@ -1396,6 +1396,7 @@ parse_flow_match(struct netdev *netdev,
                  struct match *match)
 {
     struct rte_flow_item_eth *eth_spec = NULL, *eth_mask = NULL;
+    struct rte_flow_item_vlan *vlan_spec = NULL, *vlan_mask = NULL;
     struct flow *consumed_masks;
     uint8_t proto = 0;
 
@@ -1468,6 +1469,9 @@ parse_flow_match(struct netdev *netdev,
             eth_mask->type = match->wc.masks.vlans[0].tpid;
         }
 
+        vlan_spec = spec;
+        vlan_mask = mask;
+
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_VLAN, spec, mask, NULL);
     }
     /* For untagged matching match->wc.masks.vlans[0].tci is 0xFFFF and
@@ -1475,6 +1479,33 @@ parse_flow_match(struct netdev *netdev,
      * scope to handle that.
      */
     memset(&consumed_masks->vlans[0], 0, sizeof consumed_masks->vlans[0]);
+
+    /* VLAN */
+    if (match->wc.masks.vlans[1].tci && match->flow.vlans[1].tci) {
+        struct rte_flow_item_vlan *spec, *mask;
+
+        spec = xzalloc(sizeof *spec);
+        mask = xzalloc(sizeof *mask);
+
+        spec->tci = match->flow.vlans[1].tci & ~htons(VLAN_CFI);
+        mask->tci = match->wc.masks.vlans[1].tci & ~htons(VLAN_CFI);
+
+        if (vlan_spec && vlan_mask) {
+            vlan_spec->has_more_vlan = 1;
+            vlan_mask->has_more_vlan = 1;
+            spec->inner_type = vlan_spec->inner_type;
+            mask->inner_type = vlan_mask->inner_type;
+            vlan_spec->inner_type = match->flow.vlans[1].tpid;
+            vlan_mask->inner_type = match->wc.masks.vlans[1].tpid;
+        }
+
+        add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_VLAN, spec, mask, NULL);
+    }
+    /* For untagged matching match->wc.masks.vlans[0].tci is 0xFFFF and
+     * match->flow.vlans[0].tci is 0. Consuming is needed outside of the if
+     * scope to handle that.
+     */
+    memset(&consumed_masks->vlans[1], 0, sizeof consumed_masks->vlans[1]);
 
     /* IP v4 */
     if (match->flow.dl_type == htons(ETH_TYPE_IP)) {
