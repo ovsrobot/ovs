@@ -324,6 +324,12 @@ malloc_dump_mempool_stats_wrapper(FILE *stream)
     rte_mempool_walk(dump_mempool_stats, stream);
 }
 
+static void
+malloc_dump_memzone_stats_wrapper(FILE *stream)
+{
+    rte_memzone_dump(stream);
+}
+
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
 {
@@ -454,6 +460,9 @@ dpdk_init__(const struct smap *ovs_other_config)
     unixctl_command_register("dpdk/get-mempool-stats", "", 0, 0,
                              dpdk_unixctl_mem_stream,
                              malloc_dump_mempool_stats_wrapper);
+    unixctl_command_register("dpdk/get-memzone-stats", "", 0, 0,
+                             dpdk_unixctl_mem_stream,
+                             malloc_dump_memzone_stats_wrapper);
 
     /* We are called from the main thread here */
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
