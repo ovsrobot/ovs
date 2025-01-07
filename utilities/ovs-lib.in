@@ -76,19 +76,6 @@ DAEMON_CWD=/
 
 LC_ALL=C; export LC_ALL
 
-## ------------- ##
-## LSB functions ##
-## ------------- ##
-
-# Use the system's own implementations if it has any.
-if test -e /etc/init.d/functions; then
-    . /etc/init.d/functions
-elif test -e /etc/rc.d/init.d/functions; then
-    . /etc/rc.d/init.d/functions
-elif test -e /lib/lsb/init-functions; then
-    . /lib/lsb/init-functions
-fi
-
 # Implement missing functions (e.g. OpenSUSE lacks 'action').
 if type log_success_msg >/dev/null 2>&1; then :; else
     log_success_msg () {
