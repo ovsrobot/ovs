@@ -3485,6 +3485,7 @@ emc_probabilistic_insert(struct dp_netdev_pmd_thread *pmd,
 
     if (min && random_uint32() <= min) {
         emc_insert(&(pmd->flow_cache).emc_cache, key, flow);
+        pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_EXACT_UPDATE, 1);
     }
 }
 
@@ -3543,6 +3544,9 @@ smc_insert(struct dp_netdev_pmd_thread *pmd,
     for (i = 0; i < SMC_ENTRY_PER_BUCKET; i++) {
         if (bucket->sig[i] == sig) {
             bucket->flow_idx[i] = index;
+            /* Count 1 delete + 1 add. */
+            pmd_perf_update_counter(&pmd->perf_stats,
+                                    PMD_STAT_SMC_UPDATE, 2);
             return;
         }
     }
@@ -3551,6 +3555,8 @@ smc_insert(struct dp_netdev_pmd_thread *pmd,
         if (bucket->flow_idx[i] == UINT16_MAX) {
             bucket->sig[i] = sig;
             bucket->flow_idx[i] = index;
+            pmd_perf_update_counter(&pmd->perf_stats,
+                                    PMD_STAT_SMC_UPDATE, 1);
             return;
         }
     }
@@ -3558,6 +3564,8 @@ smc_insert(struct dp_netdev_pmd_thread *pmd,
     i = random_uint32() % SMC_ENTRY_PER_BUCKET;
     bucket->sig[i] = sig;
     bucket->flow_idx[i] = index;
+    pmd_perf_update_counter(&pmd->perf_stats,
+                            PMD_STAT_SMC_UPDATE, 1);
 }
 
 inline void
@@ -4065,6 +4073,7 @@ dp_netdev_simple_match_insert(struct dp_netdev_pmd_thread *pmd,
                 CONST_CAST(struct cmap_node *, &dp_flow->simple_match_node),
                 hash);
     ccmap_inc(&pmd->n_simple_flows, odp_to_u32(in_port));
+    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SIMPLE_UPDATE, 1);
 
     VLOG_DBG("Simple match insert: "
              "core_id(%d),in_port(%"PRIu32"),mark(0x%016"PRIx64").",
@@ -4095,6 +4104,7 @@ dp_netdev_simple_match_remove(struct dp_netdev_pmd_thread *pmd,
                     CONST_CAST(struct cmap_node *, &flow->simple_match_node),
                     hash);
         ccmap_dec(&pmd->n_simple_flows, odp_to_u32(in_port));
+        pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SIMPLE_UPDATE, 1);
         dp_netdev_flow_unref(flow);
     }
 }
