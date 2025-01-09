@@ -119,6 +119,9 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
     uint32_t smc_hits = 0;
     uint32_t phwol_hits = 0;
 
+    uint32_t emc_miss = 0;
+    uint32_t smc_miss = 0;
+
     /* A 1 bit in this mask indicates a hit, so no DPCLS lookup on the pkt. */
     uint32_t hwol_emc_smc_hitmask = 0;
     uint32_t smc_hitmask = 0;
@@ -259,6 +262,8 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                 emc_hits++;
                 hwol_emc_smc_hitmask |= (UINT32_C(1) << i);
                 continue;
+            } else {
+                emc_miss++;
             }
         }
 
@@ -269,6 +274,8 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                 smc_hits++;
                 smc_hitmask |= (UINT32_C(1) << i);
                 continue;
+            } else {
+                smc_miss++;
             }
         }
 
@@ -348,6 +355,8 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
                             mfex_hit_cnt);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_EXACT_HIT, emc_hits);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SMC_HIT, smc_hits);
+    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_EXACT_MISS, emc_miss);
+    pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_SMC_MISS, smc_miss);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MASKED_HIT,
                             dpcls_key_idx);
     pmd_perf_update_counter(&pmd->perf_stats, PMD_STAT_MASKED_LOOKUP,
