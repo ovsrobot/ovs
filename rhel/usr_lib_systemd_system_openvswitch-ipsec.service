@@ -10,7 +10,7 @@ EnvironmentFile=/etc/openvswitch/default.conf
 EnvironmentFile=-/etc/sysconfig/openvswitch
 EnvironmentFile=-/run/openvswitch.useropts
 
-ExecStart=/usr/share/openvswitch/scripts/ovs-ctl \
+ExecStart=/usr/share/openvswitch/scripts/ovs-ctl --no-monitor \
                     --ike-daemon=libreswan start-ovs-ipsec $OPTIONS
 ExecStop=/usr/share/openvswitch/scripts/ovs-ctl stop-ovs-ipsec
 

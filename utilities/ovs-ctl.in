@@ -245,7 +245,8 @@ start_ovs_ipsec () {
     set ${datadir}/scripts/ovs-monitor-ipsec unix:"$DB_SOCK"
     set "$@" --log-file=${logdir}/ovs-monitor-ipsec.log
     set "$@" --pidfile=${rundir}/ovs-monitor-ipsec.pid
-    set "$@" --detach --monitor
+    set "$@" --detach
+    test X"$MONITOR" = Xno || set "$@" --monitor
     set "$@" --ike-daemon=$IKE_DAEMON
     if test X$RESTART_IKE_DAEMON = Xno; then
         set "$@" --no-restart-ike-daemon
