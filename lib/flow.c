@@ -669,7 +669,7 @@ flow_extract(struct dp_packet *packet, struct flow *flow)
 
     COVERAGE_INC(flow_extract);
 
-    miniflow_extract(packet, &m.mf);
+    miniflow_extract(packet, &m.mf, false);
     miniflow_expand(&m.mf, flow);
 }
 
@@ -762,6 +762,8 @@ dump_invalid_packet(struct dp_packet *packet, const char *reason)
 
 /* Initializes 'dst' from 'packet' and 'md', taking the packet type into
  * account.  'dst' must have enough space for FLOW_U64S * 8 bytes.
+ * 'tunneling' may be set to indicate that this packet is carrying some
+ * tunneled data.
  *
  * Initializes the layer offsets as follows:
  *
@@ -787,7 +789,8 @@ dump_invalid_packet(struct dp_packet *packet, const char *reason)
  *      of interest for the flow, otherwise UINT16_MAX.
  */
 void
-miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
+miniflow_extract(struct dp_packet *packet, struct miniflow *dst,
+                 bool tunneling)
 {
     /* Add code to this function (or its callees) to extract new fields. */
     BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
@@ -799,6 +802,8 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
     uint64_t *values = miniflow_values(dst);
     struct mf_ctx mf = { FLOWMAP_EMPTY_INITIALIZER, values,
                          values + FLOW_U64S };
+    uint16_t inner_l3_ofs = UINT16_MAX;
+    uint16_t inner_l4_ofs = UINT16_MAX;
     const char *frame;
     ovs_be16 dl_type = OVS_BE16_MAX;
     uint8_t nw_frag, nw_tos, nw_ttl, nw_proto;
@@ -857,7 +862,16 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
 
     /* Initialize packet's layer pointer and offsets. */
     frame = data;
+    if (tunneling) {
+        /* Preserve inner offsets from previous circulation. */
+        inner_l3_ofs = packet->inner_l3_ofs;
+        inner_l4_ofs = packet->inner_l4_ofs;
+    }
     dp_packet_reset_offsets(packet);
+    if (tunneling) {
+        packet->inner_l3_ofs = inner_l3_ofs;
+        packet->inner_l4_ofs = inner_l4_ofs;
+    }
 
     if (packet_type == htonl(PT_ETH)) {
         /* Must have full Ethernet header to proceed. */
@@ -936,9 +950,16 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         nw_proto = nh->ip_proto;
         nw_frag = ipv4_get_nw_frag(nh);
         data_pull(&data, &size, ip_len);
-        dp_packet_hwol_set_tx_ipv4(packet);
-        if (dp_packet_ip_checksum_good(packet)) {
-            dp_packet_hwol_set_tx_ip_csum(packet);
+        if (tunneling) {
+            dp_packet_hwol_set_tx_outer_ipv4(packet);
+            if (dp_packet_ip_checksum_good(packet)) {
+                dp_packet_hwol_set_tx_outer_ipv4_csum(packet);
+            }
+        } else {
+            dp_packet_hwol_set_tx_ipv4(packet);
+            if (dp_packet_ip_checksum_good(packet)) {
+                dp_packet_hwol_set_tx_ip_csum(packet);
+            }
         }
     } else if (dl_type == htons(ETH_TYPE_IPV6)) {
         const struct ovs_16aligned_ip6_hdr *nh = data;
@@ -953,7 +974,11 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         }
         data_pull(&data, &size, sizeof *nh);
 
-        dp_packet_hwol_set_tx_ipv6(packet);
+        if (tunneling) {
+            dp_packet_hwol_set_tx_outer_ipv6(packet);
+        } else {
+            dp_packet_hwol_set_tx_ipv6(packet);
+        }
         plen = ntohs(nh->ip6_plen);
         dp_packet_set_l2_pad_size(packet, size - plen);
         size = plen;   /* Never pull padding. */
@@ -1078,7 +1103,11 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                 dp_packet_ol_l4_csum_check_partial(packet);
                 if (dp_packet_l4_checksum_good(packet)
                     || dp_packet_ol_l4_csum_partial(packet)) {
-                    dp_packet_hwol_set_csum_udp(packet);
+                    if (tunneling) {
+                        dp_packet_hwol_set_outer_udp_csum(packet);
+                    } else {
+                        dp_packet_hwol_set_csum_udp(packet);
+                    }
                 }
             }
         } else if (OVS_LIKELY(nw_proto == IPPROTO_SCTP)) {

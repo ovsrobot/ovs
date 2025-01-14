@@ -3733,7 +3733,7 @@ ofproto_packet_out_init(struct ofproto *ofproto,
     /* Store struct flow. */
     opo->flow = xmalloc(sizeof *opo->flow);
     *opo->flow = po->flow_metadata.flow;
-    miniflow_extract(opo->packet, &m.mf);
+    miniflow_extract(opo->packet, &m.mf, false);
     flow_union_with_miniflow(opo->flow, &m.mf);
 
     /* Check actions like for flow mods.  We pass a 'table_id' of 0 to

@@ -241,7 +241,7 @@ dp_netdev_input_outer_avx512(struct dp_netdev_pmd_thread *pmd,
 
         if (!mfex_hit) {
             /* Do a scalar miniflow extract into keys. */
-            miniflow_extract(packet, &key->mf);
+            miniflow_extract(packet, &key->mf, false);
         }
 
         /* Cache TCP and byte values for all packets. */
