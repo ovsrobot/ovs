@@ -686,7 +686,7 @@ pmd_thread_ctx_time_update(struct dp_netdev_pmd_thread *pmd)
 }
 
 /* Returns true if 'dpif' is a netdev or dummy dpif, false otherwise. */
-bool
+static bool
 dpif_is_netdev(const struct dpif *dpif)
 {
     return dpif->dpif_class->open == dpif_netdev_open;
@@ -9995,6 +9995,12 @@ dpif_netdev_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
     return 0;
 }
 
+static bool
+dpif_netdev_is_userspace(void)
+{
+    return true;
+}
+
 const struct dpif_class dpif_netdev_class = {
     "netdev",
     true,                       /* cleanup_required */
@@ -10084,6 +10090,7 @@ const struct dpif_class dpif_netdev_class = {
     NULL,                       /* cache_get_name */
     NULL,                       /* cache_get_size */
     NULL,                       /* cache_set_size */
+    dpif_netdev_is_userspace,
 };
 
 static void

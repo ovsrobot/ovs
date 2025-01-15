@@ -1930,17 +1930,23 @@ log_flow_get_message(const struct dpif *dpif,
     }
 }
 
+static bool
+dpif_is_userspace(const struct dpif *dpif)
+{
+    return dpif->dpif_class->is_userspace && dpif->dpif_class->is_userspace();
+}
+
 bool
 dpif_supports_tnl_push_pop(const struct dpif *dpif)
 {
-    return dpif_is_netdev(dpif);
+    return dpif_is_userspace(dpif);
 }
 
 bool
 dpif_may_support_explicit_drop_action(const struct dpif *dpif)
 {
     /* TC does not support offloading this action. */
-    return dpif_is_netdev(dpif) || !netdev_is_flow_api_enabled();
+    return dpif_is_userspace(dpif) || !netdev_is_flow_api_enabled();
 }
 
 bool
@@ -1950,14 +1956,14 @@ dpif_supports_lb_output_action(const struct dpif *dpif)
      * Balance-tcp optimization is currently supported in netdev
      * datapath only.
      */
-    return dpif_is_netdev(dpif);
+    return dpif_is_userspace(dpif);
 }
 
 bool
 dpif_may_support_psample(const struct dpif *dpif)
 {
     /* Userspace datapath does not support this action. */
-    return !dpif_is_netdev(dpif);
+    return !dpif_is_userspace(dpif);
 }
 
 /* Meters */
