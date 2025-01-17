@@ -118,7 +118,7 @@
 
 from bcc import BPF, USDT, USDTException
 from os.path import exists
-from scapy.all import hexdump, wrpcap
+from scapy.all import hexdump, PcapNgWriter
 from scapy.layers.l2 import Ether
 
 from usdt_lib import DpPortMapping
@@ -284,6 +284,8 @@ int kretprobe__ovs_dp_upcall(struct pt_regs *ctx)
 #endif
 """
 
+pcap_writer = None
+
 
 #
 # print_key()
@@ -318,6 +320,8 @@ def print_key(event, decode_dump):
 # print_event()
 #
 def print_event(ctx, data, size):
+    global pcap_writer
+
     event = b["events"].event(data)
     dp = event.dpif_name.decode("utf-8")
 
@@ -380,7 +384,12 @@ def print_event(ctx, data, size):
         print(re.sub('^', ' ' * 4, packet.show(dump=True), flags=re.MULTILINE))
 
     if options.pcap is not None:
-        wrpcap(options.pcap, packet, append=True, snaplen=options.packet_size)
+        if pcap_writer is None:
+            pcap_writer = PcapNgWriter(options.pcap)
+
+        packet.comment = f"result={event.result}"
+        packet.sniffed_on = port
+        pcap_writer.write(packet)
 
 
 #
