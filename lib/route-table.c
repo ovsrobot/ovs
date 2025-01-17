@@ -220,6 +220,24 @@ route_table_reset(void)
     }
 }
 
+
+/* Returns true if the given route requires nexhop information (output
+   interface, nexthop IP, ...). Returns false for special route types, like
+   blackhole, that don't need this information.
+ */
+static bool
+route_needs_nexthop(const struct rtmsg *rtm) {
+    switch (rtm->rtm_type) {
+        case RTN_BLACKHOLE:
+        case RTN_THROW:
+        case RTN_UNREACHABLE:
+        case RTN_PROHIBIT:
+            return false;
+        default:
+            return true;
+    }
+}
+
 static int
 route_table_parse__(struct ofpbuf *buf, size_t ofs,
                     const struct nlmsghdr *nlmsg,
@@ -430,7 +448,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                                        &mp_change.rd.nexthops);
             }
         }
-        if (!attrs[RTA_OIF] && !attrs[RTA_GATEWAY]
+        if (route_needs_nexthop(rtm) && !attrs[RTA_OIF] && !attrs[RTA_GATEWAY]
                 && !attrs[RTA_VIA] && !attrs[RTA_MULTIPATH]) {
             VLOG_DBG_RL(&rl, "route message needs an RTA_OIF, RTA_GATEWAY, "
                              "RTA_VIA or RTA_MULTIPATH attribute");
