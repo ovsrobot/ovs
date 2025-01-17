@@ -133,6 +133,7 @@ import sys
 # Actual eBPF source code
 #
 ebpf_source = """
+#include <linux/netdevice.h>
 #include <linux/skbuff.h>
 
 #define MAX_PACKET <MAX_PACKET_VAL>
@@ -148,6 +149,7 @@ struct event_t {
     u64 key_size;
     char comm[TASK_COMM_LEN];
     char dpif_name[32];
+    char dev_name[16];
     unsigned char pkt[MAX_PACKET];
     unsigned char key[MAX_KEY];
 };
@@ -237,6 +239,7 @@ int kretprobe__ovs_dp_upcall(struct pt_regs *ctx)
     u64 pid = bpf_get_current_pid_tgid();
     struct inflight_upcall *upcall;
     int ret = PT_REGS_RC(ctx);
+    struct net_device *dev;
     u64 size;
 
     upcall = inflight_upcalls.lookup(&pid);
@@ -265,6 +268,9 @@ int kretprobe__ovs_dp_upcall(struct pt_regs *ctx)
     event->pkt_size = upcall->skb->len;
     event->upcall_type = upcall->upcall_type;
     event->key_size = 0;
+    bpf_probe_read(&dev, sizeof(upcall->skb->dev),
+                   ((char *)upcall->skb + offsetof(struct sk_buff, dev)));
+    bpf_probe_read_kernel(&event->dev_name, 16, dev->name);
 
     size = upcall->skb->len - upcall->skb->data_len;
     if (size > MAX_PACKET) {
@@ -318,7 +324,9 @@ def print_event(ctx, data, size):
     nla, key_dump = decode_nlm(
         bytes(event.key)[: min(event.key_size, options.flow_key_size)]
     )
-    if "OVS_KEY_ATTR_IN_PORT" in nla:
+    if event.dev_name:
+        port = event.dev_name.decode("utf-8")
+    elif "OVS_KEY_ATTR_IN_PORT" in nla:
         port_no = struct.unpack("=I", nla["OVS_KEY_ATTR_IN_PORT"])[0]
         port = dp_map.get_port_name(dp.partition("@")[-1], port_no)
     else:
