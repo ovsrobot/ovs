@@ -354,7 +354,7 @@ class DpUpcall(Event):
                  pkt_frag_len):
         super(DpUpcall, self).__init__(ts, pid, comm, cpu, EventType.DP_UPCALL)
         self.dpif_name = dpif_name
-        self.dp_port = dp_map.get(dpif_name, port)
+        self.dp_port = dp_map.get_port_num(dpif_name, port)
         if self.dp_port is None:
             #
             # As we only identify interfaces at startup, new interfaces could
@@ -448,7 +448,7 @@ class RecvUpcall(Event):
 
     def get_system_dp_port(dpif_name):
         dp_map = dp_map.get_map()
-        return dp_map.get(dpif_name, {}).get("ovs-system", None)
+        return dp_map.get_port_num(dpif_name, {}).get("ovs-system", None)
 
     def decode_nlm(msg, indent=4, dump=True):
         bytes_left = len(msg)
