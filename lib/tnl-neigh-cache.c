@@ -375,8 +375,8 @@ tnl_neigh_cache_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
     struct ds ds = DS_EMPTY_INITIALIZER;
     struct tnl_neigh_entry *neigh;
 
-    ds_put_cstr(&ds, "IP                                            MAC                 Bridge\n");
-    ds_put_cstr(&ds, "==========================================================================\n");
+    ds_put_cstr(&ds, "IP                                            MAC                 Port\n");
+    ds_put_cstr(&ds, "========================================================================\n");
     ovs_mutex_lock(&mutex);
     CMAP_FOR_EACH(neigh, cmap_node, &table) {
         int start_len, need_ws;

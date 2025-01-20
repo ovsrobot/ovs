@@ -3916,17 +3916,18 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
         s_ip = in6_addr_get_mapped_ipv4(&s_ip6);
     }
 
-    err = tnl_neigh_lookup(out_dev->xbridge->name, &d_ip6, &dmac);
+    err = tnl_neigh_lookup(netdev_get_name(out_dev->netdev), &d_ip6, &dmac);
     if (err) {
         struct in6_addr nh_s_ip6 = in6addr_any;
 
         xlate_report(ctx, OFT_DETAIL,
                      "neighbor cache miss for %s on bridge %s, "
                      "sending %s request",
-                     buf_dip6, out_dev->xbridge->name, d_ip ? "ARP" : "ND");
+                     buf_dip6, netdev_get_name(out_dev->netdev),
+                     d_ip ? "ARP" : "ND");
 
         err = ovs_router_get_netdev_source_address(&d_ip6,
-                                                   out_dev->xbridge->name,
+                                                   netdev_get_name(out_dev->netdev),
                                                    &nh_s_ip6);
         if (err) {
             nh_s_ip6 = s_ip6;
@@ -4414,7 +4415,7 @@ terminate_native_tunnel(struct xlate_ctx *ctx, const struct xport *xport,
          * do tunnel neighbor snooping. */
         if (*tnl_port == ODPP_NONE &&
             (check_neighbor_reply(ctx, flow) || is_garp(flow, wc))) {
-            tnl_neigh_snoop(flow, wc, ctx->xbridge->name,
+            tnl_neigh_snoop(flow, wc, netdev_get_name(xport->netdev),
                             ctx->xin->allow_side_effects);
         } else if (*tnl_port != ODPP_NONE &&
                    ctx->xin->allow_side_effects &&
@@ -4428,7 +4429,7 @@ terminate_native_tunnel(struct xlate_ctx *ctx, const struct xport *xport,
                 s_ip6 = flow->ipv6_src;
             }
 
-            tnl_neigh_set(ctx->xbridge->name, &s_ip6, mac);
+            tnl_neigh_set(netdev_get_name(xport->netdev), &s_ip6, mac);
         }
     }
 

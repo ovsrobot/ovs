@@ -1153,7 +1153,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p0 'recirc_id(0),in_port(1),dnl
   arp(sip=1.1.2.92,tip=1.1.2.88,op=2,sha=f8:bc:12:44:34:b6,tha=aa:55:aa:55:00:03)'])
 
 AT_CHECK([ovs-appctl tnl/neigh/show | tail -n+3 | sort], [0], [dnl
-1.1.2.92                                      f8:bc:12:44:34:b6   br0
+1.1.2.92                                      f8:bc:12:44:34:b6   vtep0
 ])
 
 dnl Check GRE tunnel pop.
