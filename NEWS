@@ -98,6 +98,8 @@ v3.4.0 - 15 Aug 2024
      * Link status changes are now handled via interrupt mode if the DPDK
        driver supports it.  It is possible to revert to polling mode by setting
        per interface 'options:dpdk-lsc-interrupt' to 'false'.
+     * New configuration knob 'other_config:dpdk-max-memzones' to set dpdk
+       max memory zones.
    - Python:
      * Added custom transaction support to the Idl via add_op().
      * Added support for different output formats like 'json' to Python's

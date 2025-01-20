@@ -425,6 +425,18 @@
         </p>
       </column>
 
+      <column name="other_config" key="dpdk-max-memzones"
+              type='{"type": "integer"}'>
+        <p>
+          Specifies the maximum number of memzones that can be created in
+          DPDK.
+        </p>
+        <p>
+          The default is empty, keeping DPDK's default. Changing this value
+          requires restarting the daemon.
+        </p>
+      </column>
+
       <column name="other_config" key="dpdk-extra"
               type='{"type": "string"}'>
         <p>

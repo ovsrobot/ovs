@@ -310,6 +310,28 @@ malloc_dump_stats_wrapper(FILE *stream)
     rte_malloc_dump_stats(stream, NULL);
 }
 
+#ifdef ALLOW_EXPERIMENTAL_API
+static void
+dpdk_init_max_memzones(const struct smap *ovs_other_config)
+{
+    uint32_t max_memzones;
+    int rv;
+
+    max_memzones = smap_get_uint(ovs_other_config, "dpdk-max-memzones", 0);
+
+    if (!max_memzones) {
+        return;
+    }
+
+    rv = rte_memzone_max_set(max_memzones);
+    if (rv) {
+        VLOG_WARN("Failed to set max memzones to %"PRIu32, max_memzones);
+    } else {
+        VLOG_INFO("Setting max memzones to %"PRIu32, max_memzones);
+    }
+}
+#endif
+
 static bool
 dpdk_init__(const struct smap *ovs_other_config)
 {
@@ -341,6 +363,10 @@ dpdk_init__(const struct smap *ovs_other_config)
         args_contains(&args, "--lcores")) {
         auto_determine = false;
     }
+
+#ifdef ALLOW_EXPERIMENTAL_API
+    dpdk_init_max_memzones(ovs_other_config);
+#endif
 
     /**
      * NOTE: This is an unsophisticated mechanism for determining the DPDK
