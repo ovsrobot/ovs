@@ -419,15 +419,18 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                 if (!mp_rtnh) {
                     VLOG_DBG_RL(&rl, "got short message while parsing "
                                      "multipath attribute");
+                    ofpbuf_uninit(&mp_buf);
                     goto error_out;
                 }
 
                 if (!route_table_parse__(&mp_buf, 0, nlmsg, rtm, mp_rtnh,
                                          &mp_change)) {
+                    ofpbuf_uninit(&mp_buf);
                     goto error_out;
                 }
                 ovs_list_push_back_all(&change->rd.nexthops,
                                        &mp_change.rd.nexthops);
+                ofpbuf_uninit(&mp_buf);
             }
         }
         if (!attrs[RTA_OIF] && !attrs[RTA_GATEWAY]
