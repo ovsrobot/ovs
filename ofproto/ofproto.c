@@ -1839,7 +1839,12 @@ ofproto_destroy(struct ofproto *p, bool del)
         return;
     }
 
-    ofproto_flush__(p, del);
+    /* Changed arg from "del" -> "false" to fix traffic outage during
+     * individual bridge deletion.
+     * DP flows cleanup shall be taken care automatically during individual
+     * port delete/destruct while processing evicting flows.
+     */
+    ofproto_flush__(p, false);
     HMAP_FOR_EACH_SAFE (ofport, hmap_node, &p->ports) {
         ofport_destroy(ofport, del);
     }
