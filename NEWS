@@ -50,6 +50,7 @@ v3.5.0 - xx xxx xxxx
      * Add support for DPDK 24.11.1.
      * Add hardware offload support for matching ICMPv6 protocol
        (experimental).
+     * New debug appctl command 'dpdk/get-memzone-stats'.
    - Tunnels:
      * LISP and STT tunnel port types are deprecated and will be removed in
        the next release.
