@@ -402,6 +402,64 @@ AT_CHECK([ovs-ofctl -O OpenFlow13 del-meters br0])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([dpif-netdev - stats after meters modification])
+# Create br0 with interfaces p1 and p7
+OVS_VSWITCHD_START(
+  [add-port br0 p1 -- set interface p1 type=dummy ofport_request=1 -- \
+   add-port br0 p7 -- set interface p7 ofport_request=7 type=dummy])
+AT_CHECK([ovs-appctl vlog/set dpif:dbg dpif_netdev:dbg])
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-meter br0 'meter=1 pktps burst stats bands=type=drop rate=100 burst_size=10'])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-meter br0 'meter=2 kbps burst stats bands=type=drop rate=100 burst_size=10'])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-flow br0 'in_port=1 action=meter:1,7'])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-flow br0 'in_port=7 action=meter:2,1'])
+
+for i in `seq 1 2`; do
+  AT_CHECK(
+    [ovs-appctl netdev-dummy/receive p1 \
+       'in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0a,dst=50:54:00:00:00:09),eth_type(0x0800),ipv4(src=10.0.0.1,dst=10.0.0.2,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)' --len 60])
+done
+for i in `seq 1 2`; do
+  AT_CHECK(
+    [ovs-appctl netdev-dummy/receive p7 \
+       'in_port(7),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)' --len 60])
+done
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 meter-stats br0 | strip_timers], [0], [dnl
+OFPST_METER reply (OF1.3) (xid=0x2):
+meter:1 flow_count:1 packet_in_count:2 byte_in_count:120 duration:0.0s bands:
+0: packet_count:0 byte_count:0
+
+meter:2 flow_count:1 packet_in_count:2 byte_in_count:120 duration:0.0s bands:
+0: packet_count:0 byte_count:0
+])
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 mod-meter br0 'meter=1 pktps burst stats bands=type=drop rate=200 burst_size=20'])
+AT_CHECK([ovs-ofctl -O OpenFlow13 mod-meter br0 'meter=2 kbps burst stats bands=type=drop rate=200 burst_size=20'])
+
+for i in `seq 1 2`; do
+  AT_CHECK(
+    [ovs-appctl netdev-dummy/receive p1 \
+       'in_port(1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:0a,dst=50:54:00:00:00:09),eth_type(0x0800),ipv4(src=10.0.0.1,dst=10.0.0.2,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)' --len 60])
+done
+for i in `seq 1 2`; do
+  AT_CHECK(
+    [ovs-appctl netdev-dummy/receive p7 \
+       'in_port(7),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.0.0.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)' --len 60])
+done
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 meter-stats br0 | strip_timers], [0], [dnl
+OFPST_METER reply (OF1.3) (xid=0x2):
+meter:1 flow_count:1 packet_in_count:4 byte_in_count:240 duration:0.0s bands:
+0: packet_count:0 byte_count:0
+
+meter:2 flow_count:1 packet_in_count:4 byte_in_count:240 duration:0.0s bands:
+0: packet_count:0 byte_count:0
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD],
   [AT_SETUP([dpif-netdev - partial hw offload - $1])
    OVS_VSWITCHD_START(

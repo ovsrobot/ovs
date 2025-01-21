@@ -1838,14 +1838,19 @@ dp_meter_lookup(struct cmap *meters, uint32_t meter_id)
 }
 
 static void
+dp_meter_detach_free__(struct cmap *meters, struct dp_meter *meter)
+{
+    if (meter) {
+        cmap_remove(meters, &meter->node, dp_meter_hash(meter->id));
+        ovsrcu_postpone(free, meter);
+    }
+}
+
+static void
 dp_meter_detach_free(struct cmap *meters, uint32_t meter_id)
 {
     struct dp_meter *m = dp_meter_lookup(meters, meter_id);
-
-    if (m) {
-        cmap_remove(meters, &m->node, dp_meter_hash(meter_id));
-        ovsrcu_postpone(free, m);
-    }
+    dp_meter_detach_free__(meters, m);
 }
 
 static void
@@ -7615,7 +7620,7 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
 {
     struct dp_netdev *dp = get_dp_netdev(dpif);
     uint32_t mid = meter_id.uint32;
-    struct dp_meter *meter;
+    struct dp_meter *meter, *old_meter;
     int i;
 
     if (mid >= MAX_METERS) {
@@ -7672,9 +7677,14 @@ dpif_netdev_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
         }
     }
 
+    old_meter = dp_meter_lookup(&dp->meters, mid);
+    if(old_meter) {
+        atomic_read_relaxed(&old_meter->packet_count, &meter->packet_count);
+        atomic_read_relaxed(&old_meter->byte_count, &meter->byte_count);
+    }
     ovs_mutex_lock(&dp->meters_lock);
 
-    dp_meter_detach_free(&dp->meters, mid); /* Free existing meter, if any. */
+    dp_meter_detach_free__(&dp->meters, old_meter); /* Free existing meter, if any. */
     dp_meter_attach(&dp->meters, meter);
 
     ovs_mutex_unlock(&dp->meters_lock);
