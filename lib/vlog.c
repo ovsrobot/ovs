@@ -826,6 +826,16 @@ vlog_disable_rate_limit(struct unixctl_conn *conn, int argc,
     set_rate_limits(conn, argc, argv, false);
 }
 
+static void
+vlog_inject_info_log(struct unixctl_conn *conn OVS_UNUSED, int argc,
+                     const char *argv[], void *aux OVS_UNUSED)
+{
+    if (argc >= 1) {
+        VLOG_INFO("user_message: %s", argv[1]);
+    }
+    unixctl_command_reply(conn, NULL);
+}
+
 /* Initializes the logging subsystem and registers its unixctl server
  * commands. */
 void
@@ -878,6 +888,8 @@ vlog_init(void)
                                  vlog_unixctl_reopen, NULL);
         unixctl_command_register("vlog/close", "", 0, 0,
                                  vlog_unixctl_close, NULL);
+        unixctl_command_register("vlog/message", "message", 1, 1,
+                                 vlog_inject_info_log, NULL);
 
         ovs_rwlock_rdlock(&pattern_rwlock);
         print_syslog_target_deprecation = syslog_fd >= 0;
