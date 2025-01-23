@@ -1680,15 +1680,10 @@ ofproto_rule_delete(struct ofproto *ofproto, struct rule *rule)
 }
 
 static void
-ofproto_flush__(struct ofproto *ofproto, bool del)
+ofproto_flush__(struct ofproto *ofproto)
     OVS_EXCLUDED(ofproto_mutex)
 {
     struct oftable *table;
-
-    /* This will flush all datapath flows. */
-    if (del && ofproto->ofproto_class->flush) {
-        ofproto->ofproto_class->flush(ofproto);
-    }
 
     /* XXX: There is a small race window here, where new datapath flows can be
      * created by upcall handlers based on the existing flow table.  We can not
@@ -1839,7 +1834,7 @@ ofproto_destroy(struct ofproto *p, bool del)
         return;
     }
 
-    ofproto_flush__(p, del);
+    ofproto_flush__(p);
     HMAP_FOR_EACH_SAFE (ofport, hmap_node, &p->ports) {
         ofport_destroy(ofport, del);
     }
@@ -2420,7 +2415,7 @@ void
 ofproto_flush_flows(struct ofproto *ofproto)
 {
     COVERAGE_INC(ofproto_flush);
-    ofproto_flush__(ofproto, false);
+    ofproto_flush__(ofproto);
     connmgr_flushed(ofproto->connmgr);
 }
 
