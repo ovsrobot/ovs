@@ -2294,6 +2294,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     struct flow_tnl *tnl_mask = &mask->tunnel;
     struct dpif_flow_stats adjust_stats;
     bool recirc_act = false;
+    bool match_on_dl_type = false;
     uint32_t block_id = 0;
     struct tcf_id id;
     uint32_t chain;
@@ -2500,10 +2501,11 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     flower.mask.src_mac = mask->dl_src;
     memset(&mask->dl_dst, 0, sizeof mask->dl_dst);
     memset(&mask->dl_src, 0, sizeof mask->dl_src);
+    match_on_dl_type = mask->dl_type == htons(0xffff);
     mask->dl_type = 0;
     mask->in_port.odp_port = 0;
 
-    if (key->dl_type == htons(ETH_P_ARP)) {
+    if (match_on_dl_type && key->dl_type == htons(ETH_P_ARP)) {
             flower.key.arp.spa = key->nw_src;
             flower.key.arp.tpa = key->nw_dst;
             flower.key.arp.sha = key->arp_sha;
@@ -2522,7 +2524,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             memset(&mask->arp_tha, 0, sizeof mask->arp_tha);
     }
 
-    if (is_ip_any(key) && !is_ipv6_fragment_and_masked(key, mask)) {
+    if (match_on_dl_type && (key) && !is_ipv6_fragment_and_masked(key, mask)) {
         flower.key.ip_proto = key->nw_proto;
         flower.mask.ip_proto = mask->nw_proto;
         mask->nw_proto = 0;
@@ -2554,7 +2556,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
              * flows perform a fully masked match on the fragmentation bits.
              * However, since TC depends on this behavior, we return ENOTSUPP
              * for now in case this behavior changes in the future. */
-             return EOPNOTSUPP;
+            return EOPNOTSUPP;
         }
 
         if (key->nw_proto == IPPROTO_TCP) {
