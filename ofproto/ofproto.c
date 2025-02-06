@@ -1685,8 +1685,9 @@ ofproto_flush__(struct ofproto *ofproto, bool del)
 {
     struct oftable *table;
 
-    /* This will flush all datapath flows. */
-    if (del && ofproto->ofproto_class->flush) {
+    /* This will flush all dp flows, only if datapath is not userspace. */
+    if (del && ofproto->ofproto_class->flush
+            && !strcmp(ofproto->type, "system")) {
         ofproto->ofproto_class->flush(ofproto);
     }
 
