@@ -42,14 +42,16 @@ missing_authors = []
 def open_spell_check_dict():
     import enchant
 
+    codespell_files = []
     try:
         import codespell_lib
         codespell_dir = os.path.dirname(codespell_lib.__file__)
-        codespell_file = os.path.join(codespell_dir, 'data', 'dictionary.txt')
-        if not os.path.exists(codespell_file):
-            codespell_file = ''
+        for fn in ['dictionary.txt', 'dictionary_code.txt']:
+            fn = os.path.join(codespell_dir, 'data', fn)
+            if os.path.exists(fn):
+                codespell_files.append(fn)
     except:
-        codespell_file = ''
+        pass
 
     try:
         extra_keywords = ['ovs', 'vswitch', 'vswitchd', 'ovs-vswitchd',
@@ -121,8 +123,8 @@ def open_spell_check_dict():
 
         spell_check_dict = enchant.Dict("en_US")
 
-        if codespell_file:
-            with open(codespell_file) as f:
+        for fn in codespell_files:
+            with open(fn) as f:
                 for line in f.readlines():
                     words = line.strip().split('>')[1].strip(', ').split(',')
                     for word in words:
