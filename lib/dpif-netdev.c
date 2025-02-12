@@ -6518,10 +6518,8 @@ pmd_rebalance_dry_run(struct dp_netdev *dp)
 {
     struct sched_numa_list numa_list_cur;
     struct sched_numa_list numa_list_est;
+    struct sched_numa *numa_cur;
     bool thresh_met = false;
-    uint64_t current_var, estimate_var;
-    struct sched_numa *numa_cur, *numa_est;
-    uint64_t improvement = 0;
 
     VLOG_DBG("PMD auto load balance performing dry run.");
 
@@ -6540,6 +6538,10 @@ pmd_rebalance_dry_run(struct dp_netdev *dp)
 
         /* Calculate variances. */
         HMAP_FOR_EACH (numa_cur, node, &numa_list_cur.numas) {
+            uint64_t current_var, estimate_var;
+            struct sched_numa *numa_est;
+            uint64_t improvement = 0;
+
             numa_est = sched_numa_list_lookup(&numa_list_est,
                                               numa_cur->numa_id);
             if (!numa_est) {
