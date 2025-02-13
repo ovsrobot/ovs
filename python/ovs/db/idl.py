@@ -790,6 +790,9 @@ class Idl(object):
         to doing nothing to avoid overhead where it is not needed.
         """
 
+    def after_clear(self):
+        """Hook that can be used to restore indexes after a clear."""
+
     def __clear(self):
         changed = False
 
@@ -802,6 +805,7 @@ class Idl(object):
 
         if changed:
             self.change_seqno += 1
+            self.after_clear()
 
     def __update_has_lock(self, new_has_lock):
         if new_has_lock and not self.has_lock:
