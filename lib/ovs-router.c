@@ -207,7 +207,7 @@ out:
 
 int
 ovs_router_get_netdev_source_address(const struct in6_addr *ip6_dst,
-                                     const char output_bridge[],
+                                     const char netdev_name[],
                                      struct in6_addr *psrc)
 {
     struct in6_addr *mask, *addr6;
@@ -215,7 +215,7 @@ ovs_router_get_netdev_source_address(const struct in6_addr *ip6_dst,
     struct netdev *dev;
     bool is_ipv4;
 
-    err = netdev_open(output_bridge, NULL, &dev);
+    err = netdev_open(netdev_name, NULL, &dev);
     if (err) {
         return err;
     }
