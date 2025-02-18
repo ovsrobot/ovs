@@ -7085,6 +7085,16 @@ AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [d
     3     0  50:54:00:00:00:05    ?
 ])
 
+dnl Check json output.
+AT_CHECK([ovs-appctl --format json --pretty fdb/show br0], [0], [dnl
+[[
+  {
+    "age": 0,
+    "mac": "50:54:00:00:00:05",
+    "port": 3,
+    "vlan": 0}]]
+])
+
 # Trace a packet arrival destined for the learned MAC.
 # (This will also learn a MAC.)
 OFPROTO_TRACE(
