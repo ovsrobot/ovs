@@ -961,10 +961,10 @@ netdev_pop_header(struct netdev *netdev, struct dp_packet_batch *batch)
     DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
         packet = netdev->netdev_class->pop_header(packet);
         if (packet) {
-            /* Reset the offload flags if present, to avoid wrong
+            /* Reset the TX offload flags if present, to avoid wrong
              * interpretation in the further packet processing when
              * recirculated.*/
-            dp_packet_reset_offload(packet);
+            dp_packet_reset_tx_offload(packet);
             pkt_metadata_init_conn(&packet->md);
             dp_packet_batch_refill(batch, packet, i);
         }

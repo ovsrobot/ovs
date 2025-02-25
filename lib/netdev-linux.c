@@ -7120,9 +7120,11 @@ netdev_linux_parse_vnet_hdr(struct dp_packet *b)
          * are parsed during miniflow extraction. */
         b->csum_start = (OVS_FORCE uint16_t) vnet->csum_start;
         b->csum_offset = (OVS_FORCE uint16_t) vnet->csum_offset;
+        dp_packet_ol_set_l4_csum_partial(b);
     } else {
         b->csum_start = 0;
         b->csum_offset = 0;
+        dp_packet_ol_set_l4_csum_good(b);
     }
 
     int ret = 0;

@@ -2237,7 +2237,7 @@ conn_key_extract(struct conntrack *ct, struct dp_packet *pkt, ovs_be16 dl_type,
             if (extract_l4(&ctx->key, l4, dp_packet_l4_size(pkt),
                            &ctx->icmp_related, l3,
                            !dp_packet_l4_checksum_good(pkt) &&
-                           !dp_packet_hwol_tx_l4_checksum(pkt),
+                           !dp_packet_ol_l4_csum_partial(pkt),
                            NULL)) {
                 ctx->hash = conn_key_hash(&ctx->key, ct->hash_basis);
                 return true;

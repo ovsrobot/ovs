@@ -1071,6 +1071,14 @@ dp_packet_rss_valid(const struct dp_packet *p)
 }
 
 static inline void
+dp_packet_reset_tx_offload(struct dp_packet *p)
+{
+    *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_SUPPORTED_MASK |
+                                  DP_PACKET_OL_RX_L4_CKSUM_MASK |
+                                  DP_PACKET_OL_RX_IP_CKSUM_MASK;
+}
+
+static inline void
 dp_packet_reset_offload(struct dp_packet *p)
 {
     *dp_packet_ol_flags_ptr(p) &= ~DP_PACKET_OL_SUPPORTED_MASK;
