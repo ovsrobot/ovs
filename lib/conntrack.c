@@ -2222,8 +2222,8 @@ conn_key_extract(struct conntrack *ct, struct dp_packet *pkt, ovs_be16 dl_type,
             /* Validate the checksum only when hwol is not supported and the
              * packet's checksum status is not known. */
             ok = extract_l3_ipv4(&ctx->key, l3, dp_packet_l3_size(pkt), NULL,
-                                 !dp_packet_hwol_is_ipv4(pkt) &&
-                                 !dp_packet_ip_checksum_good(pkt));
+                                 !dp_packet_hwol_is_tunnel(pkt)
+                                 && !dp_packet_ip_checksum_good(pkt));
         }
     } else if (ctx->key.dl_type == htons(ETH_TYPE_IPV6)) {
         ok = extract_l3_ipv6(&ctx->key, l3, dp_packet_l3_size(pkt), NULL);
