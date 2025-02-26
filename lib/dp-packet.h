@@ -178,8 +178,8 @@ struct dp_packet {
                                       or UINT16_MAX. */
     uint32_t cutlen;               /* length in bytes to cut from the end. */
     ovs_be32 packet_type;          /* Packet type as defined in OpenFlow */
-    uint16_t csum_start;           /* Position to start checksumming from. */
-    uint16_t csum_offset;          /* Offset to place checksum. */
+    enum OVS_PACKED_ENUM dp_packet_offload_mask offloads;
+                                   /* Checksums status and offloads. */
     union {
         struct pkt_metadata md;
         uint64_t data[DP_PACKET_CONTEXT_SIZE / 8];
@@ -1533,34 +1533,12 @@ dp_packet_ol_reset_l4_csum_good(struct dp_packet *p)
     }
 }
 
-/* Marks packet 'p' with good integrity if checksum offload locations
- * were provided. In the case of encapsulated packets, these values may
- * be deeper into the packet than OVS might expect. But the packet
- * should still be considered to have good integrity.
- * The 'csum_start' is the offset from the begin of the packet headers.
- * The 'csum_offset' is the offset from start to place the checksum.
- * The csum_start and csum_offset fields are set from the virtio_net_hdr
- * struct that may be provided by a netdev on packet ingress. */
-static inline void
-dp_packet_ol_l4_csum_check_partial(struct dp_packet *p)
-{
-    if (p->csum_start && p->csum_offset) {
-        dp_packet_ol_set_l4_csum_partial(p);
-    }
-}
-
 static inline void
 dp_packet_reset_packet(struct dp_packet *b, int off)
 {
     dp_packet_set_size(b, dp_packet_size(b) - off);
     dp_packet_set_data(b, ((unsigned char *) dp_packet_data(b) + off));
     dp_packet_reset_offsets(b);
-
-    if (b->csum_start >= off && b->csum_offset) {
-        /* Adjust values for decapsulation. */
-        b->csum_start -= off;
-        dp_packet_ol_set_l4_csum_partial(b);
-    }
 }
 
 static inline uint32_t ALWAYS_INLINE
