@@ -39,6 +39,7 @@ rt_prot_name(unsigned char p)
            p == RTPROT_STATIC     ? "RTPROT_STATIC"     :
            p == RTPROT_RA         ? "RTPROT_RA"         :
            p == RTPROT_DHCP       ? "RTPROT_DHCP"       :
+           p == RTPROT_OVN        ? "RTPROT_OVN"        :
            p == RTPROT_BGP        ? "RTPROT_BGP"        :
            "UNKNOWN";
 }
