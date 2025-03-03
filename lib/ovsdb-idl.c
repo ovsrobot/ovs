@@ -45,6 +45,7 @@
 #include "simap.h"
 #include "sset.h"
 #include "svec.h"
+#include "timeval.h"
 #include "util.h"
 #include "uuid.h"
 #include "openvswitch/vlog.h"
@@ -439,13 +440,14 @@ ovsdb_idl_clear(struct ovsdb_idl *db)
 /* Processes a batch of messages from the database server on 'idl'.  This may
  * cause the IDL's contents to change.  The client may check for that with
  * ovsdb_idl_get_seqno(). */
-void
+int
 ovsdb_idl_run(struct ovsdb_idl *idl)
 {
     ovs_assert(!idl->txn);
 
     struct ovs_list events;
-    ovsdb_cs_run(idl->cs, &events);
+    int ret;
+    ret = ovsdb_cs_run(idl->cs, &events);
 
     struct ovsdb_cs_event *event;
     LIST_FOR_EACH_POP (event, list_node, &events) {
@@ -479,6 +481,8 @@ ovsdb_idl_run(struct ovsdb_idl *idl)
     ovsdb_idl_reparse_refs_to_inserted(idl);
     ovsdb_idl_reparse_deleted(idl);
     ovsdb_idl_row_destroy_postprocess(idl);
+
+    return ret;
 }
 
 /* Arranges for poll_block() to wake up when ovsdb_idl_run() has something to
@@ -4389,6 +4393,44 @@ ovsdb_idl_loop_run(struct ovsdb_idl_loop *loop)
         ovsdb_idl_txn_add_comment(loop->open_txn, "%s", program_name);
     }
     return loop->open_txn;
+}
+
+/* Run the ovsdb_idl_loop until there is no more data to be received.
+ * A timeout in milliseconds can be provided. The actual duration of the
+ * function is returned in the duration parameter. */
+struct ovsdb_idl_txn *
+ovsdb_idl_loop_run_completion(struct ovsdb_idl_loop *idl_loop,
+                              unsigned long long timeout,
+                              uint64_t *idl_duration)
+{
+    unsigned long long duration, start = time_msec();
+    struct ovsdb_idl_txn *txn;
+    int n = 0;
+
+    /* Accumulate database changes as long as there are some,
+     * but no longer than the given timeout. */
+    while (time_msec() - start < timeout) {
+        if (ovsdb_idl_run(idl_loop->idl) == EAGAIN) {
+            break;
+        }
+        n++;
+    }
+
+    txn = ovsdb_idl_loop_run(idl_loop);
+
+    duration = time_msec() - start;
+    if (idl_duration) {
+        *idl_duration = duration;
+    }
+    /* ovsdb_idl_run() is called at least 2 times.  Once directly and
+     * once in the ovsdb_idl_loop_run().  n > 2 means that we received
+     * data on at least 2 subsequent calls. */
+    if (n > 2 || duration > 100) {
+        VLOG(duration > timeout ? VLL_INFO : VLL_DBG,
+             "%d iterations in %lld ms", n + 1, duration);
+    }
+
+    return txn;
 }
 
 /* Attempts to commit the current transaction, if one is open.
