@@ -39,6 +39,7 @@
 VLOG_DEFINE_THIS_MODULE(jsonrpc);
 
 COVERAGE_DEFINE(jsonrpc_gratuitous_echo);
+COVERAGE_DEFINE(jsonrpc_recv_needs_retry);
 
 struct jsonrpc {
     struct stream *stream;
@@ -387,6 +388,10 @@ jsonrpc_recv(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
             }
         }
     }
+
+    /* We tried hard but didn't get a complete JSON message within the above
+     * iterations. We want to know how often we abort for this reason. */
+    COVERAGE_INC(jsonrpc_recv_needs_retry);
 
     return EAGAIN;
 }
