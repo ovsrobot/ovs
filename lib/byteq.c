@@ -198,3 +198,20 @@ byteq_advance_head(struct byteq *q, unsigned int n)
     ovs_assert(byteq_headroom(q) >= n);
     q->head += n;
 }
+
+/* Optimize the byteq to have the most headroom available.
+ * Previous pointers returned by byteq_tail() or byteq_head() are potentially
+ * invalid afterwards. */
+void
+byteq_optimize(struct byteq *q)
+{
+    ovs_assert(byteq_is_empty(q));
+    /* Do not simply reset to zero, but to the next multiple of size because
+     * we currently have callers that depend on increasing values. */
+    unsigned int pos = q->head & (q->size - 1);
+    if (pos) {
+        /* Only advance head if we are not already at a multiple of size. */
+        q->head += q->size - pos;
+    }
+    q->tail = q->head;
+}

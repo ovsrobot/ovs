@@ -344,6 +344,7 @@ jsonrpc_recv(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
             size_t chunk;
             int retval;
 
+            byteq_optimize(&rpc->input);
             chunk = byteq_headroom(&rpc->input);
             retval = stream_recv(rpc->stream, byteq_head(&rpc->input), chunk);
             if (retval < 0) {
