@@ -312,11 +312,13 @@ jsonrpc_send(struct jsonrpc *rpc, struct jsonrpc_msg *msg)
 
 /* Attempts to receive a message from 'rpc'.
  *
- * If successful, stores the received message in '*msgp' and returns 0.  The
+ * If successful, stores the received message in '*msgp'. The
  * caller takes ownership of '*msgp' and must eventually destroy it with
  * jsonrpc_msg_destroy().
  *
  * Otherwise, stores NULL in '*msgp' and returns one of the following:
+ *
+ *   - 0: Message could not be completely received in this batch.
  *
  *   - EAGAIN: No message has been received.
  *
@@ -394,7 +396,7 @@ jsonrpc_recv(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
      * iterations. We want to know how often we abort for this reason. */
     COVERAGE_INC(jsonrpc_recv_needs_retry);
 
-    return EAGAIN;
+    return 0;
 }
 
 /* Causes the poll loop to wake up when jsonrpc_recv() may return a value other
@@ -443,15 +445,15 @@ jsonrpc_recv_block(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
 {
     for (;;) {
         int error = jsonrpc_recv(rpc, msgp);
-        if (error != EAGAIN) {
+        if (!*msgp && (error == 0 || error == EAGAIN)) {
+            jsonrpc_run(rpc);
+            jsonrpc_wait(rpc);
+            jsonrpc_recv_wait(rpc);
+            poll_block();
+        } else {
             fatal_signal_run();
             return error;
         }
-
-        jsonrpc_run(rpc);
-        jsonrpc_wait(rpc);
-        jsonrpc_recv_wait(rpc);
-        poll_block();
     }
 }
 
@@ -1180,15 +1182,16 @@ jsonrpc_session_send(struct jsonrpc_session *s, struct jsonrpc_msg *msg)
     }
 }
 
-struct jsonrpc_msg *
-jsonrpc_session_recv(struct jsonrpc_session *s)
+int
+jsonrpc_session_recv(struct jsonrpc_session *s, struct jsonrpc_msg **full_msg)
 {
     if (s->rpc) {
         unsigned int received_bytes;
         struct jsonrpc_msg *msg;
+        int ret;
 
         received_bytes = jsonrpc_get_received_bytes(s->rpc);
-        jsonrpc_recv(s->rpc, &msg);
+        ret = jsonrpc_recv(s->rpc, &msg);
 
         long long int now = time_msec();
         reconnect_receive_attempted(s->reconnect, now);
@@ -1213,12 +1216,15 @@ jsonrpc_session_recv(struct jsonrpc_session *s)
                        && !strcmp(msg->id->string, "echo")) {
                 /* It's a reply to our echo request.  Suppress it. */
             } else {
-                return msg;
+                *full_msg = msg;
+                return 0;
             }
             jsonrpc_msg_destroy(msg);
+        } else {
+            return ret;
         }
     }
-    return NULL;
+    return 0;
 }
 
 /* Preemptively send an echo reply if needed. */

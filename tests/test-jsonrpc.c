@@ -211,7 +211,7 @@ do_listen(struct ovs_cmdl_context *ctx)
             jsonrpc_run(rpc);
             if (!jsonrpc_get_backlog(rpc)) {
                 error = jsonrpc_recv(rpc, &msg);
-                if (!error) {
+                if (msg) {
                     error = handle_rpc(rpc, msg, &done);
                     jsonrpc_msg_destroy(msg);
                 } else if (error == EAGAIN) {

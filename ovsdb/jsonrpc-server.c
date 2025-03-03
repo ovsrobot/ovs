@@ -667,11 +667,11 @@ ovsdb_jsonrpc_session_run(struct ovsdb_jsonrpc_session *s)
     ovsdb_jsonrpc_trigger_complete_done(s);
 
     if (!jsonrpc_session_get_backlog(s->js)) {
-        struct jsonrpc_msg *msg;
+        struct jsonrpc_msg *msg = NULL;
 
         ovsdb_jsonrpc_monitor_flush_all(s);
 
-        msg = jsonrpc_session_recv(s->js);
+        jsonrpc_session_recv(s->js, &msg);
         if (msg) {
             if (msg->type == JSONRPC_REQUEST) {
                 ovsdb_jsonrpc_session_got_request(s, msg);

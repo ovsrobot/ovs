@@ -188,7 +188,7 @@ replication_run_db(struct replication_db *rdb)
     jsonrpc_session_run(rdb->session);
 
     for (int i = 0; i < 50; i++) {
-        struct jsonrpc_msg *msg;
+        struct jsonrpc_msg *msg = NULL;
         unsigned int seqno;
 
         if (!jsonrpc_session_is_connected(rdb->session)) {
@@ -210,7 +210,7 @@ replication_run_db(struct replication_db *rdb)
             VLOG_DBG("%s: send server ID request.", rdb->db->name);
         }
 
-        msg = jsonrpc_session_recv(rdb->session);
+        jsonrpc_session_recv(rdb->session, &msg);
         if (!msg) {
             continue;
         }

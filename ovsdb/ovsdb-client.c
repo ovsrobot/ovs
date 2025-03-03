@@ -217,7 +217,8 @@ open_rpc(int min_args, enum args_needed need,
             jsonrpc_session_send(js, txn);
         }
 
-        struct jsonrpc_msg *reply = jsonrpc_session_recv(js);
+        struct jsonrpc_msg *reply = NULL;
+        jsonrpc_session_recv(js, &reply);
         if (reply && id && reply->id && json_equal(id, reply->id)) {
             if (reply->type == JSONRPC_REPLY
                 && should_stay_connected(jsonrpc_session_get_name(js),
@@ -1496,6 +1497,10 @@ do_monitor__(struct jsonrpc *rpc, const char *database,
                 ovs_fatal(error, "%s: receive failed", server);
             }
 
+            if (!msg) {
+                break;
+            }
+
             if (msg->type == JSONRPC_REQUEST && !strcmp(msg->method, "echo")) {
                 jsonrpc_send(rpc, jsonrpc_create_reply(json_clone(msg->params),
                                                        msg->id));
@@ -2308,7 +2313,7 @@ do_lock(struct jsonrpc *rpc, const char *method, const char *lock)
     }
 
     for (;;) {
-        struct jsonrpc_msg *msg;
+        struct jsonrpc_msg *msg = NULL;
         int error;
 
         unixctl_server_run(unixctl);
@@ -2324,6 +2329,10 @@ do_lock(struct jsonrpc *rpc, const char *method, const char *lock)
             goto no_msg;
         } else if (error) {
             ovs_fatal(error, "%s: receive failed", jsonrpc_get_name(rpc));
+        }
+
+        if (!msg) {
+            goto no_msg;
         }
 
         if (msg->type == JSONRPC_REQUEST && !strcmp(msg->method, "echo")) {
@@ -2479,7 +2488,8 @@ do_wait(struct jsonrpc *rpc_unused OVS_UNUSED,
             jsonrpc_session_send(js, rq);
         }
 
-        struct jsonrpc_msg *reply = jsonrpc_session_recv(js);
+        struct jsonrpc_msg *reply = NULL;
+        jsonrpc_session_recv(js, &reply);
         if (reply && reply->id) {
             if (sdca_id && json_equal(sdca_id, reply->id)) {
                 if (reply->type == JSONRPC_ERROR) {

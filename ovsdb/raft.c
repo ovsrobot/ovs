@@ -1503,7 +1503,8 @@ static bool
 raft_conn_receive(struct raft *raft, struct raft_conn *conn,
                   union raft_rpc *rpc)
 {
-    struct jsonrpc_msg *msg = jsonrpc_session_recv(conn->js);
+    struct jsonrpc_msg *msg = NULL;
+    jsonrpc_session_recv(conn->js, &msg);
     if (!msg) {
         return false;
     }
