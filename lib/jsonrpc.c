@@ -21,6 +21,7 @@
 #include <errno.h>
 
 #include "byteq.h"
+#include "coverage.h"
 #include "openvswitch/dynamic-string.h"
 #include "fatal-signal.h"
 #include "openvswitch/json.h"
@@ -36,6 +37,8 @@
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(jsonrpc);
+
+COVERAGE_DEFINE(jsonrpc_gratuitous_echo);
 
 struct jsonrpc {
     struct stream *stream;
@@ -825,6 +828,9 @@ struct jsonrpc_session {
     /* Limits for jsonrpc. */
     size_t max_n_msgs;
     size_t max_backlog_bytes;
+
+    /* Used to decide whether we need to send a gratuitous echo reply. */
+    long long int last_send_timestamp;
 };
 
 static void
@@ -879,6 +885,7 @@ jsonrpc_session_open_multiple(const struct svec *remotes, bool retry)
     s->seqno = 0;
     s->dscp = 0;
     s->last_error = 0;
+    s->last_send_timestamp = 0;
 
     jsonrpc_session_set_backlog_threshold(s, 0, 0);
 
@@ -1159,6 +1166,7 @@ int
 jsonrpc_session_send(struct jsonrpc_session *s, struct jsonrpc_msg *msg)
 {
     if (s->rpc) {
+        s->last_send_timestamp = time_msec();
         return jsonrpc_send(s->rpc, msg);
     } else {
         jsonrpc_msg_destroy(msg);
@@ -1205,6 +1213,33 @@ jsonrpc_session_recv(struct jsonrpc_session *s)
         }
     }
     return NULL;
+}
+
+/* Preemptively send an echo reply if needed. */
+void
+jsonrpc_session_gratuitous_echo_reply(struct jsonrpc_session *s)
+{
+    /* XXX: This is actually the wrong interval (our side's interval),
+     * but usually it is configured the same on both sides. */
+    int probe_interval = reconnect_get_probe_interval(s->reconnect);
+    if (!probe_interval) {
+        return;
+    }
+
+    if (time_msec() < s->last_send_timestamp + probe_interval) {
+        return;
+    }
+
+    struct json *params = json_array_create_empty();
+    struct json *id = json_string_create("echo");
+    struct jsonrpc_msg *reply = jsonrpc_create_reply(params, id);
+    /* Calling jsonrpc_create_reply() creates a clone of id, so we can
+     * destroy it already (this just decreases the reference count again). */
+    json_destroy(id);
+
+    VLOG_DBG("Sending gratuitous echo reply.");
+    jsonrpc_session_send(s, reply);
+    COVERAGE_INC(jsonrpc_gratuitous_echo);
 }
 
 void

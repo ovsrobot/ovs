@@ -647,6 +647,13 @@ ovsdb_cs_run(struct ovsdb_cs *cs, struct ovs_list *events)
         ovsdb_cs_process_msg(cs, msg);
         jsonrpc_msg_destroy(msg);
     }
+
+
+    /* Send a gratuitous (unsolicited) echo reply if necessary and we didn't
+     * do it already in the above batch. This is an preemptive activity
+     * signal which doesn't hurt the other side. */
+    jsonrpc_session_gratuitous_echo_reply(cs->session);
+
     ovs_list_push_back_all(events, &cs->data.events);
 }
 
