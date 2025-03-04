@@ -993,6 +993,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads disabled).
 bad_frame=$(echo $good_frame | sed -e "s/6b72/DEAD/")
 dnl 0x6b72 + (5201-2222) == 0x7715
@@ -1021,6 +1029,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for good packet (Tx offloads enabled).
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
 
@@ -1046,6 +1062,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+# Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads enabled).
 
 dnl No Rx flag.
@@ -1069,6 +1093,14 @@ AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
 AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
+
+# Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
 
 dnl Special case, to check if Tx offload did happen in the driver.
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
@@ -1135,6 +1167,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads disabled).
 bad_frame=$(echo $good_frame | sed -e "s/bb3b/DEAD/")
 dnl 0xbb3b + (5201-2222) == 0xc6de
@@ -1163,6 +1203,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for good packet (Tx offloads enabled).
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
 
@@ -1188,6 +1236,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads enabled).
 
 dnl No Rx flag.
@@ -1211,6 +1267,14 @@ AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
 AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
+
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
 
 dnl Special case, to check if Tx offload did happen in the driver.
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
@@ -1277,6 +1341,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads disabled).
 bad_frame=$(echo $good_frame | sed -e "s/e5c2/DEAD/")
 dnl 0xe5c2 + (5201-2222) == 0xf165
@@ -1305,6 +1377,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for good packet (Tx offloads enabled).
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
 
@@ -1330,6 +1410,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads enabled).
 
 dnl No Rx flag.
@@ -1353,6 +1441,14 @@ AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
 AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
+
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
 
 dnl Special case, to check if Tx offload did happen in the driver.
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
@@ -1419,6 +1515,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads disabled).
 bad_frame=$(echo $good_frame | sed -e "s/358c/DEAD/")
 dnl 0x358c + (5201-2222) == 0x412f
@@ -1447,6 +1551,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for good packet (Tx offloads enabled).
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
 
@@ -1472,6 +1584,14 @@ AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
 
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${good_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
+
 dnl Checks for bad packet (Tx offloads enabled).
 
 dnl No Rx flag.
@@ -1495,6 +1615,14 @@ AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
 AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${bad_expected}
 ])
 AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_bad=false])
+
+dnl Flag as Rx partial.
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=true])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ${bad_frame}])
+AT_CHECK([ovs-pcap p2.pcap > p2.pcap.txt 2>&1])
+AT_CHECK_UNQUOTED([tail -n 1 p2.pcap.txt], [0], [${good_expected}
+])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_l4_rx_csum_set_partial=false])
 
 dnl Special case, to check if Tx offload did happen in the driver.
 AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
