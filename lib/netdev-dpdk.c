@@ -2423,7 +2423,8 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
     }
 
     lsc_interrupt_mode = smap_get_bool(args, "dpdk-lsc-interrupt", true);
-    if (lsc_interrupt_mode && !(*info.dev_flags & RTE_ETH_DEV_INTR_LSC)) {
+    if (lsc_interrupt_mode && !ret &&
+            !(*info.dev_flags & RTE_ETH_DEV_INTR_LSC)) {
         if (smap_get(args, "dpdk-lsc-interrupt")) {
             VLOG_WARN_BUF(errp, "'%s': link status interrupt is not "
                           "supported.", netdev_get_name(netdev));
