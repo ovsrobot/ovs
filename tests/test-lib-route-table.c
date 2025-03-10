@@ -27,6 +27,12 @@
 #include "packets.h"
 #include "route-table.h"
 
+/* These will be introduced in Linux 6.15, so they might be missing if we have
+ * old headers. */
+#ifndef RTPROT_OVN
+#define RTPROT_OVN 84
+#endif
+
 static char *
 rt_prot_name(unsigned char p)
 {
@@ -39,6 +45,7 @@ rt_prot_name(unsigned char p)
            p == RTPROT_STATIC     ? "RTPROT_STATIC"     :
            p == RTPROT_RA         ? "RTPROT_RA"         :
            p == RTPROT_DHCP       ? "RTPROT_DHCP"       :
+           p == RTPROT_OVN        ? "RTPROT_OVN"        :
            p == RTPROT_BGP        ? "RTPROT_BGP"        :
            "UNKNOWN";
 }
