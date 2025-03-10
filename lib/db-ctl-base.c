@@ -42,6 +42,19 @@
 
 VLOG_DEFINE_THIS_MODULE(db_ctl_base);
 
+#define INIT_CTL_COMMAND(max_args_val) \
+    {                                  \
+        .name = "show",                \
+        .min_args = 0,                 \
+        .max_args = max_args_val,      \
+        .arguments = "",               \
+        .prerequisites = pre_cmd_show, \
+        .run = cmd_show,               \
+        .postprocess = NULL,           \
+        .options = "",                 \
+        .mode = RO                     \
+    }
+
 /* This array defines the 'show' command output format.  User can check the
  * definition in utilities/ovs-vsctl.c as reference.
  *
@@ -2052,7 +2065,7 @@ pre_cmd_show(struct ctl_context *ctx)
     const struct cmd_show_table *show;
 
     for (show = cmd_show_tables; show->table; show++) {
-        size_t i;
+        size_t i, j;
 
         ovsdb_idl_add_table(ctx->idl, show->table);
         if (show->name_column) {
@@ -2072,6 +2085,12 @@ pre_cmd_show(struct ctl_context *ctx)
         }
         if (show->wref_table.wref_column) {
             ovsdb_idl_add_column(ctx->idl, show->wref_table.wref_column);
+        }
+        for (j = 0; j < ARRAY_SIZE(show->filter_columns); j++) {
+            const struct ovsdb_idl_column *column = show->filter_columns[j];
+            if (column) {
+                ovsdb_idl_add_column(ctx->idl, column);
+            }
         }
     }
 }
@@ -2133,6 +2152,88 @@ cmd_show_weak_ref(struct ctl_context *ctx, const struct cmd_show_table *show,
             ds_put_char(&ctx->output, '\n');
         }
     }
+}
+
+static bool
+cmd_show_filter_match(struct ctl_context *ctx,
+                      const struct ovsdb_idl_row *row,
+                      const struct ovsdb_idl_column *column)
+{
+    const struct ovsdb_datum *datum = ovsdb_idl_read(row, column);
+
+    if (!datum) {
+        return false;
+    }
+
+    for (size_t i = 0; i < datum->n; i++) {
+        for (size_t j = 1; j < ctx->argc; j++) {
+            const char *match_value = json_string(datum->keys[i].s);
+            if (match_value && !strcmp(match_value, ctx->argv[j])) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static bool
+cmd_show_row_filter_match(struct ctl_context *ctx,
+                          const struct ovsdb_idl_row *row)
+{
+    const struct cmd_show_table *show = cmd_show_find_table_by_row(row);
+
+    if (!show) {
+        return false;
+    }
+
+    if (show && show->name_column &&
+        cmd_show_filter_match(ctx, row, show->name_column)) {
+        return true;
+    }
+
+    for (size_t i = 0; i < ARRAY_SIZE(show->filter_columns); i++) {
+        const struct ovsdb_idl_column *column = show->columns[i];
+        const struct ovsdb_datum *datum;
+
+        if (!column) {
+            continue;
+        }
+
+        datum = ovsdb_idl_read(row, column);
+
+        if (!datum) {
+            continue;
+        }
+
+        if (column->type.key.type == OVSDB_TYPE_UUID &&
+            column->type.key.uuid.refTableName) {
+            const struct cmd_show_table *ref_show;
+
+            ref_show = cmd_show_find_table_by_name(
+                column->type.key.uuid.refTableName);
+
+            if (ref_show) {
+                for (size_t j = 0; j < datum->n; j++) {
+                    const struct ovsdb_idl_row *ref_row;
+
+                    ref_row = ovsdb_idl_get_row_for_uuid(ctx->idl,
+                                                         ref_show->table,
+                                                         &datum->keys[j].uuid);
+                    if (ref_row) {
+                        if (cmd_show_row_filter_match(ctx, ref_row)) {
+                            return true;
+                        }
+                    }
+                }
+                continue;
+            }
+        } else if (cmd_show_filter_match(ctx, row, column)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /* 'shown' records the tables that has been displayed by the current
@@ -2251,7 +2352,9 @@ cmd_show(struct ctl_context *ctx)
 
     for (row = ovsdb_idl_first_row(ctx->idl, cmd_show_tables[0].table);
          row; row = ovsdb_idl_next_row(row)) {
-        cmd_show_row(ctx, row, 0, &shown);
+        if (ctx->argc <= 1 || cmd_show_row_filter_match(ctx, row)) {
+            cmd_show_row(ctx, row, 0, &shown);
+        }
     }
 
     ovs_assert(sset_is_empty(&shown));
@@ -2547,9 +2650,14 @@ ctl_init__(const struct ovsdb_idl_class *idl_class_,
 
     cmd_show_tables = cmd_show_tables_;
     if (cmd_show_tables) {
-        static const struct ctl_command_syntax show =
-            {"show", 0, 0, "", pre_cmd_show, cmd_show, NULL, "", RO};
-        ctl_register_command(&show);
+        if (!cmd_show_tables->filter_columns[0]) {
+            static const struct ctl_command_syntax show = INIT_CTL_COMMAND(0);
+            ctl_register_command(&show);
+        } else {
+            static const struct ctl_command_syntax show =
+                                                INIT_CTL_COMMAND(INT_MAX);
+            ctl_register_command(&show);
+        }
     }
 }
 

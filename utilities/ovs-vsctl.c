@@ -1042,6 +1042,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&ovsrec_open_vswitch_col_manager_options,
       &ovsrec_open_vswitch_col_bridges,
       &ovsrec_open_vswitch_col_ovs_version},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -1051,6 +1052,7 @@ static struct cmd_show_table cmd_show_tables[] = {
       &ovsrec_bridge_col_fail_mode,
       &ovsrec_bridge_col_datapath_type,
       &ovsrec_bridge_col_ports},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -1059,6 +1061,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&ovsrec_port_col_tag,
       &ovsrec_port_col_trunks,
       &ovsrec_port_col_interfaces},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -1068,6 +1071,7 @@ static struct cmd_show_table cmd_show_tables[] = {
       &ovsrec_interface_col_options,
       &ovsrec_interface_col_error,
       &ovsrec_interface_col_bfd_status},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -1076,6 +1080,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&ovsrec_controller_col_is_connected,
       NULL,
       NULL},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -1084,10 +1089,11 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&ovsrec_manager_col_is_connected,
       NULL,
       NULL},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
-    {NULL, NULL, {NULL, NULL, NULL}, {NULL, NULL, NULL}}
+    {NULL, NULL, {NULL, NULL, NULL}, {NULL, NULL, NULL}, {NULL, NULL, NULL}}
 };
 
 static void

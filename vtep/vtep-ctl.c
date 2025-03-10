@@ -388,6 +388,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&vteprec_global_col_managers,
       &vteprec_global_col_switches,
       NULL},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -396,6 +397,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&vteprec_manager_col_is_connected,
       NULL,
       NULL},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -404,6 +406,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&vteprec_physical_switch_col_management_ips,
       &vteprec_physical_switch_col_tunnel_ips,
       &vteprec_physical_switch_col_ports},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -412,6 +415,7 @@ static struct cmd_show_table cmd_show_tables[] = {
      {&vteprec_physical_port_col_vlan_bindings,
       NULL,
       NULL},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
@@ -420,10 +424,11 @@ static struct cmd_show_table cmd_show_tables[] = {
      {NULL,
       NULL,
       NULL},
+     {NULL, NULL, NULL},
      {NULL, NULL, NULL}
     },
 
-    {NULL, NULL, {NULL, NULL, NULL}, {NULL, NULL, NULL}}
+    {NULL, NULL, {NULL, NULL, NULL}, {NULL, NULL, NULL}, {NULL, NULL, NULL}}
 };
 
 /* vtep-ctl specific context.  Inherits the 'struct ctl_context' as base. */
