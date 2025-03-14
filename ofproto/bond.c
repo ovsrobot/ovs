@@ -1336,6 +1336,7 @@ bond_rebalance(struct bond *bond)
     struct ovs_list bals;
     bool rebalanced = false;
     bool use_recirc;
+    uint32_t min_member_mbps = UINT32_MAX;
 
     ovs_rwlock_wrlock(&rwlock);
     if (!bond_is_balanced(bond) || time_msec() < bond->next_rebalance) {
@@ -1378,7 +1379,11 @@ bond_rebalance(struct bond *bond)
     ovs_list_init(&bals);
     HMAP_FOR_EACH (member, hmap_node, &bond->members) {
         if (member->enabled) {
+            uint32_t mbps;
+
             insert_bal(&bals, member);
+            netdev_get_speed(member->netdev, &mbps, NULL);
+            min_member_mbps = MIN(mbps, min_member_mbps);
         }
     }
     log_bals(bond, &bals);
@@ -1392,10 +1397,12 @@ bond_rebalance(struct bond *bond)
         uint64_t overload;
 
         overload = from->tx_bytes - to->tx_bytes;
-        if (overload < to->tx_bytes >> 5 || overload < 100000) {
+        if (overload < to->tx_bytes >> 5 ||
+            overload / 1000000 < MAX(1, min_member_mbps / 8 >> 6)) {
             /* The extra load on 'from' (and all less-loaded members), compared
              * to that of 'to' (the least-loaded member), is less than ~3%, or
-             * it is less than ~1Mbps.  No point in rebalancing. */
+             * it is less than MAX of 1MB and ~1.5% of minimum bond member
+             * link speed, if present.  No point in rebalancing. */
             break;
         }
 
