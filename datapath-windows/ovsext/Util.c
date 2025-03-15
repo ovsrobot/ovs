@@ -48,26 +48,6 @@ OvsAllocateMemory(size_t size)
         (UINT32)size, OVS_MEMORY_TAG, NormalPoolPriority);
 }
 
-_Use_decl_annotations_
-VOID *
-OvsAllocateAlignedMemory(size_t size, UINT16 align)
-{
-    ASSERT((align == 8) || (align == 16));
-
-    if ((align == 8) || (align == 16)) {
-        /*
-         * XXX: NdisAllocateMemory*() functions don't talk anything about
-         * alignment. Hence using ExAllocatePool*();
-         */
-        return (VOID *)ExAllocatePoolWithTagPriority(NonPagedPoolNx, size,
-                                                     OVS_MEMORY_TAG,
-                                                     NormalPoolPriority);
-    }
-
-    /* Invalid user input. */
-    return NULL;
-}
-
 VOID
 OvsFreeMemory(VOID *ptr)
 {

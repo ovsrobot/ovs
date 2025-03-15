@@ -53,21 +53,10 @@
       <ComponentGroupRef Id="BinariesComponentGroup" />
       <ComponentGroupRef Id="SymbolsComponentGroup" />
       <ComponentRef Id="OpenvSwitchEnvVars" />
-
-      <Feature Id="VC140Redistx86" Title="Visual C++ 14 Runtime x86" AllowAdvertise="no" Display="hidden" Level="1"
-               Absent="disallow" InstallDefault="followParent" TypicalDefault="install">
-        <MergeRef Id="VC140Redistx86" />
-      </Feature>
-      <Feature Id="VC140Redistx64" Title="Visual C++ 14 Runtime x64" AllowAdvertise="no" Display="hidden" Level="1"
-               Absent="disallow" InstallDefault="followParent" TypicalDefault="install">
-        <MergeRef Id="VC140Redistx64" />
-      </Feature>
     </Feature>
 
     <Feature Id="OpenvSwitchDriver" Title="Open vSwitch Hyper-V driver" Level="1" Absent="allow" InstallDefault="local" TypicalDefault="install" AllowAdvertise="no"
              Description="Installs the Open vSwitch Hyper-V switch extension driver." Display="expand">
-      <ComponentRef Id="OpenvSwitchDriver_Win8" />
-      <ComponentRef Id="OpenvSwitchDriver_Win8.1" />
       <ComponentRef Id="OpenvSwitchDriver_Win10" />
       <ComponentRef Id="ConfDir" />
       <ComponentRef Id="LogsDir" />
@@ -251,31 +240,12 @@
 
   <Fragment>
     <DirectoryRef Id="DRIVERDIR">
-      <Component Id='OpenvSwitchDriver_Win8' Guid='{7A1E2446-8196-4738-8362-5CFD55896A7B}'>
-        <Condition><![CDATA[VersionNT = "602"]]></Condition>
-          <File Id='win8_ovsext.sys' Name='ovsext.sys' DiskId='1' Source='Driver\Win8\ovsext.sys' Checksum='yes' KeyPath='yes' />
-          <File Id='win8_ovsext.inf' Name='ovsext.inf' DiskId='1' Source='Driver\Win8\ovsext.inf' Checksum='yes' />
-          <File Id='win8_ovsext.cat' Name='ovsext.cat' DiskId='1' Source='Driver\Win8\ovsext.cat' Checksum='yes' />
-     </Component>
-     <Component Id='OpenvSwitchDriver_Win8.1' Guid='{7A1E2446-8196-4738-8362-5CFD55896A7C}'>
-        <Condition><![CDATA[(VersionNT = "603") AND (BUILDNUMBER < 10000)]]></Condition>
-          <File Id='win81_ovsext.sys' Name='ovsext.sys' DiskId='1' Source='Driver\Win8.1\ovsext.sys' Checksum='yes' KeyPath='yes'/>
-          <File Id='win81_ovsext.inf' Name='ovsext.inf' DiskId='1' Source='Driver\Win8.1\ovsext.inf' Checksum='yes' />
-          <File Id='win81_ovsext.cat' Name='ovsext.cat' DiskId='1' Source='Driver\Win8.1\ovsext.cat' Checksum='yes' />
-      </Component>
       <Component Id='OpenvSwitchDriver_Win10' Guid='{7A1E2446-8196-4738-8362-5CFD55896A7D}'>
       <Condition><![CDATA[BUILDNUMBER > 10000]]></Condition>
           <File Id='win10_ovsext.sys' Name='ovsext.sys' DiskId='1' Source='Driver\Win10\ovsext.sys' Checksum='yes' KeyPath='yes'/>
           <File Id='win10_ovsext.inf' Name='ovsext.inf' DiskId='1' Source='Driver\Win10\ovsext.inf' Checksum='yes' />
           <File Id='win10_ovsext.cat' Name='ovsext.cat' DiskId='1' Source='Driver\Win10\ovsext.cat' Checksum='yes' />
       </Component>
-    </DirectoryRef>
-  </Fragment>
-
-  <Fragment>
-    <DirectoryRef Id="TARGETDIR">
-      <Merge Id="VC140Redistx86" SourceFile="Redist\Microsoft_VC140_CRT_x86.msm" DiskId="1" Language="0" />
-      <Merge Id="VC140Redistx64" SourceFile="Redist\Microsoft_VC140_CRT_x64.msm" DiskId="1" Language="0" />
     </DirectoryRef>
   </Fragment>
 

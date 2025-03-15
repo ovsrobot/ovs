@@ -200,7 +200,7 @@ Finally, to the kernel module also:
 
 Possible values for ``<target type>`` are: ``Debug`` and ``Release``
 Possible values for ``<target versions>`` is a comma separated list
-of target versions to compile among: ``Win8,Win8.1,Win10``
+of target versions to compile among: ``Win10``
 
 .. note::
 
@@ -267,9 +267,9 @@ The Kernel Module
 If you are building the kernel module, you will need to copy the below files to
 the target Hyper-V machine.
 
-- ``./datapath-windows/x64/Win8.1Debug/package/ovsext.inf``
-- ``./datapath-windows/x64/Win8.1Debug/package/OVSExt.sys``
-- ``./datapath-windows/x64/Win8.1Debug/package/ovsext.cat``
+- ``./datapath-windows/x64/Win10Debug/ovsext/ovsext.inf``
+- ``./datapath-windows/x64/Win10Debug/ovsext/ovsext.sys``
+- ``./datapath-windows/x64/Win10Debug/ovsext/ovsext.cat``
 - ``./datapath-windows/misc/install.cmd``
 - ``./datapath-windows/misc/uninstall.cmd``
 

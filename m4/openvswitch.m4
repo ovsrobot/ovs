@@ -184,28 +184,22 @@ if test "$WIN32" = yes; then
 
   AC_ARG_WITH([vstudiotargetver],
           [AS_HELP_STRING([--with-vstudiotargetver=target_ver1,target_ver2],
-              [Target versions: Win8,Win8.1,Win10])],
+              [Target versions: Win10])],
           [
               targetver=`echo "$withval" | tr -s , ' ' `
               for ver in $targetver; do
                   case "$ver" in
-                  "Win8") VSTUDIO_WIN8=true ;;
-                  "Win8.1")  VSTUDIO_WIN8_1=true ;;
                   "Win10") VSTUDIO_WIN10=true ;;
                   *) AC_MSG_ERROR([No valid Visual Studio target version found]) ;;
                   esac
               done
 
           ], [
-              VSTUDIO_WIN8=true
-              VSTUDIO_WIN8_1=true
               VSTUDIO_WIN10=true
           ]
         )
     AC_DEFINE([VSTUDIO_DDK], [1], [System uses the Visual Studio build target.])
 fi
-AM_CONDITIONAL([VSTUDIO_WIN8], [test -n "$VSTUDIO_WIN8"])
-AM_CONDITIONAL([VSTUDIO_WIN8_1], [test -n "$VSTUDIO_WIN8_1"])
 AM_CONDITIONAL([VSTUDIO_WIN10], [test -n "$VSTUDIO_WIN10"])
 AM_CONDITIONAL([VSTUDIO_DDK], [test -n "$VSTUDIO_CONFIG"])
 ])
