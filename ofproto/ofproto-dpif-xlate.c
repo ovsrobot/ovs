@@ -72,6 +72,7 @@
 COVERAGE_DEFINE(xlate_actions);
 COVERAGE_DEFINE(xlate_actions_oversize);
 COVERAGE_DEFINE(xlate_actions_too_many_output);
+COVERAGE_DEFINE(xlate_actions_tnl_void);
 
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif_xlate);
 
@@ -3893,6 +3894,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
 
     err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
     if (err) {
+        COVERAGE_INC(xlate_actions_tnl_void);
         xlate_report(ctx, OFT_WARN, "native tunnel routing failed");
         return err;
     }
@@ -3904,6 +3906,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     /* Use mac addr of bridge port of the peer. */
     err = netdev_get_etheraddr(out_dev->netdev, &smac);
     if (err) {
+        COVERAGE_INC(xlate_actions_tnl_void);
         xlate_report(ctx, OFT_WARN,
                      "tunnel output device lacks Ethernet address");
         return err;
@@ -3918,6 +3921,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     if (err) {
         struct in6_addr nh_s_ip6 = in6addr_any;
 
+        COVERAGE_INC(xlate_actions_tnl_void);
         xlate_report(ctx, OFT_DETAIL,
                      "neighbor cache miss for %s on bridge %s, "
                      "sending %s request",
@@ -3958,6 +3962,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     netdev_init_tnl_build_header_params(&tnl_params, flow, &s_ip6, dmac, smac);
     err = tnl_port_build_header(xport->ofport, &tnl_push_data, &tnl_params);
     if (err) {
+        COVERAGE_INC(xlate_actions_tnl_void);
         xlate_report(ctx, OFT_WARN, "native tunnel header build failed");
         return err;
     }
