@@ -2254,6 +2254,8 @@ parse_flow_actions(struct netdev *netdev,
                 return -1;
             }
 #endif
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_TUNNEL_VOID) {
+            /* Do nothing. */
         } else {
             VLOG_DBG_RL(&rl, "Unsupported action type %d", nl_attr_type(nla));
             return -1;
