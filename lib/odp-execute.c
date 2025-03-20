@@ -838,6 +838,7 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_CHECK_PKT_LEN:
     case OVS_ACTION_ATTR_ADD_MPLS:
     case OVS_ACTION_ATTR_DEC_TTL:
+    case OVS_ACTION_ATTR_TUNNEL_VOID:
     case OVS_ACTION_ATTR_DROP:
         return false;
 
@@ -1242,6 +1243,11 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             dp_packet_delete_batch(batch, steal);
             return;
         }
+
+        case OVS_ACTION_ATTR_TUNNEL_VOID:
+            /* Do nothing. */
+            break;
+
         case OVS_ACTION_ATTR_OUTPUT:
         case OVS_ACTION_ATTR_LB_OUTPUT:
         case OVS_ACTION_ATTR_TUNNEL_PUSH:

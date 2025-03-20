@@ -1292,6 +1292,7 @@ dpif_execute_helper_cb(void *aux_, struct dp_packet_batch *packets_,
     case OVS_ACTION_ATTR_DROP:
     case OVS_ACTION_ATTR_ADD_MPLS:
     case OVS_ACTION_ATTR_DEC_TTL:
+    case OVS_ACTION_ATTR_TUNNEL_VOID:
     case __OVS_ACTION_ATTR_MAX:
         OVS_NOT_REACHED();
     }

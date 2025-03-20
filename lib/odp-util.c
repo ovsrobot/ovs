@@ -123,6 +123,7 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_TRUNC: return sizeof(struct ovs_action_trunc);
     case OVS_ACTION_ATTR_TUNNEL_PUSH: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_TUNNEL_POP: return sizeof(uint32_t);
+    case OVS_ACTION_ATTR_TUNNEL_VOID: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_METER: return sizeof(uint32_t);
     case OVS_ACTION_ATTR_USERSPACE: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_PUSH_VLAN: return sizeof(struct ovs_action_push_vlan);
@@ -1214,6 +1215,9 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
         break;
     case OVS_ACTION_ATTR_TUNNEL_PUSH:
         format_odp_tnl_push_action(ds, a, portno_names);
+        break;
+    case OVS_ACTION_ATTR_TUNNEL_VOID:
+        ds_put_cstr(ds, "tnl_void");
         break;
     case OVS_ACTION_ATTR_USERSPACE:
         format_odp_userspace_action(ds, a, portno_names);
