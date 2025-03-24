@@ -3642,7 +3642,7 @@ bundle_set(struct ofproto *ofproto_, void *aux,
         bundle->bond = NULL;
     }
 
-    /* Set proteced port mode */
+    /* Set protected port mode. */
     if (s->protected != bundle->protected) {
         bundle->protected = s->protected;
         need_flush = true;
