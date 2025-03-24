@@ -461,6 +461,10 @@ const char *xlate_strerror(enum xlate_error error)
     return "Unknown error";
 }
 
+static void put_drop_action(struct ofproto_dpif *ofproto,
+                            struct ofpbuf *odp_actions,
+                            enum xlate_error error,
+                            bool is_last_action);
 static void xlate_action_set(struct xlate_ctx *ctx);
 static void xlate_commit_actions(struct xlate_ctx *ctx);
 
@@ -3893,6 +3897,8 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
 
     err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
     if (err) {
+        put_drop_action(ctx->xbridge->ofproto, ctx->odp_actions,
+                        XLATE_INVALID_TUNNEL_METADATA, is_last_action);
         xlate_report(ctx, OFT_WARN, "native tunnel routing failed");
         return err;
     }
@@ -3904,6 +3910,8 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     /* Use mac addr of bridge port of the peer. */
     err = netdev_get_etheraddr(out_dev->netdev, &smac);
     if (err) {
+        put_drop_action(ctx->xbridge->ofproto, ctx->odp_actions,
+                        XLATE_INVALID_TUNNEL_METADATA, is_last_action);
         xlate_report(ctx, OFT_WARN,
                      "tunnel output device lacks Ethernet address");
         return err;
@@ -3918,6 +3926,8 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     if (err) {
         struct in6_addr nh_s_ip6 = in6addr_any;
 
+        put_drop_action(ctx->xbridge->ofproto, ctx->odp_actions,
+                        XLATE_INVALID_TUNNEL_METADATA, is_last_action);
         xlate_report(ctx, OFT_DETAIL,
                      "neighbor cache miss for %s on bridge %s, "
                      "sending %s request",
@@ -6499,13 +6509,21 @@ put_ct_label(const struct flow *flow, struct ofpbuf *odp_actions,
 
 static void
 put_drop_action(struct ofproto_dpif *ofproto, struct ofpbuf *odp_actions,
-                enum xlate_error error)
+                enum xlate_error error, bool is_last_action)
 {
+    size_t offset;
+
     if (!ovs_explicit_drop_action_supported(ofproto)) {
         return;
     }
 
+    if (!is_last_action) {
+        offset = nl_msg_start_nested(odp_actions, OVS_ACTION_ATTR_CLONE);
+    }
     nl_msg_put_u32(odp_actions, OVS_ACTION_ATTR_DROP, error);
+    if (!is_last_action) {
+        nl_msg_end_nested(odp_actions, offset);
+    }
 }
 
 static void
@@ -8132,7 +8150,7 @@ xlate_tweak_odp_actions(struct xlate_ctx *ctx)
     }
 
     if (!last_action) {
-        put_drop_action(ctx->xbridge->ofproto, actions, XLATE_OK);
+        put_drop_action(ctx->xbridge->ofproto, actions, XLATE_OK, true);
         return;
     }
 
@@ -8165,7 +8183,7 @@ xlate_tweak_odp_actions(struct xlate_ctx *ctx)
         last_observe_offset != UINT32_MAX &&
         (unsigned char *) last_action == (unsigned char *) actions->data +
                                          last_observe_offset) {
-        put_drop_action(ctx->xbridge->ofproto, actions, XLATE_OK);
+        put_drop_action(ctx->xbridge->ofproto, actions, XLATE_OK, true);
     }
 }
 
@@ -8613,7 +8631,8 @@ exit:
         if (xin->odp_actions) {
             ofpbuf_clear(xin->odp_actions);
             /* Make the drop explicit if the datapath supports it. */
-            put_drop_action(ctx.xbridge->ofproto, xin->odp_actions, ctx.error);
+            put_drop_action(ctx.xbridge->ofproto, xin->odp_actions, ctx.error,
+                            true);
         }
     } else {
         /* In the non-error case, see if we can further optimize or tweak
