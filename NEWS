@@ -18,6 +18,10 @@ Post-v3.5.0
      * Bond rebalancing log messages of INFO log level is highly reduced: they
        are printed once in rebalance run.  Previous detailed log messaged moved
        to DBG log level.
+     * Additionally to previous behavior bond rebalancing now performed if the
+       most loaded bond member transfers ~3% of minimum member link speed more
+       traffic in average by last rebalance_interval, than the least loaded
+       bond member.
 
 
 v3.5.0 - 17 Feb 2025

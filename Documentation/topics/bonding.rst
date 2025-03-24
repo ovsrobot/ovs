@@ -136,7 +136,8 @@ vswitchd will only shift a hash from H to L if it will decrease the ratio of
 the load between H and L by at least 0.1.
 
 Currently, "significantly more loaded" means that H must carry at least 1 Mbps
-more traffic, and that traffic must be at least 3% greater than L's.
+or ~1.5% of slowest member network device speed more traffic, and that traffic
+must be at least 3% greater than L's.
 
 Bond Balance Modes
 ------------------

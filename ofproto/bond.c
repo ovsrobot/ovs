@@ -1331,7 +1331,10 @@ compare_bond_entries(const void *a_, const void *b_)
 void
 bond_rebalance(struct bond *bond)
 {
+    int rebalance_interval_sec = bond->rebalance_interval / 1000;
     struct bond_entry *e, *hashes[BOND_BUCKETS];
+    uint32_t min_member_mbps = UINT32_MAX;
+    uint64_t overload_threshold, overload;
     struct bond_member *member;
     struct ovs_list bals;
     bool rebalanced = false;
@@ -1378,9 +1381,18 @@ bond_rebalance(struct bond *bond)
     ovs_list_init(&bals);
     HMAP_FOR_EACH (member, hmap_node, &bond->members) {
         if (member->enabled) {
+            uint32_t mbps;
+
             insert_bal(&bals, member);
+
+            netdev_get_speed(member->netdev, &mbps, NULL);
+            /* Speed can be 0 in case inability to get it from device.  In that
+             * case min_member_mbps will be also 0, but replaced with a
+             * fallback minimum rebalance value of ~1Mbps below. */
+            min_member_mbps = MIN(mbps, min_member_mbps);
         }
     }
+    overload_threshold = MAX(1, min_member_mbps >> 6);
     log_bals(bond, &bals);
 
     /* Shift load from the most-loaded members to the least-loaded members. */
@@ -1389,13 +1401,14 @@ bond_rebalance(struct bond *bond)
             = bond_member_from_bal_node(ovs_list_front(&bals));
         struct bond_member *to
             = bond_member_from_bal_node(ovs_list_back(&bals));
-        uint64_t overload;
 
-        overload = from->tx_bytes - to->tx_bytes;
-        if (overload < to->tx_bytes >> 5 || overload < 100000) {
-            /* The extra load on 'from' (and all less-loaded members), compared
-             * to that of 'to' (the least-loaded member), is less than ~3%, or
-             * it is less than ~1Mbps.  No point in rebalancing. */
+        overload = (from->tx_bytes - to->tx_bytes) / rebalance_interval_sec;
+        if (overload < (to->tx_bytes / rebalance_interval_sec) >> 5 ||
+            overload * 8 / 1000000 < overload_threshold) {
+            /* The extra average load per second on 'from' (and all less-loaded
+             * members), compared to that of 'to' (the least-loaded member), is
+             * less than ~3%, or it is less than MAX of 1Mbps and ~1.5% of MIN
+             * bond member link speed, if present.  No point in rebalancing. */
             break;
         }
 
