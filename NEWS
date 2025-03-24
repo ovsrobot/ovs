@@ -14,6 +14,10 @@ Post-v3.5.0
    - ovs-tcpdump:
      * Update the --mirror-to option, adding support for specifying an
        existing port as a mirror interface.
+   - Bonding:
+     * Bond rebalancing log messages of INFO log level is highly reduced: they
+       are printed once in rebalance run.  Previous detailed log messaged moved
+       to DBG log level.
 
 
 v3.5.0 - 17 Feb 2025
