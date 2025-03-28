@@ -704,7 +704,7 @@ dnl MTU lower bound phy port
 AT_SETUP([OVS-DPDK - MTU lower bound phy port])
 AT_KEYWORDS([dpdk])
 
-OVS_DPDK_PRE_PHY_SKIP()
+OVS_DPDK_PRE_CHECK()
 OVS_DPDK_START()
 
 dnl Add userspace bridge and attach it to OVS and set MTU value to min lower bound
@@ -867,5 +867,50 @@ OVS_WAIT_UNTIL([tail -n +$TMP ovs-vswitchd.log | grep "Port p1: Requesting a mem
 dnl Clean up
 AT_CHECK([ovs-vsctl del-port br10 p1], [], [stdout], [stderr])
 OVS_DPDK_STOP_VSWITCHD
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl --------------------------------------------------------------------------
+dnl Setup dpif collecting meters
+AT_SETUP([OVS-DPDK - dpif collecting meters])
+AT_KEYWORDS([dpdk])
+
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START([--no-pci])
+
+AT_CHECK([ovs-vsctl add-br br-vm -- set bridge br-vm datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-br br-phy -- set bridge br-phy datapath_type=netdev])
+AT_CHECK([ovs-vsctl add-port br-vm p1 -- set Interface p1 type=vxlan options:remote_ip=1.1.1.1 options:local_ip=1.1.1.2])
+
+dnl Active vxlan egress network
+AT_CHECK([ip link set up dev br-phy])
+AT_CHECK([ip addr add 1.1.1.2/24 dev br-phy])
+
+ADD_NAMESPACES(ns1)
+# ADD_VETH(tap1, ns1, br-phy, "1.1.1.1/24")
+
+# NOT dpdk type with net_af_xdp
+AT_CHECK([ip link add tap1 type veth peer name ovs-tap1])
+AT_CHECK([ip link set up dev ovs-tap1])
+AT_CHECK([ip link set netns ns1 dev tap1])
+
+AT_CHECK([ovs-vsctl add-port br-phy ovs-tap1])
+
+NS_CHECK_EXEC([ns1], [ip link set up dev tap1])
+NS_CHECK_EXEC([ns1], [ip addr add 1.1.1.1/24 dev tap1])
+
+AT_CHECK([ping -c 3 1.1.1.1], [0], [stdout])
+OVS_WAIT_UNTIL([test -n "`ovs-appctl tnl/arp/show | grep 1.1.1.1`"])
+
+dnl Force packet-out into collecting meters
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-meter br-vm 'meter=1 pktps bands=type=drop rate=1'])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-flow br-vm 'table=2,arp actions=meter:1,set_field:2->arp_op,p1,br-vm'])
+
+dnl Send a arp packet-out message
+AT_CHECK([ovs-ofctl packet-out br-vm 'in_port=controller packet=ffffffffffff000000010102080600010800060400010000000101020101010300000000000001010102 actions=resubmit(,2)'])
+
+dnl Clean up
+OVS_DPDK_STOP_VSWITCHD
+AT_CHECK([ip link del ovs-tap1])
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
