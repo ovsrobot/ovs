@@ -173,7 +173,7 @@ netdev_windows_system_construct(struct netdev *netdev_)
     type = netdev_get_type(&netdev->up);
     if (type && !strcmp(type, "system") &&
         (info.ovs_type == OVS_VPORT_TYPE_INTERNAL)) {
-        VLOG_DBG("construct device %s, ovs_type: %u failed",
+        VLOG_ERR("construct device %s, ovs_type: %u failed",
                  netdev_get_name(&netdev->up), info.ovs_type);
         return 1;
     }
@@ -183,15 +183,18 @@ netdev_windows_system_construct(struct netdev *netdev_)
     netdev->port_no = info.port_no;
 
     netdev->mac = info.mac_address;
-    netdev->cache_valid = VALID_ETHERADDR;
+    if (!eth_addr_is_zero(netdev->mac)) {
+       netdev->cache_valid = VALID_ETHERADDR;
+    }
     netdev->ifindex = -EOPNOTSUPP;
 
     netdev->mtu = info.mtu;
     netdev->cache_valid |= VALID_MTU;
 
     netdev->ifi_flags = dp_to_netdev_ifi_flags(info.ifi_flags);
-    netdev->cache_valid |= VALID_IFFLAG;
-
+    if (netdev->ifi_flags) {
+        netdev->cache_valid |= VALID_IFFLAG;
+    }
     VLOG_DBG("construct device %s, ovs_type: %u.",
              netdev_get_name(&netdev->up), info.ovs_type);
     return 0;
@@ -330,14 +333,40 @@ netdev_windows_get_etheraddr(const struct netdev *netdev_,
                              struct eth_addr *mac)
 {
     struct netdev_windows *netdev = netdev_windows_cast(netdev_);
+    struct netdev_windows_netdev_info info;
+    struct ofpbuf *buf = NULL;
+    const char *type = NULL;
+    const char *dev_name = NULL;
+    int ret;
 
-    ovs_assert((netdev->cache_valid & VALID_ETHERADDR) != 0);
     if (netdev->cache_valid & VALID_ETHERADDR) {
         *mac = netdev->mac;
-    } else {
-        return EINVAL;
+        return 0;
+    } else if (eth_addr_is_zero(netdev->mac)) {
+        type = netdev_get_type(&netdev->up);
+        if (type && !strcmp(type, "internal")) {
+            dev_name = netdev_get_name(&netdev->up);
+            if (dev_name) {
+                ret = query_netdev(dev_name, &info, &buf);
+                if (!ret) {
+                    ofpbuf_delete(buf);
+                    *mac = info.mac_address;
+                    if (!eth_addr_is_zero(info.mac_address)) {
+                        netdev->mac = info.mac_address;
+                        netdev->cache_valid |= VALID_ETHERADDR;
+                    }
+                    VLOG_DBG("get_etheraddr query_netdev dev %s success",
+                             dev_name);
+                    return 0;
+                } else {
+                    VLOG_ERR("get_etheraddr query_netdev dev %s failed",
+                             dev_name);
+                    *mac = eth_addr_zero;
+                }
+            }
+        }
     }
-    return 0;
+    return EINVAL;
 }
 
 static int
@@ -363,8 +392,6 @@ netdev_windows_set_etheraddr(const struct netdev *netdev_,
     return 0;
 }
 
-/* This functionality is not really required by the datapath.
- * But vswitchd bringup expects this to be implemented. */
 static int
 netdev_windows_update_flags(struct netdev *netdev_,
                             enum netdev_flags off,
@@ -372,15 +399,65 @@ netdev_windows_update_flags(struct netdev *netdev_,
                             enum netdev_flags *old_flagsp)
 {
     struct netdev_windows *netdev = netdev_windows_cast(netdev_);
+    struct netdev_windows_netdev_info info;
+    struct ofpbuf *buf = NULL;
+    const char *type = NULL;
+    const char *dev_name = NULL;
+    uint32_t ifi_flags = 0;
+    int ret;
 
-    ovs_assert((netdev->cache_valid & VALID_IFFLAG) != 0);
+    type = netdev_get_type(&netdev->up);
+    if (type && !strcmp(type, "internal")) {
+        dev_name = netdev_get_name(&netdev->up);
+        if (dev_name) {
+            ret = query_netdev(dev_name, &info, &buf);
+            if (!ret) {
+                ofpbuf_delete(buf);
+                ifi_flags = dp_to_netdev_ifi_flags(info.ifi_flags);
+                if (ifi_flags) {
+                    *old_flagsp = ifi_flags;
+                    netdev->ifi_flags = ifi_flags;
+                    netdev->cache_valid |= VALID_IFFLAG;
+                }
+
+                if (eth_addr_is_zero(netdev->mac) &&
+                   !eth_addr_is_zero(info.mac_address)) {
+                    netdev->mac = info.mac_address;
+                    netdev->cache_valid |= VALID_ETHERADDR;
+                }
+                VLOG_DBG("update_flags query_netdev dev %s success: %d",
+                         dev_name, *old_flagsp);
+                return 0;
+            } else {
+                VLOG_ERR("update_flags query_netdev dev %s failed",
+                        dev_name);
+                *old_flagsp = 0;
+                netdev->ifi_flags = 0;
+                if (netdev->cache_valid & VALID_IFFLAG) {
+                    netdev->cache_valid &= ~VALID_IFFLAG;
+                    /* On ofproto_run() it will check port status
+                     * for any port whose netdev has changed
+                     * Here netdev_change_seq_changed would force do
+                     * update_port()
+                     */
+                    netdev_change_seq_changed(&netdev->up);
+                    VLOG_INFO("update_flags failed; update_port for %s",
+                              dev_name);
+                }
+                if (!eth_addr_is_zero(netdev->mac)) {
+                    netdev->mac = eth_addr_zero;
+                    netdev->cache_valid &= ~VALID_ETHERADDR;
+                }
+                return 0;
+            }
+        }
+    }
+
     if (netdev->cache_valid & VALID_IFFLAG) {
         *old_flagsp = netdev->ifi_flags;
-        /* Setting the interface flags is not supported. */
-    } else {
-        return EINVAL;
+         return 0;
     }
-    return 0;
+    return EINVAL;
 }
 
 /* Looks up in the ARP table entry for a given 'ip'. If it is found, the

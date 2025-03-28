@@ -751,6 +751,10 @@ dpif_netlink_run(struct dpif *dpif_)
             dpif_netlink_refresh_handlers_vport_dispatch(dpif,
                                                          dpif->n_handlers);
             fat_rwlock_unlock(&dpif->upcall_lock);
+            #ifdef _WIN32
+              seq_change(connectivity_seq_get());
+              VLOG_INFO("Do seq_change for connectivity_seq");
+            #endif
         }
     }
     return false;
