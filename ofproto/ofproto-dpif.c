@@ -223,7 +223,6 @@ static void ct_zone_config_init(struct dpif_backer *backer);
 static void ct_zone_config_uninit(struct dpif_backer *backer);
 static void ct_zone_timeout_policy_sweep(struct dpif_backer *backer);
 static void ct_zone_limits_commit(struct dpif_backer *backer);
-static bool recheck_support_explicit_drop_action(struct dpif_backer *backer);
 
 static inline struct ofproto_dpif *
 ofproto_dpif_cast(const struct ofproto *ofproto)
@@ -392,10 +391,6 @@ type_run(const char *type)
 
     if (backer->recv_set_enable) {
         udpif_set_threads(backer->udpif, n_handlers, n_revalidators);
-    }
-
-    if (recheck_support_explicit_drop_action(backer)) {
-        backer->need_revalidate = REV_RECONFIGURE;
     }
 
     if (backer->need_revalidate) {
@@ -1420,8 +1415,8 @@ check_drop_action(struct dpif_backer *backer)
     ofpbuf_use_stack(&actions, &actbuf, sizeof actbuf);
     nl_msg_put_u32(&actions, OVS_ACTION_ATTR_DROP, XLATE_OK);
 
-    supported = dpif_may_support_explicit_drop_action(backer->dpif) &&
-                dpif_probe_feature(backer->dpif, "drop", &key, &actions, NULL);
+    supported = dpif_probe_feature(backer->dpif, "drop", &key, &actions,
+                                   NULL);
 
     VLOG_INFO("%s: Datapath %s explicit drop action",
               dpif_name(backer->dpif),
@@ -1755,28 +1750,6 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.odp.ct_orig_tuple = check_ct_orig_tuple(backer);
     backer->rt_support.odp.ct_orig_tuple6 = check_ct_orig_tuple6(backer);
     backer->rt_support.odp.nd_ext = check_nd_extensions(backer);
-}
-
-/* TC does not support offloading the explicit drop action. As such we need to
- * re-probe the datapath if hw-offload has been modified.
- * Note: We don't support true --> false transition as that requires a restart.
- * See netdev_set_flow_api_enabled(). */
-static bool
-recheck_support_explicit_drop_action(struct dpif_backer *backer)
-{
-    bool explicit_drop_action;
-
-    atomic_read_relaxed(&backer->rt_support.explicit_drop_action,
-                        &explicit_drop_action);
-
-    if (explicit_drop_action
-        && !dpif_may_support_explicit_drop_action(backer->dpif)) {
-        ovs_assert(!check_drop_action(backer));
-        atomic_store_relaxed(&backer->rt_support.explicit_drop_action, false);
-        return true;
-    }
-
-    return false;
 }
 
 static int
