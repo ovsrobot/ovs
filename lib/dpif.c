@@ -1930,16 +1930,6 @@ log_flow_get_message(const struct dpif *dpif,
     }
 }
 
-bool
-dpif_supports_lb_output_action(const struct dpif *dpif)
-{
-    /*
-     * Balance-tcp optimization is currently supported in netdev
-     * datapath only.
-     */
-    return dpif_is_netdev(dpif);
-}
-
 /* Meters */
 void
 dpif_meter_get_features(const struct dpif *dpif,
