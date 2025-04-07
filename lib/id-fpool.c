@@ -120,10 +120,10 @@ id_slab_remove(struct id_slab *slab, uint32_t *id)
 }
 
 static void
-per_user_init(struct per_user *pu, uint32_t *next_id, uint32_t max)
+per_user_init(struct per_user *pu)
 {
     id_fpool_lock_init(&pu->user_lock);
-    pu->slab = id_slab_create(next_id, max);
+    pu->slab = NULL;
 }
 
 static void
@@ -151,8 +151,7 @@ id_fpool_create(unsigned int nb_user, uint32_t floor, uint32_t n_ids)
     pool->ceiling = floor + n_ids;
 
     for (i = 0; i < nb_user; i++) {
-        per_user_init(&pool->per_users[i],
-                      &pool->next_id, pool->ceiling);
+        per_user_init(&pool->per_users[i]);
     }
     pool->nb_user = nb_user;
 
@@ -194,6 +193,9 @@ id_fpool_new_id(struct id_fpool *pool, unsigned int uid, uint32_t *id)
 
     id_fpool_lock(&pu->user_lock);
 
+    if (pu->slab == NULL) {
+        pu->slab = id_slab_create(&pool->next_id, pool->ceiling);
+    }
     if (id_slab_remove(pu->slab, id)) {
         res = true;
         goto unlock_and_ret;
