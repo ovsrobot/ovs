@@ -42,6 +42,7 @@ int byteq_read(struct byteq *, int fd);
 
 uint8_t *byteq_head(struct byteq *);
 int byteq_headroom(const struct byteq *);
+void byteq_fast_forward(struct byteq *);
 void byteq_advance_head(struct byteq *, unsigned int n);
 int byteq_tailroom(const struct byteq *);
 const uint8_t *byteq_tail(const struct byteq *);
