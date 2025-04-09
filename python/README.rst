@@ -54,6 +54,68 @@ this purpose:
 .. __: https://packaging.python.org/en/latest/tutorials/installing-packages/#installing-extras
 
 
+Examples
+--------
+
+Show the schema
+~~~~~~~~~~~~~~~
+
+You need to generate a schema helper. If Open vSwitch is installed and running
+on your localhost, you can do this with a local file:
+
+.. code-block:: python
+
+    import ovs.db.idl
+    import ovs.dirs
+
+    remote = f'unix:{ovs.dirs.RUNDIR}/db.sock'
+    schema_path = f'{ovs.dirs.PKGDATADIR}/vswitch.ovsschema'
+    schema_helper = ovs.db.idl.SchemaHelper(schema_path)
+
+Alternatively, you can do this for a remote host via TCP:
+
+.. code-block:: python
+
+    import ovs.db.idl
+    import ovs.dirs
+    import ovs.jsonrpc
+
+    remote = 'tcp:127.0.0.1:6640'
+
+    error, stream = ovs.stream.Stream.open_block(ovs.stream.Stream.open(remote))
+    if error:
+        print(error)
+        sys.exit(1)
+
+    rpc = ovs.jsonrpc.Connection(stream)
+    request = ovs.jsonrpc.Message.create_request('get_schema', ['Open_vSwitch'])
+    error, reply = rpc.transact_block(request)
+    rpc.close()
+    if error:
+        print(error)
+        sys.exit(1)
+
+    schema_json = reply.result
+
+    schema_helper = ovs.db.idl.SchemaHelper(None, schema_json)
+
+.. note::
+
+    The above assumes the default port (``6640``) is used and exposed.
+
+Once done, you can create an instance of ``ovs.db.idl.IDL`` and use this to
+iterate over the instance:
+
+.. code-block:: python
+
+    idl = ovs.db.idl.Idl(remote, schema_helper)
+
+    for table in idl.tables.values():
+        print(f'- {table.name}')
+        for column in table.columns.values():
+            print(f'\t- {column.name}')
+
+
 Documentation
 -------------
 
