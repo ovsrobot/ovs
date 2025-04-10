@@ -10136,6 +10136,7 @@ const struct dpif_class dpif_netdev_class = {
     NULL,                       /* cache_get_name */
     NULL,                       /* cache_get_size */
     NULL,                       /* cache_set_size */
+    NULL,                       /* recheck_support_needed */
 };
 
 static void
