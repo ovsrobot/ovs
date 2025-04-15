@@ -2061,8 +2061,8 @@ ovs-ofctl add-flow br0 tun_metadata0=1234,actions=controller
     <!-- Open vSwitch uses the following fields internally, but it
          does not expose them to the user via OpenFlow, so we do not
          document them. -->
-    <field id="MFF_TUN_TTL" title="Tunnel IPv4 Time-to-Live" internal="yes"/>
-    <field id="MFF_TUN_TOS" title="Tunnel IPv4 Type of Service" internal="yes"/>
+    <field id="MFF_TUN_TTL" title="Tunnel IPv4 Time-to-Live"/>
+    <field id="MFF_TUN_TOS" title="Tunnel IPv4 Type of Service"/>
   </group>
 
   <group title="Metadata">
@@ -4878,3 +4878,4 @@ r c c c r.
     OXM fields not yet supported Future Directions References/See Also
     OXM fields required by various versions and by the "Conformance Test Specification for OpenFlow Switch Specification 1.0.1"
 -->
+

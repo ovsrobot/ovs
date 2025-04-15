@@ -664,6 +664,8 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
         } else if (!strcmp(node->key, "tos")) {
             if (!strcmp(node->value, "inherit")) {
                 tnl_cfg.tos_inherit = true;
+            } else if (!strcmp(node->value, "flow")) {
+                tnl_cfg.tos_flow = true;
             } else {
                 char *endptr;
                 int tos;
@@ -678,6 +680,8 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
         } else if (!strcmp(node->key, "ttl")) {
             if (!strcmp(node->value, "inherit")) {
                 tnl_cfg.ttl_inherit = true;
+            } else if (!strcmp(node->value, "flow")) {
+                tnl_cfg.ttl_flow = true;
             } else {
                 tnl_cfg.ttl = atoi(node->value);
             }
@@ -998,12 +1002,16 @@ get_tunnel_config(const struct netdev *dev, struct smap *args)
 
     if (tnl_cfg->ttl_inherit) {
         smap_add(args, "ttl", "inherit");
+    } else if (tnl_cfg->ttl_flow) {
+        smap_add(args, "ttl", "flow");
     } else if (tnl_cfg->ttl != DEFAULT_TTL) {
         smap_add_format(args, "ttl", "%"PRIu8, tnl_cfg->ttl);
     }
 
     if (tnl_cfg->tos_inherit) {
         smap_add(args, "tos", "inherit");
+    } else if (tnl_cfg->tos_flow) {
+        smap_add(args, "tos", "flow");
     } else if (tnl_cfg->tos) {
         smap_add_format(args, "tos", "0x%x", tnl_cfg->tos);
     }
@@ -1391,3 +1399,4 @@ netdev_vport_patch_register(void)
     simap_init(&patch_class.global_cfg_tracker);
     netdev_register_provider(&patch_class.netdev_class);
 }
+

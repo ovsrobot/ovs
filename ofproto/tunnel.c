@@ -438,18 +438,22 @@ tnl_port_send(const struct ofport_dpif *ofport, struct flow *flow,
         flow->tunnel.tun_id = cfg->out_key;
     }
 
-    if (cfg->ttl_inherit && is_ip_any(flow)) {
-        wc->masks.nw_ttl = 0xff;
-        flow->tunnel.ip_ttl = flow->nw_ttl;
-    } else {
-        flow->tunnel.ip_ttl = cfg->ttl;
+    if (!cfg->ttl_flow) {
+        if (cfg->ttl_inherit && is_ip_any(flow)) {
+            wc->masks.nw_ttl = 0xff;
+            flow->tunnel.ip_ttl = flow->nw_ttl;
+        } else {
+            flow->tunnel.ip_ttl = cfg->ttl;
+        }
     }
 
-    if (cfg->tos_inherit && is_ip_any(flow)) {
-        wc->masks.nw_tos |= IP_DSCP_MASK;
-        flow->tunnel.ip_tos = flow->nw_tos & IP_DSCP_MASK;
-    } else {
-        flow->tunnel.ip_tos = cfg->tos;
+    if (!cfg->tos_flow) {
+        if (cfg->tos_inherit && is_ip_any(flow)) {
+            wc->masks.nw_tos |= IP_DSCP_MASK;
+            flow->tunnel.ip_tos = flow->nw_tos & IP_DSCP_MASK;
+        } else {
+            flow->tunnel.ip_tos = cfg->tos;
+        }
     }
 
     /* ECN fields are always inherited. */
@@ -696,12 +700,16 @@ tnl_port_format(const struct tnl_port *tnl_port, struct ds *ds)
 
     if (cfg->ttl_inherit) {
         ds_put_cstr(ds, ", ttl=inherit");
+    } else if (cfg->ttl_flow) {
+        ds_put_cstr(ds, ", ttl=flow");
     } else {
         ds_put_format(ds, ", ttl=%"PRIu8, cfg->ttl);
     }
 
     if (cfg->tos_inherit) {
         ds_put_cstr(ds, ", tos=inherit");
+    } else if (cfg->tos_flow) {
+        ds_put_cstr(ds, ", tos=flow");
     } else if (cfg->tos) {
         ds_put_format(ds, ", tos=%#"PRIx8, cfg->tos);
     }
@@ -782,3 +790,4 @@ tnl_unixctl_list(struct unixctl_conn *conn,
     unixctl_command_reply(conn, ds_cstr(&reply));
     ds_destroy(&reply);
 }
+

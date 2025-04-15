@@ -401,7 +401,7 @@ enum OVS_PACKED_ENUM mf_field_id {
      * Maskable: no.
      * Formatting: decimal.
      * Prerequisites: none.
-     * Access: read-only.
+     * Access: read/write.
      * NXM: none.
      * OXM: none.
      */
@@ -416,7 +416,7 @@ enum OVS_PACKED_ENUM mf_field_id {
      * Maskable: no.
      * Formatting: decimal.
      * Prerequisites: none.
-     * Access: read-only.
+     * Access: read/write.
      * NXM: none.
      * OXM: none.
      */
@@ -2379,3 +2379,4 @@ void mf_set_mask_l3_prereqs(const struct mf_field *, const struct flow *,
 #endif
 
 #endif /* meta-flow.h */
+
