@@ -288,10 +288,10 @@ target machine.
 
 .. note::
   CFLAGS are not applied when building the Linux kernel module. Custom CFLAGS
-  for the kernel module are supplied using the ``EXTRA_CFLAGS`` variable when
+  for the kernel module are supplied using the ``KCFLAGS`` variable when
   running make. For example::
 
-      $ make EXTRA_CFLAGS="-Wno-error=date-time"
+      $ make KCFLAGS="-Wno-error=date-time"
 
 If you are a developer and want to enable Address Sanitizer for debugging
 purposes, at about a 2x runtime cost, you can add
