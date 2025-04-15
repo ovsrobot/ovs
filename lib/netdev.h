@@ -151,9 +151,11 @@ struct netdev_tunnel_config {
 
     uint8_t ttl;
     bool ttl_inherit;
+    bool ttl_flow;
 
     uint8_t tos;
     bool tos_inherit;
+    bool tos_flow;
 
     enum netdev_tnl_csum csum;
     bool dont_fragment;
@@ -396,3 +398,4 @@ int netdev_get_addrs(const char dev[], struct in6_addr **paddr,
 #endif
 
 #endif /* netdev.h */
+
