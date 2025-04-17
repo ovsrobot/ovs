@@ -16,6 +16,7 @@
 #ifndef UUID_H
 #define UUID_H 1
 
+#include "util.h"
 #include "openvswitch/uuid.h"
 
 #ifdef __cplusplus
@@ -71,6 +72,19 @@ static inline unsigned int
 uuid_prefix(const struct uuid *uuid, int digits)
 {
     return (uuid->parts[0] >> (32 - 4 * digits));
+}
+
+/* Returns a string representation of UUID.
+ *
+ * String is allocated on heap. Ownership of string
+ * goes to the caller.
+ */
+static inline char *
+uuid_to_string(const struct uuid *uuid)
+{
+    char *data = xmalloc(UUID_LEN+1);
+    sprintf(data, UUID_FMT, UUID_ARGS(uuid));
+    return data;
 }
 
 void uuid_init(void);
