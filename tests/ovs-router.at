@@ -28,6 +28,41 @@ User: 1.1.1.0/24 dev br0 GW 2.2.2.10 SRC 2.2.2.2
 User: 1.1.2.0/24 MARK 2 dev br0 GW 2.2.2.10 SRC 2.2.2.2
 User: 2.2.2.3/32 MARK 1 dev br0 SRC 2.2.2.2
 ])
+AT_CHECK([ovs-appctl --format=json --pretty ovs/route/show], [0], [dnl
+[[
+  {
+    "is_local": true,
+    "nw_addr": "2.2.2.0",
+    "output_netdev": "br0",
+    "plen": 120,
+    "priority": 184,
+    "src_addr": "2.2.2.2"},
+  {
+    "gw": "2.2.2.10",
+    "is_local": false,
+    "nw_addr": "1.1.1.0",
+    "output_netdev": "br0",
+    "plen": 120,
+    "priority": 152,
+    "src_addr": "2.2.2.2"},
+  {
+    "gw": "2.2.2.10",
+    "is_local": false,
+    "mark": 2,
+    "nw_addr": "1.1.2.0",
+    "output_netdev": "br0",
+    "plen": 120,
+    "priority": 152,
+    "src_addr": "2.2.2.2"},
+  {
+    "is_local": false,
+    "mark": 1,
+    "nw_addr": "2.2.2.3",
+    "output_netdev": "br0",
+    "plen": 128,
+    "priority": 160,
+    "src_addr": "2.2.2.2"}]]
+])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
