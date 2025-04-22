@@ -297,6 +297,9 @@ Q: How do I connect two bridges?
     in Open vSwitch 1.9 and earlier, patch ports will not work with the
     userspace datapath, only with the kernel module.
 
+    Please note that as of Open vSwitch 3.0 the kernel module is no longer
+    part of the Open vSwitch distribution.
+
 Q: How do I configure a bridge without an OpenFlow local port?  (Local port in
 the sense of OFPP_LOCAL)
 
