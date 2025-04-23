@@ -21,6 +21,7 @@
 #include <string.h>
 #include <time.h>
 #include "timeval.h"
+#include "uuid.h"
 #include "util.h"
 
 /* Initializes 'ds' as an empty string buffer. */
@@ -186,6 +187,13 @@ ds_put_printable(struct ds *ds, const char *s, size_t n)
             ds_put_char(ds, c);
         }
     }
+}
+
+void
+ds_put_uuid(struct ds *ds, const struct uuid *uuid) {
+    char uuid_str[UUID_LEN + 1];
+    sprintf(uuid_str, UUID_FMT, UUID_ARGS(uuid));
+    ds_put_buffer(ds, uuid_str, UUID_LEN);
 }
 
 /* Writes the current time with optional millisecond resolution to 'string'
