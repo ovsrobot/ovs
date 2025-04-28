@@ -36,6 +36,7 @@ extern "C" {
 /* The ovs_be<N> types indicate that an object is in big-endian, not
  * native-endian, byte order.  They are otherwise equivalent to uint<N>_t. */
 typedef uint16_t OVS_BITWISE ovs_be16;
+typedef uint8_t ovs_be24[3];
 typedef uint32_t OVS_BITWISE ovs_be32;
 typedef uint64_t OVS_BITWISE ovs_be64;
 

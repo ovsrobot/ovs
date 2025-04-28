@@ -31,9 +31,11 @@ static inline void put_unaligned_u32(uint32_t *, uint32_t);
 static inline void put_unaligned_u64(uint64_t *, uint64_t);
 
 static inline ovs_be16 get_unaligned_be16(const ovs_be16 *);
+static inline uint32_t get_unaligned_be24(const ovs_be24);
 static inline ovs_be32 get_unaligned_be32(const ovs_be32 *);
 static inline ovs_be64 get_unaligned_be64(const ovs_be64 *);
 static inline void put_unaligned_be16(ovs_be16 *, ovs_be16);
+static inline void put_unaligned_be24(ovs_be24, uint64_t);
 static inline void put_unaligned_be32(ovs_be32 *, ovs_be32);
 static inline void put_unaligned_be64(ovs_be64 *, ovs_be64);
 
@@ -175,6 +177,25 @@ get_unaligned_be64(const ovs_be64 *p)
     return get_unaligned_u64(p);
 }
 #endif
+
+/* Get and set ovs_be24.  These functions are useful for 24bit values in
+ * network protocols, like VXLAN, and convert from and to host integers for
+ * convenience. */
+static inline void
+put_unaligned_be24(ovs_be24 p, uint64_t x)
+{
+    p[0] = (x >> 16) & 0xFF;
+    p[1] = (x >> 8) & 0xFF;
+    p[2] = x & 0xFF;
+}
+
+static inline uint32_t
+get_unaligned_be24(const ovs_be24 p)
+{
+    return ((uint32_t) p[0] << 16)
+           | ((uint32_t) p[1] << 8)
+           | (uint32_t)  p[2];
+}
 
 /* Stores 'x' at possibly misaligned address 'p'.
  *
