@@ -515,7 +515,7 @@ conn prevent_unencrypted_vxlan
         self.IPSEC_CTL = libreswan_root_prefix + ipsec_ctl
         self.conf_file = None
         self.conns_not_active = set()
-        self.last_refresh = time.time()
+        self.last_reconciliation = time.time()
         self.secrets_file = None
         self.use_default_conn = self.IPSEC_CONF == self.ROOT_IPSEC_CONF
         self.use_default_crypto = args.use_default_crypto
@@ -656,6 +656,10 @@ conn prevent_unencrypted_vxlan
                     set(loaded_conns.keys()) | \
                     set(active_conns.keys())
 
+        reconcile = False
+        if time.time() - self.last_reconciliation >= RECONCILIATION_INTERVAL:
+            reconcile = True
+
         for name in all_names:
             desired = set(self.get_conn_names(monitor, name))
             loaded = set(loaded_conns.get(name, dict()).keys())
@@ -663,11 +667,13 @@ conn prevent_unencrypted_vxlan
 
             # Untrack connections that became active.
             self.conns_not_active.difference_update(active)
-            # Remove connections that didn't become active after --start
-            # and another explicit --up.
-            for conn in self.conns_not_active & loaded:
-                self._delete_ipsec_connection(conn, "is defunct")
-                loaded.remove(conn)
+
+            if reconcile:
+                # Remove connections that didn't become active after --start
+                # and another explicit --up.
+                for conn in self.conns_not_active & loaded:
+                    self._delete_ipsec_connection(conn, "is defunct")
+                    loaded.remove(conn)
 
             # Remove all the loaded or active but not desired connections.
             for conn in loaded | active:
@@ -699,7 +705,7 @@ conn prevent_unencrypted_vxlan
                     else:
                         vlog.info("Starting ipsec connection %s" % conn)
                         self._start_ipsec_connection(conn, "start")
-            else:
+            elif reconcile:
                 # Ask pluto to bring UP connections that are loaded,
                 # but not active for some reason.
                 #
@@ -746,7 +752,10 @@ conn prevent_unencrypted_vxlan
                             "--delete",
                             "--asynchronous", "prevent_unencrypted_vxlan"])
             monitor.conf_in_use["skb_mark"] = monitor.conf["skb_mark"]
-        self.last_refresh = time.time()
+
+        if reconcile:
+            self.last_reconciliation = time.time()
+
         vlog.info("Refreshing is done.")
 
     def get_conns_from_status(self, pattern):
@@ -809,7 +818,7 @@ conn prevent_unencrypted_vxlan
         return conns
 
     def need_to_reconcile(self, monitor):
-        if time.time() - self.last_refresh < RECONCILIATION_INTERVAL:
+        if time.time() - self.last_reconciliation < RECONCILIATION_INTERVAL:
             return False
 
         conns_dict = self.get_active_conns()
