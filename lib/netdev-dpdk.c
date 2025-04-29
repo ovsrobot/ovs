@@ -622,6 +622,15 @@ static void netdev_dpdk_mbuf_dump(const char *prefix, const char *message,
                                   const struct rte_mbuf *);
 
 static bool
+is_dpdk_driver(struct netdev_dpdk *dev, const char *name)
+{
+    struct rte_eth_dev_info info;
+
+    rte_eth_dev_info_get(dev->port_id, &info);
+    return !strcmp(info.driver_name, name);
+}
+
+static bool
 is_dpdk_class(const struct netdev_class *class)
 {
     return class->destruct == netdev_dpdk_destruct
@@ -781,6 +790,10 @@ dpdk_calculate_mbufs(struct netdev_dpdk *dev, int mtu)
                   + MIN_NB_MBUF;
     }
 
+    if (is_dpdk_driver(dev, "net_bnxt")) { // Alloc mbufs for bnxt rx-ag ring.
+        n_mbufs += dev->requested_n_rxq * dev->requested_rxq_size * 4;
+    }
+
     return n_mbufs;
 }
 
@@ -902,9 +915,10 @@ dpdk_mp_get(struct netdev_dpdk *dev, int mtu)
     bool reuse = false;
 
     ovs_mutex_lock(&dpdk_mp_mutex);
+
     /* Check if shared memory is being used, if so check existing mempools
      * to see if reuse is possible. */
-    if (!per_port_memory) {
+    if (!per_port_memory && !is_dpdk_driver(dev, "net_bnxt")) {
         /* If user has provided defined mempools, check if one is suitable
          * and get new buffer size.*/
         mtu = dpdk_get_user_adjusted_mtu(mtu, dev->requested_mtu,
@@ -933,7 +947,8 @@ dpdk_mp_get(struct netdev_dpdk *dev, int mtu)
              * dmp to point to the existing entry and increment the refcount
              * to avoid being freed at a later stage.
              */
-            if (per_port_memory && rte_errno == EEXIST) {
+            if ((per_port_memory || is_dpdk_driver(dev, "net_bnxt"))
+                && rte_errno == EEXIST) {
                 LIST_FOR_EACH (next, list_node, &dpdk_mp_list) {
                     if (dmp->mp == next->mp) {
                         rte_free(dmp);
@@ -982,7 +997,8 @@ netdev_dpdk_mempool_configure(struct netdev_dpdk *dev)
     /* With shared memory we do not need to configure a mempool if the MTU
      * and socket ID have not changed, the previous configuration is still
      * valid so return 0 */
-    if (!per_port_memory && dev->mtu == dev->requested_mtu
+    if (!per_port_memory && !is_dpdk_driver(dev, "net_bnxt")
+        && dev->mtu == dev->requested_mtu
         && dev->socket_id == dev->requested_socket_id) {
         return ret;
     }
