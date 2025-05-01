@@ -607,17 +607,15 @@ dump_flow_pattern(struct ds *s,
     } else if (item->type == RTE_FLOW_ITEM_TYPE_VXLAN) {
         const struct rte_flow_item_vxlan *vxlan_spec = item->spec;
         const struct rte_flow_item_vxlan *vxlan_mask = item->mask;
-        ovs_be32 spec_vni, mask_vni;
+        ovs_be32 spec_vni = 0, mask_vni = 0;
 
         ds_put_cstr(s, "vxlan ");
         if (vxlan_spec) {
             if (!vxlan_mask) {
                 vxlan_mask = &rte_flow_item_vxlan_mask;
             }
-            spec_vni = get_unaligned_be32(ALIGNED_CAST(ovs_be32 *,
-                                                       vxlan_spec->vni));
-            mask_vni = get_unaligned_be32(ALIGNED_CAST(ovs_be32 *,
-                                                       vxlan_mask->vni));
+            memcpy(&spec_vni, vxlan_spec->hdr.vni, sizeof vxlan_spec->hdr.vni);
+            memcpy(&mask_vni, vxlan_mask->hdr.vni, sizeof vxlan_mask->hdr.vni);
             DUMP_PATTERN_ITEM(vxlan_mask->vni, false, "vni", "%"PRIu32,
                               ntohl(spec_vni) >> 8, ntohl(mask_vni) >> 8, 0);
         }
@@ -693,10 +691,9 @@ dump_vxlan_encap(struct ds *s, const struct rte_flow_item *items)
     ds_put_format(s, "set vxlan ip-version %s ",
                   ipv4 ? "ipv4" : ipv6 ? "ipv6" : "ERR");
     if (vxlan) {
-        ovs_be32 vni;
+        ovs_be32 vni = 0;
 
-        vni = get_unaligned_be32(ALIGNED_CAST(ovs_be32 *,
-                                              vxlan->vni));
+        memcpy(&vni, &vxlan->hdr.vni, sizeof vxlan->hdr.vni);
         ds_put_format(s, "vni %"PRIu32" ", ntohl(vni) >> 8);
     }
     if (udp) {
@@ -1287,6 +1284,7 @@ parse_vxlan_match(struct flow_patterns *patterns,
 {
     struct rte_flow_item_vxlan *vx_spec, *vx_mask;
     struct flow *consumed_masks;
+    ovs_be32 tun_id;
     int ret;
 
     ret = parse_tnl_ip_match(patterns, match, IPPROTO_UDP);
@@ -1300,10 +1298,9 @@ parse_vxlan_match(struct flow_patterns *patterns,
     vx_spec = xzalloc(sizeof *vx_spec);
     vx_mask = xzalloc(sizeof *vx_mask);
 
-    put_unaligned_be32(ALIGNED_CAST(ovs_be32 *, vx_spec->vni),
-                       htonl(ntohll(match->flow.tunnel.tun_id) << 8));
-    put_unaligned_be32(ALIGNED_CAST(ovs_be32 *, vx_mask->vni),
-                       htonl(ntohll(match->wc.masks.tunnel.tun_id) << 8));
+    tun_id = htonl(ntohll(match->flow.tunnel.tun_id) << 8);
+    memcpy(vx_spec->hdr.vni, &tun_id, sizeof vx_spec->hdr.vni);
+    memcpy(vx_mask->hdr.vni, &tun_id, sizeof vx_spec->hdr.vni);
 
     consumed_masks->tunnel.tun_id = 0;
     consumed_masks->tunnel.flags = 0;
