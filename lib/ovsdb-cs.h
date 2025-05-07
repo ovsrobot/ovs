@@ -119,6 +119,7 @@ struct ovsdb_cs *ovsdb_cs_create(const char *database, int max_version,
 void ovsdb_cs_destroy(struct ovsdb_cs *);
 
 void ovsdb_cs_run(struct ovsdb_cs *, struct ovs_list *events);
+int ovsdb_cs_run_until(struct ovsdb_cs *, struct ovs_list *events, long long);
 void ovsdb_cs_wait(struct ovsdb_cs *);
 
 /* Network connection. */
