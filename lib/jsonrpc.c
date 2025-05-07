@@ -1269,18 +1269,21 @@ jsonrpc_session_send(struct jsonrpc_session *s, struct jsonrpc_msg *msg)
     }
 }
 
-struct jsonrpc_msg *
-jsonrpc_session_recv_until(struct jsonrpc_session *s, long long deadline)
+int
+jsonrpc_session_recv_until(struct jsonrpc_session *s,
+                           struct jsonrpc_msg **full_msg,
+                           long long deadline)
 {
     if (s->rpc) {
         unsigned int received_bytes;
         struct jsonrpc_msg *msg;
+        int ret;
 
         received_bytes = jsonrpc_get_received_bytes(s->rpc);
         if (deadline) {
-            jsonrpc_recv_until(s->rpc, &msg, deadline);
+            ret = jsonrpc_recv_until(s->rpc, &msg, deadline);
         } else {
-            jsonrpc_recv(s->rpc, &msg);
+            ret = jsonrpc_recv(s->rpc, &msg);
         }
 
         long long int now = time_msec();
@@ -1306,18 +1309,23 @@ jsonrpc_session_recv_until(struct jsonrpc_session *s, long long deadline)
                        && !strcmp(msg->id->string, "echo")) {
                 /* It's a reply to our echo request.  Suppress it. */
             } else {
-                return msg;
+                *full_msg = msg;
+                return 0;
             }
             jsonrpc_msg_destroy(msg);
+        } else {
+            return ret;
         }
     }
-    return NULL;
+    return 0;
 }
 
 struct jsonrpc_msg *
 jsonrpc_session_recv(struct jsonrpc_session *s)
 {
-    return jsonrpc_session_recv_until(s, 0);
+    struct jsonrpc_msg *msg = NULL;
+    jsonrpc_session_recv_until(s, &msg, 0);
+    return msg;
 }
 
 void
