@@ -443,6 +443,54 @@ jsonrpc_recv(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
     return EAGAIN;
 }
 
+/* Attempts to receive a message from 'rpc' until either a complete message
+ * is received or the given deadline has passed.
+ *
+ * If successful, stores the received message in '*msgp' and returns 0.  The
+ * caller takes ownership of '*msgp' and must eventually destroy it with
+ * jsonrpc_msg_destroy().
+ *
+ * Otherwise, stores NULL in '*msgp' and returns one of the following:
+ *
+ *   - EAGAIN: No message has been received (e.g., if the underlying stream
+ *     blocks).
+ *
+ *   - ETIME: The deadline passed and we could not receive a complete message
+ *     in the meantime.
+ *
+ *   - EOF: The remote end closed the connection gracefully.
+ *
+ *   - Otherwise an errno value that represents a JSON-RPC protocol violation
+ *     or another error fatal to the connection.  'rpc' will not send or
+ *     receive any more messages.
+ */
+int
+jsonrpc_recv_until(struct jsonrpc *rpc, struct jsonrpc_msg **msgp,
+                   long long deadline)
+{
+    *msgp = NULL;
+    if (rpc->status) {
+        return rpc->status;
+    }
+
+    while (time_msec() < deadline) {
+        int retval = jsonrpc_recv_chunk(rpc);
+        if (retval) {
+            return retval;
+        }
+        retval = jsonrpc_get_message(rpc, msgp);
+        if (retval != ENODATA) {
+            return retval;
+        }
+    }
+
+    /* We tried hard but didn't get a complete JSON message before the given
+     * deadline.  We want to know how often we abort for this reason. */
+    COVERAGE_INC(jsonrpc_recv_incomplete);
+
+    return ETIME;
+}
+
 /* Causes the poll loop to wake up when jsonrpc_recv() may return a value other
  * than EAGAIN. */
 void
@@ -1222,14 +1270,18 @@ jsonrpc_session_send(struct jsonrpc_session *s, struct jsonrpc_msg *msg)
 }
 
 struct jsonrpc_msg *
-jsonrpc_session_recv(struct jsonrpc_session *s)
+jsonrpc_session_recv_until(struct jsonrpc_session *s, long long deadline)
 {
     if (s->rpc) {
         unsigned int received_bytes;
         struct jsonrpc_msg *msg;
 
         received_bytes = jsonrpc_get_received_bytes(s->rpc);
-        jsonrpc_recv(s->rpc, &msg);
+        if (deadline) {
+            jsonrpc_recv_until(s->rpc, &msg, deadline);
+        } else {
+            jsonrpc_recv(s->rpc, &msg);
+        }
 
         long long int now = time_msec();
         reconnect_receive_attempted(s->reconnect, now);
@@ -1260,6 +1312,12 @@ jsonrpc_session_recv(struct jsonrpc_session *s)
         }
     }
     return NULL;
+}
+
+struct jsonrpc_msg *
+jsonrpc_session_recv(struct jsonrpc_session *s)
+{
+    return jsonrpc_session_recv_until(s, 0);
 }
 
 void

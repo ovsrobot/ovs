@@ -59,6 +59,7 @@ const char *jsonrpc_get_name(const struct jsonrpc *);
 
 int jsonrpc_send(struct jsonrpc *, struct jsonrpc_msg *);
 int jsonrpc_recv(struct jsonrpc *, struct jsonrpc_msg **);
+int jsonrpc_recv_until(struct jsonrpc *, struct jsonrpc_msg **, long long);
 void jsonrpc_recv_wait(struct jsonrpc *);
 
 int jsonrpc_send_block(struct jsonrpc *, struct jsonrpc_msg *);
@@ -125,6 +126,8 @@ size_t jsonrpc_session_get_n_remotes(const struct jsonrpc_session *);
 
 int jsonrpc_session_send(struct jsonrpc_session *, struct jsonrpc_msg *);
 struct jsonrpc_msg *jsonrpc_session_recv(struct jsonrpc_session *);
+struct jsonrpc_msg *jsonrpc_session_recv_until(struct jsonrpc_session *,
+                                               long long);
 void jsonrpc_session_recv_wait(struct jsonrpc_session *);
 
 bool jsonrpc_session_is_alive(const struct jsonrpc_session *);
