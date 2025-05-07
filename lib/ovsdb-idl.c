@@ -442,10 +442,20 @@ ovsdb_idl_clear(struct ovsdb_idl *db)
 void
 ovsdb_idl_run(struct ovsdb_idl *idl)
 {
+    ovsdb_idl_run_until(idl, 0);
+}
+
+void
+ovsdb_idl_run_until(struct ovsdb_idl *idl, long long deadline)
+{
     ovs_assert(!idl->txn);
 
     struct ovs_list events;
-    ovsdb_cs_run(idl->cs, &events);
+    if (deadline) {
+        ovsdb_cs_run_until(idl->cs, &events, deadline);
+    } else {
+        ovsdb_cs_run(idl->cs, &events);
+    }
 
     struct ovsdb_cs_event *event;
     LIST_FOR_EACH_POP (event, list_node, &events) {
@@ -4374,7 +4384,17 @@ ovsdb_idl_loop_destroy(struct ovsdb_idl_loop *loop)
 struct ovsdb_idl_txn *
 ovsdb_idl_loop_run(struct ovsdb_idl_loop *loop)
 {
-    ovsdb_idl_run(loop->idl);
+    return ovsdb_idl_loop_run_until(loop, 0);
+}
+
+struct ovsdb_idl_txn *
+ovsdb_idl_loop_run_until(struct ovsdb_idl_loop *loop, long long deadline)
+{
+    if (deadline) {
+        ovsdb_idl_run_until(loop->idl, deadline);
+    } else {
+        ovsdb_idl_run(loop->idl);
+    }
 
     /* See if the 'committing_txn' succeeded in the meantime. */
     if (loop->committing_txn && loop->committing_txn->status == TXN_SUCCESS) {

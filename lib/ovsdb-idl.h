@@ -74,6 +74,7 @@ void ovsdb_idl_destroy(struct ovsdb_idl *);
 void ovsdb_idl_set_leader_only(struct ovsdb_idl *, bool leader_only);
 
 void ovsdb_idl_run(struct ovsdb_idl *);
+void ovsdb_idl_run_until(struct ovsdb_idl *, long long);
 void ovsdb_idl_wait(struct ovsdb_idl *);
 
 void ovsdb_idl_get_memory_usage(struct ovsdb_idl *, struct simap *usage);
@@ -409,6 +410,8 @@ struct ovsdb_idl_loop {
 
 void ovsdb_idl_loop_destroy(struct ovsdb_idl_loop *);
 struct ovsdb_idl_txn *ovsdb_idl_loop_run(struct ovsdb_idl_loop *);
+struct ovsdb_idl_txn *ovsdb_idl_loop_run_until(struct ovsdb_idl_loop *,
+                                               long long);
 int ovsdb_idl_loop_commit_and_wait(struct ovsdb_idl_loop *);
 
 /* Conditional Replication
