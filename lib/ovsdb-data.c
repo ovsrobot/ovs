@@ -26,6 +26,7 @@
 #include "hash.h"
 #include "ovs-thread.h"
 #include "ovsdb-error.h"
+#include "ovsdb-json.h"
 #include "ovsdb-parser.h"
 #include "openvswitch/json.h"
 #include "openvswitch/shash.h"
@@ -35,9 +36,9 @@
 #include "util.h"
 
 static struct json *
-wrap_json(const char *name, struct json *wrapped)
+wrap_json(struct json *name, struct json *wrapped)
 {
-    return json_array_create_2(json_string_create(name), wrapped);
+    return json_array_create_2(name, wrapped);
 }
 
 /* Initializes 'atom' with the default value of the given 'type'.
@@ -483,7 +484,8 @@ ovsdb_atom_to_json__(const union ovsdb_atom *atom, enum ovsdb_atomic_type type,
                                     : json_deep_clone(atom->s);
 
     case OVSDB_TYPE_UUID:
-        return wrap_json("uuid", json_string_create_uuid(&atom->uuid));
+        return wrap_json(&OVSDB_JSON_STR_UUID,
+                         json_string_create_uuid(&atom->uuid));
 
     case OVSDB_N_TYPES:
     default:
@@ -1439,7 +1441,7 @@ ovsdb_base_to_json(const union ovsdb_atom *atom,
                : ovsdb_atom_to_json_deep(atom, base->type);
     } else {
         return json_array_create_2(
-            json_string_create("named-uuid"),
+            &OVSDB_JSON_STR_NAMED_UUID,
             json_string_create_nocopy(ovsdb_data_row_name(&atom->uuid)));
     }
 }
@@ -1463,7 +1465,8 @@ ovsdb_datum_to_json__(const struct ovsdb_datum *datum,
                                    use_row_names, allow_shallow_copies));
         }
 
-        return wrap_json("map", json_array_create(elems, datum->n));
+        return wrap_json(&OVSDB_JSON_STR_MAP,
+                         json_array_create(elems, datum->n));
     } else if (datum->n == 1) {
         return ovsdb_base_to_json(&datum->keys[0], &type->key,
                                   use_row_names, allow_shallow_copies);
@@ -1477,7 +1480,8 @@ ovsdb_datum_to_json__(const struct ovsdb_datum *datum,
                                           use_row_names, allow_shallow_copies);
         }
 
-        return wrap_json("set", json_array_create(elems, datum->n));
+        return wrap_json(&OVSDB_JSON_STR_SET,
+                         json_array_create(elems, datum->n));
     }
 }
 
