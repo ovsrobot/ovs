@@ -799,7 +799,7 @@ stream_parse_target_with_default_port(const char *target, int default_port,
 static enum stream_content_type
 stream_guess_content(const uint8_t *data, ssize_t size)
 {
-    if (size >= 2) {
+    if (size >= STREAM_CONTENT_REPORT_MIN_SIZE) {
 #define PAIR(A, B) (((A) << 8) | (B))
         switch (PAIR(data[0], data[1])) {
         case PAIR(0x16, 0x03):  /* Handshake, version 3. */

@@ -91,6 +91,9 @@ enum stream_content_type {
     STREAM_JSONRPC
 };
 
+/* Number of bytes required to guess content type when reporting content */
+#define STREAM_CONTENT_REPORT_MIN_SIZE 2
+
 void stream_report_content(const void *, ssize_t, enum stream_content_type,
                            struct vlog_module *, const char *stream_name);
 
