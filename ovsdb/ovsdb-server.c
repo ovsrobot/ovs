@@ -34,6 +34,7 @@
 #include "hash.h"
 #include "openvswitch/json.h"
 #include "jsonrpc.h"
+#include "jsonrpc-in.h"
 #include "jsonrpc-server.h"
 #include "openvswitch/list.h"
 #include "memory.h"
@@ -730,6 +731,7 @@ main(int argc, char *argv[])
     struct shash remotes = SHASH_INITIALIZER(&remotes);
     char *sync_from = NULL, *sync_exclude = NULL;
     bool is_backup;
+    struct jsonrpc_in_config jsonrpc_in_config = JSONRPC_IN_CONFIG_DEFAULT;
 
     struct server_config server_config = {
         .remotes = &remotes,
@@ -777,6 +779,8 @@ main(int argc, char *argv[])
 
     perf_counters_init();
 
+    jsonrpc_in_config.mode = JSONRPC_IN_MODE_THREADED;
+    jsonrpc_set_in_config(&jsonrpc_in_config);
     /* Start ovsdb jsonrpc server.  Both read and write transactions are
      * allowed by default, individual remotes and databases will be configured
      * as read-only, if necessary. */

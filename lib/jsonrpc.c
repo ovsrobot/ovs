@@ -34,6 +34,7 @@
 #include "stream.h"
 #include "svec.h"
 #include "timeval.h"
+#include "jsonrpc-in.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(jsonrpc);
@@ -46,9 +47,8 @@ struct jsonrpc {
     int status;
 
     /* Input. */
-    struct byteq input;
-    uint8_t input_buffer[4096];
-    struct json_parser *parser;
+    struct jsonrpc_in *input;
+    int error_received;
 
     /* Output. */
     struct ovs_list output;     /* Contains "struct ofpbuf"s. */
@@ -62,8 +62,10 @@ struct jsonrpc {
 
 /* Rate limit for error messages. */
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
+/* Configuration of jsonrpc input for all new sessions */
+static struct jsonrpc_in_config in_cfg = JSONRPC_IN_CONFIG_DEFAULT;
 
-static struct jsonrpc_msg *jsonrpc_parse_received_message(struct jsonrpc *);
+static struct jsonrpc_msg *jsonrpc_parse_received_message(struct jsonrpc *, struct json *);
 static void jsonrpc_cleanup(struct jsonrpc *);
 static void jsonrpc_error(struct jsonrpc *, int error);
 
@@ -95,7 +97,8 @@ jsonrpc_open(struct stream *stream)
     rpc = xzalloc(sizeof *rpc);
     rpc->name = xstrdup(stream_get_name(stream));
     rpc->stream = stream;
-    byteq_init(&rpc->input, rpc->input_buffer, sizeof rpc->input_buffer);
+    rpc->input = jsonrpc_in_new(&in_cfg);
+    rpc->error_received = 0;
     ovs_list_init(&rpc->output);
 
     return rpc;
@@ -158,6 +161,12 @@ jsonrpc_wait(struct jsonrpc *rpc)
             stream_send_wait(rpc->stream);
         }
     }
+
+}
+
+/* Configures jsonrpc input processing for all new sessions */
+void jsonrpc_set_in_config(struct jsonrpc_in_config *cfg) {
+    in_cfg = *cfg;
 }
 
 /*
@@ -203,7 +212,10 @@ jsonrpc_set_backlog_threshold(struct jsonrpc *rpc,
 unsigned int
 jsonrpc_get_received_bytes(const struct jsonrpc *rpc)
 {
-    return rpc->input.head;
+    if (rpc->input == NULL) {
+        return 0;
+    }
+    return jsonrpc_in_get_received_bytes(rpc->input);
 }
 
 /* Returns 'rpc''s name, that is, the name returned by stream_get_name() for
@@ -328,65 +340,52 @@ jsonrpc_send(struct jsonrpc *rpc, struct jsonrpc_msg *msg)
 int
 jsonrpc_recv(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
 {
-    int i;
-
     *msgp = NULL;
     if (rpc->status) {
         return rpc->status;
     }
 
-    for (i = 0; i < 50; i++) {
-        size_t n, used;
-
-        /* Fill our input buffer if it's empty. */
-        if (byteq_is_empty(&rpc->input)) {
-            size_t chunk;
+    if (rpc->error_received == 0) {
+        size_t chunk;
+        void *data = jsonrpc_in_read_buffer(rpc->input, &chunk);
+        if (chunk != 0) {
             int retval;
-
-            byteq_fast_forward(&rpc->input);
-            chunk = byteq_headroom(&rpc->input);
-            retval = stream_recv(rpc->stream, byteq_head(&rpc->input), chunk);
-            if (retval < 0) {
-                if (retval == -EAGAIN) {
-                    return EAGAIN;
-                } else {
-                    VLOG_WARN_RL(&rl, "%s: receive error: %s",
-                                 rpc->name, ovs_strerror(-retval));
-                    jsonrpc_error(rpc, -retval);
-                    return rpc->status;
-                }
+            int read_size = 0;
+            retval = stream_recv(rpc->stream, data, chunk);
+            if (retval > 0) {
+                read_size = retval;
             } else if (retval == 0) {
-                jsonrpc_error(rpc, EOF);
-                return EOF;
+                rpc->error_received = EOF;
+            } else if (retval != -EAGAIN) {
+                VLOG_WARN_RL(&rl, "%s: receive error: %s",
+                             rpc->name, ovs_strerror(-retval));
+                rpc->error_received = -retval;
             }
-            byteq_advance_head(&rpc->input, retval);
+            jsonrpc_in_read_complete(rpc->input, read_size);
         }
+    }
 
-        /* We have some input.  Feed it into the JSON parser. */
-        if (!rpc->parser) {
-            rpc->parser = json_parser_create(0);
+    struct json *json = jsonrpc_in_poll(rpc->input);
+    /* If we have complete JSON, attempt to parse it as JSON-RPC. */
+    if (json != NULL) {
+        *msgp = jsonrpc_parse_received_message(rpc, json);
+        if (*msgp) {
+            return 0;
         }
-        n = byteq_tailroom(&rpc->input);
-        used = json_parser_feed(rpc->parser,
-                                (char *) byteq_tail(&rpc->input), n);
-        byteq_advance_tail(&rpc->input, used);
-
-        /* If we have complete JSON, attempt to parse it as JSON-RPC. */
-        if (json_parser_is_done(rpc->parser)) {
-            *msgp = jsonrpc_parse_received_message(rpc);
-            if (*msgp) {
-                return 0;
+        if (rpc->status) {
+            uint8_t sdata[STREAM_CONTENT_REPORT_MIN_SIZE];
+            size_t written = jsonrpc_in_fill_stream_report_data(rpc->input, sdata, sizeof sdata);
+            if (written != 0) {
+                stream_report_content(sdata, written, STREAM_JSONRPC,
+                                      &this_module, rpc->name);
             }
-
-            if (rpc->status) {
-                const struct byteq *q = &rpc->input;
-                if (q->head <= q->size) {
-                    stream_report_content(q->buffer, q->head, STREAM_JSONRPC,
-                                          &this_module, rpc->name);
-                }
-                return rpc->status;
-            }
+            return rpc->status;
         }
+    }
+
+    if (rpc->error_received != 0 && jsonrpc_in_status(rpc->input) == JSONRPC_IN_IDLE) {
+        jsonrpc_error(rpc, rpc->error_received);
+        return rpc->status;
     }
 
     /* We tried hard but didn't get a complete JSON message within the above
@@ -401,10 +400,28 @@ jsonrpc_recv(struct jsonrpc *rpc, struct jsonrpc_msg **msgp)
 void
 jsonrpc_recv_wait(struct jsonrpc *rpc)
 {
-    if (rpc->status || !byteq_is_empty(&rpc->input)) {
+    if (rpc->status) {
         poll_immediate_wake_at(rpc->name);
-    } else {
-        stream_recv_wait(rpc->stream);
+        return;
+    }
+    switch (jsonrpc_in_wait(rpc->input)) {
+    case JSONRPC_IN_IDLE:
+        if (rpc->error_received == 0) {
+            stream_recv_wait(rpc->stream);
+        } else {
+            poll_immediate_wake_at(rpc->name);
+        }
+        break;
+    case JSONRPC_IN_ACTIVE_WAKEUP_NOW:
+        poll_immediate_wake_at(rpc->name);
+        break;
+    case JSONRPC_IN_ACTIVE_SLEEP_HAS_ROOM:
+        if (rpc->error_received == 0) {
+            stream_recv_wait(rpc->stream);
+        }
+        break;
+    case JSONRPC_IN_ACTIVE_SLEEP_NO_ROOM:
+        break;
     }
 }
 
@@ -495,14 +512,10 @@ jsonrpc_transact_block(struct jsonrpc *rpc, struct jsonrpc_msg *request,
  * JSON-RPC message.  If successful, returns the JSON-RPC message.  On failure,
  * signals an error on 'rpc' with jsonrpc_error() and returns NULL. */
 static struct jsonrpc_msg *
-jsonrpc_parse_received_message(struct jsonrpc *rpc)
+jsonrpc_parse_received_message(struct jsonrpc *rpc, struct json *json)
 {
     struct jsonrpc_msg *msg;
-    struct json *json;
     char *error;
-
-    json = json_parser_finish(rpc->parser);
-    rpc->parser = NULL;
     if (json->type == JSON_STRING) {
         VLOG_WARN_RL(&rl, "%s: error parsing stream: %s",
                      rpc->name, json_string(json));
@@ -540,8 +553,10 @@ jsonrpc_cleanup(struct jsonrpc *rpc)
     stream_close(rpc->stream);
     rpc->stream = NULL;
 
-    json_parser_abort(rpc->parser);
-    rpc->parser = NULL;
+    if (rpc->input != NULL) {
+        jsonrpc_in_cleanup(rpc->input);
+    }
+    rpc->input = NULL;
 
     ofpbuf_list_delete(&rpc->output);
     rpc->backlog = 0;
