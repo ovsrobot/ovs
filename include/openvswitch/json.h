@@ -67,6 +67,7 @@ struct json_array {
 struct json {
     enum json_type type;
     size_t count;
+    bool is_static;             /* Json with static data */
     union {
         struct shash *object;   /* Contains "struct json *"s. */
         struct json_array array;
@@ -75,6 +76,20 @@ struct json {
         char *string; /* JSON_STRING or JSON_SERIALIZED_OBJECT. */
     };
 };
+
+#define JSON_STATIC_STRING_INITIALIZER(value) { \
+            .type = JSON_STRING,                \
+            .count = 1,                         \
+            .is_static = true,                  \
+            .string = value                     \
+}
+
+#define JSON_STATIC_INT_INITIALIZER(value) {    \
+            .type = JSON_INTEGER,               \
+            .count = 1,                         \
+            .is_static = true,                  \
+            .integer = value                    \
+}
 
 struct json *json_null_create(void);
 struct json *json_boolean_create(bool);
@@ -168,7 +183,7 @@ void json_destroy__(struct json *json, bool);
 static inline void
 json_destroy(struct json *json)
 {
-    if (json && !--json->count) {
+    if (json && !json->is_static && !--json->count) {
         json_destroy__(json, false);
     }
 }

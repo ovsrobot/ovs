@@ -22,7 +22,7 @@
 static inline void
 json_destroy_with_yield(struct json *json)
 {
-    if (json && !--json->count) {
+    if (json && !json->is_static && !--json->count) {
         json_destroy__(json, true);
     }
 }

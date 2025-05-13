@@ -36,6 +36,7 @@
 #include "ovsdb-data.h"
 #include "ovsdb-error.h"
 #include "ovsdb-idl-provider.h"
+#include "ovsdb-json.h"
 #include "ovsdb-parser.h"
 #include "ovsdb-server-idl.h"
 #include "ovsdb-session.h"
@@ -2834,10 +2835,10 @@ where_uuid_equals(const struct uuid *uuid)
     return
         json_array_create_1(
             json_array_create_3(
-                json_string_create("_uuid"),
-                json_string_create("=="),
+                &OVSDB_JSON_STR__UUID,
+                &OVSDB_JSON_STR_EQ,
                 json_array_create_2(
-                    json_string_create("uuid"),
+                    &OVSDB_JSON_STR_UUID,
                     json_string_create_uuid(uuid))));
 }
 
@@ -2865,7 +2866,8 @@ substitute_uuids(struct json *json, const struct ovsdb_idl_txn *txn)
         if (json->array.n == 2
             && json->array.elems[0]->type == JSON_STRING
             && json->array.elems[1]->type == JSON_STRING
-            && !strcmp(json->array.elems[0]->string, "uuid")
+            && !strcmp(json->array.elems[0]->string,
+                       OVSDB_JSON_STR_UUID.string)
             && uuid_from_string(&uuid, json->array.elems[1]->string)) {
             const struct ovsdb_idl_row *row;
 
@@ -2876,7 +2878,7 @@ substitute_uuids(struct json *json, const struct ovsdb_idl_txn *txn)
                 } else {
                     json_destroy(json);
                     return json_array_create_2(
-                        json_string_create("named-uuid"),
+                        &OVSDB_JSON_STR_NAMED_UUID,
                         json_string_create_nocopy(ovsdb_data_row_name(&uuid)));
                 }
             }
@@ -3044,8 +3046,8 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
 
             if (any_del) {
                 col_name = json_string_create(column->name);
-                mutator = json_string_create("delete");
-                map = json_array_create_2(json_string_create("set"), del_set);
+                mutator = &OVSDB_JSON_STR_DELETE;
+                map = json_array_create_2(&OVSDB_JSON_STR_SET, del_set);
                 mutation = json_array_create_3(col_name, mutator, map);
                 json_array_add(mutations, mutation);
                 any_mutations = true;
@@ -3054,8 +3056,8 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
             }
             if (any_ins) {
                 col_name = json_string_create(column->name);
-                mutator = json_string_create("insert");
-                map = json_array_create_2(json_string_create("map"), ins_map);
+                mutator = &OVSDB_JSON_STR_INSERT;
+                map = json_array_create_2(&OVSDB_JSON_STR_MAP, ins_map);
                 mutation = json_array_create_3(col_name, mutator, map);
                 json_array_add(mutations, mutation);
                 any_mutations = true;
@@ -3118,8 +3120,8 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
             }
             if (any_del) {
                 col_name = json_string_create(column->name);
-                mutator = json_string_create("delete");
-                set = json_array_create_2(json_string_create("set"), del_set);
+                mutator = &OVSDB_JSON_STR_DELETE;
+                set = json_array_create_2(&OVSDB_JSON_STR_SET, del_set);
                 mutation = json_array_create_3(col_name, mutator, set);
                 json_array_add(mutations, mutation);
                 any_mutations = true;
@@ -3128,8 +3130,8 @@ ovsdb_idl_txn_extract_mutations(struct ovsdb_idl_row *row,
             }
             if (any_ins) {
                 col_name = json_string_create(column->name);
-                mutator = json_string_create("insert");
-                set = json_array_create_2(json_string_create("set"), ins_set);
+                mutator = &OVSDB_JSON_STR_INSERT;
+                set = json_array_create_2(&OVSDB_JSON_STR_SET, ins_set);
                 mutation = json_array_create_3(col_name, mutator, set);
                 json_array_add(mutations, mutation);
                 any_mutations = true;
@@ -3219,11 +3221,11 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
 
             op = json_object_create();
             json_array_add(operations, op);
-            json_object_put_string(op, "op", "wait");
+            json_object_put(op, "op", &OVSDB_JSON_STR_WAIT);
             json_object_put_string(op, "table", class->name);
             json_object_put(op, "timeout", json_integer_create(0));
             json_object_put(op, "where", where_uuid_equals(&row->uuid));
-            json_object_put_string(op, "until", "==");
+            json_object_put(op, "until", &OVSDB_JSON_STR_EQ);
             columns = json_array_create_empty();
             json_object_put(op, "columns", columns);
             row_json = json_object_create();
@@ -3264,11 +3266,11 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
             if (initial_rows == 0 && final_rows == 1) {
                 struct json *op = json_object_create();
                 json_array_add(operations, op);
-                json_object_put_string(op, "op", "wait");
+                json_object_put(op, "op", &OVSDB_JSON_STR_WAIT);
                 json_object_put_string(op, "table", table->class_->name);
                 json_object_put(op, "where", json_array_create_empty());
                 json_object_put(op, "timeout", json_integer_create(0));
-                json_object_put_string(op, "until", "==");
+                json_object_put(op, "until", &OVSDB_JSON_STR_EQ);
                 json_object_put(op, "rows", json_array_create_empty());
             }
         }
@@ -3280,7 +3282,7 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
         if (!row->new_datum) {
             if (class->is_root) {
                 struct json *op = json_object_create();
-                json_object_put_string(op, "op", "delete");
+                json_object_put(op, "op", &OVSDB_JSON_STR_DELETE);
                 json_object_put_string(op, "table", class->name);
                 json_object_put(op, "where", where_uuid_equals(&row->uuid));
                 json_array_add(operations, op);
@@ -3293,8 +3295,9 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
             size_t idx;
 
             struct json *op = json_object_create();
-            json_object_put_string(op, "op",
-                                   row->old_datum ? "update" : "insert");
+            json_object_put(op, "op",
+                            row->old_datum ? &OVSDB_JSON_STR_UPDATE
+                                           : &OVSDB_JSON_STR_INSERT);
             json_object_put_string(op, "table", class->name);
             if (row->old_datum) {
                 json_object_put(op, "where", where_uuid_equals(&row->uuid));
@@ -3368,7 +3371,7 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
             bool any_mutations;
 
             op = json_object_create();
-            json_object_put_string(op, "op", "mutate");
+            json_object_put(op, "op", &OVSDB_JSON_STR_MUTATE);
             json_object_put_string(op, "table", class->name);
             json_object_put(op, "where", where_uuid_equals(&row->uuid));
             mutations = json_array_create_empty();
@@ -3391,7 +3394,7 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
         txn->inc_index = operations->array.n - 1;
 
         struct json *op = json_object_create();
-        json_object_put_string(op, "op", "mutate");
+        json_object_put(op, "op", &OVSDB_JSON_STR_MUTATE);
         json_object_put_string(op, "table", txn->inc_table);
         json_object_put(op, "where",
                         substitute_uuids(where_uuid_equals(&txn->inc_row),
@@ -3400,12 +3403,12 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
                         json_array_create_1(
                             json_array_create_3(
                                 json_string_create(txn->inc_column),
-                                json_string_create("+="),
-                                json_integer_create(1))));
+                                &OVSDB_JSON_STR_ADD_EQ,
+                                &OVSDB_JSON_INTEGER_ONE)));
         json_array_add(operations, op);
 
         op = json_object_create();
-        json_object_put_string(op, "op", "select");
+        json_object_put(op, "op", &OVSDB_JSON_STR_SELECT);
         json_object_put_string(op, "table", txn->inc_table);
         json_object_put(op, "where",
                         substitute_uuids(where_uuid_equals(&txn->inc_row),
@@ -3418,14 +3421,14 @@ ovsdb_idl_txn_commit(struct ovsdb_idl_txn *txn)
 
     if (txn->comment.length) {
         struct json *op = json_object_create();
-        json_object_put_string(op, "op", "comment");
+        json_object_put(op, "op", &OVSDB_JSON_STR_COMMENT);
         json_object_put_string(op, "comment", ds_cstr(&txn->comment));
         json_array_add(operations, op);
     }
 
     if (txn->dry_run) {
         struct json *op = json_object_create();
-        json_object_put_string(op, "op", "abort");
+        json_object_put(op, "op", &OVSDB_JSON_STR_ABORT);
         json_array_add(operations, op);
     }
 

@@ -289,6 +289,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/ovsdb-idl-provider.h \
 	lib/ovsdb-idl.c \
 	lib/ovsdb-idl.h \
+	lib/ovsdb-json.c \
+	lib/ovsdb-json.h \
 	lib/ovsdb-map-op.c \
 	lib/ovsdb-map-op.h \
 	lib/ovsdb-set-op.c \

@@ -30,6 +30,7 @@
 #include "openvswitch/vlog.h"
 #include "ovsdb-data.h"
 #include "ovsdb-error.h"
+#include "ovsdb-json.h"
 #include "ovsdb-parser.h"
 #include "ovsdb-session.h"
 #include "ovsdb-types.h"
@@ -298,7 +299,7 @@ ovsdb_cs_db_init(struct ovsdb_cs_db *db, const char *db_name,
         .db_name = db_name,
         .tables = HMAP_INITIALIZER(&db->tables),
         .max_version = max_version,
-        .monitor_id = json_array_create_2(json_string_create("monid"),
+        .monitor_id = json_array_create_2(&OVSDB_JSON_STR_MONID,
                                           json_string_create(db_name)),
         .events = OVS_LIST_INITIALIZER(&db->events),
         .ops = ops,

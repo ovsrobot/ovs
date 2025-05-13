@@ -409,6 +409,10 @@ static void json_destroy_array(struct json_array *array, bool yield);
 void
 json_destroy__(struct json *json, bool yield)
 {
+    if (json->is_static) {
+        return;
+    }
+
     switch (json->type) {
     case JSON_OBJECT:
         json_destroy_object(json->object, yield);
@@ -1547,6 +1551,7 @@ json_create(enum json_type type)
     struct json *json = xmalloc(sizeof *json);
     json->type = type;
     json->count = 1;
+    json->is_static = false;
     return json;
 }
 
