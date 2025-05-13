@@ -25,6 +25,7 @@
 #include "openvswitch/types.h"
 
 struct json;
+struct jsonrpc_in_config;
 struct jsonrpc_msg;
 struct pstream;
 struct reconnect_stats;
@@ -48,6 +49,8 @@ void jsonrpc_close(struct jsonrpc *);
 
 void jsonrpc_run(struct jsonrpc *);
 void jsonrpc_wait(struct jsonrpc *);
+
+void jsonrpc_set_in_config(struct jsonrpc_in_config *cfg);
 
 int jsonrpc_get_status(const struct jsonrpc *);
 size_t jsonrpc_get_backlog(const struct jsonrpc *);
