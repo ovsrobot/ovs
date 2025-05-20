@@ -2243,19 +2243,92 @@ cmd_show_row(struct ctl_context *ctx, const struct ovsdb_idl_row *row,
     sset_find_and_delete_assert(shown, show->table->name);
 }
 
+struct output_filter {
+    char **filters;
+    size_t n_filters;
+};
+
+static void
+filter_row(struct ctl_context *ctx,
+           struct output_filter *filter,
+           size_t old_lenght)
+{
+    bool filter_match = false;
+
+    for (size_t i = 0; i < filter->n_filters; i++) {
+        if (strstr(&ctx->output.string[old_lenght], filter->filters[i])) {
+            filter_match = true;
+        }
+    }
+
+    if (!filter_match) {
+        ds_truncate(&ctx->output, old_lenght);
+    }
+}
+
+static struct output_filter *
+init_filters(struct ctl_context *ctx)
+{
+    char *filter_str = shash_find_data(&ctx->options, "--filter");
+    if (!filter_str || !*filter_str) {
+        return NULL;
+    }
+
+    size_t count = 1;
+    for (const char *p = filter_str; *p; p++) {
+        if (*p == '|') {
+            count++;
+        }
+    }
+
+    struct output_filter *filter = xmalloc(sizeof(struct output_filter));
+    filter->filters = xmalloc(count * (sizeof(char *)));
+    filter->n_filters = count;
+
+    char *ptr = NULL;
+    char *token = strtok_r(filter_str, "|", &ptr);
+    size_t idx = 0;
+
+    while (token && idx < count) {
+        filter->filters[idx++] = xstrdup(token);
+        token = strtok_r(NULL, "|", &ptr);
+    }
+
+    return filter;
+}
+
+static void
+free_filters(struct output_filter *filter)
+{
+    if (!filter) {
+        return;
+    }
+    for (size_t i = 0; i < filter->n_filters; i++) {
+        free(filter->filters[i]);
+    }
+    free(filter->filters);
+    free(filter);
+}
+
 static void
 cmd_show(struct ctl_context *ctx)
 {
     const struct ovsdb_idl_row *row;
+    struct output_filter *filter = init_filters(ctx);
     struct sset shown = SSET_INITIALIZER(&shown);
 
     for (row = ovsdb_idl_first_row(ctx->idl, cmd_show_tables[0].table);
          row; row = ovsdb_idl_next_row(row)) {
+        size_t lenght_before = ctx->output.length;
         cmd_show_row(ctx, row, 0, &shown);
+        if (filter) {
+            filter_row(ctx, filter, lenght_before);
+        }
     }
 
     ovs_assert(sset_is_empty(&shown));
     sset_destroy(&shown);
+    free_filters(filter);
 }
 
 
@@ -2548,7 +2621,7 @@ ctl_init__(const struct ovsdb_idl_class *idl_class_,
     cmd_show_tables = cmd_show_tables_;
     if (cmd_show_tables) {
         static const struct ctl_command_syntax show =
-            {"show", 0, 0, "", pre_cmd_show, cmd_show, NULL, "", RO};
+            {"show", 0, 0, "", pre_cmd_show, cmd_show, NULL, "--filter=", RO};
         ctl_register_command(&show);
     }
 }

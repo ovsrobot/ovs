@@ -1831,3 +1831,31 @@ AT_CHECK([ovs-vsctl --no-wait --bare --columns _uuid,name list bridge tst1], [0]
 
 OVS_VSCTL_CLEANUP
 AT_CLEANUP
+
+AT_SETUP([ovs-vsctl filter option usage])
+AT_KEYWORDS([ovs-vsctl filter option])
+
+OVS_VSWITCHD_START([dnl
+   add-port br0 p1 -- set Interface p1 type=internal ofport_request=1 -- \
+   add-port br0 p2 -- set Interface p2 type=internal ofport_request=2 -- \
+   add-port br0 p3 -- set Interface p3 type=internal ofport_request=3
+])
+
+AT_CHECK([ovs-vsctl --filter='p1' show | grep Port | sort], [0], [dnl
+        Port br0
+        Port p1
+        Port p2
+        Port p3
+])
+
+AT_CHECK([ovs-vsctl --filter='test' show | grep Port | sort], [0], [])
+
+AT_CHECK([ovs-vsctl --filter='Bridge' show | grep Port | sort], [0], [dnl
+        Port br0
+        Port p1
+        Port p2
+        Port p3
+])
+
+OVS_VSCTL_CLEANUP
+AT_CLEANUP
