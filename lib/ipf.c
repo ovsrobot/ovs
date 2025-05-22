@@ -808,9 +808,15 @@ ipf_process_frag(struct ipf *ipf, struct ipf_list *ipf_list,
                  struct reassembled_pkt **rp)
     OVS_REQUIRES(ipf->ipf_lock)
 {
-    bool duped_frag = ipf_is_frag_duped(ipf_list->frag_list,
-        ipf_list->last_inuse_idx, start_data_byte, end_data_byte);
     int last_inuse_idx = ipf_list->last_inuse_idx;
+    bool duped_frag = false;
+
+    /* Count the packet as a dup if it's arrived after starting to send packets. */
+    if (ipf_list->last_sent_idx != IPF_INVALID_IDX ||
+        ipf_is_frag_duped(ipf_list->frag_list, ipf_list->last_inuse_idx,
+                          start_data_byte, end_data_byte)) {
+        duped_frag = true;
+    }
 
     if (!duped_frag) {
         if (last_inuse_idx < ipf_list->size - 1) {
