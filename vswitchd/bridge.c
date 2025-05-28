@@ -266,7 +266,7 @@ static uint64_t last_ifaces_changed;
 static void add_del_bridges(const struct ovsrec_open_vswitch *);
 static void bridge_run__(void);
 static void bridge_create(const struct ovsrec_bridge *);
-static void bridge_destroy(struct bridge *, bool del);
+static void bridge_destroy(struct bridge *, bool del, bool force_flush);
 static struct bridge *bridge_lookup(const char *name);
 static unixctl_cb_func bridge_unixctl_dump_flows;
 static unixctl_cb_func bridge_unixctl_reconnect;
@@ -554,7 +554,7 @@ bridge_exit(bool delete_datapath)
 
     struct bridge *br;
     HMAP_FOR_EACH_SAFE (br, node, &all_bridges) {
-        bridge_destroy(br, delete_datapath);
+        bridge_destroy(br, delete_datapath, true);
     }
 
     ovsdb_idl_destroy(idl);
@@ -890,6 +890,10 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
         smap_get_int(&ovs_cfg->other_config, "n-handler-threads", 0),
         smap_get_int(&ovs_cfg->other_config, "n-revalidator-threads", 0));
 
+    ofproto_set_no_flush_on_bridge_delete(
+        smap_get_bool(&ovs_cfg->other_config, "no-flush-on-bridge-delete",
+                      false));
+
     ofproto_set_explicit_sampled_drops(
         smap_get_bool(&ovs_cfg->other_config, "explicit-sampled-drops",
                       OFPROTO_EXPLICIT_SAMPLED_DROPS_DEFAULT));
@@ -938,7 +942,7 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
                 VLOG_ERR("failed to create bridge %s: %s", br->name,
                          ovs_strerror(error));
                 shash_destroy(&br->wanted_ports);
-                bridge_destroy(br, true);
+                bridge_destroy(br, true, true);
             } else {
                 /* Trigger storing datapath version. */
                 seq_change(connectivity_seq_get());
@@ -2137,7 +2141,7 @@ add_del_bridges(const struct ovsrec_open_vswitch *cfg)
         br->cfg = shash_find_data(&new_br, br->name);
         if (!br->cfg || strcmp(br->type, ofproto_normalize_type(
                                    br->cfg->datapath_type))) {
-            bridge_destroy(br, true);
+            bridge_destroy(br, true, false);
         }
     }
 
@@ -3381,7 +3385,7 @@ bridge_run(void)
                     (long int) getpid());
 
         HMAP_FOR_EACH_SAFE (br, node, &all_bridges) {
-            bridge_destroy(br, false);
+            bridge_destroy(br, false, false);
         }
         /* Since we will not be running system_stats_run() in this process
          * with the current situation of multiple ovs-vswitchd daemons,
@@ -3700,7 +3704,7 @@ bridge_create(const struct ovsrec_bridge *br_cfg)
 }
 
 static void
-bridge_destroy(struct bridge *br, bool del)
+bridge_destroy(struct bridge *br, bool del, bool force_flush)
 {
     if (br) {
         struct mirror *mirror;
@@ -3714,7 +3718,7 @@ bridge_destroy(struct bridge *br, bool del)
         }
 
         hmap_remove(&all_bridges, &br->node);
-        ofproto_destroy(br->ofproto, del);
+        ofproto_destroy(br->ofproto, del, force_flush);
         hmap_destroy(&br->ifaces);
         hmap_destroy(&br->ports);
         hmap_destroy(&br->iface_by_name);

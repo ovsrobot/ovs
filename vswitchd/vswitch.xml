@@ -662,6 +662,24 @@
         </p>
       </column>
 
+      <column name="other_config" key="no-flush-on-bridege-delete"
+              type='{"type": "boolean"}'>
+        <p>
+          Set this value to <code>true</code> to keep the datapath from being
+          flushed whenever a bridge is deleted.
+        </p>
+        <p>
+          The default value is <code>false</code>.
+        </p>
+        <p>
+          If this configuration is <code>true</code>, it protects the datapath,
+          which resides in the kernel when an arbitrary bridge is deleted.
+          Otherwise, the bridge delete operation causes a datapath flush,
+          requiring rebuilding the kernel datapath. The default value is
+          <code>false</code> as it is the default behavior until now.
+        </p>
+      </column>
+
       <column name="other_config" key="emc-insert-inv-prob"
               type='{"type": "integer", "minInteger": 0, "maxInteger": 4294967295}'>
         <p>

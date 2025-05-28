@@ -315,6 +315,7 @@ unsigned ofproto_offloaded_stats_delay = OFPROTO_OFFLOADED_STATS_DELAY;
 bool ofproto_explicit_sampled_drops = OFPROTO_EXPLICIT_SAMPLED_DROPS_DEFAULT;
 
 uint32_t n_handlers, n_revalidators;
+bool no_flush_on_bridge_delete;
 
 /* Map from datapath name to struct ofproto, for use by unixctl commands. */
 static struct hmap all_ofprotos = HMAP_INITIALIZER(&all_ofprotos);
@@ -819,6 +820,12 @@ ofproto_set_threads(int n_handlers_, int n_revalidators_)
 {
     n_revalidators = MAX(n_revalidators_, 0);
     n_handlers = MAX(n_handlers_, 0);
+}
+
+void
+ofproto_set_no_flush_on_bridge_delete(bool no_flush)
+{
+    no_flush_on_bridge_delete = no_flush;
 }
 
 void
@@ -1680,13 +1687,15 @@ ofproto_rule_delete(struct ofproto *ofproto, struct rule *rule)
 }
 
 static void
-ofproto_flush__(struct ofproto *ofproto, bool del)
+ofproto_flush__(struct ofproto *ofproto, bool del, bool force_flush)
     OVS_EXCLUDED(ofproto_mutex)
 {
     struct oftable *table;
 
     /* This will flush all datapath flows. */
-    if (del && ofproto->ofproto_class->flush) {
+    if (del &&
+        ofproto->ofproto_class->flush &&
+        (force_flush || !no_flush_on_bridge_delete)) {
         ofproto->ofproto_class->flush(ofproto);
     }
 
@@ -1829,7 +1838,7 @@ ofproto_unref(struct ofproto *ofproto)
 }
 
 void
-ofproto_destroy(struct ofproto *p, bool del)
+ofproto_destroy(struct ofproto *p, bool del, bool force_flush)
     OVS_EXCLUDED(ofproto_mutex)
 {
     struct ofport *ofport;
@@ -1839,7 +1848,7 @@ ofproto_destroy(struct ofproto *p, bool del)
         return;
     }
 
-    ofproto_flush__(p, del);
+    ofproto_flush__(p, del, force_flush);
     HMAP_FOR_EACH_SAFE (ofport, hmap_node, &p->ports) {
         ofport_destroy(ofport, del);
     }
@@ -2422,7 +2431,7 @@ void
 ofproto_flush_flows(struct ofproto *ofproto)
 {
     COVERAGE_INC(ofproto_flush);
-    ofproto_flush__(ofproto, false);
+    ofproto_flush__(ofproto, false, false);
     connmgr_flushed(ofproto->connmgr);
 }
 
