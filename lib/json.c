@@ -493,7 +493,7 @@ json_deep_clone(const struct json *json)
         return json_deep_clone_array(&json->array);
 
     case JSON_STRING:
-        return json_string_create(json->string);
+        return json_string_create(json_string(json));
 
     case JSON_SERIALIZED_OBJECT:
         return json_serialized_object_create(json);
@@ -589,7 +589,7 @@ json_hash(const struct json *json, size_t basis)
 
     case JSON_STRING:
     case JSON_SERIALIZED_OBJECT:
-        return hash_string(json->string, basis);
+        return hash_string(json_string(json), basis);
 
     case JSON_NULL:
     case JSON_FALSE:
@@ -665,7 +665,7 @@ json_equal(const struct json *a, const struct json *b)
 
     case JSON_STRING:
     case JSON_SERIALIZED_OBJECT:
-        return !strcmp(a->string, b->string);
+        return !strcmp(json_string(a), json_string(b));
 
     case JSON_NULL:
     case JSON_FALSE:
@@ -1064,7 +1064,7 @@ struct json *
 json_from_serialized_object(const struct json *json)
 {
     ovs_assert(json->type == JSON_SERIALIZED_OBJECT);
-    return json_from_string(json->string);
+    return json_from_string(json_string(json));
 }
 
 /* Reads the file named 'file_name', parses its contents as a JSON object or
@@ -1656,11 +1656,11 @@ json_serialize(const struct json *json, struct json_serializer *s)
         break;
 
     case JSON_STRING:
-        json_serialize_string(json->string, ds);
+        json_serialize_string(json_string(json), ds);
         break;
 
     case JSON_SERIALIZED_OBJECT:
-        ds_put_cstr(ds, json->string);
+        ds_put_cstr(ds, json_string(json));
         break;
 
     case JSON_N_TYPES:
