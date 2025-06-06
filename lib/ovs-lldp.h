@@ -105,5 +105,6 @@ int aa_mapping_unregister(void *aux);
 /* Used by unit tests */
 struct lldp * lldp_create_dummy(void);
 void lldp_destroy_dummy(struct lldp *);
+void chassisid_to_string(uint8_t *, size_t, char **);
 
 #endif /* OVS_LLDP_H */

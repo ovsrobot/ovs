@@ -103,17 +103,19 @@ static struct lldp_aa_element_system_id system_id_null;
 
 /* Convert an LLDP chassis ID to a string.
  */
-static void
+void
 chassisid_to_string(uint8_t *array, size_t len, char **str)
 {
     unsigned int i;
 
     *str = xmalloc(len * 3);
-
     for (i = 0; i < len; i++) {
-        snprintf(&(*str)[i * 3], 4, "%02x:", array[i]);
+        if (i < len - 1) {
+            snprintf(&(*str)[i * 3], 4, "%02x:", array[i]);
+        } else {
+            snprintf(&(*str)[i * 3], 3, "%02x", array[i]);
+        }
     }
-    (*str)[(i * 3) - 1] = '\0';
 }
 
 /* Find an Auto Attach mapping keyed by I-SID.

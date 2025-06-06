@@ -270,6 +270,19 @@ test_aa_send(void)
     return 0;
 }
 
+static int
+test_aa_chassisid_to_string(void)
+{
+    char *id = NULL;
+    char id_str[] = "01:02:03:04:05:06";
+    uint8_t array[6] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
+    chassisid_to_string(array, 6, &id);
+
+    int ret = strcmp(id, id_str);
+    free(id);
+
+    return ret;
+}
 
 static void
 test_aa_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
@@ -279,6 +292,7 @@ test_aa_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
     /* Make sure we emit valid auto-attach LLDPPDUs */
     num_tests++;
     num_errors += test_aa_send();
+    num_errors += test_aa_chassisid_to_string();
 
     /* Add more tests here */
 
