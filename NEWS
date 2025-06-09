@@ -28,7 +28,7 @@ Post-v3.5.0
      the OVS distribution in the 3.0 release and is no longer present in
      any supported versions of OVS. The remaining documentation of this
      kernel module relates to topics for older releases of OVS.
-
+   - ovs-vsctl: Added new '--filter' option to the 'show' command.
 
 v3.5.0 - 17 Feb 2025
 --------------------

@@ -152,6 +152,21 @@ initialize the database without executing any other command.
 .
 .IP "\fBshow\fR"
 Prints a brief overview of the database contents.
+.br
+.br
+\fBshow\fR [\fB--filter\fR=\fIfilters\fR]
+    Prints a brief overview of the database contents.
+    The \fB--filter\fR option allows you to filter the output in two ways:
+.br
+    1. Basic filtering: Comma-separated list of filters to apply to individual records.
+       Example: \fBovs-vsctl --filter='filter1,filter2' show\fR
+.br
+    2. Recursive filtering: Filter output by specifying a table and optional conditions.
+       The syntax is \fItable\fR(\fIconditions\fR) where conditions can include nested filters.
+       Example: \fBovs-vsctl --filter='interface(geneve)' show\fR
+       This will recursively show only elements related to Geneve interfaces.
+.br
+.
 .
 .IP "\fBemer\-reset\fR"
 Reset the configuration into a clean state.  It deconfigures OpenFlow
