@@ -151,6 +151,8 @@ ebpf_source = """
 #define MAX_PACKET <MAX_PACKET_VAL>
 #define MAX_KEY    <MAX_KEY_VAL>
 
+#define barrier_var(var) asm volatile("" : "=r"(var) : "0"(var))
+
 struct event_t {
     int result;
     u32 cpu;
@@ -213,6 +215,11 @@ int do_trace(struct pt_regs *ctx) {
         size = MAX_KEY;
     else
         size = event->key_size;
+
+    /* Prevent clang from using register mirroring (or any optimization) on
+     * the 'size' variable. */
+    barrier_var(size);
+
     bpf_usdt_readarg(5, ctx, &addr);
     bpf_probe_read(&event->key, size, (void *)addr);
 
@@ -286,6 +293,10 @@ int kretprobe__ovs_dp_upcall(struct pt_regs *ctx)
     size = upcall->skb->len - upcall->skb->data_len;
     if (size > MAX_PACKET)
         size = MAX_PACKET;
+
+    /* Prevent clang from using register mirroring (or any optimization) on
+     * the 'size' variable. */
+    barrier_var(size);
 
     bpf_probe_read_kernel(event->pkt, size, upcall->skb->data);
     events.ringbuf_submit(event, 0);
