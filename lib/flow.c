@@ -1075,10 +1075,12 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                     miniflow_push_be16(mf, tp_dst, tcp->tcp_dst);
                     miniflow_push_be16(mf, ct_tp_src, ct_tp_src);
                     miniflow_push_be16(mf, ct_tp_dst, ct_tp_dst);
-                    if (dl_type == htons(ETH_TYPE_IP)) {
-                        dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
-                    } else if (dl_type == htons(ETH_TYPE_IPV6)) {
-                        dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                    if (OVS_LIKELY(!nw_frag)) {
+                        if (dl_type == htons(ETH_TYPE_IP)) {
+                            dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
+                        } else if (dl_type == htons(ETH_TYPE_IPV6)) {
+                            dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                        }
                     }
                     dp_packet_ol_l4_csum_check_partial(packet);
                     if (dp_packet_l4_checksum_good(packet)
@@ -1095,10 +1097,12 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                 miniflow_push_be16(mf, tp_dst, udp->udp_dst);
                 miniflow_push_be16(mf, ct_tp_src, ct_tp_src);
                 miniflow_push_be16(mf, ct_tp_dst, ct_tp_dst);
-                if (dl_type == htons(ETH_TYPE_IP)) {
-                    dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
-                } else if (dl_type == htons(ETH_TYPE_IPV6)) {
-                    dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                if (OVS_LIKELY(!nw_frag)) {
+                    if (dl_type == htons(ETH_TYPE_IP)) {
+                        dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
+                    } else if (dl_type == htons(ETH_TYPE_IPV6)) {
+                        dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                    }
                 }
                 dp_packet_ol_l4_csum_check_partial(packet);
                 if (dp_packet_l4_checksum_good(packet)
@@ -2426,10 +2430,13 @@ flow_hash_5tuple(const struct flow *flow, uint32_t basis)
             goto out;
         }
 
-        /* Add both ports at once. */
-        hash = hash_add(hash,
-                        ((const uint32_t *)flow)[offsetof(struct flow, tp_src)
-                                                 / sizeof(uint32_t)]);
+        /* Add both L4 ports, only if the packet is not fragmented. */
+        if (OVS_LIKELY(!(flow->nw_frag & FLOW_NW_FRAG_MASK))) {
+            hash = hash_add(hash,
+                            ((const uint32_t *)flow)
+                            [offsetof(struct flow, tp_src) /
+                            sizeof(uint32_t)]);
+        }
     }
 out:
     return hash_finish(hash, 42); /* Arbitrary number. */
