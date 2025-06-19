@@ -119,7 +119,8 @@ def open_spell_check_dict():
                           'tftp', 'timeval', 'trie', 'tso', 'ubsan', 'ukey',
                           'umask', 'unassociated', 'unixctl', 'uuid'
                           'virtqueue', 'vms', 'vnet', 'vport', 'vports',
-                          'vtep', 'wc', 'wget', 'xenserver', 'util']
+                          'vtep', 'wc', 'wget', 'xenserver', 'util',
+                          'enablement', 'ifdef', 'tnl', 'apis']
 
         global spell_check_dict
 
