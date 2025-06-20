@@ -543,6 +543,14 @@ mcast_snooping_add_mld(struct mcast_snooping *ms,
     offset += MLD_HEADER_LEN;
     addr = dp_packet_at(p, offset, sizeof(struct in6_addr));
 
+    if (!addr) {
+        /* We error out if the provided packet is not large enough to handle
+         * the types below. The BUILD_ASSERT() ensures that we can always reach
+         * the MLD2_REPORT type. */
+        BUILD_ASSERT(sizeof(struct mld2_record) > sizeof(struct in6_addr));
+        return 0;
+    }
+
     switch (mld->type) {
     case MLD_REPORT:
         ret = mcast_snooping_add_group(ms, addr, vlan, port,
