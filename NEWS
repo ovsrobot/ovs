@@ -15,6 +15,8 @@ Post-v3.5.0
        core file size.
    - ovs-appctl:
      * Added JSON output support to the 'ovs/route/show' command.
+  - ovs-vsctl:
+     * Added '--filter' option to the 'show' command.
    - SSL/TLS:
      * Support for deprecated TLSv1 and TLSv1.1 protocols on OpenFlow and
        database connections is now removed.
@@ -29,7 +31,6 @@ Post-v3.5.0
      the OVS distribution in the 3.0 release and is no longer present in
      any supported versions of OVS. The remaining documentation of this
      kernel module relates to topics for older releases of OVS.
-
 
 v3.5.0 - 17 Feb 2025
 --------------------

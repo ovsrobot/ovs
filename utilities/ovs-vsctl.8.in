@@ -152,6 +152,31 @@ initialize the database without executing any other command.
 .
 .IP "\fBshow\fR"
 Prints a brief overview of the database contents.
+.br
+.TP
+\fB--filter\fR=\fIfilter-rules\fR
+Filters the output using either direct record names or table-based patterns:
+.br
+.RS
+.IP \(bu 3
+\fBRecord names\fR: Comma-separated list of specific records to display
+.br
+Example: \fB--filter='geneve,p1'\fR
+.IP \(bu 3
+\fBTable patterns\fR: \fItable(conditions)\fR filters records within table
+.br
+Examples:
+.br
+\fB--filter='Port'\fR (all ports)
+.br
+\fB--filter='Interface(type="internal")'\fR (filtered interfaces)
+.IP \(bu 3
+\fBCombinations\fR: Mix of record names and table patterns
+.br
+Example: \fB--filter='geneve,Port(name="p1")'\fR
+.RE
+.br
+.
 .
 .IP "\fBemer\-reset\fR"
 Reset the configuration into a clean state.  It deconfigures OpenFlow
