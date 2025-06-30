@@ -217,11 +217,11 @@ For a explanation of this command, along with alternative approaches such as
 booting the VM via libvirt, refer to :doc:`/topics/dpdk/vhost-user`.
 
 Once the guest is configured and booted, configure DPDK packet forwarding
-within the guest. To accomplish this, build the ``testpmd`` application as
+within the guest. To accomplish this, build the ``dpdk-testpmd`` application as
 described in :ref:`dpdk-testpmd`. Once compiled, run the application::
 
-    $ cd $DPDK_DIR/app/test-pmd;
-    $ ./testpmd -c 0x3 -n 4 --socket-mem 1024 -- \
+    $ cd /path/to/dpdk/build/
+    $ ./dpdk-testpmd -c 0x3 -n 4 --socket-mem 1024 -- \
         --burst=64 -i --txqflags=0xf00 --disable-hw-vlan
     $ set fwd mac retry
     $ start
@@ -247,7 +247,8 @@ PHY-VM-PHY (vHost Loopback) (Kernel Forwarding)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 :ref:`dpdk-vhost-loopback` details steps for PHY-VM-PHY loopback
-testcase and packet forwarding using DPDK testpmd application in the Guest VM.
+testcase and packet forwarding using the ``dpdk-testpmd`` application in the
+Guest VM.
 For users wishing to do packet forwarding using kernel stack below, you need to
 run the below commands on the guest::
 

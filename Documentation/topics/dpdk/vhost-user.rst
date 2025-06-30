@@ -395,10 +395,9 @@ Maximum number of queue pairs can be set for vhost-user-client-ports::
 DPDK in the Guest
 -----------------
 
-The DPDK ``testpmd`` application can be run in guest VMs for high speed packet
-forwarding between vhostuser ports. DPDK and testpmd application has to be
-compiled on the guest VM. Below are the steps for setting up the testpmd
-application in the VM.
+The ``dpdk-testpmd`` application can be run in guest VMs for high speed packet
+forwarding between vhostuser ports. DPDK has to be compiled on the guest VM.
+Below are the steps for setting up the environment in the VM.
 
 .. note::
 
@@ -540,7 +539,7 @@ introduced in QEMU 2.7.0 / libvirt 2.3.0::
   </interface>
 
 The guest application will also need to provide enough descriptors.
-For example with ``testpmd`` the command line argument can be used::
+For example with ``dpdk-testpmd`` the command line argument can be used::
 
  --rxd=1024 --txd=1024
 

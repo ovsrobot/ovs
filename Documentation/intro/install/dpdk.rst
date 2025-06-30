@@ -542,7 +542,7 @@ have affinity set accordingly.
   occupancy as possible.
 
   For example, on a multicore VM, multiple QEMU vCPU threads shall be spawned.
-  When the DPDK ``testpmd`` application that does packet forwarding is invoked,
+  When the ``dpdk-testpmd`` application that does packet forwarding is invoked,
   the ``taskset`` command should be used to affinitize the vCPU threads to the
   dedicated isolated cores on the host system.
 
