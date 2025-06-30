@@ -32,8 +32,9 @@ This document describes how to use Open vSwitch with DPDK.
    Using DPDK with OVS requires configuring OVS at build time to use
    the DPDK library.  The version of DPDK that OVS supports varies
    from one OVS release to another, as described in the :doc:`releases
-   FAQ </faq/releases>`. For build instructions refer to
-   :doc:`/intro/install/dpdk`.
+   FAQ </faq/releases>`. Most distributions now provide a package for
+   DPDK and it is recommended you use it. Though for custom usecases,
+   build instructions for DPDK are provided in :doc:`/intro/install/dpdk`.
 
 Ports and Bridges
 -----------------
@@ -216,12 +217,12 @@ You can do this directly with QEMU via the ``qemu-system-x86_64`` application::
 For a explanation of this command, along with alternative approaches such as
 booting the VM via libvirt, refer to :doc:`/topics/dpdk/vhost-user`.
 
-Once the guest is configured and booted, configure DPDK packet forwarding
-within the guest. To accomplish this, build the ``dpdk-testpmd`` application as
-described in :ref:`dpdk-testpmd`. Once compiled, run the application::
+Once the guest is configured and booted, install DPDK (most distributions
+provide a package, otherwise you may build DPDK, see
+:doc:`/intro/install/dpdk`) and configure DPDK packet forwarding within the
+guest::
 
-    $ cd /path/to/dpdk/build/
-    $ ./dpdk-testpmd -c 0x3 --in-memory -- --burst=64 -i
+    $ dpdk-testpmd -c 0x3 --in-memory -- --burst=64 -i
     $ set fwd mac retry
     $ start
 

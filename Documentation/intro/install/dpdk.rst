@@ -25,9 +25,8 @@
 Open vSwitch with DPDK
 ======================
 
-This document describes how to build and install Open vSwitch using a DPDK
-datapath. Open vSwitch can use the DPDK library to operate entirely in
-userspace.
+This document describes how to build and install Open vSwitch using DPDK
+in the userspace datapath.
 
 .. important::
 
@@ -69,6 +68,10 @@ Installing
 
 Install DPDK
 ~~~~~~~~~~~~
+
+One important note is that most Linux distributions provide a DPDK package and
+using it is recommended.
+If you still require to use a manually compiled DPDK, here are the steps.
 
 #. Download the `DPDK sources`_, extract the file and set ``DPDK_DIR``::
 

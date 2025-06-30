@@ -396,7 +396,9 @@ DPDK in the Guest
 -----------------
 
 The ``dpdk-testpmd`` application can be run in guest VMs for high speed packet
-forwarding between vhostuser ports. DPDK has to be compiled on the guest VM.
+forwarding between vhostuser ports. DPDK is provided as a package in most Linux
+distributions (though you may want to build it manually, see
+:doc:`/intro/install/dpdk`).
 Below are the steps for setting up the environment in the VM.
 
 .. note::
