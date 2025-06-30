@@ -408,15 +408,13 @@ To begin, instantiate a guest as described in :ref:`dpdk-vhost-user` or
 :ref:`dpdk-vhost-user-client`. Once started, connect to the VM, download the
 DPDK sources to VM and build DPDK as described in :ref:`dpdk-install`.
 
-Setup huge pages and DPDK devices using UIO::
+Setup huge pages and DPDK devices using VFIO::
 
     $ sysctl vm.nr_hugepages=1024
     $ mkdir -p /dev/hugepages
     $ mount -t hugetlbfs hugetlbfs /dev/hugepages  # only if not already mounted
-    $ modprobe uio
-    $ insmod $DPDK_BUILD/kmod/igb_uio.ko
-    $ driverctl set-override 0000:00:03.0 igb_uio
-    $ driverctl set-override 0000:00:04.0 igb_uio
+    $ driverctl set-override 0000:00:03.0 vfio-pci
+    $ driverctl set-override 0000:00:04.0 vfio-pci
 
 .. note::
 

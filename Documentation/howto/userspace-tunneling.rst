@@ -149,8 +149,7 @@ Perform the following configuration on `host1`:
        $ ip link set eth1 up
        $ iptables -F
 
-   If instead the interface is a DPDK interface and bound to the ``igb_uio`` or
-   ``vfio`` driver, run::
+   If instead the interface is a DPDK interface, run::
 
        $ ovs-vsctl --timeout 10 add-port br-phy dpdk0 \
          -- set Interface dpdk0 type=dpdk options:dpdk-devargs=0000:06:00.0
