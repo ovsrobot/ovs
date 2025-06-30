@@ -415,8 +415,8 @@ Setup huge pages and DPDK devices using UIO::
     $ mount -t hugetlbfs hugetlbfs /dev/hugepages  # only if not already mounted
     $ modprobe uio
     $ insmod $DPDK_BUILD/kmod/igb_uio.ko
-    $ $DPDK_DIR/usertools/dpdk-devbind.py --status
-    $ $DPDK_DIR/usertools/dpdk-devbind.py -b igb_uio 00:03.0 00:04.0
+    $ driverctl set-override 0000:00:03.0 igb_uio
+    $ driverctl set-override 0000:00:04.0 igb_uio
 
 .. note::
 

@@ -72,11 +72,13 @@ driver for the devices in kernel space.
 There are two different tools for binding drivers: :command:`driverctl` which
 is a generic tool for persistently configuring alternative device drivers, and
 :command:`dpdk-devbind` which is a DPDK-specific tool and whose changes do not
-persist across reboots. In addition, there are two options available for this
-kernel space driver - VFIO (Virtual Function I/O) and UIO (Userspace I/O) -
-along with a number of drivers for each option. We will demonstrate examples of
-both tools and will use the ``vfio-pci`` driver, which is the more secure,
-robust driver of those available. More information can be found in the
+persist across reboots.
+In addition, there are two options available for this kernel space driver
+- VFIO (Virtual Function I/O) and UIO (Userspace I/O) - along with a number
+of drivers for each option.
+We will demonstrate use of the generic tool and will use the ``vfio-pci``
+driver, which is the more secure, robust driver of those available.
+More details and information about the alternatives can be found in the
 `DPDK drivers documentation`_.
 
 To list devices using :command:`driverctl`, run::
@@ -88,34 +90,6 @@ To list devices using :command:`driverctl`, run::
 You can then bind one or more of these devices using the same tool::
 
     $ driverctl set-override 0000:07:00.0 vfio-pci
-
-Alternatively, to list devices using :command:`dpdk-devbind`, run::
-
-    $ dpdk-devbind --status
-    Network devices using DPDK-compatible driver
-    ============================================
-    <none>
-
-    Network devices using kernel driver
-    ===================================
-    0000:07:00.0 'I350 Gigabit Network Connection 1521' if=enp7s0f0 drv=igb unused=igb_uio
-    0000:07:00.1 'I350 Gigabit Network Connection 1521' if=enp7s0f1 drv=igb unused=igb_uio
-
-    Other Network devices
-    =====================
-    ...
-
-Once again, you can then bind one or more of these devices using the same
-tool::
-
-    $ dpdk-devbind --bind=vfio-pci 0000:07:00.0
-
-.. versionchanged:: 2.6.0
-
-   Open vSwitch 2.6.0 added support for DPDK 16.07, which in turn renamed the
-   former ``dpdk_nic_bind`` tool to ``dpdk-devbind``.
-
-For more information, refer to the `DPDK drivers documentation`_.
 
 .. _DPDK drivers documentation: https://doc.dpdk.org/guides-24.11/linux_gsg/linux_drivers.html
 

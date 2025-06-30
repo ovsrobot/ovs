@@ -228,15 +228,17 @@ described in :ref:`dpdk-testpmd`. Once compiled, run the application::
 
 When you finish testing, bind the vNICs back to kernel::
 
-    $ $DPDK_DIR/usertools/dpdk-devbind.py --bind=virtio-pci 0000:00:03.0
-    $ $DPDK_DIR/usertools/dpdk-devbind.py --bind=virtio-pci 0000:00:04.0
+    $ driverctl unset-override 0000:00:03.0
+    $ driverctl unset-override 0000:00:04.0
 
 .. note::
 
   Valid PCI IDs must be passed in above example. The PCI IDs can be retrieved
   like so::
 
-      $ $DPDK_DIR/usertools/dpdk-devbind.py --status
+      $ driverctl -v list-devices | grep -iE '(ethernet|network)'
+      0000:03:00.0 virtio-pci (Virtio network device)
+      0000:04:00.0 virtio-pci (Virtio network device)
 
 More information on the dpdkvhostuserclient ports can be found in
 :doc:`/topics/dpdk/vhost-user`.

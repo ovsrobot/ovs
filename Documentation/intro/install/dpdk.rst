@@ -249,14 +249,17 @@ To ensure VT-d is enabled in the kernel, run::
 
 If VT-d is not enabled in the kernel, enable it now.
 
-Once VT-d is correctly configured, load the required modules and bind the NIC
-to the VFIO driver::
+Once VT-d is correctly configured, bind the NIC to the VFIO driver::
 
-    $ modprobe vfio-pci
-    $ /usr/bin/chmod a+x /dev/vfio
-    $ /usr/bin/chmod 0666 /dev/vfio/*
-    $ $DPDK_DIR/usertools/dpdk-devbind.py --bind=vfio-pci eth1
-    $ $DPDK_DIR/usertools/dpdk-devbind.py --status
+    $ ethtool -i enp0s3 | grep bus-info
+    bus-info: 0000:01:00.0
+
+    $ driverctl -v list-devices  | grep -iE '(ethernet|network)'
+    0000:01:00.0 virtio-pci (Virtio network device)
+    $ driverctl set-override 0000:01:00.0 vfio-pci
+    $ driverctl -v list-devices  | grep -iE '(ethernet|network)'
+    0000:01:00.0 vfio-pci [*] (Virtio network device)
+
 
 Setup OVS
 ~~~~~~~~~
