@@ -217,10 +217,6 @@ To verify hugepage configuration::
 
     $ grep HugePages_ /proc/meminfo
 
-Mount the hugepages, if not already mounted by default::
-
-    $ mount -t hugetlbfs none /dev/hugepages
-
 .. note::
 
    The amount of hugepage memory required can be affected by various
@@ -297,7 +293,7 @@ listed below. Defaults will be provided for all values not explicitly set.
   default will be used instead.
 
 ``dpdk-hugepage-dir``
-  Directory where hugetlbfs is mounted
+  Directory where hugetlbfs is mounted.
 
 ``vhost-sock-dir``
   Option to set the path to the vhost-user unix socket files.
@@ -421,7 +417,7 @@ steps to identify right PCIe slot.
 Advanced Hugepage Setup
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-Allocate and mount 1 GB hugepages.
+Allocate 1 GB hugepages.
 
 - For persistent allocation of huge pages, add the following options to the
   kernel bootline::
@@ -453,10 +449,6 @@ Allocate and mount 1 GB hugepages.
   .. note::
     For run-time allocation of 1G huge pages, Contiguous Memory Allocator
     (``CONFIG_CMA``) has to be supported by kernel, check your Linux distro.
-
-Now mount the huge pages, if not already done so::
-
-    $ mount -t hugetlbfs -o pagesize=1G none /dev/hugepages
 
 Isolate Cores
 ~~~~~~~~~~~~~

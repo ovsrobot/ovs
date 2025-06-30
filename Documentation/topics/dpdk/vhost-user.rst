@@ -410,8 +410,6 @@ DPDK sources to VM and build DPDK as described in :ref:`dpdk-install`.
 Setup huge pages and DPDK devices using VFIO::
 
     $ sysctl vm.nr_hugepages=1024
-    $ mkdir -p /dev/hugepages
-    $ mount -t hugetlbfs hugetlbfs /dev/hugepages  # only if not already mounted
     $ driverctl set-override 0000:00:03.0 vfio-pci
     $ driverctl set-override 0000:00:04.0 vfio-pci
 

@@ -221,7 +221,7 @@ within the guest. To accomplish this, build the ``dpdk-testpmd`` application as
 described in :ref:`dpdk-testpmd`. Once compiled, run the application::
 
     $ cd /path/to/dpdk/build/
-    $ ./dpdk-testpmd -c 0x3 --socket-mem 1024 -- --burst=64 -i
+    $ ./dpdk-testpmd -c 0x3 --in-memory -- --burst=64 -i
     $ set fwd mac retry
     $ start
 
