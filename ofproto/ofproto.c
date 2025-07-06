@@ -7939,6 +7939,16 @@ ofproto_group_mod_start(struct ofproto *ofproto, struct ofproto_group_mod *ogm)
         error = OFPERR_OFPGMFC_BAD_COMMAND;
         break;
     }
+
+    if (!error && ogm->new_group && group_collection_n(&ogm->old_groups) &&
+        ofproto->ofproto_class->group_modify) {
+        /* Modify a group. */
+        ovs_assert(group_collection_n(&ogm->old_groups) == 1);
+
+        /* XXX: OK to lose old group's stats? */
+        ofproto->ofproto_class->group_modify(ogm->new_group);
+    }
+
     return error;
 }
 
@@ -7984,15 +7994,6 @@ ofproto_group_mod_finish(struct ofproto *ofproto,
 {
     struct ofgroup *new_group = ogm->new_group;
     struct ofgroup *old_group;
-
-    if (new_group && group_collection_n(&ogm->old_groups) &&
-        ofproto->ofproto_class->group_modify) {
-        /* Modify a group. */
-        ovs_assert(group_collection_n(&ogm->old_groups) == 1);
-
-        /* XXX: OK to lose old group's stats? */
-        ofproto->ofproto_class->group_modify(new_group);
-    }
 
     /* Delete old groups. */
     GROUP_COLLECTION_FOR_EACH(old_group, &ogm->old_groups) {
