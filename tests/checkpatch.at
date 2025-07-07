@@ -726,3 +726,40 @@ try_checkpatch_c_file \
     "
 done
 AT_CLEANUP
+
+AT_SETUP([checkpatch - spelling checks])
+AT_SKIP_IF([! $PYTHON3 -c 'import enchant' >/dev/null 2>&1])
+
+dnl First check with some default words
+
+try_checkpatch_c_file \
+   "#include <foo.h>
+    #include <bar.h>
+
+    /* naintenance mode */
+    void foo() {
+       $ctr ( first_run ) {
+          something(check_node);
+       }
+    }" \
+    "WARNING: Possible misspelled word: \"naintenance\"
+Did you mean:  [['maintenance', 'countenance', 'centenarian']]
+test.c:4:
+/* naintenance mode */
+    " \
+    "-S"
+
+try_checkpatch_c_file \
+   "#include <foo.h>
+    #include <bar.h>
+
+    /* hugepage mode */
+    void foo() {
+       $ctr ( first_run ) {
+          something(check_node);
+       }
+    }" \
+    "" \
+    "-S"
+
+AT_CLEANUP
