@@ -863,12 +863,9 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
 
     /* Initialize packet's layer pointer and offsets. */
     frame = data;
-    if (dp_packet_tunnel(packet)) {
-        /* Preserve inner offsets from previous circulation. */
-        dp_packet_reset_outer_offsets(packet);
-    } else {
-        dp_packet_reset_offsets(packet);
-    }
+
+    /* Preserve inner offsets from previous circulation (if any). */
+    dp_packet_reset_outer_offsets(packet);
 
     if (packet_type == htonl(PT_ETH)) {
         /* Must have full Ethernet header to proceed. */

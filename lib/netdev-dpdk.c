@@ -2619,6 +2619,7 @@ netdev_dpdk_batch_init_packet_fields(struct dp_packet_batch *batch)
 
     DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
         dp_packet_reset_cutlen(packet);
+        dp_packet_reset_offsets(packet);
         packet->packet_type = htonl(PT_ETH);
         packet->has_hash = !!(packet->mbuf.ol_flags & RTE_MBUF_F_RX_RSS_HASH);
         packet->has_mark = !!(packet->mbuf.ol_flags & RTE_MBUF_F_RX_FDIR_ID);
