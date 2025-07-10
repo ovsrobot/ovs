@@ -39,10 +39,12 @@ Subject: Patch this is.
     fi
 }
 
-# try_checkpatch_c_file SOURCE [ERRORS] [CHECKPATCH-ARGS]
+# try_checkpatch_c_file SOURCE [ERRORS] [CHECKPATCH-ARGS] [ALLOWFILTER]
 #
 # Runs checkpatch against test SOURCE expecting the set of specified
-# ERRORS (and warnings).  Optionally, sets [CHECKPATCH-ARGS]
+# ERRORS (and warnings).  Optionally, sets [CHECKPATCH-ARGS].  The
+# optional ALLOWFILTER can be used to adjust the expected output before
+# processing.
 try_checkpatch_c_file() {
    echo "$1" | sed 's/^    //' > test.c
 
@@ -57,7 +59,8 @@ try_checkpatch_c_file() {
        AT_CHECK([OVS_SRC_DIR=$top_srcdir $PYTHON3 \
                    $top_srcdir/utilities/checkpatch.py $3 -q -f test.c],
                 [1], [stdout])
-       AT_CHECK([sed '/^Lines checked:/,$d' stdout], [0], [expout])
+       AT_CHECK([sed "$4
+/^Lines checked:/,$$d" stdout], [0], [expout])
    else
        AT_CHECK([OVS_SRC_DIR=$top_srcdir $PYTHON3 \
                    $top_srcdir/utilities/checkpatch.py $3 -q -f test.c])
@@ -725,4 +728,38 @@ try_checkpatch_c_file \
        $ctr ( first_run) {
     "
 done
+AT_CLEANUP
+
+AT_SETUP([checkpatch - spelling checks])
+AT_SKIP_IF([! $PYTHON3 -c 'import enchant' >/dev/null 2>&1])
+
+dnl First check with some default words
+
+try_checkpatch_c_file \
+   "#include <foo.h>
+    #include <bar.h>
+
+    /* naintenance mode */
+    void foo() {
+       $ctr ( first_run ) {
+          something(check_node);
+       }
+    }" \
+    "WARNING: Possible misspelled word: \"naintenance\"" \
+    "-S" \
+    "/^Did you mean:/,$$d"
+
+try_checkpatch_c_file \
+   "#include <foo.h>
+    #include <bar.h>
+
+    /* hugepage mode */
+    void foo() {
+       $ctr ( first_run ) {
+          something(check_node);
+       }
+    }" \
+    "" \
+    "-S"
+
 AT_CLEANUP
