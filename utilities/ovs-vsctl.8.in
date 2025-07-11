@@ -153,6 +153,13 @@ initialize the database without executing any other command.
 .IP "\fBshow\fR"
 Prints a brief overview of the database contents.
 .
+.IP "[\fB\-\-filter=\fIfilter\-rule\fR[\fB,\fIfilter\-rule\fR]...] \fBshow\fR"
+Used for output filtering, the syntax is as follows: each filter rule has
+the form \fBtable\-name(filter)\fR. If a table name is specified, then output
+filtering is performed at the level of the specified table. If the table
+is not specified, then output filtering is performed at the at the top level
+of the output table.
+.
 .IP "\fBemer\-reset\fR"
 Reset the configuration into a clean state.  It deconfigures OpenFlow
 controllers, OVSDB servers, and SSL/TLS, and deletes port mirroring,
