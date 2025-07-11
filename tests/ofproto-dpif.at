@@ -6621,6 +6621,47 @@ This flow is handled by the userspace slow path because it:
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ofproto-dpif - meter with slow-path action])
+
+OVS_VSWITCHD_START([ dnl
+  add-port br0 p0 -- set Interface p0 type=dummy ofport_request=1 -- \
+  add-port br0 p1 -- set Interface p1 type=dummy ofport_request=2])
+
+AT_CHECK([ovs-ofctl -O OpenFlow15 add-meter br0 \
+  'meter=1 pktps burst stats bands=type=drop rate=100 burst_size=100'])
+AT_CHECK([ovs-vsctl -- set Interface p0 options:tx_pcap=p0.pcap])
+AT_CHECK([ovs-vsctl -- set Interface p1 options:tx_pcap=p1.pcap])
+
+AT_CHECK([ovs-appctl vlog/set dpif:dbg])
+
+dnl Hex bytes for the following packet:
+dnl   00:00:00:00:00:0c -> ff:ff:ff:ff:ff:ff
+dnl   ARP 42 Who has 192.168.0.1? Tell 192.168.0.100
+eth="ffffffffffff0000000000ec0806"
+arp="0001080006040001000c29abcdefc0a80064000000000000c0a80001"
+packet="${eth}${arp}"
+
+AT_CHECK([ovs-ofctl -O OpenFlow15 add-flow br0 dnl
+  "table=1,eth_type=0x0806,actions=meter:1,clone(set_field:2->arp_op,output(port=p1,max_len=128)),output:p0"])
+
+AT_CHECK([ovs-ofctl -O OpenFlow15 packet-out br0 CONTROLLER \
+  "meter:1,resubmit(,1)" "$packet"])
+
+# Verify the orinigal packet is received on port 0.
+OVS_WAIT_UNTIL([test `ovs-pcap p0.pcap | grep -E "$packet" | wc -l` -ge 1])
+
+dnl Turn the packet defenition into a reply and verify it's received on port 1.
+packet=$(echo "$packet" | sed 's/\(.\{36\}\)01/\102/')
+OVS_WAIT_UNTIL([test `ovs-pcap p1.pcap | grep -E "$packet" | wc -l` -ge 1])
+
+dnl Make sure all meters, and outputs datapath actions get executed.
+OVS_WAIT_UNTIL([grep -E "sub-execute meter\(0\),meter\(0\),. on packet arp" dnl
+                  ovs-vswitchd.log])
+OVS_WAIT_UNTIL([grep -E "sub-execute . on packet arp" ovs-vswitchd.log])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 
 dnl CHECK_CONTINUATION(TITLE, N_PORTS0, N_PORTS1, ACTIONS0, ACTIONS1, [EXTRA_SETUP])
 dnl
