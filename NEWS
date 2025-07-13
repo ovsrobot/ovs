@@ -37,6 +37,11 @@ Post-v3.5.0
      the OVS distribution in the 3.0 release and is no longer present in
      any supported versions of OVS. The remaining documentation of this
      kernel module relates to topics for older releases of OVS.
+   - ovs-vsctl:
+     * Now exits with error code 160 (ERROR_BAD_ARGUMENTS) on Windows and
+       65 (EX_DATAERR) on other platforms if it fails while waiting for
+       ovs-vswitchd to finish reconfiguring itself after a successful
+       database transaction.
 
 
 v3.5.0 - 17 Feb 2025
