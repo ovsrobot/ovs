@@ -2,17 +2,47 @@
 These commands query and modify OVS tunnel components.
 .
 .IP "\fBovs/route/add \fIip\fB/\fIplen\fB \fIoutput_bridge\fB \
-[\fIgw\fB] [pkt_mark=\fImark\fB] [src=\fIsrc_ip\fB]\fR"
+[\fIgw\fB] [pkt_mark=\fImark\fB] [src=\fIsrc_ip\fB] [table=\fIID\fB]\fR"
 Adds \fIip\fR/\fIplen\fR route to vswitchd routing table. \fIoutput_bridge\fR
 needs to be OVS bridge name.  This command is useful if OVS cached
-routes does not look right.
+routes does not look right. A non-standard table ID can be specified, in which
+case the route is added to that routing table. The table is created if it
+doesn't exist.
 .
-.IP "\fBovs/route/show\fR"
-Print all routes in OVS routing table, This includes routes cached
-from system routing table and user configured routes.
+.IP "\fBovs/route/show [table=\fIID|all\fB]\fR"
+Print routes in OVS routing table. This includes routes cached
+from system routing table and user configured routes. By default, the contents
+of the main routing table is displayed, unless requested otherwise with
+\fItable\fR parameter. In this case the contents of a specific table ID or of
+all routing tables is printed.
 .
-.IP "\fBovs/route/del ip/plen [pkt_mark=mark]\fR"
-Delete ip/plen route from OVS routing table.
+.IP "\fBovs/route/del ip/plen [pkt_mark=mark] [table=\fIID\fB]\fR"
+Delete ip/plen route from OVS routing table. The standard routing table is used
+by default, or a specific custom table when ID is provided via \fItable\fR
+parameter.
+.
+.IP "\fBovs/route/lookup \fIip_addr\fB [pkt_mark=\fImark\fB] [src=\fIIP\fB]\fR"
+Perform route lookup for specified destination IP address in OVS routing tables
+and print the matching route information. The lookup may be more selective when
+additional parameters are used: \fIpkt_mark\fR and \fIsrc\fR.
+.
+.IP "\fBovs/route/rule/show\fR"
+Print routing rules in OVS. This includes routing rules cached from the system
+routing policy database and user configured routing rules.
+.
+.IP "\fBovs/route/rule/add [not] from=<\fIall|IP/PLEN\fB> [prio=\fINUM\fB] \
+table=<\fIlocal|main|default|ID\fB>\fR"
+Add user-configured routing rule to vswitchd. It can be useful to reference
+non-standard routing tables for configuring advanced routing policies, for
+example matching on the source IP address. If priority is not specified, the
+lowest unused priority will be selected automatically. Multiple rules with the
+same priority may exist. User-configured rules and system cached rules co-exist
+together.
+.
+.IP "\fBovs/route/rule/del [not] from=<\fIall|IP/PLEN\fB> [prio=\fINUM\fB] \
+table=<\fIlocal|main|default|ID\fB>\fR"
+Delete user-configured routing rule from vswitchd. If priority is not specified
+the first matching rule will be selected for deletion.
 .
 .IP "\fBtnl/neigh/show\fR"
 .IP "\fBtnl/arp/show\fR"

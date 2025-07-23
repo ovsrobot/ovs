@@ -201,19 +201,28 @@ Tunnel routing table
 
 To add route::
 
-    $ ovs-appctl ovs/route/add <IP address>/<prefix length> <output-bridge-name> <gw>
+    $ ovs-appctl ovs/route/add <IP address>/<prefix length> <output-bridge-name> <gw> [table=ID]
 
 To see all routes configured::
 
-    $ ovs-appctl ovs/route/show
+    $ ovs-appctl ovs/route/show [table=ID|all]
+
+To add/delete router rule::
+
+    $ ovs-appctl ovs/route/rule/add [not] from=<all|IP/PLEN> [prio=NUM] table=<local|main|default|ID>
+    $ ovs-appctl ovs/route/rule/del [not] from=<all|IP/PLEN> [prio=NUM] table=<local|main|default|ID>
+
+To see all router rules configured::
+
+    $ ovs-appctl ovs/router/rule/show
 
 To delete route::
 
-    $ ovs-appctl ovs/route/del <IP address>/<prefix length>
+    $ ovs-appctl ovs/route/del <IP address>/<prefix length> [table=ID]
 
 To look up and display the route for a destination::
 
-    $ ovs-appctl ovs/route/lookup <IP address>
+    $ ovs-appctl ovs/route/lookup <IP address> [src=IP]
 
 ARP
 ~~~

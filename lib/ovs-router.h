@@ -26,20 +26,37 @@
 extern "C" {
 #endif
 
+enum {
+    CLS_DEFAULT = 253, /* RT_TABLE_DEFAULT */
+    CLS_MAIN = 254,    /* RT_TABLE_MAIN */
+    CLS_LOCAL = 255,   /* RT_TABLE_LOCAL */
+    CLS_ALL = UINT_MAX,
+};
+
 bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip_dst,
                        char output_netdev[],
                        struct in6_addr *src, struct in6_addr *gw);
 void ovs_router_init(void);
-void ovs_router_insert(uint32_t mark, const struct in6_addr *ip_dst,
+bool ovs_router_is_empty(uint32_t table);
+bool ovs_router_is_referenced(uint32_t table);
+void ovs_router_insert(uint32_t table, uint32_t mark,
+                       const struct in6_addr *ip_dst,
                        uint8_t plen, bool local,
                        const char output_netdev[], const struct in6_addr *gw,
                        const struct in6_addr *prefsrc);
-void ovs_router_force_insert(uint32_t mark, const struct in6_addr *ip_dst,
+void ovs_router_force_insert(uint32_t table, uint32_t mark,
+                             const struct in6_addr *ip_dst,
                              uint8_t plen, bool local,
                              const char output_netdev[],
                              const struct in6_addr *gw,
                              const struct in6_addr *prefsrc);
-void ovs_router_flush(void);
+void ovs_router_rule_add(uint32_t prio, bool invert, bool user,
+                         uint8_t src_len, const struct in6_addr *from,
+                         uint32_t lookup_table);
+int ovs_router_rule_del(uint32_t prio, bool invert, uint8_t src_len,
+                        const struct in6_addr *from, uint32_t lookup_table);
+void ovs_router_flush(bool flush_all);
+void ovs_router_rules_flush(bool flush_all);
 
 void ovs_router_disable_system_routing_table(void);
 
