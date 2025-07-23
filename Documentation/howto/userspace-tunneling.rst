@@ -217,7 +217,7 @@ To delete route::
 
 To look up and display the route for a destination::
 
-    $ ovs-appctl ovs/route/lookup <IP address>
+    $ ovs-appctl ovs/route/lookup <IP address> [src=IP]
 
 ARP
 ~~~
