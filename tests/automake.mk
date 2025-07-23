@@ -458,6 +458,7 @@ tests_ovstest_SOURCES = \
 	tests/test-cooperative-multitasking.c \
 	tests/test-csum.c \
 	tests/test-flows.c \
+        tests/test-flow-hash.c \
 	tests/test-hash.c \
 	tests/test-heap.c \
 	tests/test-hindex.c \

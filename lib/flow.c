@@ -1056,10 +1056,12 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                     miniflow_push_be16(mf, tp_dst, tcp->tcp_dst);
                     miniflow_push_be16(mf, ct_tp_src, ct_tp_src);
                     miniflow_push_be16(mf, ct_tp_dst, ct_tp_dst);
-                    if (dl_type == htons(ETH_TYPE_IP)) {
-                        dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
-                    } else if (dl_type == htons(ETH_TYPE_IPV6)) {
-                        dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                    if (!(nw_frag & FLOW_NW_FRAG_MASK)) {
+                        if (dl_type == htons(ETH_TYPE_IP)) {
+                            dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
+                        } else if (dl_type == htons(ETH_TYPE_IPV6)) {
+                            dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                        }
                     }
                     dp_packet_l4_proto_set_tcp(packet);
                 }
@@ -1072,10 +1074,12 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
                 miniflow_push_be16(mf, tp_dst, udp->udp_dst);
                 miniflow_push_be16(mf, ct_tp_src, ct_tp_src);
                 miniflow_push_be16(mf, ct_tp_dst, ct_tp_dst);
-                if (dl_type == htons(ETH_TYPE_IP)) {
-                    dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
-                } else if (dl_type == htons(ETH_TYPE_IPV6)) {
-                    dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                if (!(nw_frag & FLOW_NW_FRAG_MASK)) {
+                    if (dl_type == htons(ETH_TYPE_IP)) {
+                        dp_packet_update_rss_hash_ipv4_tcp_udp(packet);
+                    } else if (dl_type == htons(ETH_TYPE_IPV6)) {
+                        dp_packet_update_rss_hash_ipv6_tcp_udp(packet);
+                    }
                 }
                 dp_packet_l4_proto_set_udp(packet);
             }
@@ -2305,6 +2309,7 @@ miniflow_hash_5tuple(const struct miniflow *flow, uint32_t basis)
     if (flow) {
         ovs_be16 dl_type = MINIFLOW_GET_BE16(flow, dl_type);
         uint8_t nw_proto;
+        uint8_t nw_frag;
 
         if (dl_type == htons(ETH_TYPE_IPV6)) {
             struct flowmap map = FLOWMAP_EMPTY_INITIALIZER;
@@ -2325,10 +2330,12 @@ miniflow_hash_5tuple(const struct miniflow *flow, uint32_t basis)
         }
 
         nw_proto = MINIFLOW_GET_U8(flow, nw_proto);
+        nw_frag = MINIFLOW_GET_U8(flow, nw_frag);
         hash = hash_add(hash, nw_proto);
-        if (nw_proto != IPPROTO_TCP && nw_proto != IPPROTO_UDP
+        if ((nw_frag & FLOW_NW_FRAG_MASK) ||
+            (nw_proto != IPPROTO_TCP && nw_proto != IPPROTO_UDP
             && nw_proto != IPPROTO_SCTP && nw_proto != IPPROTO_ICMP
-            && nw_proto != IPPROTO_ICMPV6) {
+            && nw_proto != IPPROTO_ICMPV6)) {
             goto out;
         }
 
@@ -2368,9 +2375,10 @@ flow_hash_5tuple(const struct flow *flow, uint32_t basis)
         }
 
         hash = hash_add(hash, flow->nw_proto);
-        if (flow->nw_proto != IPPROTO_TCP && flow->nw_proto != IPPROTO_UDP
+        if ((flow->nw_frag & FLOW_NW_FRAG_MASK) ||
+            (flow->nw_proto != IPPROTO_TCP && flow->nw_proto != IPPROTO_UDP
             && flow->nw_proto != IPPROTO_SCTP && flow->nw_proto != IPPROTO_ICMP
-            && flow->nw_proto != IPPROTO_ICMPV6) {
+            && flow->nw_proto != IPPROTO_ICMPV6)) {
             goto out;
         }
 
@@ -2378,6 +2386,7 @@ flow_hash_5tuple(const struct flow *flow, uint32_t basis)
         hash = hash_add(hash,
                         ((const uint32_t *)flow)[offsetof(struct flow, tp_src)
                                                  / sizeof(uint32_t)]);
+
     }
 out:
     return hash_finish(hash, 42); /* Arbitrary number. */
@@ -2415,7 +2424,9 @@ flow_hash_symmetric_l4(const struct flow *flow, uint32_t basis)
     if (fields.eth_type == htons(ETH_TYPE_IP)) {
         fields.ipv4_addr = flow->nw_src ^ flow->nw_dst;
         fields.ip_proto = flow->nw_proto;
-        if (fields.ip_proto == IPPROTO_TCP || fields.ip_proto == IPPROTO_SCTP) {
+        if (!(flow->nw_frag & FLOW_NW_FRAG_MASK) &&
+            (fields.ip_proto == IPPROTO_TCP ||
+            fields.ip_proto == IPPROTO_SCTP)) {
             fields.tp_port = flow->tp_src ^ flow->tp_dst;
         }
     } else if (fields.eth_type == htons(ETH_TYPE_IPV6)) {
@@ -2427,7 +2438,9 @@ flow_hash_symmetric_l4(const struct flow *flow, uint32_t basis)
             ipv6_addr[i] = a[i] ^ b[i];
         }
         fields.ip_proto = flow->nw_proto;
-        if (fields.ip_proto == IPPROTO_TCP || fields.ip_proto == IPPROTO_SCTP) {
+        if (!(flow->nw_frag & FLOW_NW_FRAG_MASK) &&
+            (fields.ip_proto == IPPROTO_TCP ||
+            fields.ip_proto == IPPROTO_SCTP)) {
             fields.tp_port = flow->tp_src ^ flow->tp_dst;
         }
     }
