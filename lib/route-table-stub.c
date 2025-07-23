@@ -19,6 +19,12 @@
 #include "route-table.h"
 
 bool
+route_table_is_standard_id(uint32_t table_id)
+{
+    return !table_id;
+}
+
+bool
 route_table_fallback_lookup(const struct in6_addr *ip6_dst OVS_UNUSED,
                             char name[] OVS_UNUSED,
                             struct in6_addr *gw6)

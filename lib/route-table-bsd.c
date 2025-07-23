@@ -44,6 +44,12 @@ VLOG_DEFINE_THIS_MODULE(route_table_bsd);
 #endif
 
 bool
+route_table_is_standard_id(uint32_t table_id)
+{
+    return !table_id;
+}
+
+bool
 route_table_fallback_lookup(const struct in6_addr *ip6_dst, char name[],
                             struct in6_addr *gw6)
 {
