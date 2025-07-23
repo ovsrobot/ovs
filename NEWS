@@ -26,6 +26,7 @@ v3.6.0 - xx xxx xxxx
      * Added JSON output support to the 'ovs/route/show' command.
      * 'ovs/route/show': added new option, table=[ID|all], to list routes from
        a specific OVS table or all routes from all tables.
+     * Added a new sub-command, ovs/router/rule/show, to list OVS router rules.
    - ovs-vsctl:
      * Now exits with error code 160 (ERROR_BAD_ARGUMENTS) on Windows and
        65 (EX_DATAERR) on other platforms if it fails while waiting for
