@@ -47,7 +47,9 @@ bool
 route_table_is_standard_id(uint32_t table_id)
 {
     return !table_id
-           || table_id == CLS_MAIN;
+           || table_id == CLS_DEFAULT
+           || table_id == CLS_MAIN
+           || table_id == CLS_LOCAL;
 }
 
 bool

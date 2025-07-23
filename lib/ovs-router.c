@@ -42,6 +42,7 @@
 #include "seq.h"
 #include "ovs-thread.h"
 #include "route-table.h"
+#include "pvector.h"
 #include "tnl-ports.h"
 #include "unixctl.h"
 #include "util.h"
@@ -56,11 +57,22 @@ struct clsmap_node {
     uint32_t table;
 };
 
+struct router_rule {
+    uint32_t prio;
+    bool invert;
+    uint8_t src_len;
+    struct in6_addr from_addr;
+    uint32_t lookup_table;
+};
+
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
 static struct ovs_mutex mutex = OVS_MUTEX_INITIALIZER;
 static struct hmap clsmap OVS_GUARDED_BY(mutex) = HMAP_INITIALIZER(&clsmap);
+static struct classifier cls_local;
 static struct classifier cls_main;
+static struct classifier cls_default;
+static struct pvector rules;
 
 /* By default, use the system routing table.  For system-independent testing,
  * the unit tests disable using the system routing table. */
@@ -87,7 +99,16 @@ cls_find(uint32_t table)
     struct clsmap_node *node;
 
     if (route_table_is_standard_id(table)) {
-        return &cls_main;
+        switch (table) {
+        case CLS_DEFAULT:
+            return &cls_default;
+        case CLS_MAIN:
+            return &cls_main;
+        case CLS_LOCAL:
+            return &cls_local;
+        default:
+            OVS_NOT_REACHED();
+        }
     }
 
     ovs_mutex_lock(&mutex);
@@ -131,6 +152,14 @@ cls_destroy(struct classifier *cls, bool flush_all)
     classifier_publish(cls);
 }
 
+bool
+ovs_router_is_empty(uint32_t table)
+{
+    struct classifier *cls = cls_find(table);
+
+    return !cls || !cls->n_rules;
+}
+
 static struct ovs_router_entry *
 ovs_router_entry_cast(const struct cls_rule *cr)
 {
@@ -170,26 +199,63 @@ ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
                   char output_netdev[],
                   struct in6_addr *src, struct in6_addr *gw)
 {
-    const struct cls_rule *cr;
     struct flow flow = {.ipv6_dst = *ip6_dst, .pkt_mark = mark};
+    const struct in6_addr *from_src = src;
+    const struct cls_rule *cr;
+    struct router_rule *rule;
 
     if (src && ipv6_addr_is_set(src)) {
-        const struct cls_rule *cr_src;
+        struct classifier *src_cls[] = { &cls_local, &cls_main, &cls_default };
         struct flow flow_src = {.ipv6_dst = *src, .pkt_mark = mark};
+        struct ovs_router_entry *p_src;
+        const struct cls_rule *cr_src;
+        bool local = false;
 
-        cr_src = classifier_lookup(&cls_main, OVS_VERSION_MAX, &flow_src,
-                                   NULL, NULL);
-        if (cr_src) {
-            struct ovs_router_entry *p_src = ovs_router_entry_cast(cr_src);
-            if (!p_src->local) {
-                return false;
+        for (int i = 0; i < ARRAY_SIZE(src_cls); i++) {
+            cr_src = classifier_lookup(src_cls[i], OVS_VERSION_MAX, &flow_src,
+                                       NULL, NULL);
+            if (!cr_src) {
+                continue;
             }
-        } else {
+            p_src = ovs_router_entry_cast(cr_src);
+            local = p_src->local;
+            if (local) {
+                break;
+            }
+        }
+        if (!local) {
             return false;
         }
     }
 
-    cr = classifier_lookup(&cls_main, OVS_VERSION_MAX, &flow, NULL, NULL);
+    if (!from_src) {
+        from_src = &in6addr_any;
+    }
+
+    PVECTOR_FOR_EACH (rule, &rules) {
+        bool matched = !!(!rule->src_len ||
+                          ipv6_addr_equals_masked(&rule->from_addr,
+                                                  from_src, rule->src_len));
+
+        if (rule->invert) {
+            matched = !matched;
+        }
+
+        if (matched) {
+            struct classifier *cls = cls_find(rule->lookup_table);
+
+            if (!cls) {
+                /* A rule can be added before the table is created */
+                continue;
+            }
+            cr = classifier_lookup(cls, OVS_VERSION_MAX, &flow, NULL,
+                                    NULL);
+            if (cr) {
+                break;
+            }
+        }
+    }
+
     if (cr) {
         struct ovs_router_entry *p = ovs_router_entry_cast(cr);
 
@@ -644,37 +710,40 @@ out:
 static void
 ovs_router_show_text(struct ds *ds)
 {
+    struct classifier *std_cls[] = { &cls_local, &cls_main, &cls_default };
     struct ovs_router_entry *rt;
 
     ds_put_format(ds, "Route Table:\n");
-    CLS_FOR_EACH (rt, cr, &cls_main) {
-        uint8_t plen;
-        if (rt->priority == rt->plen || rt->local) {
-            ds_put_format(ds, "Cached: ");
-        } else {
-            ds_put_format(ds, "User: ");
-        }
-        ipv6_format_mapped(&rt->nw_addr, ds);
-        plen = rt->plen;
-        if (IN6_IS_ADDR_V4MAPPED(&rt->nw_addr)) {
-            plen -= 96;
-        }
-        ds_put_format(ds, "/%"PRIu8, plen);
-        if (rt->mark) {
-            ds_put_format(ds, " MARK %"PRIu32, rt->mark);
-        }
+    for (int i = 0; i < ARRAY_SIZE(std_cls); i++) {
+        CLS_FOR_EACH (rt, cr, std_cls[i]) {
+            uint8_t plen;
+            if (rt->priority == rt->plen || rt->local) {
+                ds_put_format(ds, "Cached: ");
+            } else {
+                ds_put_format(ds, "User: ");
+            }
+            ipv6_format_mapped(&rt->nw_addr, ds);
+            plen = rt->plen;
+            if (IN6_IS_ADDR_V4MAPPED(&rt->nw_addr)) {
+                plen -= 96;
+            }
+            ds_put_format(ds, "/%"PRIu8, plen);
+            if (rt->mark) {
+                ds_put_format(ds, " MARK %"PRIu32, rt->mark);
+            }
 
-        ds_put_format(ds, " dev %s", rt->output_netdev);
-        if (ipv6_addr_is_set(&rt->gw)) {
-            ds_put_format(ds, " GW ");
-            ipv6_format_mapped(&rt->gw, ds);
+            ds_put_format(ds, " dev %s", rt->output_netdev);
+            if (ipv6_addr_is_set(&rt->gw)) {
+                ds_put_format(ds, " GW ");
+                ipv6_format_mapped(&rt->gw, ds);
+            }
+            ds_put_format(ds, " SRC ");
+            ipv6_format_mapped(&rt->src_addr, ds);
+            if (rt->local) {
+                ds_put_format(ds, " local");
+            }
+            ds_put_format(ds, "\n");
         }
-        ds_put_format(ds, " SRC ");
-        ipv6_format_mapped(&rt->src_addr, ds);
-        if (rt->local) {
-            ds_put_format(ds, " local");
-        }
-        ds_put_format(ds, "\n");
     }
 }
 
@@ -747,20 +816,104 @@ ovs_router_flush(bool flush_all)
             free(node);
         }
     }
+    cls_destroy(&cls_local, flush_all);
     cls_destroy(&cls_main, flush_all);
+    cls_destroy(&cls_default, flush_all);
     ovs_mutex_unlock(&mutex);
     seq_change(tnl_conf_seq);
 }
 
 static void
+init_standard_rules(void)
+{
+    /* Add default rules using same priorities as Linux kernel does. */
+    ovs_router_rule_add(0, false, 0, &in6addr_any, CLS_LOCAL);
+    ovs_router_rule_add(0x7FFE, false, 0, &in6addr_any, CLS_MAIN);
+    ovs_router_rule_add(0x7FFF, false, 0, &in6addr_any, CLS_DEFAULT);
+}
+
+static void
+rule_destroy_cb(struct router_rule *rule)
+{
+    ovsrcu_postpone(free, rule);
+}
+
+void
+ovs_router_rules_flush(void)
+{
+    struct router_rule *rule;
+
+    PVECTOR_FOR_EACH (rule, &rules) {
+        pvector_remove(&rules, rule);
+        ovsrcu_postpone(rule_destroy_cb, rule);
+    }
+    pvector_publish(&rules);
+    init_standard_rules();
+}
+
+static void
 ovs_router_flush_handler(void *aux OVS_UNUSED)
 {
+    ovs_router_rules_flush();
     ovs_router_flush(true);
 
     ovs_mutex_lock(&mutex);
+    pvector_destroy(&rules);
     hmap_destroy(&clsmap);
     hmap_init(&clsmap);
     ovs_mutex_unlock(&mutex);
+}
+
+bool
+ovs_router_is_referenced(uint32_t table)
+{
+    struct router_rule *rule;
+
+    if (route_table_is_standard_id(table)) {
+        return true;
+    }
+
+    PVECTOR_FOR_EACH (rule, &rules) {
+        if (rule->lookup_table == table) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int
+rule_pvec_prio(uint32_t prio)
+{
+    /* Invert the priority of a pvector entry to reverse the default sorting
+     * order (descending) to maintain the standard rules semantic where 0 is
+     * the highest priority and UINT_MAX is the lowest. The mapping is the
+     * following:
+     *
+     *     0        -> INT_MAX
+     *     INT_MAX  -> 0
+     *     UINT_MAX -> INT_MIN
+     */
+    if (prio <= INT_MAX) {
+        return -(INT_MIN + (int) prio + 1);
+    } else {
+        return -(INT_MIN + INT_MAX + (int) (prio - INT_MAX - 1) + 1) - 1;
+    }
+}
+
+void
+ovs_router_rule_add(uint32_t prio, bool invert, uint8_t src_len,
+                    const struct in6_addr *from, uint32_t lookup_table)
+{
+    struct router_rule *rule = xzalloc(sizeof *rule);
+
+    rule->prio = prio;
+    rule->invert = invert;
+    rule->src_len = src_len;
+    rule->from_addr = *from;
+    rule->lookup_table = lookup_table;
+
+    pvector_insert(&rules, rule, rule_pvec_prio(prio));
+    pvector_publish(&rules);
 }
 
 void
@@ -771,7 +924,11 @@ ovs_router_init(void)
     if (ovsthread_once_start(&once)) {
         ovs_mutex_lock(&mutex);
         hmap_init(&clsmap);
+        classifier_init(&cls_local, NULL);
         classifier_init(&cls_main, NULL);
+        classifier_init(&cls_default, NULL);
+        pvector_init(&rules);
+        init_standard_rules();
         ovs_mutex_unlock(&mutex);
         fatal_signal_add_hook(ovs_router_flush_handler, NULL, NULL, true);
         unixctl_command_register("ovs/route/add",
