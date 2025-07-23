@@ -60,6 +60,7 @@ struct clsmap_node {
 struct router_rule {
     uint32_t prio;
     bool invert;
+    bool user;
     uint8_t src_len;
     struct in6_addr from_addr;
     uint32_t lookup_table;
@@ -893,6 +894,7 @@ ovs_router_rules_show_json(struct json *rule_entries)
         struct json *entry = json_object_create();
 
         json_object_put(entry, "priority", json_integer_create(rule->prio));
+        json_object_put(entry, "user", json_integer_create(rule->user));
         json_object_put(entry, "invert", json_boolean_create(rule->invert));
         json_object_put(entry, "src_len", json_integer_create(rule->src_len));
         json_object_put(entry, "lookup",
@@ -932,6 +934,11 @@ ovs_router_rules_show_text(struct ds *ds)
     struct router_rule *rule;
 
     PVECTOR_FOR_EACH (rule, &rules) {
+        if (rule->user) {
+            ds_put_format(ds, "User: ");
+        } else {
+            ds_put_format(ds, "Cached: ");
+        }
         ds_put_format(ds, "%u: ", rule->prio);
         if (rule->invert) {
             ds_put_format(ds, "not ");
@@ -971,6 +978,156 @@ ovs_router_rules_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
         ovs_router_rules_show_text(&ds);
         unixctl_command_reply(conn, ds_cstr(&ds));
         ds_destroy(&ds);
+    }
+}
+
+static void
+ovs_router_rule_add_cmd(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                        const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    unsigned int src_len = 0;
+    struct in6_addr from;
+    bool invert = false;
+    uint32_t prio = 0;
+    uint32_t table;
+    ovs_be32 ip;
+    int i = 1;
+
+    if (ovs_scan(argv[i], "not")) {
+        invert = true;
+        i++;
+    }
+
+    if (ovs_scan(argv[i], "from=all")) {
+        from = in6addr_any;
+    } else if (ovs_scan(argv[i], "from=")) {
+        const char *arg = &argv[i][strlen("from=")];
+
+        if (scan_ipv4_route(arg, &ip, &src_len)) {
+            in6_addr_set_mapped_ipv4(&from, ip);
+            src_len += 96;
+        } else if (!scan_ipv6_route(arg, &from, &src_len)) {
+            unixctl_command_reply_error(conn, "Invalid from=ip/plen");
+            return;
+        }
+    } else {
+        unixctl_command_reply_error(conn, "Invalid 'from' parameter");
+        return;
+    }
+    if (argc <= ++i) {
+        unixctl_command_reply_error(conn, "Not enough arguments");
+        return;
+    }
+
+    if (ovs_scan(argv[i], "prio=%"SCNi32, &prio)) {
+        if (argc <= ++i) {
+            unixctl_command_reply_error(conn, "Not enough arguments");
+            return;
+        }
+    }
+
+    if (ovs_scan(argv[i], "table=local")) {
+        table = CLS_LOCAL;
+    } else if (ovs_scan(argv[i], "table=main")) {
+        table = CLS_MAIN;
+    } else if (ovs_scan(argv[i], "table=default")) {
+        table = CLS_DEFAULT;
+    } else if (!ovs_scan(argv[i], "table=%"SCNi32, &table)) {
+        unixctl_command_reply_error(conn, "Invalid 'table' format");
+        return;
+    }
+
+    if (!prio) {
+        struct router_rule *rule;
+        uint32_t prev_prio = 0;
+
+        PVECTOR_FOR_EACH (rule, &rules) {
+            if ((!prio && rule->prio) ||
+                (rule->prio - prev_prio > 1)) {
+                prio = rule->prio - 1;
+            }
+            prev_prio = rule->prio;
+        }
+    }
+
+    ovs_mutex_lock(&mutex);
+    ovs_router_rule_add(prio, invert, true, src_len, &from, table);
+    ovs_mutex_unlock(&mutex);
+    unixctl_command_reply(conn, "OK");
+}
+
+static void
+ovs_router_rule_del_cmd(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                        const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    unsigned int src_len = 0;
+    struct in6_addr from;
+    bool invert = false;
+    uint32_t prio = 0;
+    uint32_t table;
+    ovs_be32 ip;
+    int i = 1;
+    int err;
+
+    if (ovs_scan(argv[i], "not")) {
+        invert = true;
+        i++;
+    }
+
+    if (ovs_scan(argv[i], "from=all")) {
+        from = in6addr_any;
+    } else if (ovs_scan(argv[i], "from=")) {
+        const char *arg = &argv[i][strlen("from=")];
+
+        if (scan_ipv4_route(arg, &ip, &src_len)) {
+            in6_addr_set_mapped_ipv4(&from, ip);
+            src_len += 96;
+        } else if (!scan_ipv6_route(arg, &from, &src_len)) {
+            unixctl_command_reply_error(conn, "Invalid from=ip/plen");
+            return;
+        }
+    } else {
+        unixctl_command_reply_error(conn, "Invalid 'from' parameter");
+        return;
+    }
+    if (argc <= ++i) {
+        unixctl_command_reply_error(conn, "Not enough arguments");
+        return;
+    }
+
+    if (ovs_scan(argv[i], "prio=%"SCNi32, &prio)) {
+        if (argc <= ++i) {
+            unixctl_command_reply_error(conn, "Not enough arguments");
+            return;
+        }
+    }
+
+    if (ovs_scan(argv[i], "table=local")) {
+        table = CLS_LOCAL;
+    } else if (ovs_scan(argv[i], "table=main")) {
+        table = CLS_MAIN;
+    } else if (ovs_scan(argv[i], "table=default")) {
+        table = CLS_DEFAULT;
+    } else if (!ovs_scan(argv[i], "table=%"SCNi32, &table)) {
+        unixctl_command_reply_error(conn, "Invalid 'table' format");
+        return;
+    }
+
+    ovs_mutex_lock(&mutex);
+    err = ovs_router_rule_del(prio, invert, src_len, &from, table);
+    ovs_mutex_unlock(&mutex);
+
+    if (err) {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+
+        ds_put_format(&ds, "Failed to delete router rule: %d", err);
+        if (err == -ENOENT) {
+            ds_put_format(&ds, " (No such entry)");
+        }
+        unixctl_command_reply_error(conn, ds_cstr_ro(&ds));
+        ds_destroy(&ds);
+    } else {
+        unixctl_command_reply(conn, "OK");
     }
 }
 
@@ -1063,9 +1220,9 @@ static void
 init_standard_rules(void)
 {
     /* Add default rules using same priorities as Linux kernel does. */
-    ovs_router_rule_add(0, false, 0, &in6addr_any, CLS_LOCAL);
-    ovs_router_rule_add(0x7FFE, false, 0, &in6addr_any, CLS_MAIN);
-    ovs_router_rule_add(0x7FFF, false, 0, &in6addr_any, CLS_DEFAULT);
+    ovs_router_rule_add(0, false, false, 0, &in6addr_any, CLS_LOCAL);
+    ovs_router_rule_add(0x7FFE, false, false, 0, &in6addr_any, CLS_MAIN);
+    ovs_router_rule_add(0x7FFF, false, false, 0, &in6addr_any, CLS_DEFAULT);
 }
 
 static void
@@ -1075,22 +1232,26 @@ rule_destroy_cb(struct router_rule *rule)
 }
 
 void
-ovs_router_rules_flush(void)
+ovs_router_rules_flush(bool flush_all)
 {
     struct router_rule *rule;
 
+    ovs_mutex_lock(&mutex);
     PVECTOR_FOR_EACH (rule, &rules) {
-        pvector_remove(&rules, rule);
-        ovsrcu_postpone(rule_destroy_cb, rule);
+        if (flush_all || !rule->user) {
+            pvector_remove(&rules, rule);
+            ovsrcu_postpone(rule_destroy_cb, rule);
+        }
     }
     pvector_publish(&rules);
     init_standard_rules();
+    ovs_mutex_unlock(&mutex);
 }
 
 static void
 ovs_router_flush_handler(void *aux OVS_UNUSED)
 {
-    ovs_router_rules_flush();
+    ovs_router_rules_flush(true);
     ovs_router_flush(true);
 
     ovs_mutex_lock(&mutex);
@@ -1137,19 +1298,46 @@ rule_pvec_prio(uint32_t prio)
 }
 
 void
-ovs_router_rule_add(uint32_t prio, bool invert, uint8_t src_len,
+ovs_router_rule_add(uint32_t prio, bool invert, bool user, uint8_t src_len,
                     const struct in6_addr *from, uint32_t lookup_table)
 {
     struct router_rule *rule = xzalloc(sizeof *rule);
 
     rule->prio = prio;
     rule->invert = invert;
+    rule->user = user;
     rule->src_len = src_len;
     rule->from_addr = *from;
     rule->lookup_table = lookup_table;
 
     pvector_insert(&rules, rule, rule_pvec_prio(prio));
     pvector_publish(&rules);
+}
+
+int
+ovs_router_rule_del(uint32_t prio, bool invert, uint8_t src_len,
+                    const struct in6_addr *from, uint32_t lookup_table)
+{
+    struct router_rule *rule;
+
+    PVECTOR_FOR_EACH (rule, &rules) {
+        if (prio && rule->prio > prio) {
+            break;
+        }
+        if (rule->user &&
+            rule->invert == invert &&
+            (!prio || rule->prio == prio) &&
+            rule->src_len == src_len &&
+            ipv6_addr_equals(&rule->from_addr, from) &&
+            rule->lookup_table == lookup_table) {
+            pvector_remove(&rules, rule);
+            ovsrcu_postpone(rule_destroy_cb, rule);
+            pvector_publish(&rules);
+            return 0;
+        }
+    }
+
+    return -ENOENT;
 }
 
 void
@@ -1181,6 +1369,14 @@ ovs_router_init(void)
                                  ovs_router_lookup_cmd, NULL);
         unixctl_command_register("ovs/route/rule/show", "", 0, 0,
                                  ovs_router_rules_show, NULL);
+        unixctl_command_register("ovs/route/rule/add",
+                                 "[not] from=<all|IP/PLEN> [prio=NUM] "
+                                 "table=<local|main|default|ID>",
+                                 2, 5, ovs_router_rule_add_cmd, NULL);
+        unixctl_command_register("ovs/route/rule/del",
+                                 "[not] from=<all|IP/PLEN> [prio=NUM] "
+                                 "table=<local|main|default|ID>",
+                                 2, 5, ovs_router_rule_del_cmd, NULL);
         ovsthread_once_done(&once);
     }
 }

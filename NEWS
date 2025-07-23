@@ -31,6 +31,8 @@ v3.6.0 - xx xxx xxxx
        add/delete a route from a specific OVS table.
      * 'ovs/route/lookup': added new option, src=IP, to perform lookup with
        a specific source IP address.
+     * Added new sub-commands, ovs/router/rule/{add,del}, to add and remove
+       user routing rules in OVS.
    - ovs-vsctl:
      * Now exits with error code 160 (ERROR_BAD_ARGUMENTS) on Windows and
        65 (EX_DATAERR) on other platforms if it fails while waiting for
