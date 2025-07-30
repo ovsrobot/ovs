@@ -2858,6 +2858,12 @@ raft_send_append_request(struct raft *raft,
 {
     ovs_assert(raft->role == RAFT_LEADER);
 
+    /* If n > 0 then we need to have the data still available that the peer
+     * needs next. If the data is gone due to compaction we should have send
+     * an install_snapshot_request instead. */
+    ovs_assert(!n || raft->log_start <= peer->next_index);
+    ovs_assert(!n || peer->next_index + n <= raft->log_end);
+
     const union raft_rpc rq = {
         .append_request = {
             .common = {
@@ -2872,7 +2878,8 @@ raft_send_append_request(struct raft *raft,
                                               - raft->log_start].term
                               : raft->snap.term),
             .leader_commit = raft->commit_index,
-            .entries = &raft->entries[peer->next_index - raft->log_start],
+            .entries = n ? &raft->entries[
+                peer->next_index - raft->log_start] : NULL,
             .n_entries = n,
         },
     };
