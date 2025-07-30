@@ -2044,9 +2044,11 @@ raft_run(struct raft *raft)
     }
 
     if (failure_test == FT_TRANSFER_LEADERSHIP) {
-        /* Using this function as it conveniently implements all we need and
-         * snapshotting is the main test scenario for leadership transfer. */
-        raft_notify_snapshot_recommended(raft);
+        if (raft->role == RAFT_LEADER) {
+            VLOG_INFO("Transferring leadership becaues of test.");
+            raft_transfer_leadership(raft, "preparing to write snapshot");
+            raft_become_follower(raft);
+        }
         failure_test = FT_NO_TEST;
     }
 
@@ -4555,22 +4557,7 @@ raft_may_snapshot(const struct raft *raft)
             && !raft->leaving
             && !raft->left
             && !raft->failed
-            && (raft->role == RAFT_FOLLOWER || hmap_count(&raft->servers) == 1)
             && raft->last_applied >= raft->log_start);
-}
-
-/* Prepares for soon snapshotting. */
-void
-raft_notify_snapshot_recommended(struct raft *raft)
-{
-    if (raft->role == RAFT_LEADER) {
-        /* Leader is about to write database snapshot to the disk and this
-         * might take significant amount of time.  Stepping back from the
-         * leadership to keep the cluster functional during this process.  */
-        VLOG_INFO("Transferring leadership to write a snapshot.");
-        raft_transfer_leadership(raft, "preparing to write snapshot");
-        raft_become_follower(raft);
-    }
 }
 
 /* Replaces the log for 'raft', up to the last log entry read, by

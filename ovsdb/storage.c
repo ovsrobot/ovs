@@ -563,10 +563,8 @@ ovsdb_storage_should_compact(struct ovsdb_storage *storage)
             return false;
         }
 
-        /* If we can't snapshot right now, don't. */
+        /* If we can't compact right now, don't. */
         if (storage->raft && !raft_may_snapshot(storage->raft)) {
-            /* Notifying the storage that it needs to make a snapshot soon. */
-            raft_notify_snapshot_recommended(storage->raft);
             return false;
         }
 
