@@ -40,6 +40,9 @@
 #include "transaction.h"
 #include "util.h"
 
+#define OVSDB_LOG_DATA_KEY "logdata"
+#define OVSDB_LOG_META_KEY "logmeta"
+
 VLOG_DEFINE_THIS_MODULE(ovsdb_log);
 
 /* State in a log's state machine.
@@ -506,9 +509,17 @@ ovsdb_log_read(struct ovsdb_log *file, struct json **jsonp)
         goto error;
     }
 
+    struct json *data = shash_find_and_delete(json_object(json),
+                                              OVSDB_LOG_DATA_KEY);
+    if (data) {
+        *jsonp = data;
+        json_destroy(json);
+    } else {
+        *jsonp = json;
+    }
+
     file->prev_offset = file->offset;
     file->offset = data_offset + data_length;
-    *jsonp = json;
     return NULL;
 
 error:
@@ -595,17 +606,8 @@ ovsdb_log_compose_record(const struct json *json,
                   magic, data->length, SHA1_ARGS(sha1));
 }
 
-/* Writes log record 'json' to 'file'.  Returns NULL if successful or an error
- * (which the caller must eventually destroy) on failure.
- *
- * If the log contains some records that have not yet been read, then calling
- * this function truncates them.
- *
- * Log writes are atomic.  A client may use ovsdb_log_commit() to ensure that
- * they are durable.
- */
-struct ovsdb_error *
-ovsdb_log_write(struct ovsdb_log *file, const struct json *json)
+static struct ovsdb_error *
+ovsdb_log_write_(struct ovsdb_log *file, const struct json *json)
 {
     switch (file->state) {
     case OVSDB_LOG_WRITE:
@@ -661,6 +663,26 @@ ovsdb_log_write(struct ovsdb_log *file, const struct json *json)
 
     file->offset += total_length;
     return NULL;
+}
+
+/* Writes log record 'json' to 'file'.  Returns NULL if successful or an error
+ * (which the caller must eventually destroy) on failure.
+ *
+ * If the log contains some records that have not yet been read, then calling
+ * this function truncates them.
+ *
+ * Log writes are atomic.  A client may use ovsdb_log_commit() to ensure that
+ * they are durable.
+ */
+struct ovsdb_error *
+ovsdb_log_write(struct ovsdb_log *file, const struct json *json)
+{
+    struct json *outer = json_object_create();
+    json_object_put(outer, OVSDB_LOG_DATA_KEY, (struct json *) json);
+    struct ovsdb_error *error = ovsdb_log_write_(file, outer);
+    shash_find_and_delete_assert(json_object(outer), OVSDB_LOG_DATA_KEY);
+    json_destroy(outer);
+    return error;
 }
 
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT

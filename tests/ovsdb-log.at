@@ -252,7 +252,7 @@ AT_CHECK(
 file: read: {"x":0}
 file: read: {"x":1}
 file: read: {"x":2}
-file: read failed: syntax error: file: parse error at offset 186 in header line "xxx"
+file: read failed: syntax error: file: parse error at offset 225 in header line "xxx"
 ]], [ignore])
 AT_CHECK([test -f .file.~lock~])
 AT_CLEANUP
@@ -274,7 +274,7 @@ AT_CHECK(
 file: read: {"x":0}
 file: read: {"x":1}
 file: read: {"x":2}
-file: read failed: syntax error: file: parse error at offset 186 in header line "xxx"
+file: read failed: syntax error: file: parse error at offset 225 in header line "xxx"
 file: write:{"x":3} successful
 ]], [ignore])
 AT_CHECK(
@@ -308,7 +308,7 @@ AT_CHECK(
   [[file: open successful
 file: read: {"x":0}
 file: read: {"x":1}
-file: read failed: syntax error: file: 8 bytes starting at offset 178 have SHA-1 hash 2683fd63b5b9fd49df4f2aa25bf7db5cbbebbe6f but should have hash 3d8ed30f471ad1b7b4b571cb0c7d5ed3e81350aa
+file: read failed: syntax error: file: 20 bytes starting at offset 205 have SHA-1 hash 9611766b297a4c0e018f0f7bb8ddb140f3b6fc73 but should have hash d112cf97136ed93021698d0582a4b237ef2a6a64
 file: write:{"longer data":0} successful
 ]], [ignore])
 AT_CHECK(
@@ -334,14 +334,14 @@ file: write:{"x":2} successful
 ]], [ignore])
 AT_CHECK([[sed 's/{"x":2}/2/' < file > file.tmp]])
 AT_CHECK([mv file.tmp file])
-AT_CHECK([[grep -c '^2$' file]], [0], [1
+AT_CHECK([[grep -c '^{"logdata":2}$' file]], [0], [1
 ])
 AT_CHECK(
   [[test-ovsdb log-io file read/write read read read 'write:{"longer data":0}']], [0],
   [[file: open successful
 file: read: {"x":0}
 file: read: {"x":1}
-file: read failed: I/O error: file: error reading 8 bytes starting at offset 178 (End of file)
+file: read failed: I/O error: file: error reading 20 bytes starting at offset 205 (End of file)
 file: write:{"longer data":0} successful
 ]], [ignore])
 AT_CHECK(
@@ -372,7 +372,7 @@ AT_CHECK(
 file: read: {"x":0}
 file: read: {"x":1}
 file: read: {"x":2}
-file: read failed: syntax error: file: 5 bytes starting at offset 240 are not valid JSON (line 0, column 4, byte 4: syntax error at beginning of input)
+file: read failed: syntax error: file: 5 bytes starting at offset 279 are not valid JSON (line 0, column 4, byte 4: syntax error at beginning of input)
 file: write:{"replacement data":0} successful
 ]], [ignore])
 AT_CHECK(
