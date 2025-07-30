@@ -522,7 +522,7 @@ schedule_next_snapshot(struct ovsdb_storage *storage, bool quick)
 }
 
 bool
-ovsdb_storage_should_snapshot(struct ovsdb_storage *storage)
+ovsdb_storage_should_compact(struct ovsdb_storage *storage)
 {
     if (storage->raft || storage->log) {
         /* If we haven't reached the minimum snapshot time, don't snapshot. */

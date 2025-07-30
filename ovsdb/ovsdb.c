@@ -504,12 +504,12 @@ ovsdb_destroy(struct ovsdb *db)
         struct shash_node *node;
 
         /* Need to wait for compaction thread to finish the work. */
-        while (ovsdb_snapshot_in_progress(db)) {
-            ovsdb_snapshot_wait(db);
+        while (ovsdb_compcation_in_progress(db)) {
+            ovsdb_compaction_wait(db);
             poll_block();
         }
-        if (ovsdb_snapshot_ready(db)) {
-            struct ovsdb_error *error = ovsdb_snapshot(db, false);
+        if (ovsdb_compaction_ready(db)) {
+            struct ovsdb_error *error = ovsdb_compact(db, false);
 
             if (error) {
                 char *s = ovsdb_error_to_string_free(error);
@@ -640,31 +640,31 @@ compaction_thread(void *aux)
 }
 
 void
-ovsdb_snapshot_wait(struct ovsdb *db)
+ovsdb_compaction_wait(struct ovsdb *db)
 {
-    if (db->snap_state) {
-        seq_wait(db->snap_state->done, db->snap_state->seqno);
+    if (db->compact_state) {
+        seq_wait(db->compact_state->done, db->compact_state->seqno);
     }
 }
 
 bool
-ovsdb_snapshot_in_progress(struct ovsdb *db)
+ovsdb_compcation_in_progress(struct ovsdb *db)
 {
-    return db->snap_state &&
-           seq_read(db->snap_state->done) == db->snap_state->seqno;
+    return db->compact_state &&
+           seq_read(db->compact_state->done) == db->compact_state->seqno;
 }
 
 bool
-ovsdb_snapshot_ready(struct ovsdb *db)
+ovsdb_compaction_ready(struct ovsdb *db)
 {
-    return db->snap_state &&
-           seq_read(db->snap_state->done) != db->snap_state->seqno;
+    return db->compact_state &&
+           seq_read(db->compact_state->done) != db->compact_state->seqno;
 }
 
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
-ovsdb_snapshot(struct ovsdb *db, bool trim_memory OVS_UNUSED)
+ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
 {
-    if (!db->storage || ovsdb_snapshot_in_progress(db)) {
+    if (!db->storage || ovsdb_compcation_in_progress(db)) {
         return NULL;
     }
 
@@ -678,17 +678,17 @@ ovsdb_snapshot(struct ovsdb *db, bool trim_memory OVS_UNUSED)
         state->data = ovsdb_to_txn_json(db,
                                         "compacting database online", true);
         state->schema = ovsdb_schema_to_json(db->schema);
-    } else if (ovsdb_snapshot_ready(db)) {
-        xpthread_join(db->snap_state->thread, NULL);
+    } else if (ovsdb_compaction_ready(db)) {
+        xpthread_join(db->compact_state->thread, NULL);
 
-        state = db->snap_state;
-        db->snap_state = NULL;
+        state = db->compact_state;
+        db->compact_state = NULL;
 
         ovsdb_destroy(state->db);
         seq_destroy(state->done);
     } else {
         /* Creating a thread. */
-        ovs_assert(!db->snap_state);
+        ovs_assert(!db->compact_state);
         state = xzalloc(sizeof *state);
 
         state->db = ovsdb_clone_data(db);
@@ -700,7 +700,7 @@ ovsdb_snapshot(struct ovsdb *db, bool trim_memory OVS_UNUSED)
                                           compaction_thread, state);
         state->init_time = time_msec() - start_time;
 
-        db->snap_state = state;
+        db->compact_state = state;
         return NULL;
     }
 

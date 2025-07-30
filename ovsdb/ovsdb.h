@@ -125,7 +125,7 @@ struct ovsdb {
     struct hmap txn_forward_sent;
 
     /* Database compaction. */
-    struct ovsdb_compaction_state *snap_state;
+    struct ovsdb_compaction_state *compact_state;
 };
 
 /* Total number of 'weak reference' objects in all databases
@@ -154,11 +154,11 @@ struct json *ovsdb_execute(struct ovsdb *, const struct ovsdb_session *,
                            long long int elapsed_msec,
                            long long int *timeout_msec);
 
-struct ovsdb_error *ovsdb_snapshot(struct ovsdb *, bool trim_memory)
+struct ovsdb_error *ovsdb_compact(struct ovsdb *, bool trim_memory)
     OVS_WARN_UNUSED_RESULT;
-void ovsdb_snapshot_wait(struct ovsdb *);
-bool ovsdb_snapshot_in_progress(struct ovsdb *);
-bool ovsdb_snapshot_ready(struct ovsdb *);
+void ovsdb_compaction_wait(struct ovsdb *);
+bool ovsdb_compcation_in_progress(struct ovsdb *);
+bool ovsdb_compaction_ready(struct ovsdb *);
 
 void ovsdb_replace(struct ovsdb *dst, struct ovsdb *src);
 
