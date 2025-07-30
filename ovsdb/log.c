@@ -77,7 +77,8 @@ enum ovsdb_log_state {
 
 struct ovsdb_log_file {
     off_t prev_offset;          /* While reading the offset before the latest
-                                 * read call. */
+                                 * read call. While writing the offset before
+                                 * the latest ovsdb_log_write_file call. */
     off_t offset;               /* The current offset in the file. */
     char *name;                 /* Absolute name of file. */
     struct lockfile *lockfile;
@@ -728,6 +729,7 @@ ovsdb_log_write_file(struct ovsdb_log *log, struct ovsdb_log_file *file,
         return ovsdb_error_clone(log->error);
     }
 
+    file->prev_offset = file->offset;
     file->offset += total_length;
     return NULL;
 }
