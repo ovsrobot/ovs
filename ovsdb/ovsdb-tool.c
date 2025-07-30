@@ -278,7 +278,8 @@ do_create(struct ovs_cmdl_context *ctx)
 
     /* Create database file. */
     check_ovsdb_error(ovsdb_log_open(db_file_name, OVSDB_MAGIC,
-                                     OVSDB_LOG_CREATE_EXCL, true, &log));
+                                     OVSDB_LOG_CREATE_EXCL_SINGLE, true,
+                                     &log));
     check_ovsdb_error(ovsdb_log_write_and_free(log, json));
     check_ovsdb_error(ovsdb_log_commit_block(log));
     ovsdb_log_close(log);
@@ -352,7 +353,8 @@ write_standalone_db(const char *file_name, const char *comment,
 {
     struct ovsdb_log *log;
     struct ovsdb_error *error = ovsdb_log_open(file_name, OVSDB_MAGIC,
-                                               OVSDB_LOG_CREATE, false, &log);
+                                               OVSDB_LOG_CREATE_EXCL_SINGLE,
+                                               false, &log);
     if (error) {
         return error;
     }
@@ -1708,7 +1710,7 @@ do_cluster_standalone(struct ovs_cmdl_context *ctx)
                                      OVSDB_MAGIC"|"RAFT_MAGIC,
                                      OVSDB_LOG_READ_ONLY, true, &log));
     check_ovsdb_error(ovsdb_log_open(db_file_name, OVSDB_MAGIC,
-                                     OVSDB_LOG_CREATE_EXCL, true,
+                                     OVSDB_LOG_CREATE_EXCL_SINGLE, true,
                                      &db_log_data));
     if (strcmp(ovsdb_log_get_magic(log), RAFT_MAGIC) != 0) {
         ovs_fatal(0, "Database is not clustered db.\n");

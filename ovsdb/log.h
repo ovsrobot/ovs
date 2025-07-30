@@ -45,10 +45,13 @@ struct ovsdb_log;
 
 /* Access mode for opening an OVSDB log. */
 enum ovsdb_log_open_mode {
-    OVSDB_LOG_READ_ONLY,        /* Open existing file, read-only. */
-    OVSDB_LOG_READ_WRITE,       /* Open existing file, read/write. */
-    OVSDB_LOG_CREATE_EXCL,      /* Create new file, read/write. */
-    OVSDB_LOG_CREATE            /* Create or open file, read/write. */
+    OVSDB_LOG_READ_ONLY,          /* Open existing file, read-only. */
+    OVSDB_LOG_READ_WRITE,         /* Open existing file, read/write. */
+    OVSDB_LOG_CREATE_EXCL,        /* Create new file, read/write. */
+    OVSDB_LOG_CREATE_EXCL_SINGLE, /* Create new file, read/write. Do not create
+                                   * multiple files for writing. Only use this
+                                   * for short lived files. */
+    OVSDB_LOG_CREATE              /* Create or open file, read/write. */
 };
 
 /* 'magic' for use with ovsdb_log_open() for OVSDB databases (see ovsdb(5)). */

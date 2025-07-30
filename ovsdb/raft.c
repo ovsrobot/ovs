@@ -502,7 +502,7 @@ raft_create_cluster(const char *file_name, const char *name,
 
     /* Create log file. */
     struct ovsdb_log *log;
-    error = ovsdb_log_open(file_name, RAFT_MAGIC, OVSDB_LOG_CREATE_EXCL,
+    error = ovsdb_log_open(file_name, RAFT_MAGIC, OVSDB_LOG_CREATE_EXCL_SINGLE,
                            true, &log);
     if (error) {
         return error;

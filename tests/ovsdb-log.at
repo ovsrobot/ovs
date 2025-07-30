@@ -243,7 +243,7 @@ file: write:{"x":0} successful
 file: write:{"x":1} successful
 file: write:{"x":2} successful
 ]], [ignore])
-AT_CHECK([echo 'xxx' >> file])
+AT_CHECK([bash -c "echo 'xxx' >> file.*"])
 AT_CHECK(
   [test-ovsdb log-io file read-only read read read read | sed -e 's|error: .*file[[.0-9]]*:|error: file:|'], [0],
   [[file: open successful
@@ -265,7 +265,7 @@ file: write:{"x":0} successful
 file: write:{"x":1} successful
 file: write:{"x":2} successful
 ]], [ignore])
-AT_CHECK([echo 'xxx' >> file])
+AT_CHECK([bash -c "echo 'xxx' >> file.*"])
 AT_CHECK(
   [[test-ovsdb log-io file read/write read read read read 'write:{"x":3}' | sed -e 's|error: .*file[.0-9]*:|error: file:|']], [0],
   [[file: open successful
@@ -297,8 +297,9 @@ file: write:{"x":0} successful
 file: write:{"x":1} successful
 file: write:{"x":2} successful
 ]], [ignore])
-AT_CHECK([[sed 's/{"x":2}/{"x":3}/' < file > file.tmp]])
+AT_CHECK([[bash -c "sed 's/{\"x\":2}/{\"x\":3}/' < file.* > file.tmp"]])
 AT_CHECK([mv file.tmp file])
+AT_CHECK([[bash -c "rm file.*"]])
 AT_CHECK([[grep -c '{"x":3}' file]], [0], [1
 ])
 AT_CHECK(
@@ -330,8 +331,9 @@ file: write:{"x":0} successful
 file: write:{"x":1} successful
 file: write:{"x":2} successful
 ]], [ignore])
-AT_CHECK([[sed 's/{"x":2}/2/' < file > file.tmp]])
+AT_CHECK([[bash -c "sed 's/{\"x\":2}/2/' < file.* > file.tmp"]])
 AT_CHECK([mv file.tmp file])
+AT_CHECK([[bash -c "rm file.*"]])
 AT_CHECK([[grep -c '^{"logdata":2}$' file]], [0], [1
 ])
 AT_CHECK(
@@ -363,7 +365,7 @@ file: write:{"x":0} successful
 file: write:{"x":1} successful
 file: write:{"x":2} successful
 ]], [ignore])
-AT_CHECK([[printf '%s\n%s\n' 'OVSDB JSON 5 d910b02871075d3156ec8675dfc95b7d5d640aa6' 'null' >> file]])
+AT_CHECK([[bash -c "printf '%s\n%s\n' 'OVSDB JSON 5 d910b02871075d3156ec8675dfc95b7d5d640aa6' 'null' >> file.*"]])
 AT_CHECK(
   [[test-ovsdb log-io file read/write read read read read 'write:{"replacement data":0}' | sed -e 's|error: .*file[.0-9]*:|error: file:|']], [0],
   [[file: open successful

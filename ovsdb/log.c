@@ -37,11 +37,13 @@
 #include "seq.h"
 #include "sha1.h"
 #include "socket-util.h"
+#include "timeval.h"
 #include "transaction.h"
 #include "util.h"
 
 #define OVSDB_LOG_DATA_KEY "logdata"
 #define OVSDB_LOG_META_KEY "logmeta"
+#define OVSDB_LOG_NEXT_FILE_KEY "next_file"
 
 VLOG_DEFINE_THIS_MODULE(ovsdb_log);
 
@@ -74,6 +76,21 @@ enum ovsdb_log_state {
     OVSDB_LOG_BROKEN,           /* Disk on fire, see 'error' for details. */
 };
 
+/* The ovsdb log (if used for writing) consists of up to 3 files that are used
+ * concurrently. The files may reference the following files.
+ *
+ * base: This file contains the state after a snapshot (or initial database
+ *       creation). It is never written to, but will be replaced during
+ *       ovsdb_log_replace_*.
+ *       May be NULL during the initial read of the log.
+ * curr: The currently active log that is being written to. May contain any
+ *       number of commited data. New entries are written to this file only.
+ *       This is never NULL.
+ * old:  During compaction curr is replaced with a new file and the previous
+ *       curr is stored as old. The compcation will merge base and old to a
+ *       single consistent state and afterwards replace base with it.
+ *       Unless a compaction is currently running this is NULL.
+ */
 
 struct ovsdb_log_file {
     off_t prev_offset;          /* While reading the offset before the latest
@@ -94,9 +111,13 @@ struct ovsdb_log {
 
     enum ovsdb_log_open_mode open_mode;
     bool may_lock;
+    bool only_single_file;      /* To be used for temporary logs (e.g. during
+                                 *  snapshots). */
     char *display_name;         /* For use in log messages, etc. */
     char *magic;
 
+    struct ovsdb_log_file *base;
+    struct ovsdb_log_file *old;
     struct ovsdb_log_file *curr;
 };
 
@@ -153,6 +174,7 @@ ovsdb_log_file_open(const char *name,
         break;
 
     case OVSDB_LOG_CREATE_EXCL:
+    case OVSDB_LOG_CREATE_EXCL_SINGLE:
 #ifndef _WIN32
         if (stat(name, &s) == -1 && errno == ENOENT
             && lstat(name, &s) == 0 && S_ISLNK(s.st_mode)) {
@@ -187,7 +209,9 @@ ovsdb_log_file_open(const char *name,
         fd = open(name, flags, 0660);
     }
     if (fd < 0) {
-        const char *op = (open_mode == OVSDB_LOG_CREATE_EXCL ? "create"
+        const char *op = (
+            (open_mode == OVSDB_LOG_CREATE_EXCL ||
+             open_mode == OVSDB_LOG_CREATE_EXCL_SINGLE) ? "create"
             : open_mode == OVSDB_LOG_CREATE ? "create or open"
             : "open");
         error = ovsdb_io_error(errno, "%s: %s failed", name, op);
@@ -291,6 +315,7 @@ ovsdb_log_open(const char *name, const char *magic,
     /* If we can create a new file, we need to know what kind of magic to
      * use, so there must be only one kind. */
     if (open_mode == OVSDB_LOG_CREATE_EXCL ||
+            open_mode == OVSDB_LOG_CREATE_EXCL_SINGLE ||
             open_mode == OVSDB_LOG_CREATE) {
         ovs_assert(!strchr(magic, '|'));
     }
@@ -325,6 +350,7 @@ ovsdb_log_open(const char *name, const char *magic,
     log->magic = actual_magic;
     log->open_mode = open_mode;
     log->may_lock = may_lock;
+    log->only_single_file = open_mode == OVSDB_LOG_CREATE_EXCL_SINGLE;
 
     log->curr = file;
     *filep = log;
@@ -374,6 +400,8 @@ ovsdb_log_close(struct ovsdb_log *file)
         ovsdb_error_destroy(file->error);
         free(file->display_name);
         free(file->magic);
+        ovsdb_log_file_close(file->base);
+        ovsdb_log_file_close(file->old);
         ovsdb_log_file_close(file->curr);
         free(file);
     }
@@ -607,7 +635,43 @@ ovsdb_log_read(struct ovsdb_log *log, struct json **jsonp)
             *jsonp = data;
             break;
         } else {
-            OVS_NOT_REACHED();
+            const struct json *next_file = shash_find_data(
+                json_object(metadata), OVSDB_LOG_NEXT_FILE_KEY);
+            if (next_file) {
+                const char *next_filename = json_string(next_file);
+                char *abs_name = follow_symlinks(log->curr->name);
+                char *basedir = dir_name(abs_name);
+                char *filename = xasprintf("%s/%s", basedir,
+                                           next_filename);
+                struct ovsdb_log_file *next;
+                error = ovsdb_log_file_open(
+                    filename, log->magic, log->open_mode,
+                    log->may_lock, &next, NULL);
+                free(abs_name);
+                free(basedir);
+                free(filename);
+                if (error) {
+                    json_destroy(*jsonp);
+                    *jsonp = NULL;
+                    return error;
+                }
+                if (!log->base) {
+                    /* We just finished reading the base file */
+                    log->base = log->curr;
+                    log->curr = next;
+                } else {
+                    /* We already have a base file, so we must be reading from
+                     * a db that is in a transient state of a compaction.
+                     * For now this needs to be fixed manually. */
+                    log->state = OVSDB_LOG_BROKEN;
+                    json_destroy(*jsonp);
+                    *jsonp = NULL;
+                    return ovsdb_error(NULL, "%s: can not further follow "
+                                       "referenced data files", next_filename);
+                }
+            }
+            json_destroy(*jsonp);
+            *jsonp = NULL;
         }
     }
 
@@ -627,6 +691,9 @@ void
 ovsdb_log_unread(struct ovsdb_log *file)
 {
     ovs_assert(file->state == OVSDB_LOG_READ);
+
+    ovs_assert(file->curr->prev_offset > 0 || !file->base);
+
     file->curr->offset = file->curr->prev_offset;
 }
 
@@ -656,11 +723,17 @@ ovsdb_log_truncate(struct ovsdb_log *file)
 
 /* Removes all the data from the log by moving current offset to zero and
  * truncating the file to zero bytes.  After this operation the file is empty
- * and in a write state. */
+ * and in a write state.
+ * This is currently only supported in combination with
+ * OVSDB_LOG_CREATE_EXCL_SINGLE. */
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_log_reset(struct ovsdb_log *file)
 {
+    ovs_assert(!file->base && !file->old &&
+               file->open_mode == OVSDB_LOG_CREATE_EXCL_SINGLE);
+
     ovsdb_error_destroy(file->error);
+
     file->curr->offset = file->curr->prev_offset = 0;
     file->error = ovsdb_log_truncate(file);
     if (file->error) {
@@ -734,6 +807,35 @@ ovsdb_log_write_file(struct ovsdb_log *log, struct ovsdb_log_file *file,
     return NULL;
 }
 
+static struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_log_write_next_file(struct ovsdb_log *log, struct ovsdb_log_file *file,
+                          const char *filepath)
+{
+    char *filename = base_name(filepath);
+    struct json *inner = json_object_create();
+    json_object_put_string(inner, OVSDB_LOG_NEXT_FILE_KEY, filename);
+    free(filename);
+    struct json *json = json_object_create();
+    json_object_put(json, OVSDB_LOG_META_KEY, inner);
+
+    struct ovsdb_error *error = ovsdb_log_write_file(log, file, json);
+    json_destroy(json);
+    return error;
+}
+
+static char *
+ovsdb_log_get_new_filename(struct ovsdb_log *log)
+{
+    struct ovsdb_log_file *file = log->curr;
+    if (log->base) {
+        file = log->base;
+    }
+    char *deref_name = follow_symlinks(file->name);
+    char *new_curr_name = xasprintf("%s.%lld", deref_name, time_wall_msec());
+    free(deref_name);
+    return new_curr_name;
+}
+
 static struct ovsdb_error *
 ovsdb_log_write_(struct ovsdb_log *log, const struct json *json)
 {
@@ -761,6 +863,43 @@ ovsdb_log_write_(struct ovsdb_log *log, const struct json *json)
     case OVSDB_LOG_BROKEN:
         return ovsdb_error_clone(log->error);
     }
+
+    if (!log->base && !log->only_single_file) {
+        /* When we start writing to a log we will always ensure we
+         * have a base file for later snapshoting. */
+        struct ovsdb_log_file *new_curr;
+        char *new_curr_name = ovsdb_log_get_new_filename(log);
+
+        enum ovsdb_log_open_mode mode = log->open_mode;
+        if (mode == OVSDB_LOG_READ_WRITE) {
+            mode = OVSDB_LOG_CREATE;
+        }
+
+        log->error = ovsdb_log_file_open(new_curr_name, log->magic,
+                                         mode, log->may_lock,
+                                         &new_curr, NULL);
+        if (log->error) {
+            log->state = OVSDB_LOG_WRITE_ERROR;
+            free(new_curr_name);
+            return ovsdb_error_clone(log->error);
+        }
+
+        log->error = ovsdb_log_write_next_file(log, log->curr, new_curr_name);
+        if (log->error) {
+            /* Close and remove the newly created file. */
+            ovsdb_log_file_close(new_curr);
+            unlink(new_curr_name);
+            free(new_curr_name);
+            log->state = OVSDB_LOG_WRITE_ERROR;
+            return ovsdb_error_clone(log->error);
+        }
+
+        free(new_curr_name);
+        log->base = log->curr;
+        log->curr = new_curr;
+    }
+
+    ovs_assert(log->base || log->only_single_file);
 
     if (!json) {
         return NULL;
@@ -900,6 +1039,7 @@ struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_log_replace_start(struct ovsdb_log *old,
                         struct ovsdb_log **newp)
 {
+    ovs_assert(!old->old);
     ovs_assert(old->curr->lockfile);
 
     /* If old->name is a symlink, then we want the new file to be in the same
@@ -919,7 +1059,7 @@ ovsdb_log_replace_start(struct ovsdb_log *old,
     }
 
     /* Create temporary file. */
-    error = ovsdb_log_open(tmp_name, old->magic, OVSDB_LOG_CREATE_EXCL,
+    error = ovsdb_log_open(tmp_name, old->magic, OVSDB_LOG_CREATE_EXCL_SINGLE,
                            false, newp);
     free(tmp_name);
     return error;
@@ -928,6 +1068,9 @@ ovsdb_log_replace_start(struct ovsdb_log *old,
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_log_replace_commit(struct ovsdb_log *old, struct ovsdb_log *new)
 {
+    /* We may not replace and compact at the same time */
+    ovs_assert(!old->old);
+
     struct ovsdb_error *error = ovsdb_log_commit_block(new);
     if (error) {
         ovsdb_log_replace_abort(new);
@@ -953,6 +1096,8 @@ ovsdb_log_replace_commit(struct ovsdb_log *old, struct ovsdb_log *new)
      * to test both strategies on Unix-like systems, and to make the code
      * easier to read. */
     if (!rename_open_files) {
+        fclose(old->base->stream);
+        old->base->stream = NULL;
         fclose(old->curr->stream);
         old->curr->stream = NULL;
 
@@ -963,13 +1108,27 @@ ovsdb_log_replace_commit(struct ovsdb_log *old, struct ovsdb_log *new)
     /* Rename 'old' to 'new'.  We dereference the old name because, if it is a
      * symlink, we want to replace the referent of the symlink instead of the
      * symlink itself. */
-    char *deref_name = follow_symlinks(old->curr->name);
+    char *deref_name = follow_symlinks(old->base->name);
     error = ovsdb_rename(new->curr->name, deref_name);
     free(deref_name);
     if (error) {
         ovsdb_log_replace_abort(new);
         return error;
     }
+
+    /* By now we are safely in the state where 'new' is new correct state.
+     * The new 'cur' will now replace the old 'cur'. The old 'base' will be
+     * closed. */
+    if (old->base) {
+        char *old_curr_file = old->curr->name;
+        old->curr->name = NULL;
+        ovsdb_log_file_close(old->curr);
+        unlink(old_curr_file);
+        free(old_curr_file);
+        old->curr = old->base;
+        old->base = NULL;
+    }
+
     if (rename_open_files) {
         fsync_parent_dir(old->curr->name);
         old->curr->stream = new->curr->stream;
