@@ -669,6 +669,12 @@ compaction_thread(void *aux)
 
     VLOG_DBG("%s: Compaction thread finished in %"PRIu64" ms.",
              state->db->name, state->thread_time);
+
+    ovsdb_destroy(state->db);
+    state->db = NULL;
+    json_destroy(state->schema);
+    state->schema = NULL;
+
     seq_change(state->done);
     return NULL;
 }
@@ -713,9 +719,7 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
         state = db->compact_state;
         db->compact_state = NULL;
 
-        ovsdb_destroy(state->db);
         seq_destroy(state->done);
-        json_destroy(state->schema);
 
         if (state->error) {
             VLOG_WARN("Compaction failed in thread with %s",
