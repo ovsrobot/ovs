@@ -100,6 +100,16 @@ struct ovsdb_error *ovsdb_log_replace_commit(struct ovsdb_log *old,
     OVS_WARN_UNUSED_RESULT;
 void ovsdb_log_replace_abort(struct ovsdb_log *new);
 
+struct ovsdb_error *ovsdb_log_compact_start(struct ovsdb_log *old,
+                                            struct ovsdb_log **newp)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *ovsdb_log_compact_commit(struct ovsdb_log *old,
+                                             struct ovsdb_log *new)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *ovsdb_log_compact_abort(struct ovsdb_log *old,
+                                            struct ovsdb_log *new)
+    OVS_WARN_UNUSED_RESULT;
+
 /* For testing. */
 void ovsdb_log_disable_renaming_open_files(void);
 

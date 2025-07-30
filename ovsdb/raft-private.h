@@ -227,4 +227,11 @@ struct uuid raft_parse_required_uuid(struct ovsdb_parser *, const char *name);
 bool raft_parse_optional_uuid(struct ovsdb_parser *, const char *name,
                          struct uuid *);
 
+/* Type used to share data with the compaction thread. */
+struct raft_compaction_state {
+    struct raft_header header;
+    uint64_t term;
+    struct uuid vote;
+};
+
 #endif /* raft-private.h */

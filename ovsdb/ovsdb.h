@@ -78,10 +78,19 @@ struct ovsdb_compaction_state {
 
     struct ovsdb *db;          /* Copy of a database data to compact. */
 
-    struct json *data;         /* 'db' as a serialized json. */
     struct json *schema;       /* 'db' schema json. */
     uint64_t applied_index;    /* Last applied index reported by the storage
                                 * at the moment of a database copy. */
+
+    struct ovsdb_log *log;     /* The log to write the compacted data to. */
+
+    bool is_raft;
+
+    void *aux;                 /* Data that might be used to support the
+                                * compaction on the underlying storage. */
+
+    struct ovsdb_error *error; /* NULL on success, otherwise contains the
+                                * error. */
 
     /* Completion signaling. */
     struct seq *done;
@@ -153,6 +162,14 @@ struct json *ovsdb_execute(struct ovsdb *, const struct ovsdb_session *,
                            const char *role, const char *id,
                            long long int elapsed_msec,
                            long long int *timeout_msec);
+
+struct ovsdb_write *
+ovsdb_write_schema_change(struct ovsdb *db,
+                          const struct ovsdb_schema *schema,
+                          const struct json *data,
+                          const struct uuid *prereq,
+                          struct uuid *resultp)
+    OVS_WARN_UNUSED_RESULT;
 
 struct ovsdb_error *ovsdb_compact(struct ovsdb *, bool trim_memory)
     OVS_WARN_UNUSED_RESULT;

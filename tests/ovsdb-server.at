@@ -1159,13 +1159,13 @@ ovs-appctl: ovsdb-server: server returned an error
     fi
 
     # We can't fully re-check the contents of the database log, because the
-    # order of the records is not predictable, but there should only be 4 lines
+    # order of the records is not predictable, but there should only be 6 lines
     # in it now in the standalone case
     AT_CAPTURE_FILE([db])
     compacted_lines=`cat dir/db* | wc -l`
     echo compacted_lines=$compacted_lines
     if test $model = standalone; then
-        AT_CHECK([test $compacted_lines -eq 4])
+        AT_CHECK([test $compacted_lines -eq 6])
     fi
 
     dnl And check that the dumped data is the same too:

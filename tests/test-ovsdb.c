@@ -412,6 +412,17 @@ do_log_io(struct ovs_cmdl_context *ctx)
             ovsdb_log_replace_abort(replacement);
             replacement = NULL;
             error = NULL;
+        } else if (!strcmp(command, "compact_start")) {
+            ovs_assert(!replacement);
+            error = ovsdb_log_compact_start(log, &replacement);
+        } else if (!strcmp(command, "compact_commit")) {
+            ovs_assert(replacement);
+            error = ovsdb_log_compact_commit(log, replacement);
+            replacement = NULL;
+        } else if (!strcmp(command, "compact_abort")) {
+            ovs_assert(replacement);
+            error = ovsdb_log_compact_abort(log, replacement);
+            replacement = NULL;
         } else {
             ovs_fatal(0, "unknown log-io command \"%s\"", command);
         }

@@ -1261,8 +1261,8 @@ ovsdb_txn_propose_schema_change(struct ovsdb *db,
     struct ovsdb_txn_progress *progress = xzalloc(sizeof *progress);
     progress->storage = db->storage;
 
-    struct ovsdb_write *write = ovsdb_storage_write_schema_change(
-        db->storage, schema, data, &db->prereq, txnid);
+    struct ovsdb_write *write = ovsdb_write_schema_change(
+        db, schema, data, &db->prereq, txnid);
     if (!ovsdb_write_is_complete(write)) {
         progress->write = write;
     } else {

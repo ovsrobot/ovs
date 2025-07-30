@@ -23,6 +23,7 @@
 struct json;
 struct ovsdb_schema;
 struct ovsdb_storage;
+struct ovsdb_log;
 struct simap;
 struct uuid;
 
@@ -77,11 +78,6 @@ void ovsdb_write_wait(const struct ovsdb_write *);
 void ovsdb_write_destroy(struct ovsdb_write *);
 
 bool ovsdb_storage_should_compact(struct ovsdb_storage *);
-struct ovsdb_error *ovsdb_storage_store_snapshot(struct ovsdb_storage *storage,
-                                                 const struct json *schema,
-                                                 const struct json *snapshot,
-                                                 uint64_t applied_index)
-    OVS_WARN_UNUSED_RESULT;
 
 struct ovsdb_write *ovsdb_storage_write_schema_change(
     struct ovsdb_storage *,
@@ -100,5 +96,26 @@ struct ovsdb_schema *ovsdb_storage_read_schema(struct ovsdb_storage *);
  * to be successfully written to the storage. */
 bool ovsdb_storage_precheck_prereq(const struct ovsdb_storage *,
                                    const struct uuid *prereq);
+
+struct ovsdb_error *ovsdb_storage_compact_start(struct ovsdb_storage *storage,
+                                                uint64_t index,
+                                                struct ovsdb_log **dst,
+                                                void **aux)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *ovsdb_storage_compact_commit(struct ovsdb_storage *storage,
+                                                 struct ovsdb_log *dst,
+                                                 uint64_t applied_index,
+                                                 void *aux)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *ovsdb_storage_compact_abort(struct ovsdb_storage *storage,
+                                                struct ovsdb_log *dst,
+                                                void *aux)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *ovsdb_storage_compact_write(bool is_raft,
+                                                struct ovsdb_log *target_log,
+                                                const struct json *schema,
+                                                struct json *snapshot,
+                                                void *aux)
+    OVS_WARN_UNUSED_RESULT;
 
 #endif /* ovsdb/storage.h */

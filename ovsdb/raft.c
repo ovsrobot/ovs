@@ -4546,8 +4546,8 @@ raft_get_log_length(const struct raft *raft)
             : raft->last_applied - raft->log_start + 1);
 }
 
-/* Returns true if taking a snapshot of 'raft', with raft_store_snapshot(), is
- * possible. */
+/* Returns true if taking a snapshot of 'raft', with raft_store_snapshot() or
+ * compaction, is possible. */
 bool
 raft_may_snapshot(const struct raft *raft)
 {
@@ -5325,4 +5325,112 @@ raft_init(void)
     unixctl_command_register("cluster/failure-test", "FAILURE SCENARIO", 1, 1,
                              raft_unixctl_failure_test, NULL);
     ovsthread_once_done(&once);
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+raft_compact_start(struct raft *raft, uint64_t applied_index,
+                   struct ovsdb_log **dst, void **aux)
+{
+    if (raft->joining) {
+        return ovsdb_error(NULL,
+                           "cannot store a snapshot while joining cluster");
+    } else if (raft->leaving) {
+        return ovsdb_error(NULL,
+                           "cannot store a snapshot while leaving cluster");
+    } else if (raft->left) {
+        return ovsdb_error(NULL,
+                           "cannot store a snapshot after leaving cluster");
+    } else if (raft->failed) {
+        return ovsdb_error(NULL,
+                           "cannot store a snapshot following failure");
+    }
+
+    struct ovsdb_error *error = ovsdb_log_compact_start(raft->log, dst);
+
+    if (!error) {
+        struct raft_compaction_state *state = xzalloc(sizeof *state);
+        *aux = state;
+        struct raft_header *h = &state->header;
+        h->sid = raft->sid;
+        h->cid = raft->cid;
+        h->name = xstrdup(raft->name);
+        h->local_address = xstrdup(raft->local_address);
+        h->snap_index = applied_index;
+        h->snap.term = raft_get_term(raft, applied_index);
+        h->snap.eid = *raft_get_eid(raft, applied_index);
+        h->snap.servers = json_clone(raft_servers_for_index(
+            raft, applied_index - 1));
+        h->snap.election_timer = raft->election_timer;
+        state->term = raft->term;
+        state->vote = raft->vote;
+    }
+
+    return error;
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+raft_compact_commit(struct raft *raft, struct ovsdb_log *dst,
+                    uint64_t applied_index, void *aux)
+{
+    struct ovsdb_error *error = ovsdb_log_compact_commit(raft->log, dst);
+    if (error) {
+        return error;
+    }
+
+    struct raft_compaction_state *state = aux;
+    raft_entry_uninit(&raft->snap);
+    raft->snap = state->header.snap;
+    free(state->header.name);
+    free(state->header.local_address);
+    free(state);
+
+    uint64_t new_log_start = applied_index + 1;
+    for (size_t i = 0; i < new_log_start - raft->log_start; i++) {
+        raft_entry_uninit(&raft->entries[i]);
+    }
+    memmove(&raft->entries[0], &raft->entries[new_log_start - raft->log_start],
+            (raft->log_end - new_log_start) * sizeof *raft->entries);
+
+    raft->log_start = new_log_start;
+
+    return NULL;
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+raft_compact_abort(struct raft *raft, struct ovsdb_log *dst, void *aux)
+{
+    struct raft_compaction_state *state = aux;
+    raft_header_uninit(&state->header);
+    free(state->header.name);
+    free(state->header.local_address);
+    free(state);
+    return ovsdb_log_compact_abort(raft->log, dst);
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+raft_store_compact(struct ovsdb_log *target,
+                   const struct json *new_snapshot_data,
+                   void *aux)
+{
+    struct raft_compaction_state *state = aux;
+    struct raft_header *header = &state->header;
+    raft_entry_set_parsed_data(&header->snap, new_snapshot_data);
+    struct ovsdb_error *error = ovsdb_log_write_and_free(
+        target, raft_header_to_json(header));
+    if (error) {
+        return error;
+    }
+
+    /* Write term and vote (if any).
+     *
+     * The term is redundant if we wrote a log record for that term above.  The
+     * vote, if any, is never redundant.
+     */
+    error = raft_write_state(target, state->term, &state->vote);
+    if (error) {
+        return error;
+    }
+
+    return ovsdb_log_commit_block(target);
+
 }

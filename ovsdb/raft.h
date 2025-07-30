@@ -190,4 +190,23 @@ void raft_take_leadership(struct raft *);
 void raft_transfer_leadership(struct raft *, const char *reason);
 
 bool raft_precheck_prereq(const struct raft *, const struct uuid *prereq);
+
+struct ovsdb_error *raft_compact_start(struct raft *raft,
+                                       uint64_t applied_index,
+                                       struct ovsdb_log **dst,
+                                       void **aux)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *raft_compact_commit(struct raft *raft,
+                                        struct ovsdb_log *dst,
+                                        uint64_t applied_index,
+                                        void *aux)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *raft_compact_abort(struct raft *raft,
+                                       struct ovsdb_log *dst,
+                                       void *aux)
+    OVS_WARN_UNUSED_RESULT;
+struct ovsdb_error *raft_store_compact(struct ovsdb_log *target,
+                                       const struct json *new_snapshot,
+                                       void *aux)
+    OVS_WARN_UNUSED_RESULT;
 #endif /* lib/raft.h */

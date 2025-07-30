@@ -608,22 +608,6 @@ ovsdb_storage_store_snapshot__(struct ovsdb_storage *storage,
     }
 }
 
-/* 'schema' and 'data' should faithfully represent the current schema and data,
- * otherwise the two storing backing formats will yield divergent results.  Use
- * ovsdb_storage_write_schema_change() to change the schema. */
-struct ovsdb_error * OVS_WARN_UNUSED_RESULT
-ovsdb_storage_store_snapshot(struct ovsdb_storage *storage,
-                             const struct json *schema,
-                             const struct json *data, uint64_t index)
-{
-    struct ovsdb_error *error = ovsdb_storage_store_snapshot__(storage,
-                                                               schema, data,
-                                                               index);
-    bool retry_quickly = error != NULL;
-    schedule_next_snapshot(storage, retry_quickly);
-    return error;
-}
-
 struct ovsdb_write * OVS_WARN_UNUSED_RESULT
 ovsdb_storage_write_schema_change(struct ovsdb_storage *storage,
                                   const struct ovsdb_schema *schema,
@@ -672,4 +656,82 @@ ovsdb_storage_precheck_prereq(const struct ovsdb_storage *storage,
         return true;
     }
     return raft_precheck_prereq(storage->raft, prereq);
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_storage_compact_start(struct ovsdb_storage *storage,
+                            uint64_t index,
+                            struct ovsdb_log **dst,
+                            void **aux)
+{
+    if (storage->raft) {
+        return raft_compact_start(storage->raft, index, dst, aux);
+    } else {
+        return ovsdb_log_compact_start(storage->log, dst);
+    }
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_storage_compact_commit(struct ovsdb_storage *storage,
+                             struct ovsdb_log *dst,
+                             uint64_t applied_index,
+                             void *aux)
+{
+    struct ovsdb_error *error = NULL;
+    if (storage->raft) {
+        error = raft_compact_commit(storage->raft, dst, applied_index, aux);
+    } else {
+        error = ovsdb_log_compact_commit(storage->log, dst);
+    }
+    schedule_next_snapshot(storage, error != NULL);
+    return error;
+}
+
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_storage_compact_abort(struct ovsdb_storage *storage,
+                            struct ovsdb_log *dst,
+                            void *aux)
+{
+    schedule_next_snapshot(storage, true);
+    if (storage->raft) {
+        return raft_compact_abort(storage->raft, dst, aux);
+    } else {
+        return ovsdb_log_compact_abort(storage->log, dst);
+    }
+}
+
+/* 'schema' and 'data' should faithfully represent the current schema and data,
+ * otherwise the two storing backing formats will yield divergent results.  Use
+ * ovsdb_storage_write_schema_change() to change the schema. */
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_storage_compact_write(bool is_raft,
+                            struct ovsdb_log *target_log,
+                            const struct json *schema,
+                            struct json *data,
+                            void *aux)
+{
+    struct ovsdb_error *error = NULL;
+    if (is_raft) {
+        struct json *entries = json_array_create_empty();
+        if (schema) {
+            json_array_add(entries, json_clone(schema));
+        }
+        if (data) {
+            json_array_add(entries, data);
+        }
+        error = raft_store_compact(target_log, entries, aux);
+        json_destroy(entries);
+        return error;
+    } else {
+        error = ovsdb_log_write(target_log, schema);
+        if (error) {
+            return error;
+        }
+        error = ovsdb_log_write_and_free(target_log, data);
+        if (error) {
+            return error;
+        }
+        error = ovsdb_log_commit_block(target_log);
+    }
+    return error;
 }

@@ -386,3 +386,162 @@ file: read: end of log
 ]], [ignore])
 AT_CHECK([test -f .file.~lock~])
 AT_CLEANUP
+
+AT_SETUP([ovsdb-log - write one, compact, commit])
+AT_KEYWORDS([ovsdb log])
+AT_CAPTURE_FILE([file])
+for option in '' --no-rename-open-files; do
+    rm -f file
+    AT_CHECK(
+      [[test-ovsdb $option log-io file create \
+          'write:{"a":0}' \
+          'write:{"b":1}' \
+          'compact_start' \
+          'new-write:{"a":0,"b":1}' \
+          'old-write:{"c":2}' \
+          'compact_commit' \
+          'read' \
+          'write:{"a":3}']], [0],
+      [[file: open successful
+file: write:{"a":0} successful
+file: write:{"b":1} successful
+file: compact_start successful
+(temp): write:{"a":0,"b":1} successful
+file: write:{"c":2} successful
+file: compact_commit successful
+file: read: end of log
+file: write:{"a":3} successful
+]])
+    AT_CHECK(
+      [test-ovsdb log-io file read-only read read read read], [0],
+      [[file: open successful
+file: read: {"a":0,"b":1}
+file: read: {"c":2}
+file: read: {"a":3}
+file: read: end of log
+]], [ignore])
+done
+AT_CHECK([test -f .file.~lock~])
+AT_CLEANUP
+
+AT_SETUP([ovsdb-log - write one, compact, abort])
+AT_KEYWORDS([ovsdb log])
+AT_CAPTURE_FILE([file])
+for option in '' --no-rename-open-files; do
+    rm -f file
+    AT_CHECK(
+      [[test-ovsdb $option log-io file create \
+          'write:{"a":0}' \
+          'write:{"b":1}' \
+          'compact_start' \
+          'new-write:{"a":0,"b":1}' \
+          'old-write:{"c":2}' \
+          'compact_abort' \
+          'read' \
+          'write:{"a":3}']], [0],
+      [[file: open successful
+file: write:{"a":0} successful
+file: write:{"b":1} successful
+file: compact_start successful
+(temp): write:{"a":0,"b":1} successful
+file: write:{"c":2} successful
+file: compact_abort successful
+file: read: end of log
+file: write:{"a":3} successful
+]])
+    AT_CHECK(
+      [test-ovsdb log-io file read-only read read read read read], [0],
+      [[file: open successful
+file: read: {"a":0}
+file: read: {"b":1}
+file: read: {"c":2}
+file: read: {"a":3}
+file: read: end of log
+]], [ignore])
+done
+AT_CHECK([test -f .file.~lock~])
+AT_CLEANUP
+
+AT_SETUP([ovsdb-log - write one, non-completed compact])
+AT_KEYWORDS([ovsdb log])
+AT_CAPTURE_FILE([file])
+for option in '' --no-rename-open-files; do
+    rm -f file
+    AT_CHECK(
+      [[test-ovsdb $option log-io file create \
+          'write:{"a":0}' \
+          'write:{"b":1}' \
+          'compact_start' \
+          'new-write:{"a":0,"b":1}' \
+          'old-write:{"c":2}' \
+          'read']], [0],
+      [[file: open successful
+file: write:{"a":0} successful
+file: write:{"b":1} successful
+file: compact_start successful
+(temp): write:{"a":0,"b":1} successful
+file: write:{"c":2} successful
+file: read: end of log
+]])
+    AT_CHECK(
+      [test-ovsdb log-io file read-only read read read read], [0],
+      [[file: open successful
+file: read: {"a":0}
+file: read: {"b":1}
+file: read: {"c":2}
+file: read: end of log
+]], [ignore])
+done
+AT_CHECK([test -f .file.~lock~])
+AT_CLEANUP
+
+AT_SETUP([ovsdb-log - write one, non-completed compact, write, compact])
+AT_KEYWORDS([ovsdb log])
+AT_CAPTURE_FILE([file])
+for option in '' --no-rename-open-files; do
+    rm -f file
+    AT_CHECK(
+      [[test-ovsdb $option log-io file create \
+          'write:{"a":0}' \
+          'write:{"b":1}' \
+          'compact_start' \
+          'new-write:{"a":0,"b":1}' \
+          'old-write:{"c":2}' \
+          'read']], [0],
+      [[file: open successful
+file: write:{"a":0} successful
+file: write:{"b":1} successful
+file: compact_start successful
+(temp): write:{"a":0,"b":1} successful
+file: write:{"c":2} successful
+file: read: end of log
+]])
+    AT_CHECK(
+      [[test-ovsdb $option log-io file read/write \
+          'write:{"d":3}' \
+          'compact_start' \
+          'new-write:{"a":0,"b":1,"c":2,"d":3}' \
+          'old-write:{"e":4}' \
+          'compact_commit' \
+          'write:{"f":5}' \
+          'read']], [0],
+      [[file: open successful
+file: write:{"d":3} successful
+file: compact_start successful
+(temp): write:{"a":0,"b":1,"c":2,"d":3} successful
+file: write:{"e":4} successful
+file: compact_commit successful
+file: write:{"f":5} successful
+file: read: end of log
+]])
+    AT_CHECK(
+      [test-ovsdb log-io file read-only read read read read], [0],
+      [[file: open successful
+file: read: {"a":0,"b":1,"c":2,"d":3}
+file: read: {"e":4}
+file: read: {"f":5}
+file: read: end of log
+]], [ignore])
+done
+AT_CHECK([test -f .file.~lock~])
+AT_CLEANUP

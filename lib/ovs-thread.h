@@ -123,6 +123,7 @@ void xpthread_sigmask(int, const sigset_t *, sigset_t *);
 
 pthread_t ovs_thread_create(const char *name, void *(*)(void *), void *);
 void xpthread_join(pthread_t, void **);
+void xpthread_kill(pthread_t, int);
 
 /* Per-thread data.
  *

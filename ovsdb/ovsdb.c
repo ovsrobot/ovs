@@ -14,6 +14,7 @@
  */
 
 #include <config.h>
+#include <signal.h>
 
 #include "ovsdb.h"
 
@@ -616,20 +617,53 @@ ovsdb_clone_data(const struct ovsdb *db)
 
     return new;
 }
+struct ovsdb_write * OVS_WARN_UNUSED_RESULT
+ovsdb_write_schema_change(struct ovsdb *db,
+                          const struct ovsdb_schema *schema,
+                          const struct json *data,
+                          const struct uuid *prereq,
+                          struct uuid *resultp)
+{
+    /* If we are currently running a compaction we will abort it now. This
+     * might be expensive in terms of disk writes, but there is no real
+     * alternative. */
+    if (ovsdb_compcation_in_progress(db)) {
+        xpthread_kill(db->compact_state->thread, SIGKILL);
+        xpthread_join(db->compact_state->thread, NULL);
+        struct ovsdb_error *err = ovsdb_storage_compact_abort(
+                db->storage, db->compact_state->log,
+                db->compact_state->aux);
+        if (err) {
+            char *s = ovsdb_error_to_string_free(err);
+            VLOG_FATAL("Error when aborting compaction during a "
+                       "schema change: %s", s);
+            free(s);
+        }
+    }
+
+    return ovsdb_storage_write_schema_change(db->storage, schema, data,
+                                             prereq, resultp);
+}
 
 static void *
 compaction_thread(void *aux)
 {
     struct ovsdb_compaction_state *state = aux;
     uint64_t start_time = time_msec();
-    struct json *data;
+    struct json *data, *serialized_data;
 
     VLOG_DBG("%s: Compaction thread started.", state->db->name);
     data = ovsdb_to_txn_json(state->db, "compacting database online",
                              /* Do not allow shallow copies to avoid races. */
                              false);
-    state->data = json_serialized_object_create(data);
+    serialized_data = json_serialized_object_create(data);
     json_destroy(data);
+
+    state->error = ovsdb_storage_compact_write(state->is_raft,
+                                               state->log,
+                                               state->schema,
+                                               serialized_data,
+                                               state->aux);
 
     state->thread_time = time_msec() - start_time;
 
@@ -671,14 +705,9 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
     uint64_t applied_index = ovsdb_storage_get_applied_index(db->storage);
     uint64_t elapsed, start_time = time_msec();
     struct ovsdb_compaction_state *state;
+    struct ovsdb_error *error;
 
-    if (!applied_index) {
-        /* Parallel compaction is not supported for standalone databases. */
-        state = xzalloc(sizeof *state);
-        state->data = ovsdb_to_txn_json(db,
-                                        "compacting database online", true);
-        state->schema = ovsdb_schema_to_json(db->schema);
-    } else if (ovsdb_compaction_ready(db)) {
+    if (ovsdb_compaction_ready(db)) {
         xpthread_join(db->compact_state->thread, NULL);
 
         state = db->compact_state;
@@ -686,14 +715,67 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
 
         ovsdb_destroy(state->db);
         seq_destroy(state->done);
+        json_destroy(state->schema);
+
+        if (state->error) {
+            VLOG_WARN("Compaction failed in thread with %s",
+                      ovsdb_error_to_string(state->error));
+            error = ovsdb_storage_compact_abort(db->storage, state->log,
+                                                state->aux);
+            if (error) {
+                VLOG_ABORT("Failure to abort compaction: %s.",
+                           ovsdb_error_to_string(error));
+            }
+            free(state);
+            return error;
+        }
+
+        error = ovsdb_storage_compact_commit(db->storage, state->log,
+                                             state->applied_index,
+                                             state->aux);
+        if (error) {
+            VLOG_WARN("Compaction failed with %s",
+                      ovsdb_error_to_string(error));
+            free(state);
+            return error;
+        }
+
+#if HAVE_DECL_MALLOC_TRIM
+        if (!error && trim_memory) {
+            malloc_trim(0);
+        }
+#endif
+
+        elapsed = time_msec() - start_time;
+        VLOG(elapsed > 1000 ? VLL_INFO : VLL_DBG,
+             "%s: Database compaction took %"PRIu64"ms "
+             "(init: %"PRIu64"ms, write: %"PRIu64"ms, thread: %"PRIu64"ms)",
+             db->name, elapsed + state->init_time,
+             state->init_time, elapsed, state->thread_time);
+
+        free(state);
+        return error;
     } else {
         /* Creating a thread. */
         ovs_assert(!db->compact_state);
-        state = xzalloc(sizeof *state);
 
+        struct ovsdb_log *target;
+        void *aux;
+        error = ovsdb_storage_compact_start(db->storage, applied_index,
+                                            &target, &aux);
+        if (error) {
+            VLOG_WARN("Compaction start failed with %s",
+                      ovsdb_error_to_string(error));
+            return error;
+        }
+
+        state = xzalloc(sizeof *state);
         state->db = ovsdb_clone_data(db);
         state->schema = ovsdb_schema_to_json(db->schema);
+        state->log = target;
         state->applied_index = applied_index;
+        state->is_raft = applied_index != 0;
+        state->aux = aux;
         state->done = seq_create();
         state->seqno = seq_read(state->done);
         state->thread = ovs_thread_create("compaction",
@@ -703,29 +785,6 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
         db->compact_state = state;
         return NULL;
     }
-
-    struct ovsdb_error *error;
-
-    error = ovsdb_storage_store_snapshot(db->storage, state->schema,
-                                         state->data, state->applied_index);
-    json_destroy(state->schema);
-    json_destroy(state->data);
-
-#if HAVE_DECL_MALLOC_TRIM
-    if (!error && trim_memory) {
-        malloc_trim(0);
-    }
-#endif
-
-    elapsed = time_msec() - start_time;
-    VLOG(elapsed > 1000 ? VLL_INFO : VLL_DBG,
-         "%s: Database compaction took %"PRIu64"ms "
-         "(init: %"PRIu64"ms, write: %"PRIu64"ms, thread: %"PRIu64"ms)",
-         db->name, elapsed + state->init_time,
-         state->init_time, elapsed, state->thread_time);
-
-    free(state);
-    return error;
 }
 
 void

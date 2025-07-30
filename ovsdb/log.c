@@ -659,10 +659,46 @@ ovsdb_log_read(struct ovsdb_log *log, struct json **jsonp)
                     /* We just finished reading the base file */
                     log->base = log->curr;
                     log->curr = next;
-                } else {
+                } else if (!log->old) {
                     /* We already have a base file, so we must be reading from
                      * a db that is in a transient state of a compaction.
-                     * For now this needs to be fixed manually. */
+                     * We need to clean this up. */
+                    VLOG_WARN("%s: db was in a compaction-in-progress state. "
+                              "Recovering...", log->display_name);
+                    log->old = log->curr;
+                    log->curr = next;
+
+                    char *deref_name = follow_symlinks(log->base->name);
+                    char *tmp_name = xasprintf("%s.tmp", deref_name);
+                    free(deref_name);
+                    if (unlink(tmp_name) < 0 && errno != ENOENT) {
+                        error = ovsdb_io_error(errno, "failed to remove %s",
+                                               tmp_name);
+                        json_destroy(*jsonp);
+                        *jsonp = NULL;
+                        free(tmp_name);
+                        return error;
+                    }
+
+                    struct ovsdb_log *temporary;
+                    error = ovsdb_log_open(tmp_name, log->magic,
+                                           OVSDB_LOG_CREATE_EXCL_SINGLE,
+                                           false, &temporary);
+                    free(tmp_name);
+                    if (error) {
+                        json_destroy(*jsonp);
+                        *jsonp = NULL;
+                        return error;
+                    }
+                    error = ovsdb_log_compact_abort(log, temporary);
+                    if (error) {
+                        json_destroy(*jsonp);
+                        *jsonp = NULL;
+                        return error;
+                    }
+                } else {
+                    /* Not sure what causes us to have 4 files, but something
+                     * is definately broken. Return an error. */
                     log->state = OVSDB_LOG_BROKEN;
                     json_destroy(*jsonp);
                     *jsonp = NULL;
@@ -1189,6 +1225,360 @@ ovsdb_log_replace_abort(struct ovsdb_log *new)
         unlink(name);
         free(name);
     }
+}
+
+static struct ovsdb_error *
+ovsdb_log_copy_file(struct ovsdb_log_file *source, struct ovsdb_log_file *dst,
+                    off_t source_start_offset, off_t source_end_offset)
+{
+    struct ovsdb_error *error;
+    char buf[BUFSIZ];
+    source->offset = source_start_offset;
+    if (fseeko(source->stream, source->offset, SEEK_SET)) {
+        error = ovsdb_io_error(errno, "%s: cannot seek to start of file",
+                               source->name);
+        return error;
+    }
+    while (source->offset < source_end_offset) {
+        int chunk = MIN(source_end_offset - source->offset, sizeof buf);
+        if (fread(buf, 1, chunk, source->stream) != chunk) {
+            return ovsdb_io_error(ferror(source->stream) ? errno : EOF,
+                                  "%s: error reading %u bytes "
+                                  "starting at offset %lld",
+                                  source->name, chunk,
+                                  (long long int) source->offset);
+        }
+        source->offset += chunk;
+        if (fwrite(buf, 1, chunk, dst->stream) != chunk) {
+            return ovsdb_io_error(ferror(dst->stream) ? errno : EOF,
+                                  "%s: error writing %u bytes "
+                                  "starting at offset %lld",
+                                  dst->name, chunk,
+                                  (long long int) dst->offset);
+        }
+        dst->offset += chunk;
+    }
+    return NULL;
+}
+
+/* Replaces the file behind original with the file behind replacer.
+ * original will be in a state with valid streams afterwards while replacer
+ * will have a closed stream. */
+static struct ovsdb_error *
+ovsdb_log_rename_file(struct ovsdb_log_file *original,
+                      struct ovsdb_log_file *replacer)
+{
+    /* Replace original base file by the temporary file.
+     *
+     * We support two strategies:
+     *
+     *     - The preferred strategy is to rename the temporary file over the
+     *       original one in-place, then close the original one.  This works on
+     *       Unix-like systems.  It does not work on Windows, which does not
+     *       allow open files to be renamed.  The approach has the advantage
+     *       that, at any point, we can drop back to something that already
+     *       works.
+     *
+     *     - Alternatively, we can close both files, rename, then open the new
+     *       file (which now has the original name).  This works on all
+     *       systems, but if reopening the file fails then 'old' is broken.
+     *
+     * We make the strategy a variable instead of an #ifdef to make it easier
+     * to test both strategies on Unix-like systems, and to make the code
+     * easier to read. */
+    if (!rename_open_files) {
+        fclose(original->stream);
+        original->stream = NULL;
+
+        fclose(replacer->stream);
+        replacer->stream = NULL;
+    }
+
+    /* Rename 'old' to 'new'.  We dereference the old name because, if it is a
+     * symlink, we want to replace the referent of the symlink instead of the
+     * symlink itself. */
+    char *deref_name = follow_symlinks(original->name);
+    struct ovsdb_error *error = ovsdb_rename(replacer->name, deref_name);
+    free(deref_name);
+
+    if (error) {
+        return error;
+    }
+    if (rename_open_files) {
+        fsync_parent_dir(original->name);
+        fclose(original->stream);
+        original->stream = replacer->stream;
+        replacer->stream = NULL;
+    } else {
+        original->stream = fopen(original->name, "r+b");
+        if (!original->stream) {
+            return  ovsdb_io_error(errno, "%s: could not reopen log",
+                                   original->name);
+        }
+
+        if (fseek(original->stream, replacer->offset, SEEK_SET)) {
+            return ovsdb_io_error(errno, "%s: seek failed", original->name);
+        }
+    }
+    return error;
+}
+
+/* Prepare to compact the content of the 'log' on disk. In order to do that
+ * we need to:
+ * 1. Open a new file to be used for writing from now on. Store as new curr
+ * 2. Write metadata at the end of old to point to the new file
+ * 3. Transition the file in curr to old
+ * 4. Open an additional temporary file. This will be the new base in the
+ *    future and will contain all data of base and old in a compacted way.
+ *
+ * The caller is responsible to write all data that has been accumulated until
+ * now into newp and afterwards call ovsdb_log_compact_commit or abort.
+ */
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_log_compact_start(struct ovsdb_log *old,
+                        struct ovsdb_log **newp)
+{
+    struct ovsdb_error *error;
+
+    ovs_assert(old->open_mode != OVSDB_LOG_READ_ONLY);
+
+    /* If we have a single file and not yet two files we first need to split
+     * them. That makes the replacement way easier. */
+    if (!old->base) {
+        ovsdb_log_write_(old, NULL);
+    }
+
+    ovs_assert(old->curr->lockfile);
+    ovs_assert(!old->old);
+    ovs_assert(old->base);
+
+    struct ovsdb_log_file *new_curr;
+
+    char *new_curr_name = ovsdb_log_get_new_filename(old);
+    error = ovsdb_log_file_open(new_curr_name, old->magic, OVSDB_LOG_CREATE,
+                                old->may_lock, &new_curr, NULL);
+
+    if (error) {
+        return error;
+    }
+
+    error = ovsdb_log_write_next_file(old, old->curr, new_curr_name);
+
+    if (error) {
+        /* Close and remove the newly created file. */
+        ovsdb_log_file_close(new_curr);
+        unlink(new_curr_name);
+        free(new_curr_name);
+        return error;
+    }
+    free(new_curr_name);
+
+    old->old = old->curr;
+    old->curr = new_curr;
+
+    /* If old->curr->name is a symlink, then we want the new file to be in the
+     * same directory as the symlink's referent. */
+    char *deref_name = follow_symlinks(old->base->name);
+    char *tmp_name = xasprintf("%s.tmp", deref_name);
+    free(deref_name);
+
+    /* Remove temporary file.  (It might not exist.) */
+    if (unlink(tmp_name) < 0 && errno != ENOENT) {
+        error = ovsdb_io_error(errno, "failed to remove %s", tmp_name);
+        free(tmp_name);
+        *newp = NULL;
+        return error;
+    }
+
+    /* Create temporary file. */
+    error = ovsdb_log_open(tmp_name, old->magic, OVSDB_LOG_CREATE_EXCL_SINGLE,
+                           false, newp);
+    free(tmp_name);
+    return error;
+}
+
+/* Finish the compact the content of the 'log' on disk. In order to do that
+ * we need to:
+ * 1. Write to the end of new->curr a reference to old->curr
+ * 2. Atomically replace old->base with new->curr
+ * 3. Remove old->old as it is now unreferenced
+ */
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_log_compact_commit(struct ovsdb_log *old, struct ovsdb_log *new)
+{
+    if (!old->old) {
+        VLOG_WARN("The compaction of %s has been aborted previously.",
+                  old->display_name);
+        ovsdb_log_close(new);
+        return NULL;
+    }
+    ovs_assert(old->base && old->old && old->curr);
+    ovs_assert(!old->only_single_file);
+    ovs_assert(!new->base && !new->old);
+    ovs_assert(new->curr);
+    ovs_assert(new->only_single_file);
+    ovs_assert(!strcmp(old->magic, new->magic));
+    struct ovsdb_error *error, *abort_error;
+
+    error = ovsdb_log_commit_block(new);
+    if (error) {
+        goto abort;
+    }
+
+    error = ovsdb_log_write_next_file(new, new->curr, old->curr->name);
+    if (error) {
+        goto abort;
+    }
+
+    error = ovsdb_log_rename_file(old->base, new->curr);
+    if (error) {
+        old->error = error;
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(error);
+    }
+
+    /* Remove old->old since it is now no longer necessary.
+     * We ignore errors during removal as actually removing it is not
+     * critical. */
+    char *oldname = old->old->name;
+    old->old->name = NULL;
+    ovsdb_log_file_close(old->old);
+    if (unlink(oldname) < 0) {
+        VLOG_WARN("failed to remove old file %s, the file is unnecessary "
+                  " and can be removed now. Errno %d", oldname, errno);
+    }
+    free(oldname);
+    old->old = NULL;
+
+    /* Replace 'old' by 'new' in memory.
+     *
+     * 'old' transitions to OVSDB_LOG_WRITE (it was probably in that mode
+     * anyway). */
+    old->state = OVSDB_LOG_WRITE;
+    ovsdb_error_destroy(old->error);
+    old->error = NULL;
+    /* prev_offset only matters for OVSDB_LOG_READ. */
+    if (old->base->afsync) {
+        uint64_t ticket = afsync_destroy(old->base->afsync);
+        old->base->afsync = afsync_create(fileno(old->base->stream),
+                                          ticket + 1);
+    }
+    old->base->offset = new->curr->offset;
+
+    /* Free 'new'. */
+    ovsdb_log_close(new);
+
+    return NULL;
+
+abort:
+    abort_error = ovsdb_log_compact_abort(old, new);
+    if (abort_error) {
+        char *e = ovsdb_error_to_string_free(error);
+        VLOG_ERR("Error when commiting compaction and additional "
+                 "error while aborting the compaction. Initial error %s",
+                 e);
+        free(e);
+        return abort_error;
+    }
+    return error;
+}
+
+
+/* Abort the compact the content of the 'log' on disk. In order to do that
+ * we need to:
+ * 1. Remove the new log completely
+ * 2. Sync old->old to disk
+ * 3. Write the whole old->old to a temporary file without the redirect
+ * 4. Append all data of old->curr to the temporary file
+ * 5. Replace the underlying file of old->old with the temporary file
+ * 6. Remove old->curr
+ * 7. Move old->old to old->curr
+ *
+ * In comparison to the other compact operations this will cause potentially
+ * significant amount of writes.
+ * This process is designed in a way that if we crash at any step a new process
+ * can clean up. In the worst case we would leave a temporary file laying
+ * around.
+ */
+struct ovsdb_error * OVS_WARN_UNUSED_RESULT
+ovsdb_log_compact_abort(struct ovsdb_log *old, struct ovsdb_log *new)
+{
+    struct ovsdb_error *error;
+
+    /* We need to keep a consistent state in regards to the offset we are
+     * reading next, since we might not have read old->curr yet. */
+    off_t new_offset = old->old->prev_offset + old->curr->offset;
+
+    /* Step 1: Remove the new log completely
+     * We will truncate the new file and abuse it as temporary file. */
+    struct ovsdb_log_file *tmpfile = new->curr;
+    new->curr = NULL;
+    ovsdb_log_close(new);
+    tmpfile->offset = tmpfile->prev_offset = 0;
+    ovsdb_log_file_truncate(tmpfile);
+
+    /* Step 2: Sync old->old to disk.
+     * If this fails we can only hope for no data loss. */
+    error = ovsdb_log_file_commit_block(old->old);
+    if (error) {
+        old->error = error;
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(error);
+    }
+
+    /* 3. Write the whole old->old to a temporary file without the redirect.
+     * old->old->prev_offset will tell us until when we want to read. */
+    error = ovsdb_log_copy_file(old->old, tmpfile, 0, old->old->prev_offset);
+    if (error) {
+        old->error = error;
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(error);
+    }
+
+    /* 4. Append all data of old->curr to the temporary file.
+     * Since we might not be at the end of the file yet we need to seek to the
+     * end. */
+    if (fseek(old->curr->stream, 0, SEEK_END)) {
+        old->error = ovsdb_io_error(errno, "%s: seek failed", old->curr->name);
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(old->error);
+    }
+
+    error = ovsdb_log_copy_file(old->curr, tmpfile, 0,
+                                ftell(old->curr->stream));
+    if (error) {
+        old->error = error;
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(error);
+    }
+
+    /* 5. Replace the underlying file of old->old with the temporary file. */
+    error = ovsdb_log_rename_file(old->old, tmpfile);
+    if (error) {
+        old->error = error;
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(error);
+    }
+    ovsdb_log_file_close(tmpfile);
+
+    /* 6. Remove old->curr. */
+    char *filename = old->curr->name;
+    old->curr->name = NULL;
+    ovsdb_log_file_close(old->curr);
+    unlink(filename);
+    free(filename);
+
+    /* 7. Move old->old to old->curr. */
+    old->curr = old->old;
+    old->old = NULL;
+    old->curr->offset = old->curr->prev_offset = new_offset;
+    if (fseek(old->curr->stream, new_offset, SEEK_SET)) {
+        old->error = ovsdb_io_error(errno, "%s: seek failed", old->curr->name);
+        old->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(old->error);
+    }
+
+    return NULL;
 }
 
 void

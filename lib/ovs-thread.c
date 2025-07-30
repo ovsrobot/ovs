@@ -188,6 +188,7 @@ XPTHREAD_FUNC1(pthread_cond_signal, pthread_cond_t *);
 XPTHREAD_FUNC1(pthread_cond_broadcast, pthread_cond_t *);
 
 XPTHREAD_FUNC2(pthread_join, pthread_t, void **);
+XPTHREAD_FUNC2(pthread_kill, pthread_t, int);
 
 typedef void destructor_func(void *);
 XPTHREAD_FUNC2(pthread_key_create, pthread_key_t *, destructor_func *);
