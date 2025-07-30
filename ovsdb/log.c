@@ -116,9 +116,8 @@ static uint64_t afsync_destroy(struct afsync *);
  * log file, use the OVSDB_MAGIC macro.  To accept more than one magic string,
  * separate them with "|", e.g. "MAGIC 1|MAGIC 2".
  *
- * Whether the file will be locked using lockfile_lock() depends on 'locking':
- * use true to lock it, false not to lock it, or -1 to lock it only if
- * 'open_mode' is a mode that allows writing.
+ * Whether the file will be locked using lockfile_lock() depends on 'may_lock':
+ * use true to lock if 'open_mode' allows writing, false not to never lock it.
  *
  * A log consists of a series of records.  After opening or creating a log with
  * this function, the client may use ovsdb_log_read() to read any existing
@@ -129,7 +128,7 @@ static uint64_t afsync_destroy(struct afsync *);
 struct ovsdb_error *
 ovsdb_log_open(const char *name, const char *magic,
                enum ovsdb_log_open_mode open_mode,
-               int locking, struct ovsdb_log **filep)
+               bool may_lock, struct ovsdb_log **filep)
 {
     struct lockfile *lockfile;
     struct ovsdb_error *error;
@@ -159,11 +158,7 @@ ovsdb_log_open(const char *name, const char *magic,
         goto error;
     }
 
-    ovs_assert(locking == -1 || locking == false || locking == true);
-    if (locking < 0) {
-        locking = open_mode != OVSDB_LOG_READ_ONLY;
-    }
-    if (locking) {
+    if (may_lock && open_mode != OVSDB_LOG_READ_ONLY) {
         int retval = lockfile_lock(name, &lockfile);
         if (retval) {
             error = ovsdb_io_error(retval, "%s: failed to lock lockfile",

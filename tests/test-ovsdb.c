@@ -354,7 +354,7 @@ do_log_io(struct ovs_cmdl_context *ctx)
     }
 
     struct ovsdb_log *log;
-    check_ovsdb_error(ovsdb_log_open(name, magic, mode, -1, &log));
+    check_ovsdb_error(ovsdb_log_open(name, magic, mode, true, &log));
     printf("%s: open successful\n", name);
 
     struct ovsdb_log *replacement = NULL;

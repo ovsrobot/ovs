@@ -278,7 +278,7 @@ do_create(struct ovs_cmdl_context *ctx)
 
     /* Create database file. */
     check_ovsdb_error(ovsdb_log_open(db_file_name, OVSDB_MAGIC,
-                                     OVSDB_LOG_CREATE_EXCL, -1, &log));
+                                     OVSDB_LOG_CREATE_EXCL, true, &log));
     check_ovsdb_error(ovsdb_log_write_and_free(log, json));
     check_ovsdb_error(ovsdb_log_commit_block(log));
     ovsdb_log_close(log);
@@ -480,7 +480,7 @@ do_db_name(struct ovs_cmdl_context *ctx)
 
     struct ovsdb_log *log;
     check_ovsdb_error(ovsdb_log_open(db_file_name, OVSDB_MAGIC"|"RAFT_MAGIC,
-                                     OVSDB_LOG_READ_ONLY, -1, &log));
+                                     OVSDB_LOG_READ_ONLY, true, &log));
     if (!strcmp(ovsdb_log_get_magic(log), OVSDB_MAGIC)) {
         struct json *schema_json;
         check_ovsdb_error(ovsdb_log_read(log, &schema_json));
@@ -528,7 +528,7 @@ read_cluster_metadata(const char *filename)
 {
     struct ovsdb_log *log;
     check_ovsdb_error(ovsdb_log_open(filename, OVSDB_MAGIC"|"RAFT_MAGIC,
-                                     OVSDB_LOG_READ_ONLY, -1, &log));
+                                     OVSDB_LOG_READ_ONLY, true, &log));
     if (strcmp(ovsdb_log_get_magic(log), RAFT_MAGIC)) {
         ovs_fatal(0, "%s: not a clustered database", filename);
     }
@@ -579,7 +579,7 @@ do_db_has_magic(struct ovs_cmdl_context *ctx, const char *magic)
     struct ovsdb_log *log;
 
     check_ovsdb_error(ovsdb_log_open(filename, OVSDB_MAGIC"|"RAFT_MAGIC,
-                                     OVSDB_LOG_READ_ONLY, -1, &log));
+                                     OVSDB_LOG_READ_ONLY, true, &log));
     int cmp = strcmp(ovsdb_log_get_magic(log), magic);
     ovsdb_log_close(log);
     if (cmp) {
@@ -1109,7 +1109,7 @@ do_show_log(struct ovs_cmdl_context *ctx)
     struct ovsdb_log *log;
 
     check_ovsdb_error(ovsdb_log_open(db_file_name, OVSDB_MAGIC"|"RAFT_MAGIC,
-                                     OVSDB_LOG_READ_ONLY, -1, &log));
+                                     OVSDB_LOG_READ_ONLY, true, &log));
     if (!strcmp(ovsdb_log_get_magic(log), OVSDB_MAGIC)) {
         do_show_log_standalone(log);
     } else {
@@ -1284,7 +1284,7 @@ do_check_cluster(struct ovs_cmdl_context *ctx)
         s->filename = ctx->argv[i];
 
         check_ovsdb_error(ovsdb_log_open(s->filename, RAFT_MAGIC,
-                                         OVSDB_LOG_READ_ONLY, -1, &s->log));
+                                         OVSDB_LOG_READ_ONLY, true, &s->log));
 
         struct json *json;
         check_ovsdb_error(ovsdb_log_read(s->log, &json));
@@ -1706,9 +1706,10 @@ do_cluster_standalone(struct ovs_cmdl_context *ctx)
 
     check_ovsdb_error(ovsdb_log_open(cluster_db_file_name,
                                      OVSDB_MAGIC"|"RAFT_MAGIC,
-                                     OVSDB_LOG_READ_ONLY, -1, &log));
+                                     OVSDB_LOG_READ_ONLY, true, &log));
     check_ovsdb_error(ovsdb_log_open(db_file_name, OVSDB_MAGIC,
-                                     OVSDB_LOG_CREATE_EXCL, -1, &db_log_data));
+                                     OVSDB_LOG_CREATE_EXCL, true,
+                                     &db_log_data));
     if (strcmp(ovsdb_log_get_magic(log), RAFT_MAGIC) != 0) {
         ovs_fatal(0, "Database is not clustered db.\n");
     }

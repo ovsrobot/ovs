@@ -56,7 +56,7 @@ enum ovsdb_log_open_mode {
 
 struct ovsdb_error *ovsdb_log_open(const char *name, const char *magic,
                                    enum ovsdb_log_open_mode,
-                                   int locking, struct ovsdb_log **)
+                                   bool may_lock, struct ovsdb_log **)
     OVS_WARN_UNUSED_RESULT;
 void ovsdb_log_close(struct ovsdb_log *);
 

@@ -69,7 +69,7 @@ ovsdb_storage_open__(const char *filename, bool rw, bool allow_clustered,
     struct ovsdb_error *error;
     error = ovsdb_log_open(filename, OVSDB_MAGIC"|"RAFT_MAGIC,
                            rw ? OVSDB_LOG_READ_WRITE : OVSDB_LOG_READ_ONLY,
-                           -1, &log);
+                           true, &log);
     if (error) {
         return error;
     }
