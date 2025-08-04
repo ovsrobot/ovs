@@ -8079,6 +8079,20 @@ xlate_wc_init(struct xlate_ctx *ctx)
 }
 
 static void
+clear_tunnel_wc(const struct flow_tnl *spec, struct flow_tnl *mask)
+{
+    if (!spec->ip_src && !spec->ip_dst) {
+        mask->ip_src = 0;
+        mask->ip_dst = 0;
+    }
+    if (!ipv6_addr_is_set(&spec->ipv6_src) &&
+        !ipv6_addr_is_set(&spec->ipv6_dst)) {
+        mask->ipv6_src = in6addr_any;
+        mask->ipv6_dst = in6addr_any;
+    }
+}
+
+static void
 xlate_wc_finish(struct xlate_ctx *ctx)
 {
     int i;
@@ -8152,6 +8166,9 @@ xlate_wc_finish(struct xlate_ctx *ctx)
     if (!flow_tnl_dst_is_set(&ctx->xin->upcall_flow->tunnel)) {
         memset(&ctx->wc->masks.tunnel, 0, sizeof ctx->wc->masks.tunnel);
     }
+    /* Both IPv4/IPv6 tunnel wc may be set because of set_fields action.
+     * Clear the irrelevant one. */
+    clear_tunnel_wc(&ctx->xin->upcall_flow->tunnel, &ctx->wc->masks.tunnel);
 }
 
 /* This will tweak the odp actions generated. For now, it will:
