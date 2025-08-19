@@ -2348,6 +2348,24 @@ insert_controllers(struct ctl_context *ctx, char *targets[], size_t n)
     return controllers;
 }
 
+static int
+check_dup_controllers(char *targets[], size_t n)
+{
+    size_t i;
+    size_t j;
+
+    /* check if the input parameters are duplicated */
+    for (i = 0; i < n; i++) {
+        for (j = i + 1; j < n; j++) {
+            if (!strcmp(targets[i], targets[j])) {
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
 static void
 cmd_set_controller(struct ctl_context *ctx)
 {
@@ -2361,9 +2379,15 @@ cmd_set_controller(struct ctl_context *ctx)
     br = find_real_bridge(vsctl_ctx, ctx->argv[1], true)->br_cfg;
     verify_controllers(br);
 
+    n = ctx->argc - 2;
+    if (!check_dup_controllers(&ctx->argv[2], n)) {
+        /* controller parameters are duplicated */
+        ds_put_format(&ctx->output, "Controller parameter is duplicated\n");
+        return;
+    }
+
     delete_controllers(br->controller, br->n_controller);
 
-    n = ctx->argc - 2;
     controllers = insert_controllers(ctx, &ctx->argv[2], n);
     ovsrec_bridge_set_controller(br, controllers, n);
     free(controllers);
