@@ -37,8 +37,10 @@ AT_CHECK([ovs-appctl netdev-dummy/ip6addr br0 2001:cafe::88/24], [0], [OK
 ])
 dnl Checking that a local routes for added IPs were successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached | sort], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
-Cached: 2001:ca00::/24 dev br0 SRC 2001:cafe::88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 2001:ca00::/24 dev br0 SRC 2001:cafe::88
+Cached: 2001:cafe::88/128 dev br0 SRC 2001:cafe::88 local
 ])
 
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
@@ -246,8 +248,10 @@ AT_CHECK([ovs-appctl ovs/route/add 1.1.2.92/24 br0 pkt_mark=1234], [0], [OK
 dnl Checking that local routes for added IPs and the static route with a mark
 dnl were successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep br0 | sort], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
-Cached: 2001:ca00::/24 dev br0 SRC 2001:cafe::88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 2001:ca00::/24 dev br0 SRC 2001:cafe::88
+Cached: 2001:cafe::88/128 dev br0 SRC 2001:cafe::88 local
 User: 1.1.2.0/24 MARK 1234 dev br0 SRC 1.1.2.88
 ])
 
@@ -779,7 +783,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
 ])
 
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
@@ -820,7 +825,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
 ])
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
 
@@ -893,8 +899,10 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 2.2.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached | sort], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
-Cached: 2.2.2.0/24 dev br0 SRC 2.2.2.88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 2.2.2.0/24 dev br0 SRC 2.2.2.88
+Cached: 2.2.2.88/32 dev br0 SRC 2.2.2.88 local
 ])
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
 AT_CHECK([ovs-ofctl add-flow int-br action=normal])
@@ -975,7 +983,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
 ])
 
 AT_CHECK([ovs-ofctl add-flow br0 'arp,priority=1,action=normal'])
@@ -1025,7 +1034,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
 ])
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
 
@@ -1094,7 +1104,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 10.0.0.2/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 10.0.0.0/24 dev br0 SRC 10.0.0.2 local
+Cached: 10.0.0.2/32 dev br0 SRC 10.0.0.2 local
+Cached: 10.0.0.0/24 dev br0 SRC 10.0.0.2
 ])
 
 dnl Send an ARP reply to port b8 on br0, so that packets will be forwarded
@@ -1141,7 +1152,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 10.0.0.2/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 10.0.0.0/24 dev br0 SRC 10.0.0.2 local
+Cached: 10.0.0.2/32 dev br0 SRC 10.0.0.2 local
+Cached: 10.0.0.0/24 dev br0 SRC 10.0.0.2
 ])
 
 dnl Send an ARP reply to port b8 on br0, so that packets will be forwarded
@@ -1213,7 +1225,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr vtep0 1.1.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached], [0], [dnl
-Cached: 1.1.2.0/24 dev vtep0 SRC 1.1.2.88 local
+Cached: 1.1.2.88/32 dev vtep0 SRC 1.1.2.88 local
+Cached: 1.1.2.0/24 dev vtep0 SRC 1.1.2.88
 ])
 
 AT_CHECK([ovs-ofctl add-flow br0 action=normal])
@@ -1277,7 +1290,8 @@ AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
 ])
 dnl Checking that a local route for added IP was successfully installed.
 AT_CHECK([ovs-appctl ovs/route/show | grep Cached | sort], [0], [dnl
-Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88 local
+Cached: 1.1.2.0/24 dev br0 SRC 1.1.2.88
+Cached: 1.1.2.88/32 dev br0 SRC 1.1.2.88 local
 ])
 
 dnl Add a dp-hash selection group.
