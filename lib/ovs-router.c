@@ -84,7 +84,6 @@ struct ovs_router_entry {
     struct in6_addr src_addr;
     uint8_t plen;
     uint8_t priority;
-    bool local;
     uint32_t mark;
 };
 
@@ -127,7 +126,7 @@ cls_flush(struct classifier *cls, bool flush_all)
 
     classifier_defer(cls);
     CLS_FOR_EACH (rt, cr, cls) {
-        if (flush_all || rt->priority == rt->plen || rt->local) {
+        if (flush_all || rt->priority == rt->plen) {
             rt_entry_delete__(&rt->cr, cls);
         }
     }
@@ -197,12 +196,7 @@ ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
 
         cr_src = classifier_lookup(cls_local, OVS_VERSION_MAX, &flow_src,
                                    NULL, NULL);
-        if (cr_src) {
-            struct ovs_router_entry *p_src = ovs_router_entry_cast(cr_src);
-            if (!p_src->local) {
-                return false;
-            }
-        } else {
+        if (!cr_src) {
             return false;
         }
     }
@@ -363,7 +357,7 @@ out:
 
 static int
 ovs_router_insert__(uint32_t table, uint32_t mark, uint8_t priority,
-                    bool local, const struct in6_addr *ip6_dst,
+                    const struct in6_addr *ip6_dst,
                     uint8_t plen, const char output_netdev[],
                     const struct in6_addr *gw,
                     const struct in6_addr *ip6_src)
@@ -387,7 +381,6 @@ ovs_router_insert__(uint32_t table, uint32_t mark, uint8_t priority,
     p->mark = mark;
     p->nw_addr = match.flow.ipv6_dst;
     p->plen = plen;
-    p->local = local;
     p->priority = priority;
 
     if (ipv6_addr_is_set(ip6_src)) {
@@ -432,13 +425,13 @@ ovs_router_insert__(uint32_t table, uint32_t mark, uint8_t priority,
 
 void
 ovs_router_insert(uint32_t table, uint32_t mark, const struct in6_addr *ip_dst,
-                  uint8_t plen, bool local, const char output_netdev[],
+                  uint8_t plen, const char output_netdev[],
                   const struct in6_addr *gw, const struct in6_addr *prefsrc)
 {
     if (use_system_routing_table) {
-        uint8_t priority = local ? plen + 64 : plen;
-        ovs_router_insert__(table, mark, priority, local, ip_dst, plen,
-                            output_netdev, gw, prefsrc);
+        uint8_t priority = table == CLS_LOCAL ? plen + 64 : plen;
+        ovs_router_insert__(table, mark, priority, ip_dst, plen, output_netdev,
+                            gw, prefsrc);
     }
 }
 
@@ -447,14 +440,14 @@ ovs_router_insert(uint32_t table, uint32_t mark, const struct in6_addr *ip_dst,
 void
 ovs_router_force_insert(uint32_t table, uint32_t mark,
                         const struct in6_addr *ip_dst,
-                        uint8_t plen, bool local, const char output_netdev[],
+                        uint8_t plen, const char output_netdev[],
                         const struct in6_addr *gw,
                         const struct in6_addr *prefsrc)
 {
-    uint8_t priority = local ? plen + 64 : plen;
+    uint8_t priority = table == CLS_LOCAL ? plen + 64 : plen;
 
-    ovs_router_insert__(table, mark, priority, local, ip_dst, plen,
-                        output_netdev, gw, prefsrc);
+    ovs_router_insert__(table, mark, priority, ip_dst, plen, output_netdev, gw,
+                        prefsrc);
 }
 
 static void
@@ -585,8 +578,8 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
         in6_addr_set_mapped_ipv4(&src6, src);
     }
 
-    err = ovs_router_insert__(CLS_MAIN, mark, plen + 32, false, &ip6, plen,
-                              argv[2], &gw6, &src6);
+    err = ovs_router_insert__(CLS_MAIN, mark, plen + 32, &ip6, plen, argv[2],
+                              &gw6, &src6);
     if (err) {
         unixctl_command_reply_error(conn, "Error while inserting route.");
     } else {
@@ -637,7 +630,7 @@ ovs_router_show_json(struct json *json_routes, const struct classifier *cls,
     }
 
     CLS_FOR_EACH (rt, cr, cls) {
-        bool user = rt->priority != rt->plen && !rt->local;
+        bool user = rt->priority != rt->plen && table != CLS_LOCAL;
         uint8_t plen = rt->plen;
         struct json *json, *nh;
 
@@ -650,7 +643,8 @@ ovs_router_show_json(struct json *json_routes, const struct classifier *cls,
 
         json_object_put(json, "table", json_integer_create(table));
         json_object_put(json, "user", json_boolean_create(user));
-        json_object_put(json, "local", json_boolean_create(rt->local));
+        json_object_put(json, "local",
+                        json_boolean_create(table == CLS_LOCAL));
         json_object_put(json, "priority", json_integer_create(rt->priority));
         json_object_put(json, "prefix", json_integer_create(plen));
         json_object_put_string(nh, "dev", rt->output_netdev);
@@ -708,7 +702,7 @@ ovs_router_show_text(struct ds *ds, const struct classifier *cls,
 
     CLS_FOR_EACH (rt, cr, cls) {
         uint8_t plen;
-        if (rt->priority == rt->plen || rt->local) {
+        if (rt->priority == rt->plen || table == CLS_LOCAL) {
             ds_put_format(ds, "Cached: ");
         } else {
             ds_put_format(ds, "User: ");
@@ -730,7 +724,7 @@ ovs_router_show_text(struct ds *ds, const struct classifier *cls,
         }
         ds_put_format(ds, " SRC ");
         ipv6_format_mapped(&rt->src_addr, ds);
-        if (rt->local) {
+        if (table == CLS_LOCAL) {
             ds_put_format(ds, " local");
         }
         if (!is_standard_table(table) && !show_header) {
@@ -860,7 +854,7 @@ ovs_router_flush(bool flush_all)
 
     ovs_mutex_lock(&mutex);
     CMAP_FOR_EACH (node, cmap_node, &clsmap) {
-        cls_flush(&node->cls, flush_all);
+        cls_flush(&node->cls, flush_all || node->table == CLS_LOCAL);
         if (!node->cls.n_rules) {
             cmap_remove(&clsmap, &node->cmap_node, hash_int(node->table, 0));
             ovsrcu_postpone(clsmap_node_destroy_cb, node);

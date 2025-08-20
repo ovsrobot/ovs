@@ -40,13 +40,11 @@ void ovs_router_init(void);
 bool ovs_router_is_empty(uint32_t table);
 bool ovs_router_is_referenced(uint32_t table);
 void ovs_router_insert(uint32_t table, uint32_t mark,
-                       const struct in6_addr *ip_dst,
-                       uint8_t plen, bool local,
+                       const struct in6_addr *ip_dst, uint8_t plen,
                        const char output_netdev[], const struct in6_addr *gw,
                        const struct in6_addr *prefsrc);
 void ovs_router_force_insert(uint32_t table, uint32_t mark,
-                             const struct in6_addr *ip_dst,
-                             uint8_t plen, bool local,
+                             const struct in6_addr *ip_dst, uint8_t plen,
                              const char output_netdev[],
                              const struct in6_addr *gw,
                              const struct in6_addr *prefsrc);
