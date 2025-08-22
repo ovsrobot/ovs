@@ -841,7 +841,9 @@ def do_authors_exist(authors):
     missing_authors = []
 
     try:
-        with open(get_top_directory() + "/AUTHORS.rst", "r") as file:
+        with open(
+                get_top_directory() + "/AUTHORS.rst", "r", encoding="utf-8"
+        ) as file:
             file_content = file.read()
             for author in authors:
                 m = re.search(r'<(.*?)>', author)
