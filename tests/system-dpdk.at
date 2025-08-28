@@ -51,9 +51,82 @@ OVS_DPDK_STOP_VSWITCHD
 AT_CLEANUP
 dnl --------------------------------------------------------------------------
 
-
-
+dnl Check dpdk-lcore-mask conversion for only first bit
+AT_SETUP([OVS-DPDK - dpdk-lcore-mask conversion - single])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START_OVSDB()
+OVS_DPDK_START_VSWITCHD([--no-pci])
+CHECK_CPU_DISCOVERED()
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0x1])
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true])
+expected_lcores="lcores 0@0"
+OVS_WAIT_UNTIL([grep "$expected_lcores" ovs-vswitchd.log])
+OVS_DPDK_STOP_VSWITCHD
+AT_CLEANUP
 dnl --------------------------------------------------------------------------
+
+dnl Check dpdk-lcore-mask conversion for only multiple bits
+AT_SETUP([OVS-DPDK - dpdk-lcore-mask conversion - multi])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START_OVSDB()
+OVS_DPDK_START_VSWITCHD([--no-pci])
+CHECK_CPU_DISCOVERED(4)
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0xf])
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true])
+expected_lcores="lcores 0@0,1@1,2@2,3@3"
+OVS_WAIT_UNTIL([grep "$expected_lcores" ovs-vswitchd.log])
+OVS_DPDK_STOP_VSWITCHD
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl Check dpdk-lcore-mask conversion for max length string
+AT_SETUP([OVS-DPDK - dpdk-lcore-mask conversion - max])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START_OVSDB()
+OVS_DPDK_START_VSWITCHD([--no-pci])
+CHECK_CPU_DISCOVERED(42)
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0x7ffffffffff])
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true])
+expected_lcores="lcores 0@0,1@1,2@2,3@3,4@4,5@5,6@6,7@7,8@8,9@9,10@10,11@11,12@12,13@13,14@14,15@15,16@16,17@17,18@18,19@19,20@20,21@21,22@22,23@23,24@24,25@25,26@26,27@27,28@28,29@29,30@30,31@31,32@32,33@33,34@34,35@35,36@36,37@37,38@38,39@39,40@40,41@41,42@42"
+OVS_WAIT_UNTIL([grep "$expected_lcores" ovs-vswitchd.log])
+OVS_DPDK_STOP_VSWITCHD
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl Check dpdk-lcore-mask conversion for > max length string
+AT_SETUP([OVS-DPDK - dpdk-lcore-mask conversion - cat])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START_OVSDB()
+OVS_DPDK_START_VSWITCHD([--no-pci])
+CHECK_CPU_DISCOVERED(42)
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0xfffffffffff])
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true])
+OVS_WAIT_UNTIL([grep "Concatenating DPDK lcore list from dpdk-lcore-mask as string too long." ovs-vswitchd.log])
+expected_lcores="lcores 0@0,1@1,2@2,3@3,4@4,5@5,6@6,7@7,8@8,9@9,10@10,11@11,12@12,13@13,14@14,15@15,16@16,17@17,18@18,19@19,20@20,21@21,22@22,23@23,24@24,25@25,26@26,27@27,28@28,29@29,30@30,31@31,32@32,33@33,34@34,35@35,36@36,37@37,38@38,39@39,40@40,41@41,42@42"
+OVS_WAIT_UNTIL([grep "$expected_lcores" ovs-vswitchd.log])
+OVS_DPDK_STOP_VSWITCHD
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
+dnl Check dpdk-lcore-mask conversion for zero
+AT_SETUP([OVS-DPDK - dpdk-lcore-mask conversion - zeromask])
+AT_KEYWORDS([dpdk])
+OVS_DPDK_PRE_CHECK()
+OVS_DPDK_START_OVSDB()
+OVS_DPDK_START_VSWITCHD([--no-pci])
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0x0])
+AT_CHECK([ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true])
+OVS_WAIT_UNTIL([grep "Ignoring database defined option 'dpdk-lcore-mask' due to invalid value '0x0'" ovs-vswitchd.log])
+expected_lcores="lcores 0@0"
+OVS_WAIT_UNTIL([grep "$expected_lcores" ovs-vswitchd.log])
+OVS_DPDK_STOP_VSWITCHD(["/Ignoring database defined option/d"])
+AT_CLEANUP
+dnl --------------------------------------------------------------------------
+
 dnl Add standard DPDK PHY port
 AT_SETUP([OVS-DPDK - add standard DPDK port])
 AT_KEYWORDS([dpdk])
