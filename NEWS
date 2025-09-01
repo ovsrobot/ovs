@@ -3,6 +3,9 @@ Post-v3.6.0
    - Userspace datapath:
      * Conntrack now supports the FTP commands EPSV and EPRT with IPv4
        connections, instead of limiting these commands to IPv6 only.
+   - ovs-vsctl:
+     * Added JSON output support to the 'ovs/route/show' command.
+     * Added 'lldp/neighbor' command that displays lldp neighbor information.
 
 
 v3.6.0 - 18 Aug 2025
