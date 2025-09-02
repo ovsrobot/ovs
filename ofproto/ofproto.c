@@ -2953,21 +2953,26 @@ init_ports(struct ofproto *p)
     return 0;
 }
 
+/* If 'port' is internal or patch and if the user didn't explicitly specify an
+ * mtu through the database, we have to override it. Uses cached port type
+ * values to avoid repeated ofproto_port_open_type() calls. */
 static bool
-ofport_is_internal_or_patch(const struct ofproto *p, const struct ofport *port)
+ofport_is_mtu_overridden_cached(const struct ofport *port,
+                                const char *internal_type,
+                                const char *patch_type)
 {
     const char *netdev_type = netdev_get_type(port->netdev);
-    return !strcmp(netdev_type, ofproto_port_open_type(p, "internal")) ||
-           !strcmp(netdev_type, ofproto_port_open_type(p, "patch"));
+    bool is_internal_or_patch = !strcmp(netdev_type, internal_type) ||
+                                !strcmp(netdev_type, patch_type);
+    return is_internal_or_patch && !netdev_mtu_is_user_config(port->netdev);
 }
 
-/* If 'port' is internal or patch and if the user didn't explicitly specify an
- * mtu through the database, we have to override it. */
 static bool
 ofport_is_mtu_overridden(const struct ofproto *p, const struct ofport *port)
 {
-    return ofport_is_internal_or_patch(p, port)
-           && !netdev_mtu_is_user_config(port->netdev);
+    const char *internal_type = ofproto_port_open_type(p, "internal");
+    const char *patch_type = ofproto_port_open_type(p, "patch");
+    return ofport_is_mtu_overridden_cached(port, internal_type, patch_type);
 }
 
 /* Find the minimum MTU of all non-overridden devices attached to 'p'.
@@ -2978,12 +2983,17 @@ find_min_mtu(struct ofproto *p)
     struct ofport *ofport;
     int mtu = 0;
 
+    const char *internal_type = ofproto_port_open_type(p, "internal");
+    const char *patch_type = ofproto_port_open_type(p, "patch");
+
     HMAP_FOR_EACH (ofport, hmap_node, &p->ports) {
         struct netdev *netdev = ofport->netdev;
         int dev_mtu;
 
-        /* Skip any overridden port, since that's what we're trying to set. */
-        if (ofport_is_mtu_overridden(p, ofport)) {
+        /* Skip any overridden port, since that's what we're trying to set.
+         * Use cached port types to avoid repeated lookups. */
+        if (ofport_is_mtu_overridden_cached(ofport, internal_type,
+                                            patch_type)) {
             continue;
         }
 
@@ -3037,10 +3047,15 @@ update_mtu_ofproto(struct ofproto *p)
         return;
     }
 
+    const char *internal_type = ofproto_port_open_type(p, "internal");
+    const char *patch_type = ofproto_port_open_type(p, "patch");
+
     HMAP_FOR_EACH (ofport, hmap_node, &p->ports) {
         struct netdev *netdev = ofport->netdev;
 
-        if (ofport_is_mtu_overridden(p, ofport)) {
+        /* Use cached port types to avoid repeated lookups */
+        if (ofport_is_mtu_overridden_cached(ofport, internal_type,
+                                            patch_type)) {
             if (!netdev_set_mtu(netdev, p->min_mtu)) {
                 ofport->mtu = p->min_mtu;
             }
