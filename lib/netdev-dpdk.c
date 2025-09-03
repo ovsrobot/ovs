@@ -450,6 +450,11 @@ enum dpdk_rx_steer_flags {
  *  already defined.
  */
 
+typedef enum {
+    FULL_DUPLEX,
+    HALF_DUPLEX
+} dpdk_link_duplex_t;
+
 struct netdev_dpdk {
     PADDED_MEMBERS_CACHELINE_MARKER(CACHE_LINE_SIZE, cacheline0,
         dpdk_port_t port_id;
@@ -544,6 +549,15 @@ struct netdev_dpdk {
         /* Number of rx/tx descriptors for physical devices */
         int rxq_size;
         int txq_size;
+
+        /* Link configuration parameters. */
+        int requested_link_speed;
+        bool requested_autoneg;
+        dpdk_link_duplex_t requested_duplex;
+
+        int link_speed;
+        bool autoneg;
+        dpdk_link_duplex_t duplex;
 
         /* Socket ID detected when vHost device is brought up */
         int requested_socket_id;
@@ -1005,6 +1019,72 @@ netdev_dpdk_mempool_configure(struct netdev_dpdk *dev)
 }
 
 static void
+netdev_dpdk_update_link_fields_from_hw(struct netdev_dpdk *dev)
+    OVS_REQUIRES(dev->mutex)
+{
+    struct rte_eth_link *link = &dev->link;
+
+    if (link->link_status) {
+        /* Link is up - update actual speed, duplex, autoneg from hardware */
+        switch (link->link_speed) {
+            case RTE_ETH_SPEED_NUM_10M:
+                dev->link_speed = 10;
+                break;
+            case RTE_ETH_SPEED_NUM_100M:
+                dev->link_speed = 100;
+                break;
+            case RTE_ETH_SPEED_NUM_1G:
+                dev->link_speed = 1000;
+                break;
+            case RTE_ETH_SPEED_NUM_2_5G:
+                dev->link_speed = 2500;
+                break;
+            case RTE_ETH_SPEED_NUM_5G:
+                dev->link_speed = 5000;
+                break;
+            case RTE_ETH_SPEED_NUM_10G:
+                dev->link_speed = 10000;
+                break;
+            case RTE_ETH_SPEED_NUM_20G:
+                dev->link_speed = 20000;
+                break;
+            case RTE_ETH_SPEED_NUM_25G:
+                dev->link_speed = 25000;
+                break;
+            case RTE_ETH_SPEED_NUM_40G:
+                dev->link_speed = 40000;
+                break;
+            case RTE_ETH_SPEED_NUM_50G:
+                dev->link_speed = 50000;
+                break;
+            case RTE_ETH_SPEED_NUM_56G:
+                dev->link_speed = 56000;
+                break;
+            case RTE_ETH_SPEED_NUM_100G:
+                dev->link_speed = 100000;
+                break;
+            case RTE_ETH_SPEED_NUM_200G:
+                dev->link_speed = 200000;
+                break;
+            case RTE_ETH_SPEED_NUM_400G:
+                dev->link_speed = 400000;
+                break;
+            case RTE_ETH_SPEED_NUM_UNKNOWN:
+            default:
+                dev->link_speed = 0; /* Unknown speed */
+                break;
+        }
+
+        dev->duplex = (link->link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
+                      FULL_DUPLEX : HALF_DUPLEX;
+        dev->autoneg = (link->link_autoneg == RTE_ETH_LINK_AUTONEG);
+    } else {
+        /* Link is down - set speed to unknown */
+        dev->link_speed = 0;
+    }
+}
+
+static void
 check_link_status(struct netdev_dpdk *dev)
 {
     struct rte_eth_link link;
@@ -1021,6 +1101,10 @@ check_link_status(struct netdev_dpdk *dev)
 
         dev->link_reset_cnt++;
         dev->link = link;
+
+         /* Update individual link fields from hardware state */
+        netdev_dpdk_update_link_fields_from_hw(dev);
+
         if (dev->link.link_status) {
             VLOG_DBG_RL(&rl,
                         "Port "DPDK_PORT_ID_FMT" Link Up - speed %u Mbps - %s",
@@ -1098,6 +1182,123 @@ netdev_dpdk_update_netdev_flags(struct netdev_dpdk *dev)
                                    NETDEV_TX_OFFLOAD_OUTER_UDP_CKSUM);
 }
 
+/**
+ * Convert link configuration parameters to DPDK link_speeds bitmap.
+ *
+ * @param speed_mbps
+ *   Link speed in Mbps (10, 100, 1000, 10000, etc.)
+ * @param duplex
+ *   Duplex mode: FULL_DUPLEX or HALF_DUPLEX
+ * @param autoneg
+ *   true for autonegotiation, false for fixed speed
+ * @return
+ *   DPDK link_speeds bitmap value for rte_eth_conf.link_speeds
+ */
+static uint32_t
+netdev_dpdk_convert_link_speeds(int speed_mbps, dpdk_link_duplex_t duplex, bool autoneg)
+{
+    uint32_t link_speeds = 0;
+
+    if (autoneg) {
+        /* Autonegotiation enabled - advertise all supported speeds */
+        return RTE_ETH_LINK_SPEED_AUTONEG;
+    }
+
+    /* Fixed speed configuration */
+    link_speeds = RTE_ETH_LINK_SPEED_FIXED;
+
+    /* Convert speed and duplex to appropriate bitmap flags */
+    switch (speed_mbps) {
+        case 10:
+            if (duplex == FULL_DUPLEX) {
+                link_speeds |= RTE_ETH_LINK_SPEED_10M;
+            } else {
+                link_speeds |= RTE_ETH_LINK_SPEED_10M_HD;
+            }
+            break;
+
+        case 100:
+            if (duplex == FULL_DUPLEX) {
+                link_speeds |= RTE_ETH_LINK_SPEED_100M;
+            } else {
+                link_speeds |= RTE_ETH_LINK_SPEED_100M_HD;
+            }
+            break;
+
+        case 1000:
+            /* 1G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_1G;
+            break;
+
+        case 2500:
+            /* 2.5G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_2_5G;
+            break;
+
+        case 5000:
+            /* 5G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_5G;
+            break;
+
+        case 10000:
+            /* 10G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_10G;
+            break;
+
+        case 20000:
+            /* 20G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_20G;
+            break;
+
+        case 25000:
+            /* 25G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_25G;
+            break;
+
+        case 40000:
+            /* 40G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_40G;
+            break;
+
+        case 50000:
+            /* 50G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_50G;
+            break;
+
+        case 56000:
+            /* 56G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_56G;
+            break;
+
+        case 100000:
+            /* 100G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_100G;
+            break;
+
+        case 200000:
+            /* 200G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_200G;
+            break;
+
+        case 400000:
+            /* 400G only supports full duplex */
+            link_speeds |= RTE_ETH_LINK_SPEED_400G;
+            break;
+
+        case 0:
+            /* Speed 0 means autoneg, even if autoneg flag is false */
+            return RTE_ETH_LINK_SPEED_AUTONEG;
+
+        default:
+            /* Unsupported speed - fallback to autoneg */
+            VLOG_WARN("Unsupported link speed %d Mbps, falling back to autonegotiation", 
+                      speed_mbps);
+            return RTE_ETH_LINK_SPEED_AUTONEG;
+    }
+
+    return link_speeds;
+}
+
 static int
 dpdk_eth_dev_port_config(struct netdev_dpdk *dev,
                          const struct rte_eth_dev_info *info,
@@ -1107,6 +1308,18 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev,
     uint16_t conf_mtu;
     int diag = 0;
     int i;
+
+    /* Configure link speeds based on requested configuration */
+    conf.link_speeds = netdev_dpdk_convert_link_speeds(
+        dev->requested_link_speed,
+        dev->requested_duplex,
+        dev->requested_autoneg);
+
+    VLOG_DBG("Device %s: link_speeds=0x%x (speed=%d, duplex=%s, autoneg=%s)",
+              dev->up.name, conf.link_speeds,
+              dev->requested_link_speed,
+              dev->requested_duplex == FULL_DUPLEX ? "full" : "half",
+              dev->requested_autoneg ? "true" : "false");
 
     /* As of DPDK 17.11.1 a few PMDs require to explicitly enable
      * scatter to support jumbo RX.
@@ -1187,6 +1400,8 @@ dpdk_eth_dev_port_config(struct netdev_dpdk *dev,
         if (diag) {
             VLOG_INFO("Retrying setup with (rxq:%d txq:%d)", n_rxq, n_txq);
         }
+
+        VLOG_INFO("Configuring device with conf=%p", &conf);
 
         diag = rte_eth_dev_configure(dev->port_id, n_rxq, n_txq, &conf);
         if (diag) {
@@ -1467,6 +1682,10 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
     }
     dev->started = true;
 
+    dev->link_speed = dev->requested_link_speed;
+    dev->autoneg = dev->requested_autoneg;
+    dev->duplex = dev->requested_duplex;
+
     netdev_dpdk_configure_xstats(dev);
 
     rte_eth_promiscuous_enable(dev->port_id);
@@ -1546,6 +1765,12 @@ common_construct(struct netdev *netdev, dpdk_port_t port_no,
     dev->requested_mtu = RTE_ETHER_MTU;
     dev->max_packet_len = MTU_TO_FRAME_LEN(dev->mtu);
     dev->requested_lsc_interrupt_mode = 0;
+    dev->requested_autoneg = true;
+    dev->requested_link_speed = 0;
+    dev->requested_duplex = FULL_DUPLEX;
+    dev->autoneg = true;
+    dev->duplex = FULL_DUPLEX;
+    dev->link_speed = 0;
     ovsrcu_index_init(&dev->vid, -1);
     dev->vhost_reconfigured = false;
     dev->virtio_features_state = OVS_VIRTIO_F_CLEAN;
@@ -2301,6 +2526,80 @@ dpdk_set_rx_steer_config(struct netdev *netdev, struct netdev_dpdk *dev,
     }
 }
 
+static bool
+is_valid_link_combo(bool autoneg, int speed, int duplex)
+{
+    VLOG_DBG("is_valid_link_combo: autoneg=%s, speed=%d, duplex=%s",
+                  autoneg ? "true" : "false",
+                  speed,
+                  duplex == FULL_DUPLEX ? "full" : "half");
+    if (autoneg) {
+        // Autoneg ON: speed/duplex should not be forced.
+        return true;
+    } else {
+        // Autoneg OFF: must set valid speed/duplex.
+        if (speed == 100 && duplex == HALF_DUPLEX) {
+            return true;
+        }
+        if ((speed == 100 || speed == 1000 || speed == 10000) &&
+            duplex == FULL_DUPLEX) {
+            return true;
+        }
+        return false;
+    }
+}
+
+static void
+dpdk_set_link_config(struct netdev_dpdk *dev, const struct smap *args, char **errp)
+    OVS_REQUIRES(dev->mutex)
+{
+    const char *link_speed_str = smap_get(args, "dpdk-link-speed");
+    const char *autoneg_str = smap_get(args, "dpdk-autoneg");
+    const char *duplex_str = smap_get(args, "dpdk-duplex");
+
+    int requested_link_speed = link_speed_str ? atoi(link_speed_str) : 0;
+    bool requested_autoneg = autoneg_str ? !strcmp(autoneg_str, "true") : true;
+    int requested_duplex = duplex_str && !strcmp(duplex_str, "half") ? HALF_DUPLEX : FULL_DUPLEX;
+
+    VLOG_INFO("dpdk_set_link_config: Requested DPDK link configuration: speed=%d, autoneg=%s, duplex=%s",
+              requested_link_speed,
+              requested_autoneg ? "true" : "false",
+              requested_duplex == FULL_DUPLEX ? "full" : "half");
+
+    // Sanity check
+    if (!is_valid_link_combo(requested_autoneg, requested_link_speed, requested_duplex)) {
+        VLOG_WARN_BUF(errp, "Invalid DPDK link configuration: autoneg=%s, speed=%d, duplex=%s",
+            requested_autoneg ? "true" : "false",
+            requested_link_speed,
+            requested_duplex == FULL_DUPLEX ? "full" : "half");
+        // fallback to autoneg true
+        requested_autoneg = true;
+        requested_link_speed = 0;
+        requested_duplex = FULL_DUPLEX;
+    }
+
+    bool changed = false;
+    if (dev->requested_link_speed != requested_link_speed) {
+        dev->requested_link_speed = requested_link_speed;
+        changed = true;
+    }
+    if (dev->requested_autoneg != requested_autoneg) {
+        dev->requested_autoneg = requested_autoneg;
+        changed = true;
+    }
+    if (dev->requested_duplex != requested_duplex) {
+        dev->requested_duplex = requested_duplex;
+        changed = true;
+    }
+    if (changed) {
+        VLOG_INFO("dpdk_set_link_config: Before reconfigure: Link configuration changed: speed=%d, autoneg=%s, duplex=%s",
+                  dev->requested_link_speed,
+                  dev->requested_autoneg ? "true" : "false",
+                  dev->requested_duplex == FULL_DUPLEX ? "full" : "half");
+        netdev_request_reconfigure(&dev->up);
+    }
+}
+
 static int
 netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
                        char **errp)
@@ -2324,6 +2623,8 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
     dpdk_set_rx_steer_config(netdev, dev, args, errp);
 
     dpdk_set_rxq_config(dev, args);
+
+    dpdk_set_link_config(dev, args, errp);
 
     new_devargs = smap_get(args, "dpdk-devargs");
 
@@ -6185,6 +6486,11 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
     bool try_rx_steer;
     int err = 0;
 
+    VLOG_DBG("netdev_dpdk_reconfigure: Before reconfigure: Link configuration changed: speed=%d, autoneg=%s, duplex=%s",
+                  dev->requested_link_speed,
+                  dev->requested_autoneg ? "true" : "false",
+                  dev->requested_duplex == FULL_DUPLEX ? "full" : "half");
+
     ovs_mutex_lock(&dev->mutex);
 
     try_rx_steer = dev->requested_rx_steer_flags != 0;
@@ -6205,7 +6511,10 @@ netdev_dpdk_reconfigure(struct netdev *netdev)
         && dev->txq_size == dev->requested_txq_size
         && eth_addr_equals(dev->hwaddr, dev->requested_hwaddr)
         && dev->socket_id == dev->requested_socket_id
-        && dev->started && !pending_reset) {
+        && dev->started && !pending_reset
+        && dev->link_speed == dev->requested_link_speed
+        && dev->autoneg == dev->requested_autoneg
+        && dev->duplex == dev->requested_duplex) {
         /* Reconfiguration is unnecessary */
 
         goto out;
@@ -6253,9 +6562,20 @@ retry:
 
     err = dpdk_eth_dev_init(dev);
     if (err) {
+        VLOG_ERR("%s : Failed to initialize DPDK device: %s",
+                 netdev_get_name(&dev->up), rte_strerror(err));
         goto out;
     }
     netdev_dpdk_update_netdev_flags(dev);
+
+    VLOG_DBG("netdev_dpdk_reconfigure: Applied link configuration: speed=%d, autoneg=%s, duplex=%s",
+              dev->requested_link_speed,
+              dev->requested_autoneg ? "true" : "false",
+              dev->requested_duplex == FULL_DUPLEX ? "full" : "half");
+    dev->link_speed = dev->requested_link_speed;
+    dev->autoneg = dev->requested_autoneg;
+    dev->duplex = dev->requested_duplex;
+
 
     /* If both requested and actual hwaddr were previously
      * unset (initialized to 0), then first device init above

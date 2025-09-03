@@ -3589,6 +3589,27 @@ ovs-vsctl add-port br0 p0 -- set Interface p0 type=patch options:peer=p1 \
         </p>
       </column>
 
+      <column name="options" key="dpdk-link-speed" type='{"type": "integer"}'>
+        <p>
+          Specifies the fixed link speed in Mbps for this DPDK interface (e.g., 1000, 10000).
+          Only applies to interfaces with type <code>dpdk</code>.
+        </p>
+      </column>
+
+      <column name="options" key="dpdk-autoneg" type='{"type": "boolean"}'>
+        <p>
+          Set to <code>true</code> to enable autonegotiation, <code>false</code> to disable.
+          Only applies to interfaces with type <code>dpdk</code>.
+        </p>
+      </column>
+
+      <column name="options" key="dpdk-duplex" type='{"type": "string", "enum": ["set", ["full", "half"]]}'>
+        <p>
+          Specifies the duplex mode for this DPDK interface. Valid values are <code>full</code> or <code>half</code>.
+          Only applies to interfaces with type <code>dpdk</code>.
+          Only applies if autonegotiation is disabled.
+        </p>
+      </column>
     </group>
 
     <group title="EMC (Exact Match Cache) Configuration">
