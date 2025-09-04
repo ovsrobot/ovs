@@ -54,11 +54,19 @@ struct coverage_counter {
     unsigned int hr[HR_AVG_LEN];
 };
 
-void coverage_counter_register(struct coverage_counter*);
+enum coverage_level {
+    COVERAGE_LEVEL_INFO,
+    COVERAGE_LEVELS
+};
+
+#define COVERAGE_DEFINE(COUNTER) \
+    COVERAGE_DEFINE__(COUNTER, COVERAGE_LEVEL_INFO)
+
+void coverage_counter_register(struct coverage_counter *, enum coverage_level);
 
 /* Defines COUNTER.  There must be exactly one such definition at file scope
  * within a program. */
-#define COVERAGE_DEFINE(COUNTER)                                        \
+#define COVERAGE_DEFINE__(COUNTER, LEVEL)                               \
         DEFINE_STATIC_PER_THREAD_DATA(unsigned int,                     \
                                       counter_##COUNTER, 0);            \
         static unsigned int COUNTER##_count(void)                       \
@@ -76,7 +84,7 @@ void coverage_counter_register(struct coverage_counter*);
         struct coverage_counter counter_##COUNTER                       \
             = { #COUNTER, COUNTER##_count, 0, 0, {0}, {0} };            \
         OVS_CONSTRUCTOR(COUNTER##_init_coverage) {                      \
-            coverage_counter_register(&counter_##COUNTER);              \
+            coverage_counter_register(&counter_##COUNTER, LEVEL);       \
         }
 
 /* Adds 1 to COUNTER. */

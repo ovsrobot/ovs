@@ -29,11 +29,13 @@
 VLOG_DEFINE_THIS_MODULE(coverage);
 
 /* The coverage counters. */
-static struct coverage_counter **coverage_counters = NULL;
-static size_t n_coverage_counters = 0;
-static size_t allocated_coverage_counters = 0;
+static struct coverage_counter **coverage_counters[COVERAGE_LEVELS];
+static size_t n_coverage_counters[COVERAGE_LEVELS];
+static size_t allocated_coverage_counters[COVERAGE_LEVELS];
 
-static struct ovs_mutex coverage_mutex = OVS_MUTEX_INITIALIZER;
+static struct ovs_mutex coverage_mutex[COVERAGE_LEVELS] = {
+    [COVERAGE_LEVEL_INFO] = OVS_MUTEX_INITIALIZER,
+};
 
 DEFINE_STATIC_PER_THREAD_DATA(long long int, coverage_clear_time, LLONG_MIN);
 static long long int coverage_run_time = LLONG_MIN;
@@ -41,36 +43,89 @@ static long long int coverage_run_time = LLONG_MIN;
 /* Index counter used to compute the moving average array's index. */
 static unsigned int idx_count = 0;
 
-static void coverage_read(struct svec *);
+static void coverage_read(struct svec *, enum coverage_level);
 static unsigned int coverage_array_sum(const unsigned int *arr,
-                                       const unsigned int len);
+                                       const unsigned int len,
+                                       enum coverage_level level);
 static bool coverage_read_counter(const char *name,
                                   unsigned long long int *count);
 
 /* Registers a coverage counter with the coverage core */
 void
-coverage_counter_register(struct coverage_counter* counter)
+coverage_counter_register(struct coverage_counter *counter,
+                          enum coverage_level level)
 {
-    if (n_coverage_counters >= allocated_coverage_counters) {
-        coverage_counters = x2nrealloc(coverage_counters,
-                                       &allocated_coverage_counters,
-                                       sizeof(struct coverage_counter*));
+    if (n_coverage_counters[level] >= allocated_coverage_counters[level]) {
+        coverage_counters[level] =
+            x2nrealloc(coverage_counters[level],
+                       &allocated_coverage_counters[level],
+                       sizeof(struct coverage_counter *));
     }
-    coverage_counters[n_coverage_counters++] = counter;
+    coverage_counters[level][n_coverage_counters[level]++] = counter;
+}
+
+static const char *
+coverage_level_name(enum coverage_level level)
+{
+    switch (level) {
+    case COVERAGE_LEVEL_INFO:
+        return "info";
+    case COVERAGE_LEVELS:
+    default:
+        OVS_NOT_REACHED();
+    }
+
+    OVS_NOT_REACHED();
+    return "ERR";
+}
+
+static enum coverage_level
+coverage_level_from_name(const char *name)
+{
+    for (enum coverage_level l = 0; l < COVERAGE_LEVELS; l++) {
+        if (nullable_string_is_equal(name, coverage_level_name(l))) {
+            return l;
+        }
+    }
+    return COVERAGE_LEVELS;
 }
 
 static void
 coverage_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                      const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
 {
+    enum coverage_level level;
     struct svec lines;
-    char *reply;
+    const char *line;
+    struct ds reply;
+    size_t i;
 
     svec_init(&lines);
-    coverage_read(&lines);
-    reply = svec_join(&lines, "\n", "\n");
-    unixctl_command_reply(conn, reply);
-    free(reply);
+
+    if (argc > 1) {
+        level = coverage_level_from_name(argv[1]);
+        if (level == COVERAGE_LEVELS) {
+            unixctl_command_reply_error(conn, "Invalid level");
+            svec_destroy(&lines);
+            return;
+        }
+        coverage_read(&lines, level);
+    } else {
+        for (level = 0; level < COVERAGE_LEVELS; level++) {
+            coverage_read(&lines, level);
+        }
+    }
+
+    ds_init(&reply);
+    SVEC_FOR_EACH (i, line, &lines) {
+        if ((i & 1) == 0) {
+            continue;
+        }
+        ds_put_cstr(&reply, line);
+        ds_put_cstr(&reply, "\n");
+    }
+    unixctl_command_reply(conn, ds_cstr(&reply));
+    ds_destroy(&reply);
     svec_destroy(&lines);
 }
 
@@ -96,7 +151,7 @@ coverage_unixctl_read_counter(struct unixctl_conn *conn, int argc OVS_UNUSED,
 void
 coverage_init(void)
 {
-    unixctl_command_register("coverage/show", "", 0, 0,
+    unixctl_command_register("coverage/show", "[level]", 0, 1,
                              coverage_unixctl_show, NULL);
     unixctl_command_register("coverage/read-counter", "COUNTER", 1, 1,
                              coverage_unixctl_read_counter, NULL);
@@ -119,24 +174,25 @@ compare_coverage_counters(const void *a_, const void *b_)
 }
 
 static uint32_t
-coverage_hash(void)
+coverage_hash(enum coverage_level level)
 {
     struct coverage_counter **c;
     uint32_t hash = 0;
     int n_groups, i;
 
     /* Sort coverage counters into groups with equal totals. */
-    c = xmalloc(n_coverage_counters * sizeof *c);
-    ovs_mutex_lock(&coverage_mutex);
-    for (i = 0; i < n_coverage_counters; i++) {
-        c[i] = coverage_counters[i];
+    c = xmalloc(n_coverage_counters[level] * sizeof *c);
+    ovs_mutex_lock(&coverage_mutex[level]);
+    for (i = 0; i < n_coverage_counters[level]; i++) {
+        c[i] = coverage_counters[level][i];
     }
-    ovs_mutex_unlock(&coverage_mutex);
-    qsort(c, n_coverage_counters, sizeof *c, compare_coverage_counters);
+    ovs_mutex_unlock(&coverage_mutex[level]);
+    qsort(c, n_coverage_counters[level], sizeof *c, compare_coverage_counters);
 
     /* Hash the names in each group along with the rank. */
     n_groups = 0;
-    for (i = 0; i < n_coverage_counters; ) {
+    i = 0;
+    while (i < n_coverage_counters[level]) {
         int j;
 
         if (!c[i]->total) {
@@ -144,7 +200,7 @@ coverage_hash(void)
         }
         n_groups++;
         hash = hash_int(i, hash);
-        for (j = i; j < n_coverage_counters; j++) {
+        for (j = i; j < n_coverage_counters[level]; j++) {
             if (c[j]->total != c[i]->total) {
                 break;
             }
@@ -185,83 +241,116 @@ coverage_hit(uint32_t hash)
     }
 }
 
+static enum vlog_level
+coverage_vlog_level(const char *line)
+{
+    if (line[0] == COVERAGE_LEVEL_INFO) {
+        return VLL_INFO;
+    }
+
+    OVS_NOT_REACHED();
+    return VLL_EMER;
+}
+
 /* Logs the coverage counters, unless a similar set of events has already been
  * logged.
  *
- * This function logs at log level VLL_INFO.  Use care before adjusting this
+ * This function logs at log level <level>.  Use care before adjusting this
  * level, because depending on its configuration, syslogd can write changes
  * synchronously, which can cause the coverage messages to take several seconds
  * to write. */
-void
-coverage_log(void)
+static void
+coverage_log__(enum coverage_level level)
 {
-    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 3);
+    static struct vlog_rate_limit rl[COVERAGE_LEVELS] = {
+        [COVERAGE_LEVEL_INFO] = VLOG_RATE_LIMIT_INIT(1, 3),
+    };
 
-    if (!VLOG_DROP_INFO(&rl)) {
-        uint32_t hash = coverage_hash();
+    if (!VLOG_DROP_INFO(&rl[level])) {
+        uint32_t hash = coverage_hash(level);
         if (coverage_hit(hash)) {
             VLOG_INFO("Skipping details of duplicate event coverage for "
                       "hash=%08"PRIx32, hash);
         } else {
+            enum vlog_level vl_level = 0;
             struct svec lines;
             const char *line;
             size_t i;
 
             svec_init(&lines);
-            coverage_read(&lines);
+            coverage_read(&lines, level);
             SVEC_FOR_EACH (i, line, &lines) {
-                VLOG_INFO("%s", line);
+                if ((i & 1) == 0) {
+                    vl_level = coverage_vlog_level(line);
+                    continue;
+                }
+                VLOG(vl_level, "%s", line);
             }
             svec_destroy(&lines);
         }
     }
 }
 
+void
+coverage_log(void)
+{
+    enum coverage_level level;
+
+    for (level = 0; level < COVERAGE_LEVELS; level++) {
+        coverage_log__(level);
+    }
+}
+
 /* Adds coverage counter information to 'lines'. */
 static void
-coverage_read(struct svec *lines)
+coverage_read(struct svec *lines, enum coverage_level level)
 {
-    struct coverage_counter **c = coverage_counters;
+    struct coverage_counter **c = coverage_counters[level];
     unsigned long long int *totals;
     size_t n_never_hit;
     uint32_t hash;
     size_t i;
 
-    hash = coverage_hash();
+    hash = coverage_hash(level);
 
     n_never_hit = 0;
+    svec_add_nocopy(lines, xasprintf("%c", COVERAGE_LEVEL_INFO));
     svec_add_nocopy(lines,
-                    xasprintf("Event coverage, avg rate over last: %d "
-                              "seconds, last minute, last hour,  "
-                              "hash=%08"PRIx32":",
-                              COVERAGE_RUN_INTERVAL/1000, hash));
+        xasprintf("Event coverage level %s, avg rate over last: %d "
+                  "seconds, last minute, last hour,  "
+                  "hash=%08"PRIx32":", coverage_level_name(level),
+                  COVERAGE_RUN_INTERVAL / 1000, hash));
 
-    totals = xmalloc(n_coverage_counters * sizeof *totals);
-    ovs_mutex_lock(&coverage_mutex);
-    for (i = 0; i < n_coverage_counters; i++) {
+    totals = xmalloc(n_coverage_counters[level] * sizeof *totals);
+    ovs_mutex_lock(&coverage_mutex[level]);
+    for (i = 0; i < n_coverage_counters[level]; i++) {
         totals[i] = c[i]->total;
     }
-    ovs_mutex_unlock(&coverage_mutex);
+    ovs_mutex_unlock(&coverage_mutex[level]);
 
-    for (i = 0; i < n_coverage_counters; i++) {
+    for (i = 0; i < n_coverage_counters[level]; i++) {
+        float last_min, last_hour;
+
+        last_min = coverage_array_sum(c[i]->min, MIN_AVG_LEN, level) / 60.0;
+        last_hour = coverage_array_sum(c[i]->hr,  HR_AVG_LEN, level) / 3600.0;
         if (totals[i]) {
             /* Shows the averaged per-second rates for the last
              * COVERAGE_RUN_INTERVAL interval, the last minute and
              * the last hour. */
+            svec_add_nocopy(lines, xasprintf("%c", level));
             svec_add_nocopy(lines,
                 xasprintf("%-24s %5.1f/sec %9.3f/sec "
                           "%13.4f/sec   total: %llu",
                           c[i]->name,
                           (c[i]->min[(idx_count - 1) % MIN_AVG_LEN]
                            * 1000.0 / COVERAGE_RUN_INTERVAL),
-                          coverage_array_sum(c[i]->min, MIN_AVG_LEN) / 60.0,
-                          coverage_array_sum(c[i]->hr,  HR_AVG_LEN) / 3600.0,
-                          totals[i]));
+                          last_min, last_hour, totals[i]));
         } else {
             n_never_hit++;
         }
     }
 
+    svec_add_nocopy(lines, xasprintf("%c", COVERAGE_LEVEL_INFO));
     svec_add_nocopy(lines, xasprintf("%"PRIuSIZE" events never hit", n_never_hit));
     free(totals);
 }
@@ -275,9 +364,31 @@ coverage_read(struct svec *lines)
  *
  * */
 static void
-coverage_clear__(bool trylock)
+coverage_clear__(bool trylock, enum coverage_level level)
+{
+    size_t i;
+
+    if (trylock) {
+        /* Returns if cannot acquire lock. */
+        if (ovs_mutex_trylock(&coverage_mutex[level])) {
+            return;
+        }
+    } else {
+        ovs_mutex_lock(&coverage_mutex[level]);
+    }
+
+    for (i = 0; i < n_coverage_counters[level]; i++) {
+        struct coverage_counter *c = coverage_counters[level][i];
+        c->total += c->count();
+    }
+    ovs_mutex_unlock(&coverage_mutex[level]);
+}
+
+void
+coverage_clear(void)
 {
     long long int now, *thread_time;
+    enum coverage_level level;
 
     now = time_msec();
     thread_time = coverage_clear_time_get();
@@ -288,49 +399,46 @@ coverage_clear__(bool trylock)
     }
 
     if (now >= *thread_time) {
-        size_t i;
-
-        if (trylock) {
-            /* Returns if cannot acquire lock. */
-            if (ovs_mutex_trylock(&coverage_mutex)) {
-                return;
-            }
-        } else {
-            ovs_mutex_lock(&coverage_mutex);
+        for (level = 0; level < COVERAGE_LEVELS; level++) {
+            coverage_clear__(false, level);
         }
-
-        for (i = 0; i < n_coverage_counters; i++) {
-            struct coverage_counter *c = coverage_counters[i];
-            c->total += c->count();
-        }
-        ovs_mutex_unlock(&coverage_mutex);
         *thread_time = now + COVERAGE_CLEAR_INTERVAL;
     }
 }
 
 void
-coverage_clear(void)
-{
-    coverage_clear__(false);
-}
-
-void
 coverage_try_clear(void)
 {
-    coverage_clear__(true);
+    long long int now, *thread_time;
+    enum coverage_level level;
+
+    now = time_msec();
+    thread_time = coverage_clear_time_get();
+
+    /* Initialize the coverage_clear_time. */
+    if (*thread_time == LLONG_MIN) {
+        *thread_time = now + COVERAGE_CLEAR_INTERVAL;
+    }
+
+    if (now >= *thread_time) {
+        for (level = 0; level < COVERAGE_LEVELS; level++) {
+            coverage_clear__(true, level);
+        }
+        *thread_time = now + COVERAGE_CLEAR_INTERVAL;
+    }
 }
 
 /* Runs approximately every COVERAGE_RUN_INTERVAL amount of time to update the
  * coverage counters' 'min' and 'hr' array.  'min' array is for cumulating
  * per second counts into per minute count.  'hr' array is for cumulating per
  * minute counts into per hour count.  Every thread may call this function. */
-void
-coverage_run(void)
+static void
+coverage_run__(enum coverage_level level)
 {
-    struct coverage_counter **c = coverage_counters;
+    struct coverage_counter **c = coverage_counters[level];
     long long int now;
 
-    ovs_mutex_lock(&coverage_mutex);
+    ovs_mutex_lock(&coverage_mutex[level]);
     now = time_msec();
     /* Initialize the coverage_run_time. */
     if (coverage_run_time == LLONG_MIN) {
@@ -344,7 +452,7 @@ coverage_run(void)
          * COVERAGE_RUN_INTERVAL. */
         int slots = (now - coverage_run_time) / COVERAGE_RUN_INTERVAL + 1;
 
-        for (i = 0; i < n_coverage_counters; i++) {
+        for (i = 0; i < n_coverage_counters[level]; i++) {
             unsigned int count, portion;
             unsigned int idx = idx_count;
 
@@ -379,36 +487,51 @@ coverage_run(void)
         /* Updates the run time. */
         coverage_run_time = now + COVERAGE_RUN_INTERVAL;
     }
-    ovs_mutex_unlock(&coverage_mutex);
+    ovs_mutex_unlock(&coverage_mutex[level]);
+}
+
+void
+coverage_run(void)
+{
+    enum coverage_level level;
+
+    for (level = 0; level < COVERAGE_LEVELS; level++) {
+        coverage_run__(level);
+    }
 }
 
 static unsigned int
-coverage_array_sum(const unsigned int *arr, const unsigned int len)
+coverage_array_sum(const unsigned int *arr,
+                   const unsigned int len,
+                   enum coverage_level level)
 {
     unsigned int sum = 0;
     size_t i;
 
-    ovs_mutex_lock(&coverage_mutex);
+    ovs_mutex_lock(&coverage_mutex[level]);
     for (i = 0; i < len; i++) {
         sum += arr[i];
     }
-    ovs_mutex_unlock(&coverage_mutex);
+    ovs_mutex_unlock(&coverage_mutex[level]);
     return sum;
 }
 
 static bool
 coverage_read_counter(const char *name, unsigned long long int *count)
 {
-    for (size_t i = 0; i < n_coverage_counters; i++) {
-        struct coverage_counter *c = coverage_counters[i];
+    enum coverage_level l;
 
-        if (!strcmp(c->name, name)) {
-            ovs_mutex_lock(&coverage_mutex);
-            c->total += c->count();
-            *count = c->total;
-            ovs_mutex_unlock(&coverage_mutex);
+    for (l = 0; l < COVERAGE_LEVELS; l++) {
+        for (size_t i = 0; i < n_coverage_counters[l]; i++) {
+            struct coverage_counter *c = coverage_counters[l][i];
 
-            return true;
+            if (!strcmp(c->name, name)) {
+                ovs_mutex_lock(&coverage_mutex[l]);
+                c->total += c->count();
+                *count = c->total;
+                ovs_mutex_unlock(&coverage_mutex[l]);
+                return true;
+            }
         }
     }
 
