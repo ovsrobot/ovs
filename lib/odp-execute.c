@@ -42,24 +42,24 @@
 #include "unixctl.h"
 
 VLOG_DEFINE_THIS_MODULE(odp_execute);
-COVERAGE_DEFINE(datapath_drop_sample_error);
-COVERAGE_DEFINE(datapath_drop_nsh_decap_error);
+COVERAGE_DEFINE_WARN(datapath_drop_sample_error);
+COVERAGE_DEFINE_ERR(datapath_drop_nsh_decap_error);
 COVERAGE_DEFINE(drop_action_of_pipeline);
-COVERAGE_DEFINE(drop_action_bridge_not_found);
-COVERAGE_DEFINE(drop_action_recursion_too_deep);
-COVERAGE_DEFINE(drop_action_too_many_resubmit);
-COVERAGE_DEFINE(drop_action_stack_too_deep);
-COVERAGE_DEFINE(drop_action_no_recirculation_context);
-COVERAGE_DEFINE(drop_action_recirculation_conflict);
-COVERAGE_DEFINE(drop_action_too_many_mpls_labels);
-COVERAGE_DEFINE(drop_action_invalid_tunnel_metadata);
-COVERAGE_DEFINE(drop_action_unsupported_packet_type);
-COVERAGE_DEFINE(drop_action_congestion);
-COVERAGE_DEFINE(drop_action_forwarding_disabled);
-COVERAGE_DEFINE(drop_action_tunnel_routing_failed);
-COVERAGE_DEFINE(drop_action_tunnel_output_no_ethernet);
-COVERAGE_DEFINE(drop_action_tunnel_neigh_cache_miss);
-COVERAGE_DEFINE(drop_action_tunnel_header_build_failed);
+COVERAGE_DEFINE_WARN(drop_action_bridge_not_found);
+COVERAGE_DEFINE_ERR(drop_action_recursion_too_deep);
+COVERAGE_DEFINE_ERR(drop_action_too_many_resubmit);
+COVERAGE_DEFINE_ERR(drop_action_stack_too_deep);
+COVERAGE_DEFINE_ERR(drop_action_no_recirculation_context);
+COVERAGE_DEFINE_ERR(drop_action_recirculation_conflict);
+COVERAGE_DEFINE_ERR(drop_action_too_many_mpls_labels);
+COVERAGE_DEFINE_WARN(drop_action_invalid_tunnel_metadata);
+COVERAGE_DEFINE_ERR(drop_action_unsupported_packet_type);
+COVERAGE_DEFINE_ERR(drop_action_congestion);
+COVERAGE_DEFINE_ERR(drop_action_forwarding_disabled);
+COVERAGE_DEFINE_WARN(drop_action_tunnel_routing_failed);
+COVERAGE_DEFINE_WARN(drop_action_tunnel_output_no_ethernet);
+COVERAGE_DEFINE_WARN(drop_action_tunnel_neigh_cache_miss);
+COVERAGE_DEFINE_WARN(drop_action_tunnel_header_build_failed);
 
 static void
 dp_update_drop_action_counter(enum xlate_error drop_reason,

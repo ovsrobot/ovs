@@ -69,7 +69,7 @@
 
 VLOG_DEFINE_THIS_MODULE(tc);
 
-COVERAGE_DEFINE(tc_netlink_malformed_reply);
+COVERAGE_DEFINE_ERR(tc_netlink_malformed_reply);
 
 static struct vlog_rate_limit error_rl = VLOG_RATE_LIMIT_INIT(60, 5);
 

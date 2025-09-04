@@ -41,7 +41,7 @@
 
 VLOG_DEFINE_THIS_MODULE(netlink_socket);
 
-COVERAGE_DEFINE(netlink_overflow);
+COVERAGE_DEFINE_WARN(netlink_overflow);
 COVERAGE_DEFINE(netlink_received);
 COVERAGE_DEFINE(netlink_recv_jumbo);
 COVERAGE_DEFINE(netlink_sent);

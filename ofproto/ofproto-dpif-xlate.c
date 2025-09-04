@@ -70,8 +70,8 @@
 #include "vlan-bitmap.h"
 
 COVERAGE_DEFINE(xlate_actions);
-COVERAGE_DEFINE(xlate_actions_oversize);
-COVERAGE_DEFINE(xlate_actions_too_many_output);
+COVERAGE_DEFINE_ERR(xlate_actions_oversize);
+COVERAGE_DEFINE_WARN(xlate_actions_too_many_output);
 
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif_xlate);
 

@@ -58,7 +58,7 @@ COVERAGE_DEFINE(txn_aborted);
 COVERAGE_DEFINE(txn_success);
 COVERAGE_DEFINE(txn_try_again);
 COVERAGE_DEFINE(txn_not_locked);
-COVERAGE_DEFINE(txn_error);
+COVERAGE_DEFINE_ERR(txn_error);
 
 /* An arc from one idl_row to another.  When row A contains a UUID that
  * references row B, this is represented by an arc from A (the source) to B

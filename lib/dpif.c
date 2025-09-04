@@ -57,13 +57,13 @@ VLOG_DEFINE_THIS_MODULE(dpif);
 
 COVERAGE_DEFINE(dpif_destroy);
 COVERAGE_DEFINE(dpif_execute);
-COVERAGE_DEFINE(dpif_execute_error);
+COVERAGE_DEFINE_ERR(dpif_execute_error);
 COVERAGE_DEFINE(dpif_execute_with_help);
 COVERAGE_DEFINE(dpif_flow_del);
-COVERAGE_DEFINE(dpif_flow_del_error);
+COVERAGE_DEFINE_WARN(dpif_flow_del_error);
 COVERAGE_DEFINE(dpif_flow_flush);
 COVERAGE_DEFINE(dpif_flow_get);
-COVERAGE_DEFINE(dpif_flow_get_error);
+COVERAGE_DEFINE_ERR(dpif_flow_get_error);
 COVERAGE_DEFINE(dpif_flow_put);
 COVERAGE_DEFINE(dpif_flow_put_error);
 COVERAGE_DEFINE(dpif_meter_del);

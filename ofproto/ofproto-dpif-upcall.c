@@ -52,21 +52,21 @@
 
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif_upcall);
 
-COVERAGE_DEFINE(dumped_duplicate_flow);
-COVERAGE_DEFINE(dumped_inconsistent_flow);
+COVERAGE_DEFINE_WARN(dumped_duplicate_flow);
+COVERAGE_DEFINE_ERR(dumped_inconsistent_flow);
 COVERAGE_DEFINE(dumped_new_flow);
-COVERAGE_DEFINE(handler_duplicate_upcall);
-COVERAGE_DEFINE(revalidate_missed_dp_flow);
-COVERAGE_DEFINE(revalidate_missing_dp_flow);
+COVERAGE_DEFINE_ERR(handler_duplicate_upcall);
+COVERAGE_DEFINE_WARN(revalidate_missed_dp_flow);
+COVERAGE_DEFINE_WARN(revalidate_missing_dp_flow);
 COVERAGE_DEFINE(ukey_dp_change);
-COVERAGE_DEFINE(ukey_invalid_stat_reset);
+COVERAGE_DEFINE_WARN(ukey_invalid_stat_reset);
 COVERAGE_DEFINE(ukey_replace_contention);
 COVERAGE_DEFINE(upcall_flow_limit_grew);
-COVERAGE_DEFINE(upcall_flow_limit_hit);
-COVERAGE_DEFINE(upcall_flow_limit_kill);
-COVERAGE_DEFINE(upcall_flow_limit_reduced);
-COVERAGE_DEFINE(upcall_flow_limit_scaled);
-COVERAGE_DEFINE(upcall_ukey_contention);
+COVERAGE_DEFINE_WARN(upcall_flow_limit_hit);
+COVERAGE_DEFINE_ERR(upcall_flow_limit_kill);
+COVERAGE_DEFINE_WARN(upcall_flow_limit_reduced);
+COVERAGE_DEFINE_WARN(upcall_flow_limit_scaled);
+COVERAGE_DEFINE_WARN(upcall_ukey_contention);
 COVERAGE_DEFINE(upcall_ukey_replace);
 
 /* A thread that reads upcalls from dpif, forwards each upcall's packet,

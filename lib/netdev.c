@@ -69,9 +69,9 @@ COVERAGE_DEFINE(netdev_received);
 COVERAGE_DEFINE(netdev_sent);
 COVERAGE_DEFINE(netdev_add_router);
 COVERAGE_DEFINE(netdev_get_stats);
-COVERAGE_DEFINE(netdev_push_header_drops);
+COVERAGE_DEFINE_ERR(netdev_push_header_drops);
 COVERAGE_DEFINE(netdev_soft_seg_good);
-COVERAGE_DEFINE(netdev_soft_seg_drops);
+COVERAGE_DEFINE_ERR(netdev_soft_seg_drops);
 
 struct netdev_saved_flags {
     struct netdev *netdev;

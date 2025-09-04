@@ -51,9 +51,9 @@ VLOG_DEFINE_THIS_MODULE(native_tnl);
 static struct vlog_rate_limit err_rl = VLOG_RATE_LIMIT_INIT(60, 5);
 
 COVERAGE_DEFINE(native_tnl_l3csum_checked);
-COVERAGE_DEFINE(native_tnl_l3csum_err);
+COVERAGE_DEFINE_ERR(native_tnl_l3csum_err);
 COVERAGE_DEFINE(native_tnl_l4csum_checked);
-COVERAGE_DEFINE(native_tnl_l4csum_err);
+COVERAGE_DEFINE_ERR(native_tnl_l4csum_err);
 
 #define VXLAN_HLEN   (sizeof(struct udp_header) +         \
                       sizeof(struct vxlanhdr))

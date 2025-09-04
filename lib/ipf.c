@@ -36,10 +36,10 @@
 #include "util.h"
 
 VLOG_DEFINE_THIS_MODULE(ipf);
-COVERAGE_DEFINE(ipf_stuck_frag_list_expired);
-COVERAGE_DEFINE(ipf_stuck_frag_list_purged);
+COVERAGE_DEFINE_WARN(ipf_stuck_frag_list_expired);
+COVERAGE_DEFINE_WARN(ipf_stuck_frag_list_purged);
 COVERAGE_DEFINE(ipf_l3csum_checked);
-COVERAGE_DEFINE(ipf_l3csum_err);
+COVERAGE_DEFINE_ERR(ipf_l3csum_err);
 
 enum {
     IPV4_PACKET_MAX_HDR_SIZE = 60,

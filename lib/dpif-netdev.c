@@ -109,19 +109,19 @@ DEFINE_STATIC_PER_THREAD_DATA(uint32_t, recirc_depth, 0)
 enum { MAX_METERS = 1 << 18 };  /* Maximum number of meters. */
 enum { MAX_BANDS = 8 };         /* Maximum number of bands / meter. */
 
-COVERAGE_DEFINE(datapath_drop_meter);
-COVERAGE_DEFINE(datapath_drop_upcall_error);
-COVERAGE_DEFINE(datapath_drop_lock_error);
-COVERAGE_DEFINE(datapath_drop_userspace_action_error);
-COVERAGE_DEFINE(datapath_drop_tunnel_push_error);
-COVERAGE_DEFINE(datapath_drop_tunnel_pop_error);
-COVERAGE_DEFINE(datapath_drop_recirc_error);
-COVERAGE_DEFINE(datapath_drop_invalid_port);
-COVERAGE_DEFINE(datapath_drop_invalid_bond);
-COVERAGE_DEFINE(datapath_drop_invalid_tnl_port);
-COVERAGE_DEFINE(datapath_drop_rx_invalid_packet);
+COVERAGE_DEFINE_WARN(datapath_drop_meter);
+COVERAGE_DEFINE_ERR(datapath_drop_upcall_error);
+COVERAGE_DEFINE_ERR(datapath_drop_lock_error);
+COVERAGE_DEFINE_ERR(datapath_drop_userspace_action_error);
+COVERAGE_DEFINE_WARN(datapath_drop_tunnel_push_error);
+COVERAGE_DEFINE_WARN(datapath_drop_tunnel_pop_error);
+COVERAGE_DEFINE_WARN(datapath_drop_recirc_error);
+COVERAGE_DEFINE_WARN(datapath_drop_invalid_port);
+COVERAGE_DEFINE_WARN(datapath_drop_invalid_bond);
+COVERAGE_DEFINE_WARN(datapath_drop_invalid_tnl_port);
+COVERAGE_DEFINE_ERR(datapath_drop_rx_invalid_packet);
 #ifdef ALLOW_EXPERIMENTAL_API /* Packet restoration API required. */
-COVERAGE_DEFINE(datapath_drop_hw_miss_recover);
+COVERAGE_DEFINE_WARN(datapath_drop_hw_miss_recover);
 #endif
 
 /* Protects against changes to 'dp_netdevs'. */

@@ -60,10 +60,10 @@
 #define SOL_XDP 283
 #endif
 
-COVERAGE_DEFINE(afxdp_cq_empty);
-COVERAGE_DEFINE(afxdp_fq_full);
-COVERAGE_DEFINE(afxdp_tx_full);
-COVERAGE_DEFINE(afxdp_cq_skip);
+COVERAGE_DEFINE_WARN(afxdp_cq_empty);
+COVERAGE_DEFINE_WARN(afxdp_fq_full);
+COVERAGE_DEFINE_WARN(afxdp_tx_full);
+COVERAGE_DEFINE_WARN(afxdp_cq_skip);
 
 VLOG_DEFINE_THIS_MODULE(netdev_afxdp);
 

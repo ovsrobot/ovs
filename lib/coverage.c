@@ -35,6 +35,8 @@ static size_t allocated_coverage_counters[COVERAGE_LEVELS];
 
 static struct ovs_mutex coverage_mutex[COVERAGE_LEVELS] = {
     [COVERAGE_LEVEL_INFO] = OVS_MUTEX_INITIALIZER,
+    [COVERAGE_LEVEL_WARN] = OVS_MUTEX_INITIALIZER,
+    [COVERAGE_LEVEL_ERR] = OVS_MUTEX_INITIALIZER,
 };
 
 DEFINE_STATIC_PER_THREAD_DATA(long long int, coverage_clear_time, LLONG_MIN);
@@ -70,6 +72,10 @@ coverage_level_name(enum coverage_level level)
     switch (level) {
     case COVERAGE_LEVEL_INFO:
         return "info";
+    case COVERAGE_LEVEL_WARN:
+        return "warning";
+    case COVERAGE_LEVEL_ERR:
+        return "error";
     case COVERAGE_LEVELS:
     default:
         OVS_NOT_REACHED();
@@ -246,6 +252,10 @@ coverage_vlog_level(const char *line)
 {
     if (line[0] == COVERAGE_LEVEL_INFO) {
         return VLL_INFO;
+    } else if (line[0] == COVERAGE_LEVEL_WARN) {
+        return VLL_WARN;
+    } else if (line[0] == COVERAGE_LEVEL_ERR) {
+        return VLL_ERR;
     }
 
     OVS_NOT_REACHED();
@@ -264,6 +274,8 @@ coverage_log__(enum coverage_level level)
 {
     static struct vlog_rate_limit rl[COVERAGE_LEVELS] = {
         [COVERAGE_LEVEL_INFO] = VLOG_RATE_LIMIT_INIT(1, 3),
+        [COVERAGE_LEVEL_WARN] = VLOG_RATE_LIMIT_INIT(1, 3),
+        [COVERAGE_LEVEL_ERR] = VLOG_RATE_LIMIT_INIT(1, 3),
     };
 
     if (!VLOG_DROP_INFO(&rl[level])) {

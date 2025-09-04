@@ -49,10 +49,10 @@
 VLOG_DEFINE_THIS_MODULE(flow);
 
 COVERAGE_DEFINE(flow_extract);
-COVERAGE_DEFINE(miniflow_extract_ipv4_pkt_len_error);
-COVERAGE_DEFINE(miniflow_extract_ipv4_pkt_too_short);
-COVERAGE_DEFINE(miniflow_extract_ipv6_pkt_len_error);
-COVERAGE_DEFINE(miniflow_extract_ipv6_pkt_too_short);
+COVERAGE_DEFINE_ERR(miniflow_extract_ipv4_pkt_len_error);
+COVERAGE_DEFINE_ERR(miniflow_extract_ipv4_pkt_too_short);
+COVERAGE_DEFINE_ERR(miniflow_extract_ipv6_pkt_len_error);
+COVERAGE_DEFINE_ERR(miniflow_extract_ipv6_pkt_too_short);
 COVERAGE_DEFINE(miniflow_malloc);
 
 /* U64 indices for segmented flow classification. */

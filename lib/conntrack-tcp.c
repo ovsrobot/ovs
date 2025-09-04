@@ -46,8 +46,8 @@
 #include "util.h"
 
 COVERAGE_DEFINE(conntrack_tcp_seq_chk_bypass);
-COVERAGE_DEFINE(conntrack_tcp_seq_chk_failed);
-COVERAGE_DEFINE(conntrack_invalid_tcp_flags);
+COVERAGE_DEFINE_ERR(conntrack_tcp_seq_chk_failed);
+COVERAGE_DEFINE_ERR(conntrack_invalid_tcp_flags);
 
 struct tcp_peer {
     uint32_t               seqlo;          /* Max sequence number sent     */

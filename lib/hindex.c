@@ -23,7 +23,7 @@ static bool hindex_node_is_head(const struct hindex_node *);
 static void hindex_resize(struct hindex *, size_t new_mask);
 static size_t hindex_calc_mask(size_t capacity);
 
-COVERAGE_DEFINE(hindex_pathological);
+COVERAGE_DEFINE_WARN(hindex_pathological);
 COVERAGE_DEFINE(hindex_expand);
 COVERAGE_DEFINE(hindex_shrink);
 COVERAGE_DEFINE(hindex_reserve);

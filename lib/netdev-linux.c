@@ -89,8 +89,8 @@ COVERAGE_DEFINE(netdev_get_hwaddr);
 COVERAGE_DEFINE(netdev_set_hwaddr);
 COVERAGE_DEFINE(netdev_get_ethtool);
 COVERAGE_DEFINE(netdev_set_ethtool);
-COVERAGE_DEFINE(netdev_linux_invalid_l4_csum);
-COVERAGE_DEFINE(netdev_linux_unknown_l4_csum);
+COVERAGE_DEFINE_WARN(netdev_linux_invalid_l4_csum);
+COVERAGE_DEFINE_WARN(netdev_linux_unknown_l4_csum);
 
 
 #ifndef IFLA_IF_NETNSID

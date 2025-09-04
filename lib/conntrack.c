@@ -47,13 +47,13 @@
 
 VLOG_DEFINE_THIS_MODULE(conntrack);
 
-COVERAGE_DEFINE(conntrack_full);
+COVERAGE_DEFINE_ERR(conntrack_full);
 COVERAGE_DEFINE(conntrack_l3csum_checked);
-COVERAGE_DEFINE(conntrack_l3csum_err);
+COVERAGE_DEFINE_ERR(conntrack_l3csum_err);
 COVERAGE_DEFINE(conntrack_l4csum_checked);
-COVERAGE_DEFINE(conntrack_l4csum_err);
-COVERAGE_DEFINE(conntrack_lookup_natted_miss);
-COVERAGE_DEFINE(conntrack_zone_full);
+COVERAGE_DEFINE_ERR(conntrack_l4csum_err);
+COVERAGE_DEFINE_WARN(conntrack_lookup_natted_miss);
+COVERAGE_DEFINE_WARN(conntrack_zone_full);
 
 struct conn_lookup_ctx {
     struct conn_key key;

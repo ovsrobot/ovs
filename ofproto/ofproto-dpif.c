@@ -78,7 +78,7 @@
 VLOG_DEFINE_THIS_MODULE(ofproto_dpif);
 
 COVERAGE_DEFINE(ofproto_dpif_expired);
-COVERAGE_DEFINE(packet_in_overflow);
+COVERAGE_DEFINE_ERR(packet_in_overflow);
 
 struct flow_miss;
 
