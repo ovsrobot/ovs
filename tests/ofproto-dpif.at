@@ -1270,7 +1270,7 @@ n_flows=ok n_buckets=ok
 #   bucket4:    0                   0
 
 ovs-appctl time/warp 1000
-AT_CHECK([ovs-ofctl -O OpenFlow13 dump-group-stats br0 | sed 's/duration=[[0-9]]\.[[0-9]]*s,//' | check_group_stats 40 80 200 500],
+AT_CHECK([ovs-ofctl -O OpenFlow13 dump-group-stats br0 | sed 's/duration=[[0-9\.]]*s,//' | check_group_stats 40 80 200 500],
 [0], [dnl
 bucket0 >= 40
 bucket1 >= 80
@@ -6885,7 +6885,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p1 "$flow"], [0], [stdout])
 
 # Check flow stats
 AT_CHECK([ovs-ofctl dump-flows br0], [0], [stdout])
-AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9]]*\.[[0-9]]*s/duration=0.0s/p' | sed -n 's/idle_age=[[0-9]]*/idle_age=0/p' | grep 'table=2'], [0], [dnl
+AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9\.]]*s/duration=0.0s/p' | sed -n 's/idle_age=[[0-9]]*/idle_age=0/p' | grep 'table=2'], [0], [dnl
  cookie=0x0, duration=0.0s, table=2, n_packets=1, n_bytes=106, idle_age=0, reg1=0x1 actions=output:2
 ])
 
@@ -6920,7 +6920,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p1 "$flow"], [0], [stdout])
 
 # Check flow stats
 AT_CHECK([ovs-ofctl dump-flows br0], [0], [stdout])
-AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9]]*\.[[0-9]]*s/duration=0.0s/p' | sed -n 's/idle_age=[[0-9]]*/idle_age=0/p' | grep 'table=2'], [0], [dnl
+AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9\.]]*s/duration=0.0s/p' | sed -n 's/idle_age=[[0-9]]*/idle_age=0/p' | grep 'table=2'], [0], [dnl
  cookie=0x0, duration=0.0s, table=2, n_packets=1, n_bytes=106, idle_age=0, ct_state=+new+trk,icmp,in_port=1 actions=output:2
 ])
 
@@ -7012,7 +7012,7 @@ AT_CHECK([ovs-appctl netdev-dummy/receive p0 "$flow"], [0], [stdout])
 
 # Check flow stats
 AT_CHECK([ovs-ofctl dump-flows br1], [0], [stdout])
-AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9]]*\.[[0-9]]*s/duration=0.0s/p' | sed -n 's/idle_age=[[0-9]]*/idle_age=0/p' | grep 'table=3' | grep -v 'commit'], [0], [dnl
+AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9\.]]*s/duration=0.0s/p' | sed -n 's/idle_age=[[0-9]]*/idle_age=0/p' | grep 'table=3' | grep -v 'commit'], [0], [dnl
  cookie=0x0, duration=0.0s, table=3, n_packets=1, n_bytes=106, idle_age=0, icmp,in_port=1 actions=output:2
 ])
 
@@ -9248,7 +9248,7 @@ done
 AT_CHECK([ovs-appctl time/warp 1000], [0], [ignore])
 AT_CHECK([ovs-appctl revalidator/purge], [0])
 AT_CHECK([ovs-ofctl dump-flows br0], [0], [stdout])
-AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9]]*\.[[0-9]]*s/duration=0.0s/p' | sort], [0], [dnl
+AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9\.]]*s/duration=0.0s/p' | sort], [0], [dnl
  cookie=0x0, duration=0.0s, table=0, n_packets=0, n_bytes=0, idle_age=1, icmp actions=NORMAL
  cookie=0x0, duration=0.0s, table=0, n_packets=10, n_bytes=1180, idle_age=1, ip actions=NORMAL
 ])
@@ -9273,7 +9273,7 @@ warp_and_dump_NXM () {
     else
         expected=" cookie=0x0, duration=$1s, table=0, n_packets=$2, n_bytes=$3, idle_age=$4, ip actions=NORMAL"
     fi
-    AT_CHECK_UNQUOTED([strip_xids < stdout | sed -n 's/duration=\([[0-9]]*\)\.*[[0-9]]*s/duration=\1s/p' | sort], [0], [dnl
+    AT_CHECK_UNQUOTED([strip_xids < stdout | sed -n 's/duration=\([[0-9\.]]*\)s/duration=\1s/p' | sort], [0], [dnl
 $expected
 ])
 }
@@ -9288,7 +9288,7 @@ warp_and_dump_OF () {
     else
         expected=" cookie=0x0, duration=$2s, table=0, n_packets=$3, n_bytes=$4, $5 ip actions=NORMAL"
     fi
-    AT_CHECK_UNQUOTED([strip_xids < stdout | sed -n 's/duration=\([[0-9]]*\)\.*[[0-9]]*s/duration=\1s/p' | sort], [0], [dnl
+    AT_CHECK_UNQUOTED([strip_xids < stdout | sed -n 's/duration=\([[0-9\.]]*\)s/duration=\1s/p' | sort], [0], [dnl
 $expected
 ])
 }
@@ -9446,7 +9446,7 @@ warp_and_dump_OF () {
     else
         expected=" cookie=0x0, duration=$2s, table=0, n_packets=$3, n_bytes=$4, $6 idle_age=$5, ip actions=NORMAL"
     fi
-     AT_CHECK_UNQUOTED([strip_xids < stdout | sed -n 's/duration=\([[0-9]]*\)\.*[[0-9]]*s/duration=\1s/p' | sort], [0], [dnl
+     AT_CHECK_UNQUOTED([strip_xids < stdout | sed -n 's/duration=\([[0-9\.]]*\)s/duration=\1s/p' | sort], [0], [dnl
 $expected
 ])
 }
@@ -9530,7 +9530,7 @@ AT_CHECK([ovs-vsctl set Open_vSwitch . other-config:n-revalidator-threads=2])
 ovs-appctl time/warp 1000
 
 AT_CHECK([ovs-ofctl dump-flows br0], [0], [stdout])
-AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9]]*\.[[0-9]]*s/duration=0.0s/p' | sort], [0], [dnl
+AT_CHECK([strip_xids < stdout | sed -n 's/duration=[[0-9\.]]*s/duration=0.0s/p' | sort], [0], [dnl
  cookie=0x0, duration=0.0s, table=0, n_packets=0, n_bytes=0, idle_age=1, icmp actions=NORMAL
  cookie=0x0, duration=0.0s, table=0, n_packets=10, n_bytes=1180, idle_age=1, ip actions=NORMAL
 ])
