@@ -6,6 +6,8 @@ Post-v3.6.0
    - ovs-vsctl:
      * Added JSON output support to the 'ovs/route/show' command.
      * Added 'lldp/neighbor' command that displays lldp neighbor information.
+   - lldp:
+     * Added support for decoding dot1 and dot3 TLVs.
 
 
 v3.6.0 - 18 Aug 2025
