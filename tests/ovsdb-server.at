@@ -105,6 +105,69 @@ AT_CHECK([uuidfilt output], [0],
 ]], [])
 AT_CLEANUP
 
+AT_SETUP([invalid database is recreated])
+AT_KEYWORDS([ovsdb unix])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+ordinal_schema > schema
+
+. ovs-lib
+
+dnl Check that DB is recreated when file is empty.
+AT_CHECK([truncate -s 0 db])
+AT_CHECK([upgrade_db db schema], [0], [stdout], [ignore])
+AT_CHECK([grep -c "db does not exist\|Creating empty database db" stdout], [0], [2
+])
+AT_CHECK([validate_db db], [0])
+
+AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
+'["ordinals",
+  {"op": "insert",
+   "table": "ordinals",
+   "row": {"number": 1, "name": "one"}}]'
+]])
+AT_CHECK([ovsdb-server --remote=punix:socket db --run="sh txnfile"], [0], [stdout], [stderr])
+
+dnl Check that DB is not recreated on corrupted log.  This is similar to the
+dnl previous test but includes a mid-operation upgrade.
+AT_CHECK([echo 'xxx' >> db])
+AT_CHECK([upgrade_db db schema], [0], [], [ignore])
+
+dnl Validate that the db can now be used.
+AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
+'["ordinals",
+  {"op": "select",
+   "table": "ordinals",
+   "where": []}]'
+]])
+AT_CHECK([ovsdb-server --remote=punix:socket db --run="sh txnfile"], [0], [stdout], [stderr])
+AT_CHECK([grep -q 'syntax error: db: parse error.* in header line "xxx"' stderr])
+AT_CHECK([uuidfilt stdout], [0],
+  [[[{"rows":[{"_uuid":["uuid","<0>"],"_version":["uuid","<1>"],"name":"one","number":1}]}]
+]], [])
+
+dnl Create then validate cluster.
+AT_CHECK([truncate -s 0 db])
+AT_CHECK([create_cluster db schema tcp:1.1.1.1:1111 1000], [0], [stdout], [])
+AT_CHECK([grep -Ec 'Creating cluster database db' stdout], [0], [1
+])
+AT_CHECK([validate_db db])
+
+dnl Corrupt a cluster db, validate does not clear it.
+AT_CHECK([echo 'x' >> db])
+AT_CHECK([validate_db db])
+
+dnl Clear the DB, validate_db should remove it.
+AT_CHECK([truncate -s 0 db])
+AT_CHECK([validate_db db], [1], [ignore])
+
+dnl Join a cluster with an empty db.
+AT_CHECK([truncate -s 0 db])
+AT_CHECK([join_cluster db schema tcp:1.1.1.1:1111 tcp:2.2.2.2:2222], [0], [stdout], [])
+AT_CHECK([grep -Ec 'Joining db to cluster' stdout], [0], [1
+])
+AT_CHECK([validate_db db])
+AT_CLEANUP
+
 AT_SETUP([truncating database log with bad transaction])
 AT_KEYWORDS([ovsdb server positive unix])
 AT_SKIP_IF([test "$IS_WIN32" = "yes"])

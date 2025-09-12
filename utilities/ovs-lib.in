@@ -445,16 +445,39 @@ create_db () {
 
 backup_db () {
     # Back up the old version.
-    version=`ovsdb_tool db-version "$DB_FILE"`
-    cksum=`ovsdb_tool db-cksum "$DB_FILE" | awk '{print $1}'`
-    backup=$DB_FILE.backup$version-$cksum
+    if test ! -e "$DB_FILE"; then
+        return 0
+    elif ovsdb_tool db-is-standalone "$DB_FILE" 2>/dev/null; then
+        version=`ovsdb_tool db-version "$DB_FILE"`
+        cksum=`ovsdb_tool db-cksum "$DB_FILE" | awk '{print $1}'`
+        backup=$DB_FILE.backup$version-$cksum
+    else
+        # Support for clustered databases.
+        backup=`mktemp $DB_FILE.XXXXXXXXXX`
+    fi
     action "Backing up database to $backup" cp "$DB_FILE" "$backup" || return 1
+}
+
+validate_db () {
+    # Returns 0 if $DB_FILE is present and non-empty.
+    # Returns 1 if $DB_FILE does not exist or is empty.
+    DB_FILE="$1"
+
+    if test ! -e "$DB_FILE"; then
+        return 1
+    elif test ! -s "$DB_FILE"; then
+        rm -f "$DB_FILE"
+        return 1
+    fi
+
+    return 0
 }
 
 upgrade_db () {
     DB_FILE="$1"
     DB_SCHEMA="$2"
 
+    validate_db "$DB_FILE"
     schemaver=`ovsdb_tool schema-version "$DB_SCHEMA"`
     if test ! -e "$DB_FILE"; then
         log_warning_msg "$DB_FILE does not exist"
@@ -517,6 +540,7 @@ create_cluster () {
       election_timer_arg="--election-timer=$ELECTION_TIMER_MS"
     fi
 
+    validate_db "$DB_FILE"
     if test ! -e "$DB_FILE"; then
         action "Creating cluster database $DB_FILE" ovsdb_tool $election_timer_arg create-cluster "$DB_FILE" "$DB_SCHEMA" "$LOCAL_ADDR"
     elif ovsdb_tool db-is-standalone "$DB_FILE"; then
@@ -534,6 +558,7 @@ join_cluster() {
     LOCAL_ADDR="$3"
     REMOTE_ADDR="$4"
 
+    validate_db "$DB_FILE"
     if test -e "$DB_FILE" && ovsdb_tool db-is-standalone "$DB_FILE"; then
         backup_db || return 1
         rm $DB_FILE
