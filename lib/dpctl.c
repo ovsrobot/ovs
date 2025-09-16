@@ -33,6 +33,7 @@
 #include "dirs.h"
 #include "dpctl.h"
 #include "dpif.h"
+#include "dpif-offload.h"
 #include "dpif-provider.h"
 #include "openvswitch/dynamic-string.h"
 #include "flow.h"
@@ -964,10 +965,10 @@ determine_dpif_flow_dump_types(struct dump_types *dump_types,
                                struct dpif_flow_dump_types *dpif_dump_types)
 {
     dpif_dump_types->ovs_flows = dump_types->ovs || dump_types->non_offloaded;
-    dpif_dump_types->netdev_flows = dump_types->tc || dump_types->offloaded
-                                    || dump_types->non_offloaded
-                                    || dump_types->dpdk
-                                    || dump_types->partially_offloaded;
+    dpif_dump_types->offloaded_flows = dump_types->tc || dump_types->offloaded
+                                       || dump_types->non_offloaded
+                                       || dump_types->dpdk
+                                       || dump_types->partially_offloaded;
 }
 
 static bool
@@ -1598,33 +1599,58 @@ dpctl_del_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
 }
 
 static int
+compare_custom_stats(const void *a, const void *b)
+{
+    const struct netdev_custom_stats *sa = a;
+    const struct netdev_custom_stats *sb = b;
+
+    return sa->label && sb->label ? strcmp(sa->label, sb->label)
+                                  : (sa->label != NULL) - (sb->label != NULL);
+}
+
+static int
 dpctl_offload_stats_show(int argc, const char *argv[],
                          struct dpctl_params *dpctl_p)
 {
-    struct netdev_custom_stats stats;
+    struct netdev_custom_stats *stats_array;
     struct dpif *dpif;
+    size_t n_stats;
     int error;
-    size_t i;
 
     error = opt_dpif_open(argc, argv, dpctl_p, 2, &dpif);
     if (error) {
         return error;
     }
 
-    memset(&stats, 0, sizeof(stats));
-    error = dpif_offload_stats_get(dpif, &stats);
+    error = dpif_offload_stats_get(dpif, &stats_array, &n_stats);
     if (error) {
         dpctl_error(dpctl_p, error, "retrieving offload statistics");
         goto close_dpif;
     }
 
-    dpctl_print(dpctl_p, "HW Offload stats:\n");
-    for (i = 0; i < stats.size; i++) {
-        dpctl_print(dpctl_p, "   %s: %6" PRIu64 "\n",
-                    stats.counters[i].name, stats.counters[i].value);
+    if (stats_array && n_stats) {
+        qsort(stats_array, n_stats, sizeof *stats_array, compare_custom_stats);
     }
 
-    netdev_free_custom_stats_counters(&stats);
+    dpctl_print(dpctl_p, "HW Offload stats:\n");
+    for (size_t i = 0; i < n_stats; i++) {
+        struct netdev_custom_stats *stats = &stats_array[i];
+
+        if (!stats) {
+            continue;
+        }
+
+        if (stats->label) {
+            dpctl_print(dpctl_p, "  %s:\n", stats->label);
+        }
+        for (size_t j = 0; j < stats->size; j++) {
+            dpctl_print(dpctl_p, "    %s: %6" PRIu64 "\n",
+                        stats->counters[j].name, stats->counters[j].value);
+        }
+        netdev_free_custom_stats_counters(stats);
+    }
+
+    free(stats_array);
 
 close_dpif:
     dpif_close(dpif);
