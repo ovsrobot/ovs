@@ -385,6 +385,7 @@ const struct ovsdb_idl_row *ovsdb_idl_txn_insert_persist_uuid(
     const struct uuid *uuid);
 
 struct ovsdb_idl *ovsdb_idl_txn_get_idl (struct ovsdb_idl_txn *);
+void ovsdb_idl_txn_set_read_only(struct ovsdb_idl_txn *txn, bool read_only);
 void ovsdb_idl_get_initial_snapshot(struct ovsdb_idl *);
 
 
