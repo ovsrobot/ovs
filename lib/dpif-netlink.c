@@ -274,6 +274,7 @@ static int dpif_netlink_vport_from_ofpbuf(struct dpif_netlink_vport *,
 static int dpif_netlink_port_query__(const struct dpif_netlink *dpif,
                                      odp_port_t port_no, const char *port_name,
                                      struct dpif_port *dpif_port);
+static void vport_del_channels(struct dpif_netlink *dpif, odp_port_t port_no);
 
 static int
 create_nl_sock(struct dpif_netlink *dpif OVS_UNUSED, struct nl_sock **sockp)
@@ -604,6 +605,11 @@ vport_add_channel(struct dpif_netlink *dpif, odp_port_t port_no,
         }
 #endif
     }
+
+    if (dpif->channels[port_idx].sock != NULL) {
+        vport_del_channels(dpif, port_no);
+    }
+
     dpif->channels[port_idx].sock = sock;
     dpif->channels[port_idx].last_poll = LLONG_MIN;
 
