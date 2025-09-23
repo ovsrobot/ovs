@@ -43,6 +43,9 @@ id_pool_create(uint32_t base, uint32_t n_ids)
     struct id_pool *pool;
 
     pool = xmalloc(sizeof *pool);
+
+    n_ids = MIN(UINT32_MAX - base, n_ids);
+
     id_pool_init(pool, base, n_ids);
 
     return pool;
