@@ -714,6 +714,10 @@ odp_execute_sample(void *dp, struct dp_packet *packet, bool steal,
     struct dp_packet_batch pb;
     size_t left;
 
+    if (!action || nl_attr_get_size(action) == 0) {
+        return;
+    }
+
     NL_NESTED_FOR_EACH_UNSAFE (a, left, action) {
         int type = nl_attr_type(a);
 
