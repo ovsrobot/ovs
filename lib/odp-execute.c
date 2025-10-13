@@ -739,6 +739,13 @@ odp_execute_sample(void *dp, struct dp_packet *packet, bool steal,
         }
     }
 
+    if (!subactions || !nl_attr_get_size(subactions)) {
+        if (steal) {
+            dp_packet_delete(packet);
+        }
+        return;
+    }
+
     if (!steal) {
         /* The 'subactions' may modify the packet, but the modification
          * should not propagate beyond this sample action. Make a copy
