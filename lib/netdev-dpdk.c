@@ -2120,8 +2120,13 @@ static atomic_bool netdev_dpdk_pending_reset[RTE_MAX_ETHPORTS];
 static void
 netdev_dpdk_wait(const struct netdev_class *netdev_class OVS_UNUSED)
 {
-    uint64_t last_reset_seq = seq_read(netdev_dpdk_reset_seq);
+    uint64_t last_reset_seq;
 
+    if (!dpdk_available()) {
+        return;
+    }
+
+    last_reset_seq = seq_read(netdev_dpdk_reset_seq);
     if (netdev_dpdk_last_reset_seq == last_reset_seq) {
         seq_wait(netdev_dpdk_reset_seq, netdev_dpdk_last_reset_seq);
     } else {
@@ -2132,8 +2137,13 @@ netdev_dpdk_wait(const struct netdev_class *netdev_class OVS_UNUSED)
 static void
 netdev_dpdk_run(const struct netdev_class *netdev_class OVS_UNUSED)
 {
-    uint64_t reset_seq = seq_read(netdev_dpdk_reset_seq);
+    uint64_t reset_seq;
 
+    if (!dpdk_available()) {
+        return;
+    }
+
+    reset_seq = seq_read(netdev_dpdk_reset_seq);
     if (reset_seq != netdev_dpdk_last_reset_seq) {
         dpdk_port_t port_id;
 
@@ -5217,8 +5227,6 @@ netdev_dpdk_class_init(void)
     /* This function can be called for different classes.  The initialization
      * needs to be done only once */
     if (ovsthread_once_start(&once)) {
-        int ret;
-
         ovs_thread_create("dpdk_watchdog", dpdk_watchdog, NULL);
         unixctl_command_register("netdev-dpdk/set-admin-state",
                                  "[netdev] up|down", 1, 2,
@@ -5231,16 +5239,6 @@ netdev_dpdk_class_init(void)
         unixctl_command_register("netdev-dpdk/get-mempool-info",
                                  "[netdev]", 0, 1,
                                  netdev_dpdk_get_mempool_info, NULL);
-
-        netdev_dpdk_reset_seq = seq_create();
-        netdev_dpdk_last_reset_seq = seq_read(netdev_dpdk_reset_seq);
-        ret = rte_eth_dev_callback_register(RTE_ETH_ALL,
-                                            RTE_ETH_EVENT_INTR_RESET,
-                                            dpdk_eth_event_callback, NULL);
-        if (ret != 0) {
-            VLOG_ERR("Ethernet device callback register error: %s",
-                     rte_strerror(-ret));
-        }
 
         ovsthread_once_done(&once);
     }
@@ -6827,6 +6825,46 @@ parse_vhost_config(const struct smap *ovs_other_config)
               vhost_postcopy_enabled ? "enabled" : "disabled");
 }
 
+static int
+netdev_dpdk_set_other_config(const struct netdev_class *class OVS_UNUSED,
+                             const struct smap *other_config)
+{
+    dpdk_init(other_config);
+
+    if (dpdk_available()) {
+        static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+        int ret;
+
+        if (!ovsthread_once_start(&once)) {
+            return 0;
+        }
+
+        parse_mempool_config(other_config);
+        parse_user_mempools_list(other_config);
+        parse_vhost_config(other_config);
+
+        ovsthread_once_done(&once);
+
+        netdev_dpdk_reset_seq = seq_create();
+        netdev_dpdk_last_reset_seq = seq_read(netdev_dpdk_reset_seq);
+        ret = rte_eth_dev_callback_register(RTE_ETH_ALL,
+                                            RTE_ETH_EVENT_INTR_RESET,
+                                            dpdk_eth_event_callback, NULL);
+        if (ret != 0) {
+            VLOG_ERR("Ethernet device callback register error: %s",
+                     rte_strerror(-ret));
+        }
+    }
+
+    return 0;
+}
+
+static void
+netdev_dpdk_class_status(const struct ovsrec_open_vswitch *cfg)
+{
+    dpdk_status(cfg);
+}
+
 #define NETDEV_DPDK_CLASS_COMMON                            \
     .is_pmd = true,                                         \
     .alloc = netdev_dpdk_alloc,                             \
@@ -6861,6 +6899,8 @@ parse_vhost_config(const struct smap *ovs_other_config)
     .init = netdev_dpdk_class_init,                     \
     .run = netdev_dpdk_run,                             \
     .wait = netdev_dpdk_wait,                           \
+    .set_other_config = netdev_dpdk_set_other_config,   \
+    .class_status = netdev_dpdk_class_status,           \
     .destruct = netdev_dpdk_destruct,                   \
     .set_tx_multiq = netdev_dpdk_set_tx_multiq,         \
     .get_carrier = netdev_dpdk_get_carrier,             \
@@ -6872,7 +6912,7 @@ parse_vhost_config(const struct smap *ovs_other_config)
     .reconfigure = netdev_dpdk_reconfigure,             \
     .rxq_recv = netdev_dpdk_rxq_recv
 
-static const struct netdev_class dpdk_class = {
+const struct netdev_class dpdk_class = {
     .type = "dpdk",
     NETDEV_DPDK_CLASS_BASE,
     .construct = netdev_dpdk_construct,
@@ -6881,7 +6921,7 @@ static const struct netdev_class dpdk_class = {
     .send = netdev_dpdk_eth_send,
 };
 
-static const struct netdev_class dpdk_vhost_class = {
+const struct netdev_class dpdk_vhost_class = {
     .type = "dpdkvhostuser",
     NETDEV_DPDK_CLASS_COMMON,
     .init = netdev_dpdk_vhost_class_init,
@@ -6897,7 +6937,7 @@ static const struct netdev_class dpdk_vhost_class = {
     .rxq_enabled = netdev_dpdk_vhost_rxq_enabled,
 };
 
-static const struct netdev_class dpdk_vhost_client_class = {
+const struct netdev_class dpdk_vhost_client_class = {
     .type = "dpdkvhostuserclient",
     NETDEV_DPDK_CLASS_COMMON,
     .init = netdev_dpdk_vhost_class_init,
@@ -6914,15 +6954,3 @@ static const struct netdev_class dpdk_vhost_client_class = {
     .rxq_recv = netdev_dpdk_vhost_rxq_recv,
     .rxq_enabled = netdev_dpdk_vhost_rxq_enabled,
 };
-
-void
-netdev_dpdk_register(const struct smap *ovs_other_config)
-{
-    parse_mempool_config(ovs_other_config);
-    parse_user_mempools_list(ovs_other_config);
-    parse_vhost_config(ovs_other_config);
-
-    netdev_register_provider(&dpdk_class);
-    netdev_register_provider(&dpdk_vhost_class);
-    netdev_register_provider(&dpdk_vhost_client_class);
-}
