@@ -1043,7 +1043,91 @@ OVSDB_SERVER_SHUTDOWN(["
   /Protocol error/d
 "])
 AT_CLEANUP
-
+
+AT_SETUP([SSL/TLS db: SNI (Server Name Indication)])
+AT_KEYWORDS([ovsdb server positive ssl tls sni])
+AT_SKIP_IF([test "$HAVE_OPENSSL" = no])
+# For this test, we pass PKIDIR through a ovsdb-tool transact and
+# msys on Windows does not convert the path style automatically.
+# So, do that forcefully with a 'pwd -W' (called through pwd() function).
+PKIDIR="$(cd $abs_top_builddir/tests && pwd)"
+AT_SKIP_IF([expr "$PKIDIR" : ".*[[       '\"
+\\]]"])
+
+# Create additional certificates for SNI testing in the current directory
+OVS_PKI="sh $abs_top_srcdir/utilities/ovs-pki.in --dir=./sni-pki --log=./sni-pki.log"
+# Remove any existing PKI directory to ensure clean state for test
+rm -rf ./sni-pki
+AT_CHECK([$OVS_PKI init], [0], [ignore], [ignore])
+
+# Create a certificate for a hostname that differs from the connection IP
+AT_CHECK([$OVS_PKI req+sign backend-service.test switch], [0], [ignore], [ignore])
+
+AT_DATA([schema],
+  [[{"name": "mydb",
+     "tables": {
+       "SSL": {
+         "columns": {
+           "private_key": {"type": "string"},
+           "certificate": {"type": "string"},
+           "ca_cert": {"type": "string"}
+         }}}}
+]])
+AT_CHECK([ovsdb-tool create db schema], [0], [stdout], [ignore])
+
+# Use direct file paths for SSL configuration
+on_exit 'kill `cat *.pid`'
+AT_CHECK(
+  [ovsdb-server --log-file -vstream_ssl:dbg --detach --no-chdir --pidfile \
+        --private-key=backend-service.test-privkey.pem \
+        --certificate=backend-service.test-cert.pem \
+        --ca-cert=sni-pki/switchca/cacert.pem \
+        --remote=pssl:0:127.0.0.1 db],
+  [0], [ignore], [ignore])
+PARSE_LISTENING_PORT([ovsdb-server.log], [SSL_PORT])
+
+# SSL_OVSDB_CLIENT_SNI(SNI_HOSTNAME)
+m4_define([SSL_OVSDB_CLIENT_SNI], [dnl
+  ovsdb-client -vconsole:stream_ssl:dbg \
+    --private-key=backend-service.test-privkey.pem \
+    --certificate=backend-service.test-cert.pem \
+    --ca-cert=sni-pki/switchca/cacert.pem \
+    --ssl-server-name=[$1] \
+    list-dbs ssl:127.0.0.1:$SSL_PORT])
+
+# SSL_OVSDB_CLIENT_NO_SNI() - test default behavior without SNI override
+m4_define([SSL_OVSDB_CLIENT_NO_SNI], [dnl
+  ovsdb-client -vconsole:stream_ssl:dbg \
+    --private-key=backend-service.test-privkey.pem \
+    --certificate=backend-service.test-cert.pem \
+    --ca-cert=sni-pki/switchca/cacert.pem \
+    list-dbs ssl:127.0.0.1:$SSL_PORT])
+
+# SNI Test Flow:
+# 1. Client sends SNI extension with --ssl-server-name=HOSTNAME during SSL handshake
+# 2. Server receives SNI extension and logs "connection indicated server name HOSTNAME"
+# 3. We verify SNI transmission by checking server log for the expected message
+# This validates that the client-side SNI implementation correctly sends SNI to the server
+
+# Test 1: SNI matches server certificate - should succeed
+AT_CHECK(SSL_OVSDB_CLIENT_SNI([backend-service.test]), [0], [stdout], [stderr])
+AT_CHECK([grep -q "connection indicated server name backend-service.test" ovsdb-server.log])
+
+# Save the current log size to check only new messages in Test 2
+LOG_SIZE=$(wc -l < ovsdb-server.log)
+
+# Test 2: Default behavior without SNI override - should work
+# and NOT show SNI server name in debug log (since no --ssl-server-name was used)
+AT_CHECK(SSL_OVSDB_CLIENT_NO_SNI(), [0], [stdout], [stderr])
+# Check only new log entries after Test 1 - should have no SNI messages
+AT_CHECK([tail -n +$(($LOG_SIZE + 1)) ovsdb-server.log | grep -q "connection indicated server name"], [1])
+
+OVSDB_SERVER_SHUTDOWN(["
+  /stream_ssl|WARN/d
+  /Protocol error/d
+"])
+AT_CLEANUP
+
 OVS_START_SHELL_HELPERS
 # ovsdb_check_online_compaction MODEL
 #
