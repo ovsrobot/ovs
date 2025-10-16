@@ -1386,7 +1386,7 @@ upcall_uninit(struct upcall *upcall)
         ofpbuf_uninit(&upcall->put_actions);
         if (upcall->ukey) {
             if (!upcall->ukey_persists) {
-                ukey_delete__(upcall->ukey);
+                ovsrcu_postpone(ukey_delete__, upcall->ukey);
             }
         } else if (upcall->have_recirc_ref) {
             /* The reference was transferred to the ukey if one was created. */
