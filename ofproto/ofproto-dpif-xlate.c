@@ -4793,6 +4793,10 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
             tuple_swap(&ctx->xin->flow, ctx->wc);
         }
 
+        if (rule && !ofproto_rule_try_ref(&rule->up)) {
+            rule = NULL;
+        }
+
         if (rule) {
             /* Fill in the cache entry here instead of xlate_recursively
              * to make the reference counting more explicit.  We take a
