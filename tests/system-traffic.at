@@ -3061,6 +3061,8 @@ NS_CHECK_EXEC([at_ns0], [$PYTHON3 $srcdir/sendpkt.py p0 \
     "$(ovs-ofctl compose-packet --bare 'ICMP_PKT')"],
   [0], [ignore])
 
+AT_CHECK([ovs-appctl dpctl/show | grep -q lookups.*lost:0])
+
 dnl Check the expected decapsulated on the egress interface.
 OVS_WAIT_UNTIL([ovs-pcap p1.pcap | grep -q \
     "^$(ovs-ofctl compose-packet --bare 'ICMP_PKT')\$"])
