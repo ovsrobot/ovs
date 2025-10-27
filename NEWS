@@ -17,6 +17,10 @@ Post-v3.6.0
        as read-only and trigger assertion failure when application attempts
        to modify the database data through this transaction.
 
+   - ovs-appctl:
+     * 'ovs/route/show': added new option, table=[ID|all], to list routes from
+       a specific OVS table or all routes from all tables.
+
 
 v3.6.0 - 18 Aug 2025
 --------------------
