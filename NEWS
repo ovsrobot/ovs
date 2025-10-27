@@ -25,6 +25,8 @@ Post-v3.6.0
        add/delete a route from a specific OVS table.
      * 'ovs/route/lookup': added new option, src=IP, to perform lookup with
        a specific source IP address.
+     * Added new sub-commands, ovs/route/rule/{add,del}, to add and remove
+       user routing rules in OVS.
 
 
 v3.6.0 - 18 Aug 2025

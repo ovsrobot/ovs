@@ -345,9 +345,9 @@ AT_CHECK([ip link set p1-route up])
 
 dnl Check there are no non-standard rules cached in OVS.
 AT_CHECK([ovs-appctl ovs/route/rule/show], [0], [dnl
-0: from all lookup local
-32766: from all lookup main
-32767: from all lookup default
+Cached: 0: from all lookup local
+Cached: 32766: from all lookup main
+Cached: 32767: from all lookup default
 ])
 
 dnl Add unsupported rules to kernel.
@@ -363,9 +363,9 @@ dnl Give the main thread a chance to act.
 AT_CHECK([ovs-appctl revalidator/wait])
 dnl Check OVS rules cache hasn't changed.
 AT_CHECK([ovs-appctl ovs/route/rule/show], [0], [dnl
-0: from all lookup local
-32766: from all lookup main
-32767: from all lookup default
+Cached: 0: from all lookup local
+Cached: 32766: from all lookup main
+Cached: 32767: from all lookup default
 ])
 
 dnl Add unsupported rules to kernel.
