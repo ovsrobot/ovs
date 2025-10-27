@@ -1081,6 +1081,25 @@ ipv6_is_cidr(const struct in6_addr *netmask)
     return true;
 }
 
+bool
+ipv6_addr_equals_masked(const struct in6_addr *a, const struct in6_addr *b,
+                        int plen)
+{
+    struct in6_addr mask;
+    struct in6_addr ma;
+    struct in6_addr mb;
+
+    if (plen == 128) {
+        return ipv6_addr_equals(a, b);
+    }
+
+    mask = ipv6_create_mask(plen);
+    ma = ipv6_addr_bitand(a, &mask);
+    mb = ipv6_addr_bitand(b, &mask);
+
+    return ipv6_addr_equals(&ma, &mb);
+}
+
 /* Populates 'b' with an Ethernet II packet headed with the given 'eth_dst',
  * 'eth_src' and 'eth_type' parameters.  A payload of 'size' bytes is allocated
  * in 'b' and returned.  This payload may be populated with appropriate
