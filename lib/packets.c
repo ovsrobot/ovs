@@ -2052,13 +2052,8 @@ packet_udp_complete_csum(struct dp_packet *p, bool inner)
         udp_sz = dp_packet_l4_size(p);
     }
 
-    ovs_assert(udp);
     ovs_assert(ip_hdr);
-
-    /* Skip csum calculation if the udp_csum is zero. */
-    if (!udp->udp_csum) {
-        goto out;
-    }
+    ovs_assert(udp && udp->udp_csum);
 
     udp->udp_csum = 0;
     if (IP_VER(((const struct ip_header *) ip_hdr)->ip_ihl_ver) == 4) {
@@ -2077,7 +2072,6 @@ packet_udp_complete_csum(struct dp_packet *p, bool inner)
         udp->udp_csum = htons(0xffff);
     }
 
-out:
     if (inner) {
         dp_packet_inner_l4_checksum_set_good(p);
     } else {
