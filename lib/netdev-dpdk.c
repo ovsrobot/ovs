@@ -2615,6 +2615,7 @@ netdev_dpdk_batch_init_packet_fields(struct dp_packet_batch *batch)
 static bool
 netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
 {
+    static struct vlog_rate_limit prep_rl = VLOG_RATE_LIMIT_INIT(5, 5);
     struct dp_packet *pkt = CONTAINER_OF(mbuf, struct dp_packet, mbuf);
     uint64_t unexpected = mbuf->ol_flags & RTE_MBUF_F_TX_OFFLOAD_MASK;
     const struct ip_header *ip;
@@ -2770,6 +2771,18 @@ netdev_dpdk_prep_hwol_packet(struct netdev_dpdk *dev, struct rte_mbuf *mbuf)
         if (IP_VER(ip->ip_ihl_ver) == 4) {
             mbuf->ol_flags |= RTE_MBUF_F_TX_IP_CKSUM;
         }
+    }
+
+    if (OVS_UNLIKELY(!VLOG_DROP_DBG(&prep_rl))) {
+        char flags[BUFSIZ];
+
+        if (rte_get_tx_ol_flag_list(mbuf->ol_flags, flags, sizeof flags)) {
+            ovs_strlcpy(flags, "...", sizeof flags);
+        }
+        VLOG_DBG("%s: prepared mbuf lengths %u, %u, %u, %u, %u, %u, segsz %u,"
+                 " flags %s", dev->up.name, mbuf->pkt_len, mbuf->outer_l2_len,
+                 mbuf->outer_l3_len, mbuf->l2_len, mbuf->l3_len, mbuf->l4_len,
+                 mbuf->tso_segsz, flags);
     }
 
     return true;
