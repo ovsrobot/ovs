@@ -60,6 +60,7 @@ COVERAGE_DEFINE(drop_action_tunnel_routing_failed);
 COVERAGE_DEFINE(drop_action_tunnel_output_no_ethernet);
 COVERAGE_DEFINE(drop_action_tunnel_neigh_cache_miss);
 COVERAGE_DEFINE(drop_action_tunnel_header_build_failed);
+COVERAGE_DEFINE(drop_action_thread_stack_exhausted);
 
 static void
 dp_update_drop_action_counter(enum xlate_error drop_reason,
@@ -115,6 +116,9 @@ dp_update_drop_action_counter(enum xlate_error drop_reason,
         break;
    case XLATE_TUNNEL_HEADER_BUILD_FAILED:
         COVERAGE_ADD(drop_action_tunnel_header_build_failed, delta);
+        break;
+   case XLATE_THREAD_STACK_EXHAUSTED:
+        COVERAGE_ADD(drop_action_thread_stack_exhausted, delta);
         break;
    case XLATE_MAX:
    default:

@@ -94,6 +94,7 @@ main(int argc, char *argv[])
     fatal_ignore_sigpipe();
 
     daemonize_start(true, hw_rawio_access);
+    ovsthread_stack_init();
 
     if (want_mlockall) {
 #ifdef HAVE_MLOCKALL

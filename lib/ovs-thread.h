@@ -474,6 +474,14 @@ ovsthread_id_self(void)
     return id;
 }
 
+/* Enables use of ovsthread_low_on_stack().  Must be called by a new thread
+ * early after the thread creation, e.g. called from ovs_thread_create(). */
+void ovsthread_stack_init(void);
+
+/* Returns 'true' if the current thread used up most of its stack space.
+ * Can be used, for example, to check if recursion has to be stopped. */
+bool ovsthread_low_on_stack(void);
+
 /* Simulated global counter.
  *
  * Incrementing such a counter is meant to be cheaper than incrementing a

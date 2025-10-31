@@ -29,6 +29,9 @@
 #ifndef __has_attribute
   #define __has_attribute(x) 0
 #endif
+#ifndef __has_builtin
+  #define __has_builtin(x) 0
+#endif
 
 /* To make OVS_NO_RETURN portable across gcc/clang and MSVC, it should be
  * added at the beginning of the function declaration. */
@@ -317,5 +320,13 @@
 #define BUILD_ASSERT_DECL_GCCONLY(EXPR) ((void) 0)
 #endif
 
+/* OVS_FRAME_ADDRESS can be used to get the address of the current stack frame.
+ * Note: Attempts to get address of any frame beside the current one (0) are
+ * dangerous and can lead to crashes according to GCC documentation.  */
+#if __has_builtin(__builtin_frame_address)
+#define OVS_FRAME_ADDRESS() ((char *) __builtin_frame_address(0))
+#else
+#define OVS_FRAME_ADDRESS() ((char *) 0)
+#endif
 
 #endif /* compiler.h */

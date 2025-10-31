@@ -463,6 +463,8 @@ const char *xlate_strerror(enum xlate_error error)
         return "Tunnel neighbor cache miss";
     case XLATE_TUNNEL_HEADER_BUILD_FAILED:
         return "Native tunnel header build failed";
+    case XLATE_THREAD_STACK_EXHAUSTED:
+        return "Thread stack exhausted";
     case XLATE_MAX:
         break;
     }
@@ -4702,6 +4704,9 @@ xlate_resubmit_resource_check(struct xlate_ctx *ctx)
     } else if (ctx->stack.size >= 65536) {
         xlate_report_error(ctx, "resubmits yielded over 64 kB of stack");
         ctx->error = XLATE_STACK_TOO_DEEP;
+    } else if (ovsthread_low_on_stack()) {
+        xlate_report_error(ctx, "thread stack exhausted.");
+        ctx->error = XLATE_THREAD_STACK_EXHAUSTED;
     } else {
         return true;
     }
@@ -4906,8 +4911,9 @@ xlate_group_bucket(struct xlate_ctx *ctx, struct ofputil_bucket *bucket,
      *
      * Exception to above is errors which are system limits to protect
      * translation from running too long or occupy too much space. These errors
-     * should not be masked. XLATE_RECURSION_TOO_DEEP, XLATE_TOO_MANY_RESUBMITS
-     * and XLATE_STACK_TOO_DEEP fall in this category. */
+     * should not be masked. Following errors fall in this category:
+     * XLATE_RECURSION_TOO_DEEP, XLATE_TOO_MANY_RESUBMITS,
+     * XLATE_STACK_TOO_DEEP and XLATE_THREAD_STACK_EXHAUSTED. */
     if (ctx->error == XLATE_TOO_MANY_MPLS_LABELS ||
         ctx->error == XLATE_UNSUPPORTED_PACKET_TYPE) {
         /* reset the error and continue processing other buckets */

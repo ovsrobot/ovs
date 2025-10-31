@@ -404,6 +404,52 @@ ovsthread_id_init(void)
     return *ovsthread_id_get() = atomic_count_inc(&next_id);
 }
 
+DEFINE_STATIC_PER_THREAD_DATA(uintptr_t, ovsthread_stack_base, 0);
+DEFINE_STATIC_PER_THREAD_DATA(size_t, ovsthread_stack_size, 0);
+
+void
+ovsthread_stack_init(void)
+{
+    pthread_attr_t attr;
+    size_t stacksize;
+    int error;
+
+    ovs_assert(*ovsthread_stack_base_get() == 0);
+    *ovsthread_stack_base_get() = (uintptr_t) OVS_FRAME_ADDRESS();
+
+    pthread_attr_init(&attr);
+
+    error = pthread_attr_getstacksize(&attr, &stacksize);
+    if (error) {
+        VLOG_ABORT("pthread_attr_getstacksize failed: %s",
+                   ovs_strerror(error));
+    }
+    *ovsthread_stack_size_get() = stacksize;
+    pthread_attr_destroy(&attr);
+}
+
+bool
+ovsthread_low_on_stack(void)
+{
+    uintptr_t curr = (uintptr_t) OVS_FRAME_ADDRESS();
+    uintptr_t base = *ovsthread_stack_base_get();
+    size_t size = *ovsthread_stack_size_get();
+    size_t used;
+
+    if (!curr || !base || !size) {
+        /* Either not initialized or not supported. */
+        return false;
+    }
+
+    used = (base > curr) ? base - curr : curr - base;
+
+    /* Consider 'low' as less than a 100 KB. */
+    if (size < used + 100 * 1024) {
+        return true;
+    }
+    return false;
+}
+
 static void *
 ovsthread_wrapper(void *aux_)
 {
@@ -412,6 +458,7 @@ ovsthread_wrapper(void *aux_)
     unsigned int id;
 
     id = ovsthread_id_init();
+    ovsthread_stack_init();
 
     aux = *auxp;
     free(auxp);
