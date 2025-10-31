@@ -37,15 +37,18 @@ filter_flow_install () {
 }
 
 filter_hw_flow_install () {
-    grep 'netdev_dummy.*flow put\[create\]' | sed 's/.*|DBG|//' | sort | uniq
+    grep 'dpif_offload_dummy.*flow put\[create\]' | sed 's/.*|DBG|//' \
+      | sed -E 's/mark: [0-9]+/mark: 1/' | sort | uniq
 }
 
 filter_hw_flow_del () {
-    grep 'netdev_dummy.*flow del' | sed 's/.*|DBG|//' | sort | uniq
+    grep 'dpif_offload_dummy.*flow del' | sed 's/.*|DBG|//' \
+      | sed -E 's/mark: [0-9]+/mark: 1/' | sort | uniq
 }
 
 filter_hw_packet_netdev_dummy () {
-    grep 'netdev_dummy.*: packet:.*with mark' | sed 's/.*|DBG|//' | sort | uniq
+    grep 'dpif_offload_dummy.*: packet:.*with mark' | sed 's/.*|DBG|//' \
+      | sed -E 's/mark: [0-9]+/mark: 1/' | sort | uniq
 }
 
 filter_flow_dump () {
@@ -411,10 +414,10 @@ m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD],
       set bridge br0 datapath-type=dummy \
                      other-config:datapath-id=1234 fail-mode=secure], [], [],
       [m4_if([$1], [dummy-pmd], [--dummy-numa="0,0,0,0,1,1,1,1"], [])])
-   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg netdev_dummy:file:dbg])
+   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg dpif_offload_dummy:file:dbg])
 
    AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=true])
-   OVS_WAIT_UNTIL([grep "netdev: Flow API Enabled" ovs-vswitchd.log])
+   OVS_WAIT_UNTIL([grep "hw-offload API Enabled" ovs-vswitchd.log])
 
    AT_CHECK([ovs-ofctl del-flows br0])
    AT_CHECK([ovs-ofctl add-flow br0 in_port=1,actions=IN_PORT])
@@ -465,7 +468,6 @@ p1: flow del: mark: 1
 DPIF_NETDEV_FLOW_HW_OFFLOAD([dummy])
 DPIF_NETDEV_FLOW_HW_OFFLOAD([dummy-pmd])
 
-
 m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS],
   [AT_SETUP([dpif-netdev - partial hw offload with packet modifications - $1])
    OVS_VSWITCHD_START(
@@ -474,10 +476,10 @@ m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS],
       set bridge br0 datapath-type=dummy \
                      other-config:datapath-id=1234 fail-mode=secure], [], [],
       [m4_if([$1], [dummy-pmd], [--dummy-numa="0,0,0,0,1,1,1,1"], [])])
-   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg netdev_dummy:file:dbg])
+   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg dpif_offload_dummy:file:dbg])
 
    AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=true])
-   OVS_WAIT_UNTIL([grep "netdev: Flow API Enabled" ovs-vswitchd.log])
+   OVS_WAIT_UNTIL([grep "hw-offload API Enabled" ovs-vswitchd.log])
 
    AT_CHECK([ovs-ofctl del-flows br0])
 
@@ -551,10 +553,10 @@ m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS_VID_ARP],
       set bridge br0 datapath-type=dummy \
                      other-config:datapath-id=1234 fail-mode=secure], [], [],
       [m4_if([$1], [dummy-pmd], [--dummy-numa="0,0,0,0,1,1,1,1"], [])])
-   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg netdev_dummy:file:dbg])
+   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg dpif_offload_dummy:file:dbg])
 
    AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=true])
-   OVS_WAIT_UNTIL([grep "netdev: Flow API Enabled" ovs-vswitchd.log])
+   OVS_WAIT_UNTIL([grep "hw-offload API Enabled" ovs-vswitchd.log])
 
    AT_CHECK([ovs-ofctl del-flows br0])
 

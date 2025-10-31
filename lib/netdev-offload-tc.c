@@ -31,7 +31,7 @@
 #include "openvswitch/util.h"
 #include "openvswitch/vlog.h"
 #include "netdev-linux.h"
-#include "netdev-offload-provider.h"
+#include "netdev-offload-tc.h"
 #include "netdev-provider.h"
 #include "netdev-vport.h"
 #include "netlink.h"
@@ -41,6 +41,7 @@
 #include "tc.h"
 #include "unaligned.h"
 #include "util.h"
+#include "dpif-offload.h"
 #include "dpif-provider.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_offload_tc);
@@ -96,9 +97,9 @@ static struct hmap police_idx_to_meter_id OVS_GUARDED_BY(meter_mutex)
 static int meter_id_lookup(uint32_t meter_id, uint32_t *police_idx);
 static int police_idx_lookup(uint32_t police_idx, uint32_t *meter_id);
 
-static int netdev_tc_parse_nl_actions(struct netdev *netdev,
+static int netdev_tc_parse_nl_actions(struct dpif *, struct netdev *netdev,
                                       struct tc_flower *flower,
-                                      struct offload_info *info,
+                                      struct tc_offload_info *info,
                                       const struct nlattr *actions,
                                       size_t actions_len,
                                       bool *recirc_act, bool more_actions,
@@ -499,7 +500,7 @@ static int
 get_chains_from_netdev(struct netdev *netdev, struct tcf_id *id,
                        struct hmap *map)
 {
-    struct netdev_flow_dump *dump;
+    struct netdev_tc_flow_dump *dump;
     struct chain_node *chain_node;
     struct ofpbuf rbuffer, reply;
     uint32_t chain;
@@ -562,8 +563,8 @@ delete_chains_from_netdev(struct netdev *netdev, struct tcf_id *id)
     return error;
 }
 
-static int
-netdev_tc_flow_flush(struct netdev *netdev)
+int
+netdev_offload_tc_flow_flush(struct netdev *netdev)
 {
     struct ufid_tc_data *data;
     int err;
@@ -584,13 +585,13 @@ netdev_tc_flow_flush(struct netdev *netdev)
     return 0;
 }
 
-static int
-netdev_tc_flow_dump_create(struct netdev *netdev,
-                           struct netdev_flow_dump **dump_out,
-                           bool terse)
+int
+netdev_offload_tc_flow_dump_create(struct netdev *netdev,
+                                   struct netdev_tc_flow_dump **dump_out,
+                                   bool terse)
 {
     enum tc_qdisc_hook hook = get_tc_qdisc_hook(netdev);
-    struct netdev_flow_dump *dump;
+    struct netdev_tc_flow_dump *dump;
     uint32_t block_id = 0;
     struct tcf_id id;
     int prio = 0;
@@ -616,9 +617,8 @@ netdev_tc_flow_dump_create(struct netdev *netdev,
 
     return 0;
 }
-
-static int
-netdev_tc_flow_dump_destroy(struct netdev_flow_dump *dump)
+int
+netdev_offload_tc_flow_dump_destroy(struct netdev_tc_flow_dump *dump)
 {
     nl_dump_done(dump->nl_dump);
     netdev_close(dump->netdev);
@@ -828,8 +828,22 @@ parse_tc_flower_terse_to_match(struct tc_flower *flower,
     return 0;
 }
 
+static odp_port_t
+netdev_tc_get_port_id_by_ifindex(const struct netdev *in_netdev, int ifindex)
+{
+    const struct dpif_offload *offload = ovsrcu_get(
+        const struct dpif_offload *, &in_netdev->dpif_offload);
+
+    if (!offload || strcmp(dpif_offload_class_type(offload), "tc")) {
+        return ODPP_NONE;
+    }
+
+    return dpif_offload_tc_get_port_id_by_ifindex(offload, ifindex);
+}
+
 static int
-parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
+parse_tc_flower_to_actions__(const struct netdev *netdev,
+                             struct tc_flower *flower, struct ofpbuf *buf,
                              int start_index, int max_index)
 {
     struct tc_action *action;
@@ -952,12 +966,12 @@ parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
         }
         break;
         case TC_ACT_OUTPUT: {
-            odp_port_t outport = 0;
+            odp_port_t outport = ODPP_NONE;
 
             if (action->out.ifindex_out) {
-                outport =
-                    netdev_ifindex_to_odp_port(action->out.ifindex_out);
-                if (!outport) {
+                outport = netdev_tc_get_port_id_by_ifindex(
+                    netdev, action->out.ifindex_out);
+                if (outport == ODPP_NONE) {
                     return -ENOENT;
                 }
             }
@@ -1068,7 +1082,7 @@ parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
 
             act_offset = nl_msg_start_nested(
                 buf, OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER);
-            i = parse_tc_flower_to_actions__(flower, buf, i + 1,
+            i = parse_tc_flower_to_actions__(netdev, flower, buf, i + 1,
                                              action->police.result_jump);
             if (i < 0) {
                 return i;
@@ -1083,7 +1097,7 @@ parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
                 jump = max_index;
             }
             if (jump != 0) {
-                i = parse_tc_flower_to_actions__(flower, buf, i, jump);
+                i = parse_tc_flower_to_actions__(netdev, flower, buf, i, jump);
                 if (i < 0) {
                     return i;
                 }
@@ -1107,10 +1121,11 @@ parse_tc_flower_to_actions__(struct tc_flower *flower, struct ofpbuf *buf,
 }
 
 static int
-parse_tc_flower_to_actions(struct tc_flower *flower,
+parse_tc_flower_to_actions(const struct netdev *netdev,
+                           struct tc_flower *flower,
                            struct ofpbuf *buf)
 {
-    return parse_tc_flower_to_actions__(flower, buf, 0, 0);
+    return parse_tc_flower_to_actions__(netdev, flower, buf, 0, 0);
 }
 
 static int
@@ -1335,7 +1350,7 @@ parse_tc_flower_to_match(const struct netdev *netdev,
     }
 
     act_off = nl_msg_start_nested(buf, OVS_FLOW_ATTR_ACTIONS);
-    err = parse_tc_flower_to_actions(flower, buf);
+    err = parse_tc_flower_to_actions(netdev, flower, buf);
     if (err < 0) {
         return -err;
     }
@@ -1349,15 +1364,15 @@ parse_tc_flower_to_match(const struct netdev *netdev,
     return 0;
 }
 
-static bool
-netdev_tc_flow_dump_next(struct netdev_flow_dump *dump,
-                         struct match *match,
-                         struct nlattr **actions,
-                         struct dpif_flow_stats *stats,
-                         struct dpif_flow_attrs *attrs,
-                         ovs_u128 *ufid,
-                         struct ofpbuf *rbuffer,
-                         struct ofpbuf *wbuffer)
+bool
+netdev_offload_tc_flow_dump_next(struct netdev_tc_flow_dump *dump,
+                                 struct match *match,
+                                 struct nlattr **actions,
+                                 struct dpif_flow_stats *stats,
+                                 struct dpif_flow_attrs *attrs,
+                                 ovs_u128 *ufid,
+                                 struct ofpbuf *rbuffer,
+                                 struct ofpbuf *wbuffer)
 {
     struct netdev *netdev = dump->netdev;
     struct ofpbuf nl_flow;
@@ -2040,11 +2055,12 @@ parse_match_ct_state_to_flower(struct tc_flower *flower, struct match *match)
     }
 }
 
-
 static int
-parse_check_pkt_len_action(struct netdev *netdev, struct tc_flower *flower,
-                           struct offload_info *info, struct tc_action *action,
-                           const struct nlattr *nla, bool last_action,
+parse_check_pkt_len_action(struct dpif *dpif, struct netdev *netdev,
+                           struct tc_flower *flower,
+                           struct tc_offload_info *info,
+                           struct tc_action *action, const struct nlattr *nla,
+                           bool last_action,
                            struct tc_action **need_jump_update,
                            bool *recirc_act)
 {
@@ -2083,7 +2099,7 @@ parse_check_pkt_len_action(struct netdev *netdev, struct tc_flower *flower,
      * NOTE: The last_action parameter means that there are no more actions
      *       after the if () then ... else () case. */
     nl_actions = a[OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER];
-    err = netdev_tc_parse_nl_actions(netdev, flower, info,
+    err = netdev_tc_parse_nl_actions(dpif, netdev, flower, info,
                                      nl_attr_get(nl_actions),
                                      nl_attr_get_size(nl_actions),
                                      recirc_act, !last_action,
@@ -2099,7 +2115,7 @@ parse_check_pkt_len_action(struct netdev *netdev, struct tc_flower *flower,
 
     /* Parse and add the less than action(s). */
     nl_actions = a[OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_LESS_EQUAL];
-    err = netdev_tc_parse_nl_actions(netdev, flower, info,
+    err = netdev_tc_parse_nl_actions(dpif, netdev, flower, info,
                                      nl_attr_get(nl_actions),
                                      nl_attr_get_size(nl_actions),
                                      recirc_act, !last_action,
@@ -2150,8 +2166,9 @@ parse_check_pkt_len_action(struct netdev *netdev, struct tc_flower *flower,
 }
 
 static int
-netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
-                           struct offload_info *info,
+netdev_tc_parse_nl_actions(struct dpif *dpif, struct netdev *netdev,
+                           struct tc_flower *flower,
+                           struct tc_offload_info *info,
                            const struct nlattr *actions, size_t actions_len,
                            bool *recirc_act, bool more_actions,
                            struct tc_action **need_jump_update)
@@ -2173,20 +2190,21 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
 
         if (nl_attr_type(nla) == OVS_ACTION_ATTR_OUTPUT) {
             odp_port_t port = nl_attr_get_odp_port(nla);
-            struct netdev *outdev = netdev_ports_get(
-                                        port, netdev_get_dpif_type(netdev));
-
+            struct netdev *outdev = dpif_offload_get_netdev_by_port_id(dpif,
+                                                                       NULL,
+                                                                       port);
             if (!outdev) {
-                VLOG_DBG_RL(&rl, "Can't find netdev for output port %d", port);
-                return ENODEV;
+                VLOG_DBG_RL(&rl,
+                            "Can't find offloaded netdev for output port %d",
+                            port);
+                return EOPNOTSUPP;
             }
 
-            if (!netdev_flow_api_equals(netdev, outdev)) {
+            if (!dpif_offload_netdev_same_offload(netdev, outdev)) {
                 VLOG_DBG_RL(&rl,
                             "Flow API provider mismatch between ingress (%s) "
                             "and egress (%s) ports",
                             netdev_get_name(netdev), netdev_get_name(outdev));
-                netdev_close(outdev);
                 return EOPNOTSUPP;
             }
 
@@ -2195,14 +2213,12 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
                 VLOG_DBG_RL(&rl,
                             "Can't find ifindex for output port %s, error %d",
                             netdev_get_name(outdev), action->out.ifindex_out);
-                netdev_close(outdev);
                 return -action->out.ifindex_out;
             }
 
             action->out.ingress = is_internal_port(netdev_get_type(outdev));
             action->type = TC_ACT_OUTPUT;
             flower->action_count++;
-            netdev_close(outdev);
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_PUSH_VLAN) {
             const struct ovs_action_push_vlan *vlan_push = nl_attr_get(nla);
 
@@ -2281,7 +2297,8 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
             action->police.index = police_index;
             flower->action_count++;
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_CHECK_PKT_LEN) {
-            err = parse_check_pkt_len_action(netdev, flower, info, action, nla,
+            err = parse_check_pkt_len_action(dpif, netdev, flower, info,
+                                             action, nla,
                                              nl_attr_len_pad(nla,
                                                              left) >= left
                                              && !more_actions,
@@ -2299,11 +2316,12 @@ netdev_tc_parse_nl_actions(struct netdev *netdev, struct tc_flower *flower,
     return 0;
 }
 
-static int
-netdev_tc_flow_put(struct netdev *netdev, struct match *match,
-                   struct nlattr *actions, size_t actions_len,
-                   const ovs_u128 *ufid, struct offload_info *info,
-                   struct dpif_flow_stats *stats)
+int
+netdev_offload_tc_flow_put(struct dpif *dpif, struct netdev *netdev,
+                           struct match *match, struct nlattr *actions,
+                           size_t actions_len, const ovs_u128 *ufid,
+                           struct tc_offload_info *info,
+                           struct dpif_flow_stats *stats)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
     enum tc_qdisc_hook hook = get_tc_qdisc_hook(netdev);
@@ -2655,7 +2673,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     }
 
     /* Parse all (nested) actions. */
-    err = netdev_tc_parse_nl_actions(netdev, &flower, info,
+    err = netdev_tc_parse_nl_actions(dpif, netdev, &flower, info,
                                      actions, actions_len, &recirc_act,
                                      false, NULL);
     if (err) {
@@ -2671,6 +2689,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     if (get_ufid_tc_mapping(ufid, &id) == 0) {
         VLOG_DBG_RL(&rl, "updating old handle: %d prio: %d",
                     id.handle, id.prio);
+        info->tc_modify_flow = true;
         info->tc_modify_flow_deleted = !del_filter_and_ufid_mapping(
             &id, ufid, &adjust_stats);
     }
@@ -2719,14 +2738,14 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     return err;
 }
 
-static int
-netdev_tc_flow_get(struct netdev *netdev,
-                   struct match *match,
-                   struct nlattr **actions,
-                   const ovs_u128 *ufid,
-                   struct dpif_flow_stats *stats,
-                   struct dpif_flow_attrs *attrs,
-                   struct ofpbuf *buf)
+int
+netdev_offload_tc_flow_get(struct netdev *netdev,
+                           struct match *match,
+                           struct nlattr **actions,
+                           const ovs_u128 *ufid,
+                           struct dpif_flow_stats *stats,
+                           struct dpif_flow_attrs *attrs,
+                           struct ofpbuf *buf)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
     struct tc_flower flower;
@@ -2751,7 +2770,7 @@ netdev_tc_flow_get(struct netdev *netdev,
         return err;
     }
 
-    in_port = netdev_ifindex_to_odp_port(id.ifindex);
+    in_port = netdev_tc_get_port_id_by_ifindex(netdev, id.ifindex);
     err = parse_tc_flower_to_match(netdev, &flower, match, actions,
                                    stats, attrs, buf, false);
     if (err) {
@@ -2776,10 +2795,9 @@ netdev_tc_flow_get(struct netdev *netdev,
     return 0;
 }
 
-static int
-netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
-                   const ovs_u128 *ufid,
-                   struct dpif_flow_stats *stats)
+int
+netdev_offload_tc_flow_del(const ovs_u128 *ufid,
+                           struct dpif_flow_stats *stats)
 {
     struct tcf_id id;
     int error;
@@ -2792,22 +2810,17 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
     return del_filter_and_ufid_mapping(&id, ufid, stats);
 }
 
-static int
-netdev_tc_get_n_flows(struct netdev *netdev, uint64_t *n_flows)
+uint64_t
+dpif_offload_tc_flow_get_n_offloaded(const struct dpif_offload *offload \
+                                         OVS_UNUSED)
 {
-    struct ufid_tc_data *data;
-    uint64_t total = 0;
+    uint64_t total;
 
     ovs_mutex_lock(&ufid_lock);
-    HMAP_FOR_EACH (data, tc_to_ufid_node, &tc_to_ufid) {
-        if (data->netdev == netdev) {
-            total++;
-        }
-    }
+    total = hmap_count(&tc_to_ufid);
     ovs_mutex_unlock(&ufid_lock);
 
-    *n_flows = total;
-    return 0;
+    return total;
 }
 
 static void
@@ -3074,7 +3087,7 @@ tc_get_policer_action_ids(struct hmap *map)
 {
     uint32_t police_idx[TCA_ACT_MAX_PRIO];
     struct policer_node *policer_node;
-    struct netdev_flow_dump *dump;
+    struct netdev_tc_flow_dump *dump;
     struct ofpbuf rbuffer, reply;
     size_t hash;
     int i, err;
@@ -3147,8 +3160,23 @@ tc_cleanup_policer_actions(struct id_pool *police_ids,
     hmap_destroy(&map);
 }
 
-static int
-netdev_tc_init_flow_api(struct netdev *netdev)
+void
+dpif_offload_tc_meter_init(void) {
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+
+    if (ovsthread_once_start(&once)) {
+        ovs_mutex_lock(&meter_police_ids_mutex);
+        meter_police_ids = id_pool_create(
+            METER_POLICE_IDS_BASE,
+            METER_POLICE_IDS_MAX - METER_POLICE_IDS_BASE + 1);
+        ovs_mutex_unlock(&meter_police_ids_mutex);
+
+        ovsthread_once_done(&once);
+    }
+}
+
+int
+netdev_offload_tc_init(struct netdev *netdev)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     enum tc_qdisc_hook hook = get_tc_qdisc_hook(netdev);
@@ -3201,9 +3229,9 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         probe_vxlan_gbp_support(ifindex);
         probe_enc_flags_support(ifindex);
 
+        dpif_offload_tc_meter_init();
+
         ovs_mutex_lock(&meter_police_ids_mutex);
-        meter_police_ids = id_pool_create(METER_POLICE_IDS_BASE,
-                            METER_POLICE_IDS_MAX - METER_POLICE_IDS_BASE + 1);
         tc_cleanup_policer_actions(meter_police_ids, METER_POLICE_IDS_BASE,
                                    METER_POLICE_IDS_MAX);
         ovs_mutex_unlock(&meter_police_ids_mutex);
@@ -3329,14 +3357,23 @@ meter_free_police_index(uint32_t police_index)
     ovs_mutex_unlock(&meter_police_ids_mutex);
 }
 
-static int
-meter_tc_set_policer(ofproto_meter_id meter_id,
-                     struct ofputil_meter_config *config)
+int
+dpif_offload_tc_meter_set(const struct dpif_offload *offload OVS_UNUSED,
+                         ofproto_meter_id meter_id,
+                         struct ofputil_meter_config *config)
 {
     uint32_t police_index;
     uint32_t rate, burst;
     bool add_policer;
     int err;
+
+    if (!dpif_offload_is_offload_enabled()) {
+        /* FIXME: If offload is disabled, ignore this call. This preserves the
+         * behavior from before the dpif-offload implementation. However, it
+         * also retains the same bug where the meter_id is not offloaded if it
+         * was configured before offload was enabled. */
+        return 0;
+    }
 
     if (!config->bands || config->n_bands < 1 ||
         config->bands[0].type != OFPMBT13_DROP) {
@@ -3383,12 +3420,21 @@ meter_tc_set_policer(ofproto_meter_id meter_id,
     return err;
 }
 
-static int
-meter_tc_get_policer(ofproto_meter_id meter_id,
-                     struct ofputil_meter_stats *stats)
+int
+dpif_offload_tc_meter_get(const struct dpif_offload *offload OVS_UNUSED,
+                          ofproto_meter_id meter_id,
+                          struct ofputil_meter_stats *stats)
 {
     uint32_t police_index;
     int err = ENOENT;
+
+    if (!dpif_offload_is_offload_enabled()) {
+        /* FIXME: If offload is disabled, ignore this call. This preserves the
+         * behavior from before the dpif-offload implementation. However, it
+         * also retains the same bug where the meter_id is not offloaded if it
+         * was configured before offload was enabled. */
+        return 0;
+    }
 
     if (!meter_id_lookup(meter_id.uint32, &police_index)) {
         err = tc_get_policer_action(police_index, stats);
@@ -3402,12 +3448,21 @@ meter_tc_get_policer(ofproto_meter_id meter_id,
     return err;
 }
 
-static int
-meter_tc_del_policer(ofproto_meter_id meter_id,
-                     struct ofputil_meter_stats *stats)
+int
+dpif_offload_tc_meter_del(const struct dpif_offload *offload OVS_UNUSED,
+                          ofproto_meter_id meter_id,
+                          struct ofputil_meter_stats *stats)
 {
     uint32_t police_index;
     int err = ENOENT;
+
+    if (!dpif_offload_is_offload_enabled()) {
+        /* FIXME: If offload is disabled, ignore this call. This preserves the
+         * behavior from before the dpif-offload implementation. However, it
+         * also retains the same bug where the meter_id is not offloaded if it
+         * was configured before offload was enabled. */
+        return 0;
+    }
 
     if (!meter_id_lookup(meter_id.uint32, &police_index)) {
         err = tc_del_policer_action(police_index, stats);
@@ -3423,19 +3478,3 @@ meter_tc_del_policer(ofproto_meter_id meter_id,
 
     return err;
 }
-
-const struct netdev_flow_api netdev_offload_tc = {
-   .type = "linux_tc",
-   .flow_flush = netdev_tc_flow_flush,
-   .flow_dump_create = netdev_tc_flow_dump_create,
-   .flow_dump_destroy = netdev_tc_flow_dump_destroy,
-   .flow_dump_next = netdev_tc_flow_dump_next,
-   .flow_put = netdev_tc_flow_put,
-   .flow_get = netdev_tc_flow_get,
-   .flow_del = netdev_tc_flow_del,
-   .flow_get_n_flows = netdev_tc_get_n_flows,
-   .meter_set = meter_tc_set_policer,
-   .meter_get = meter_tc_get_policer,
-   .meter_del = meter_tc_del_policer,
-   .init_flow_api = netdev_tc_init_flow_api,
-};
