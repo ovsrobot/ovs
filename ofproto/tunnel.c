@@ -381,6 +381,7 @@ tnl_wc_init(struct flow *flow, struct flow_wildcards *wc)
          * wildcarded, not to unwildcard them here. */
         wc->masks.tunnel.tp_src = 0;
         wc->masks.tunnel.tp_dst = 0;
+        wc->masks.tunnel.eth_type = OVS_BE16_MAX;
 
         if (is_ip_any(flow)
             && IP_ECN_is_ce(flow->tunnel.ip_tos)) {

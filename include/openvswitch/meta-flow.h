@@ -304,6 +304,20 @@ enum OVS_PACKED_ENUM mf_field_id {
      */
     MFF_TUN_ID,
 
+    /* "tun_eth_type".
+     *
+     * Packet's Tunnel Ethernet type.
+     *
+     * Type: be16.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: none.
+     * Access: read-only.
+     * NXM: none.
+     * OXM: none.
+     */
+    MFF_TUN_ETH_TYPE,
+
     /* "tun_src".
      *
      * The IPv4 source address in the outer IP header of a tunneled packet.

@@ -1759,6 +1759,8 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.odp.ct_orig_tuple = check_ct_orig_tuple(backer);
     backer->rt_support.odp.ct_orig_tuple6 = check_ct_orig_tuple6(backer);
     backer->rt_support.odp.nd_ext = check_nd_extensions(backer);
+    backer->rt_support.odp.tun_eth_type =
+        dpif_supports_tun_eth_type(backer->dpif);
 }
 
 /* TC does not support offloading the explicit drop action. As such we need to
@@ -5924,6 +5926,7 @@ get_datapath_cap(const char *datapath_type, struct smap *cap)
     smap_add(cap, "ct_orig_tuple", s->odp.ct_orig_tuple ? "true" : "false");
     smap_add(cap, "ct_orig_tuple6", s->odp.ct_orig_tuple6 ? "true" : "false");
     smap_add(cap, "nd_ext", s->odp.nd_ext ? "true" : "false");
+    smap_add(cap, "tun_eth_type", s->odp.tun_eth_type ? "true" : "false");
 
     /* DPIF_SUPPORT_FIELDS */
     smap_add(cap, "masked_set_action",
