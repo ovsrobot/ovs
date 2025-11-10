@@ -24,6 +24,7 @@
 #include "cmap.h"
 #include "lib/dpif-provider.h"
 #include "dpif.h"
+#include "dpif-offload.h"
 #include "openvswitch/dynamic-string.h"
 #include "fail-open.h"
 #include "guarded-list.h"
@@ -825,16 +826,8 @@ udpif_get_n_flows(struct udpif *udpif)
         atomic_store_relaxed(&udpif->n_flows_timestamp, now);
         dpif_get_dp_stats(udpif->dpif, &stats);
         flow_count = stats.n_flows;
-
-        if (!dpif_synced_dp_layers(udpif->dpif)) {
-            /* If the dpif layer does not sync the flows, we need to include
-             * the hardware offloaded flows separately. */
-            uint64_t hw_flows;
-
-            if (!dpif_get_n_offloaded_flows(udpif->dpif, &hw_flows)) {
-                flow_count += hw_flows;
-            }
-        }
+        flow_count += dpif_offload_flow_get_n_offloaded_by_impl(
+            udpif->dpif, DPIF_OFFLOAD_IMPL_HW_ONLY);
 
         atomic_store_relaxed(&udpif->n_flows, flow_count);
         ovs_mutex_unlock(&udpif->n_flows_mutex);
@@ -981,7 +974,7 @@ udpif_run_flow_rebalance(struct udpif *udpif)
         return;
     }
 
-    if (!netdev_any_oor()) {
+    if (!dpif_offload_netdevs_out_of_resources(udpif->dpif)) {
         return;
     }
 
@@ -1070,7 +1063,7 @@ udpif_revalidator(void *arg)
 
             dpif_flow_dump_destroy(udpif->dump);
             seq_change(udpif->dump_seq);
-            if (netdev_is_offload_rebalance_policy_enabled()) {
+            if (dpif_offload_is_offload_rebalance_policy_enabled()) {
                 udpif_run_flow_rebalance(udpif);
             }
 
@@ -2713,7 +2706,6 @@ ukey_netdev_unref(struct udpif_key *ukey)
 static void
 ukey_to_flow_netdev(struct udpif *udpif, struct udpif_key *ukey)
 {
-    const char *dpif_type_str = dpif_normalize_type(dpif_type(udpif->dpif));
     const struct nlattr *k;
     unsigned int left;
 
@@ -2725,8 +2717,8 @@ ukey_to_flow_netdev(struct udpif *udpif, struct udpif_key *ukey)
         enum ovs_key_attr type = nl_attr_type(k);
 
         if (type == OVS_KEY_ATTR_IN_PORT) {
-            ukey->in_netdev = netdev_ports_get(nl_attr_get_odp_port(k),
-                                               dpif_type_str);
+            ukey->in_netdev = dpif_offload_get_netdev_by_port_id(
+                udpif->dpif, NULL, nl_attr_get_odp_port(k));
         } else if (type == OVS_KEY_ATTR_TUNNEL) {
             struct flow_tnl tnl;
             enum odp_key_fitness res;
@@ -2804,6 +2796,21 @@ udpif_update_used(struct udpif *udpif, struct udpif_key *ukey,
         stats->used = ukey->created;
     }
     return stats->used;
+}
+
+static bool
+did_dp_hw_only_offload_change(const char *old_type, const char *new_type)
+{
+    enum dpif_offload_impl_type old_impl = old_type ?
+        dpif_offload_get_impl_type_by_class(old_type) : DPIF_OFFLOAD_IMPL_NONE;
+    enum dpif_offload_impl_type new_impl = new_type ?
+        dpif_offload_get_impl_type_by_class(new_type) : DPIF_OFFLOAD_IMPL_NONE;
+
+    if (old_impl != new_impl && (old_impl == DPIF_OFFLOAD_IMPL_HW_ONLY ||
+                                 new_impl == DPIF_OFFLOAD_IMPL_HW_ONLY)) {
+        return true;
+    }
+    return false;
 }
 
 static void
@@ -2904,9 +2911,8 @@ revalidate(struct revalidator *revalidator)
 
             ukey->offloaded = f->attrs.offloaded;
             if (!ukey->dp_layer
-                || (!dpif_synced_dp_layers(udpif->dpif)
-                    && strcmp(ukey->dp_layer, f->attrs.dp_layer))) {
-
+                || did_dp_hw_only_offload_change(ukey->dp_layer,
+                                                 f->attrs.dp_layer)) {
                 if (ukey->dp_layer) {
                     /* The dp_layer has changed this is probably due to an
                      * earlier revalidate cycle moving it to/from hw offload.
@@ -2963,7 +2969,7 @@ revalidate(struct revalidator *revalidator)
             }
             ukey->dump_seq = dump_seq;
 
-            if (netdev_is_offload_rebalance_policy_enabled() &&
+            if (dpif_offload_is_offload_rebalance_policy_enabled() &&
                 result != UKEY_DELETE) {
                 udpif_update_flow_pps(udpif, ukey, f);
             }
@@ -3170,7 +3176,8 @@ upcall_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
         ds_put_format(&ds, "  flows         : (current %lu)"
             " (avg %u) (max %u) (limit %u)\n", udpif_get_n_flows(udpif),
             udpif->avg_n_flows, udpif->max_n_flows, flow_limit);
-        if (!dpif_get_n_offloaded_flows(udpif->dpif, &n_offloaded_flows)) {
+        n_offloaded_flows = dpif_offload_flow_get_n_offloaded(udpif->dpif);
+        if (n_offloaded_flows) {
             ds_put_format(&ds, "  offloaded flows : %"PRIu64"\n",
                           n_offloaded_flows);
         }

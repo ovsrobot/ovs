@@ -23,12 +23,16 @@
  * ports that they contain may be fixed or dynamic. */
 
 #include "openflow/openflow.h"
+#include "ovs-thread.h"
 #include "dpif.h"
 #include "util.h"
 
 #ifdef  __cplusplus
 extern "C" {
 #endif
+
+/* Forward declarations of private structures. */
+struct dp_offload;
 
 /* Open vSwitch datapath interface.
  *
@@ -40,6 +44,9 @@ struct dpif {
     uint8_t netflow_engine_type;
     uint8_t netflow_engine_id;
     long long int current_ms;
+
+    /* dpif offload provider specific variables. */
+    OVSRCU_TYPE(struct dp_offload *) dp_offload;
 };
 
 struct dpif_ipf_status;
@@ -58,23 +65,52 @@ static inline void dpif_assert_class(const struct dpif *dpif,
 struct dpif_flow_dump {
     struct dpif *dpif;
     bool terse;         /* If true, key/mask/actions may be omitted. */
+
+    struct ovs_mutex offload_dump_mutex;
+    struct dpif_offload_flow_dump **offload_dumps;
+    size_t n_offload_dumps;
+    size_t offload_dump_index;
 };
 
+void dpif_offload_flow_dump_create(struct dpif_flow_dump *,
+                                   const struct dpif *, bool terse);
+void dpif_offload_flow_dump_thread_create(struct dpif_flow_dump_thread *,
+                                          struct dpif_flow_dump *);
+
 static inline void
-dpif_flow_dump_init(struct dpif_flow_dump *dump, const struct dpif *dpif)
+dpif_flow_dump_init(struct dpif_flow_dump *dump, const struct dpif *dpif,
+                    bool terse, struct dpif_flow_dump_types *types)
 {
     dump->dpif = CONST_CAST(struct dpif *, dpif);
+    dump->terse = terse;
+    dump->offload_dumps = NULL;
+    dump->n_offload_dumps = 0;
+    dump->offload_dump_index = 0;
+    ovs_mutex_init(&dump->offload_dump_mutex);
+    if (!types || types->offloaded_flows) {
+        dpif_offload_flow_dump_create(dump, dpif, terse);
+    }
 }
 
 struct dpif_flow_dump_thread {
-    struct dpif *dpif;
+    struct dpif_flow_dump *dump;
+
+    struct dpif_offload_flow_dump_thread **offload_threads;
+    size_t n_offload_threads;
+    size_t offload_dump_index;
+    bool offload_dump_done;
 };
 
 static inline void
 dpif_flow_dump_thread_init(struct dpif_flow_dump_thread *thread,
                            struct dpif_flow_dump *dump)
 {
-    thread->dpif = dump->dpif;
+    thread->dump = dump;
+    thread->offload_threads = NULL;
+    thread->n_offload_threads = 0;
+    thread->offload_dump_index = 0;
+    thread->offload_dump_done = true;
+    dpif_offload_flow_dump_thread_create(thread, dump);
 }
 
 struct ct_dpif_dump_state;
@@ -127,14 +163,6 @@ struct dpif_class {
      * This is used by the vswitch at exit, so that it can clean any
      * datapaths that can not exist without it (e.g. netdev datapath).  */
     bool cleanup_required;
-
-    /* If 'true' the specific dpif implementation synchronizes the various
-     * datapath implementation layers, i.e., the dpif's layer in combination
-     * with the underlying netdev offload layers. For example, dpif-netlink
-     * does not sync its kernel flows with the tc ones, i.e., only one gets
-     * installed. On the other hand, dpif-netdev installs both flows,
-     * internally keeps track of both, and represents them as one. */
-    bool synced_dp_layers;
 
     /* Called when the dpif provider is registered, typically at program
      * startup.  Returning an error from this function will prevent any
@@ -199,6 +227,7 @@ struct dpif_class {
     int (*get_stats)(const struct dpif *dpif, struct dpif_dp_stats *stats);
 
     int (*set_features)(struct dpif *dpif, uint32_t user_features);
+    uint32_t (*get_features)(struct dpif *dpif);
 
     /* Adds 'netdev' as a new port in 'dpif'.  If '*port_no' is not
      * ODPP_NONE, attempts to use that as the port's port number.
@@ -334,18 +363,8 @@ struct dpif_class {
     /* Executes each of the 'n_ops' operations in 'ops' on 'dpif', in the order
      * in which they are specified, placing each operation's results in the
      * "output" members documented in comments and the 'error' member of each
-     * dpif_op. The offload_type argument tells the provider if 'ops' should
-     * be submitted to to a netdev (only offload) or to the kernel datapath
-     * (never offload) or to both (offload if possible; software fallback). */
-    void (*operate)(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
-                    enum dpif_offload_type offload_type);
-
-    /* Get hardware-offloads activity counters from a dataplane.
-     * Those counters are not offload statistics (which are accessible through
-     * netdev statistics), but a status of hardware offload management:
-     * how many offloads are currently waiting, inserted, etc. */
-    int (*offload_stats_get)(struct dpif *dpif,
-                             struct netdev_custom_stats *stats);
+     * dpif_op. */
+    void (*operate)(struct dpif *dpif, struct dpif_op **ops, size_t n_ops);
 
     /* Enables or disables receiving packets with dpif_recv() for 'dpif'.
      * Turning packet receive off and then back on is allowed to change Netlink
