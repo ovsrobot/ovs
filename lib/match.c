@@ -403,6 +403,13 @@ match_set_tun_gtpu_msgtype(struct match *match, uint8_t msgtype)
 }
 
 void
+match_set_tun_eth_type(struct match *match, ovs_be16 eth_type)
+{
+    match->wc.masks.tunnel.eth_type = OVS_BE16_MAX;
+    match->flow.tunnel.eth_type = eth_type;
+}
+
+void
 match_set_in_port(struct match *match, ofp_port_t ofp_port)
 {
     match->wc.masks.in_port.ofp_port = u16_to_ofp(UINT16_MAX);
@@ -1390,6 +1397,9 @@ format_flow_tunnel(struct ds *s, const struct match *match)
     }
     if (wc->masks.tunnel.gtpu_msgtype) {
         ds_put_format(s, "gtpu_msgtype=%"PRIu8",", tnl->gtpu_msgtype);
+    }
+    if (wc->masks.tunnel.eth_type) {
+        ds_put_format(s, "tun_eth_type=0x%04"PRIx16",", ntohs(tnl->eth_type));
     }
     if (wc->masks.tunnel.flags & FLOW_TNL_F_MASK) {
         format_flags_masked(s, "tun_flags", flow_tun_flag_to_string,

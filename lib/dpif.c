@@ -1945,6 +1945,12 @@ dpif_may_support_psample(const struct dpif *dpif)
     return !dpif_is_netdev(dpif);
 }
 
+bool
+dpif_supports_tun_eth_type(const struct dpif *dpif)
+{
+    return dpif_is_netdev(dpif);
+}
+
 /* Meters */
 void
 dpif_meter_get_features(const struct dpif *dpif,

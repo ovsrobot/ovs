@@ -213,6 +213,8 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
         return !wc->masks.packet_type;
     case MFF_CONJ_ID:
         return !wc->masks.conj_id;
+    case MFF_TUN_ETH_TYPE:
+        return !wc->masks.tunnel.eth_type;
     case MFF_TUN_SRC:
         return !wc->masks.tunnel.ip_src;
     case MFF_TUN_DST:
@@ -524,6 +526,7 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
     case MFF_PACKET_TYPE:
     case MFF_CONJ_ID:
     case MFF_TUN_ID:
+    case MFF_TUN_ETH_TYPE:
     case MFF_TUN_SRC:
     case MFF_TUN_DST:
     case MFF_TUN_IPV6_SRC:
@@ -679,6 +682,9 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
         break;
     case MFF_TUN_ID:
         value->be64 = flow->tunnel.tun_id;
+        break;
+    case MFF_TUN_ETH_TYPE:
+        value->be16 = flow->tunnel.eth_type;
         break;
     case MFF_TUN_SRC:
         value->be32 = flow->tunnel.ip_src;
@@ -1016,6 +1022,9 @@ mf_set_value(const struct mf_field *mf,
         break;
     case MFF_TUN_ID:
         match_set_tun_id(match, value->be64);
+        break;
+    case MFF_TUN_ETH_TYPE:
+        match_set_tun_eth_type(match, value->be16);
         break;
     case MFF_TUN_SRC:
         match_set_tun_src(match, value->be32);
@@ -1439,6 +1448,9 @@ mf_set_flow_value(const struct mf_field *mf,
     case MFF_TUN_ID:
         flow->tunnel.tun_id = value->be64;
         break;
+    case MFF_TUN_ETH_TYPE:
+        flow->tunnel.eth_type = value->be16;
+        break;
     case MFF_TUN_SRC:
         flow->tunnel.ip_src = value->be32;
         break;
@@ -1823,6 +1835,7 @@ mf_is_any_metadata(const struct mf_field *mf)
         return true;
 
     case MFF_TUN_ID:
+    case MFF_TUN_ETH_TYPE:
     case MFF_TUN_SRC:
     case MFF_TUN_DST:
     case MFF_TUN_IPV6_SRC:
@@ -1917,6 +1930,7 @@ mf_is_pipeline_field(const struct mf_field *mf)
 {
     switch (mf->id) {
     case MFF_TUN_ID:
+    case MFF_TUN_ETH_TYPE:
     case MFF_TUN_SRC:
     case MFF_TUN_DST:
     case MFF_TUN_IPV6_SRC:
@@ -2074,6 +2088,9 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
         break;
     case MFF_TUN_ID:
         match_set_tun_id_masked(match, htonll(0), htonll(0));
+        break;
+    case MFF_TUN_ETH_TYPE:
+        match->flow.tunnel.eth_type = 0;
         break;
     case MFF_TUN_SRC:
         match_set_tun_src_masked(match, htonl(0), htonl(0));
@@ -2479,6 +2496,7 @@ mf_set(const struct mf_field *mf,
     case MFF_ICMPV6_CODE:
     case MFF_ND_RESERVED:
     case MFF_ND_OPTIONS_TYPE:
+    case MFF_TUN_ETH_TYPE:
         return OFPUTIL_P_NONE;
 
     case MFF_DP_HASH:

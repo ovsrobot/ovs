@@ -8081,6 +8081,8 @@ xlate_wc_init(struct xlate_ctx *ctx)
 static void
 xlate_wc_finish(struct xlate_ctx *ctx)
 {
+    struct ofproto_dpif *ofproto = ctx->xbridge->ofproto;
+    struct dpif_backer *backer = ofproto->backer;
     int i;
 
     /* Clear the metadata and register wildcard masks, because we won't
@@ -8151,6 +8153,20 @@ xlate_wc_finish(struct xlate_ctx *ctx)
     /* Clear tunnel wc bits if original packet is non-tunnel. */
     if (!flow_tnl_dst_is_set(&ctx->xin->upcall_flow->tunnel)) {
         memset(&ctx->wc->masks.tunnel, 0, sizeof ctx->wc->masks.tunnel);
+    }
+    /* Clear tunnel eth type if not supported. */
+    if (!backer->rt_support.odp.tun_eth_type) {
+        ctx->wc->masks.tunnel.eth_type = 0;
+    }
+    /* Clear IPv6 artifacts when eth_type explicitly indicates IPv4 */
+    if (ctx->wc->masks.tunnel.eth_type == htons(ETH_TYPE_IP)) {
+        ctx->wc->masks.tunnel.ipv6_src = in6addr_any;
+        ctx->wc->masks.tunnel.ipv6_dst = in6addr_any;
+    }
+    /* Clear IPv4 artifacts when eth_type explicitly indicates IPv6 */
+    if (ctx->wc->masks.tunnel.eth_type == htons(ETH_TYPE_IPV6)) {
+        ctx->wc->masks.tunnel.ip_src = 0;
+        ctx->wc->masks.tunnel.ip_dst = 0;
     }
 }
 

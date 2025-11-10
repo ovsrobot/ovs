@@ -1184,11 +1184,32 @@ parse_tnl_ip_match(struct flow_patterns *patterns,
                    struct match *match,
                    uint8_t proto)
 {
+    ovs_be16 eth_type = match->flow.tunnel.eth_type;
     struct flow *consumed_masks;
+    bool is_ipv4, is_ipv6;
+
+    /* Determine IP version - either explicitly set via eth_type
+     * or inferred from masks.
+     */
+    if (eth_type == htons(ETH_TYPE_IP)) {
+        is_ipv4 = true;
+        is_ipv6 = false;
+    } else if (eth_type == htons(ETH_TYPE_IPV6)) {
+        is_ipv4 = false;
+        is_ipv6 = true;
+    } else {
+        /* eth_type is 0 - infer from which address masks are set */
+        is_ipv4 = (match->wc.masks.tunnel.ip_src ||
+                   match->wc.masks.tunnel.ip_dst);
+        is_ipv6 = (!is_all_zeros(&match->wc.masks.tunnel.ipv6_src,
+                   sizeof(struct in6_addr)) ||
+                   !is_all_zeros(&match->wc.masks.tunnel.ipv6_dst,
+                   sizeof(struct in6_addr)));
+    }
 
     consumed_masks = &match->wc.masks;
     /* IP v4 */
-    if (match->wc.masks.tunnel.ip_src || match->wc.masks.tunnel.ip_dst) {
+    if (is_ipv4) {
         struct rte_flow_item_ipv4 *spec, *mask;
 
         spec = xzalloc(sizeof *spec);
@@ -1212,10 +1233,7 @@ parse_tnl_ip_match(struct flow_patterns *patterns,
         consumed_masks->tunnel.ip_dst = 0;
 
         add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_IPV4, spec, mask, NULL);
-    } else if (!is_all_zeros(&match->wc.masks.tunnel.ipv6_src,
-                             sizeof(struct in6_addr)) ||
-               !is_all_zeros(&match->wc.masks.tunnel.ipv6_dst,
-                             sizeof(struct in6_addr))) {
+    } else if (is_ipv6) {
         /* IP v6 */
         struct rte_flow_item_ipv6 *spec, *mask;
 
@@ -1376,6 +1394,19 @@ parse_flow_tnl_match(struct netdev *tnldev,
     ret = add_vport_match(patterns, orig_in_port, tnldev);
     if (ret) {
         return ret;
+    }
+
+    if (match->wc.masks.tunnel.eth_type) {
+        struct rte_flow_item_eth *spec, *mask;
+
+        spec = xzalloc(sizeof *spec);
+        mask = xzalloc(sizeof *mask);
+
+        spec->type = match->flow.tunnel.eth_type;
+        mask->type = match->wc.masks.tunnel.eth_type;
+        match->wc.masks.tunnel.eth_type = 0;
+
+        add_flow_pattern(patterns, RTE_FLOW_ITEM_TYPE_ETH, spec, mask, NULL);
     }
 
     if (!strcmp(netdev_get_type(tnldev), "vxlan")) {

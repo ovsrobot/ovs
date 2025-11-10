@@ -506,6 +506,7 @@ netdev_gre_pop_header(struct dp_packet *packet)
     struct pkt_metadata *md = &packet->md;
     struct flow_tnl *tnl = &md->tunnel;
     int hlen = sizeof(struct eth_header) + 4;
+    const struct eth_header *eth;
 
     ovs_assert(data_dp);
 
@@ -520,6 +521,11 @@ netdev_gre_pop_header(struct dp_packet *packet)
     hlen = parse_gre_header(packet, tnl);
     if (hlen < 0) {
         goto err;
+    }
+
+    eth = dp_packet_eth(packet);
+    if (eth) {
+        tnl->eth_type = eth->eth_type;
     }
 
     tnl_ol_pop(packet, hlen);
@@ -1102,6 +1108,7 @@ netdev_vxlan_pop_header(struct dp_packet *packet)
     unsigned int hlen;
     ovs_be32 vx_flags;
     enum packet_type next_pt = PT_ETH;
+    const struct eth_header *eth;
 
     ovs_assert(packet->l3_ofs > 0);
     ovs_assert(packet->l4_ofs > 0);
@@ -1152,6 +1159,12 @@ netdev_vxlan_pop_header(struct dp_packet *packet)
     tnl->flags |= FLOW_TNL_F_KEY;
 
     packet->packet_type = htonl(next_pt);
+
+    eth = dp_packet_eth(packet);
+    if (eth) {
+        tnl->eth_type = eth->eth_type;
+    }
+
     tnl_ol_pop(packet, hlen + VXLAN_HLEN);
     if (next_pt != PT_ETH) {
         packet->l3_ofs = 0;
@@ -1219,6 +1232,7 @@ netdev_geneve_pop_header(struct dp_packet *packet)
     struct flow_tnl *tnl = &md->tunnel;
     struct genevehdr *gnh;
     unsigned int hlen, opts_len, ulen;
+    const struct eth_header *eth;
 
     pkt_metadata_init_tnl(md);
     if (GENEVE_BASE_HLEN > dp_packet_l4_size(packet)) {
@@ -1260,6 +1274,12 @@ netdev_geneve_pop_header(struct dp_packet *packet)
     tnl->flags |= FLOW_TNL_F_UDPIF;
 
     packet->packet_type = htonl(PT_ETH);
+
+    eth = dp_packet_eth(packet);
+    if (eth) {
+        tnl->eth_type = eth->eth_type;
+    }
+
     tnl_ol_pop(packet, hlen);
 
     return packet;
