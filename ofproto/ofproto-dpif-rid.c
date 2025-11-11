@@ -241,6 +241,13 @@ recirc_alloc_id__(const struct frozen_state *state, uint32_t hash)
     frozen_state_clone(CONST_CAST(struct frozen_state *, &node->state), state);
 
     ovs_mutex_lock(&mutex);
+    struct recirc_id_node *old_node;
+    old_node = recirc_find_equal(state, hash);
+    if (old_node && ovs_refcount_try_ref_rcu(&old_node->refcount)) {
+        xfree(node);
+        ovs_mutex_unlock(&mutex);
+        return old_node;
+    }
     for (;;) {
         /* Claim the next ID.  The ID space should be sparse enough for the
            allocation to succeed at the first try.  We do skip the first
