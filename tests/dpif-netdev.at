@@ -1152,6 +1152,2162 @@ AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel (no csum) - no offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+dnl Simple ARP.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP; "dnl
+"p = Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP, IP, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [arp_frame], [arp_expected])
+
+dnl ICMPv6
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN; "dnl
+"from scapy.all import IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [ndp_frame], [ndp_expected])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel (no csum) - ip csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.1.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/433c/423c/" > bad_frame
+cat good_expected | sed -e "s/bd3c/bc3c/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum=true])
+
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_ip_tx_csum=true])
+
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_ip_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/339e/0000/" | sed -e "s/bd3c/423c/" > half_bad_expected
+
+CHECK_FWD_PACKET(p1, p2, ol_ip_rx_csum_set_good, [bad_frame], [half_bad_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_ip_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_ip_tx_csum])
+
+cat good_expected | sed -e "s/bd3c/423c/" > half_bad_expected
+
+CHECK_FWD_PACKET(p1, p2, ol_ip_rx_csum_set_good, [bad_frame], [half_bad_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_ip_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_ip_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel (no csum) - tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/6b72/dead/" > bad_frame
+dnl 0x6b72 + (5201-2222) == 0x7715
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/7715/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/7715/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel (no csum) - udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_expected
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/bb3b/dead/" > bad_frame
+dnl 0xbb3b + (5201-2222) == 0xc6de
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/c6de/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/c6de/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel (no csum) - IPv6 tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, IPv6, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/e5c2/dead/" > bad_frame
+dnl 0xe5c2 + (5201-2222) == 0xf165
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/f165/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/f165/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel (no csum) - IPv6 udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=5201, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, IPv6, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=2222, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_expected
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, IPv6, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/358c/dead/" > bad_frame
+dnl 0x358c + (5201-2222) == 0x412f
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/412f/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/412f/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel - no offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+dnl Simple ARP.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP; "dnl
+"p = Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP, IP, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [arp_frame], [arp_expected])
+
+dnl ICMPv6.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN; "dnl
+"from scapy.all import IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [ndp_frame], [ndp_expected])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel - ip csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.1.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/433c/423c/" > bad_frame
+cat good_expected | sed -e "s/454d/464d/" -e "s/bd3c/bc3c/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum=true])
+
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_ip_tx_csum=true])
+
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_ip_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/339e/0000/" > half_bad_expected
+
+CHECK_FWD_PACKET(p1, p2, ol_ip_rx_csum_set_good, [bad_frame], [half_bad_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_ip_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_ip_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_ip_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_ip_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_ip_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel - tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/6b72/dead/" > bad_frame
+dnl 0x6b72 + (5201-2222) == 0x7715
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/bf4d/4c12/" -e "s/7715/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/bf4d/ffff/" -e "s/7715/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel - udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_expected
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/bb3b/dead/" > bad_frame
+dnl 0xbb3b + (5201-2222) == 0xc6de
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/bf64/9bf2/" -e "s/c6de/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/bf64/ffff/" -e "s/c6de/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel - IPv6 tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, IPv6, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/e5c2/dead/" > bad_frame
+dnl 0xe5c2 + (5201-2222) == 0xf165
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/625e/6973/" -e "s/f165/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/625e/ffff/" -e "s/f165/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv4 vxlan tunnel - IPv6 udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=1.1.2.92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br2 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 1.1.2.92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, VXLAN, IPv6, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IP(src='1.1.2.88', dst='1.1.2.92', id=0, flags='DF'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/358c/dead/" > bad_frame
+dnl 0x358c + (5201-2222) == 0x412f
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/5781/ae5f/" -e "s/412f/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/5781/ffff/" -e "s/412f/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel (no csum) - no offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/64], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+dnl Simple ARP.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP; "dnl
+"p = Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP, IPv6, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [arp_frame], [arp_expected])
+
+dnl ICMPv6.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN; "dnl
+"from scapy.all import ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [ndp_frame], [ndp_expected])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel (no csum) - ip csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/64], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.1.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/433c/423c/" > bad_frame
+cat good_expected | sed -e "s/bd3c/bc3c/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum=true])
+
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/bd3c/423c/" > half_bad_expected
+
+CHECK_FWD_PACKET(p1, p2, ol_ip_rx_csum_set_good, [bad_frame], [half_bad_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_ip_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_ip_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel (no csum) - tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/64], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/6b72/dead/" > bad_frame
+dnl 0x6b72 + (5201-2222) == 0x7715
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/7715/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/7715/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel (no csum) - udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/64], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_expected
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/bb3b/dead/" > bad_frame
+dnl 0xbb3b + (5201-2222) == 0xc6de
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/c6de/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/c6de/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel (no csum) - IPv6 tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/64], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/e5c2/dead/" > bad_frame
+dnl 0xe5c2 + (5201-2222) == 0xf165
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/f165/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/f165/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel (no csum) - IPv6 udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=false], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/64], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp6,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=5201, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=2222, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_expected
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363, chksum=0); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/358c/dead/" > bad_frame
+dnl 0x358c + (5201-2222) == 0x412f
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/412f/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/412f/dead/" > bad_updated
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel - no offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+dnl Simple ARP.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP; "dnl
+"p = Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, ARP, IPv6, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(dst='ff:ff:ff:ff:ff:ff'); "dnl
+"p /= ARP(pdst='192.168.123.1', hwsrc='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > arp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [arp_frame], [arp_expected])
+
+dnl ICMPv6.
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN; "dnl
+"from scapy.all import ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='04:bf:1b:d8:2d:2d', dst='33:33:ff:00:00:01'); "dnl
+"p /= IPv6(src='fe80::2', dst='ff02::1:ff00:1'); "dnl
+"p /= ICMPv6ND_NS(type=135, tgt='fe80::1'); "dnl
+"p /= ICMPv6NDOptSrcLLAddr(lladdr='8a:bf:7e:2f:05:84'); "dnl
+"print(p.build().hex())" > ndp_expected
+
+CHECK_FWD_PACKET(p1, p2, , [ndp_frame], [ndp_expected])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel - ip csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=mod_nw_dst:192.168.1.1,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.1.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/433c/423c/" > bad_frame
+cat good_expected | sed -e "s/74e9/75e9/" -e "s/bd3c/bc3c/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_ip_tx_csum=true])
+
+CHECK_IP_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel - tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/6b72/dead/" > bad_frame
+dnl 0x6b72 + (5201-2222) == 0x7715
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/eee9/7bae/" -e "s/7715/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/eee9/ffff/" -e "s/7715/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel - udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222, chksum=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > no_csum_expected
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IP, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, IP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IP(src='192.168.123.2', dst='192.168.123.1', id=0, ttl=0); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/bb3b/dead/" > bad_frame
+dnl 0xbb3b + (5201-2222) == 0xc6de
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/ef00/cb8e/" -e "s/c6de/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [no_csum_frame], [no_csum_expected])
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/ef00/ffff/" -e "s/c6de/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel - IPv6 tcp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,tcp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, TCP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=5201, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, TCP, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= TCP(sport=54392, dport=2222, flags='A', window=0); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/e5c2/dead/" > bad_frame
+dnl 0xe5c2 + (5201-2222) == 0xf165
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/91fa/990f/" -e "s/f165/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/91fa/ffff/" -e "s/f165/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([dpif-netdev - IPv6 vxlan tunnel - IPv6 udp csum offload])
+AT_KEYWORDS([userspace offload])
+AT_SKIP_IF([! $PYTHON3 -c "import scapy"], [], [])
+OVS_VSWITCHD_START(
+  [add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-br br2 -- set bridge br2 datapath-type=dummy -- \
+       set bridge br2 other-config:hwaddr=aa:66:aa:66:00:00 -- \
+   add-port br2 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-vsctl add-port br1 t1 \
+                    -- set Interface t1 type=vxlan \
+                       options:remote_ip=2001:cafe::92 options:key=123 \
+                       options:csum=true], [0])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br2 2001:cafe::88/24], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/neigh/set br2 2001:cafe::92 aa:66:aa:66:00:01], [0], [OK
+])
+AT_CHECK([ovs-appctl tnl/egress_port_range 57363 57363], [0], [OK
+])
+AT_CHECK([ovs-appctl vlog/set netdev_dummy:file:dbg])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,udp6,tp_dst=5201,actions=mod_tp_dst:2222,output:t1])
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, Raw; "dnl
+"p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=5201); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_frame
+
+$PYTHON3 -c dnl
+"from scapy.all import Ether, IPv6, UDP, VXLAN, Raw; "dnl
+"p = Ether(src='aa:66:aa:66:00:00', dst='aa:66:aa:66:00:01'); "dnl
+"p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92'); "dnl
+"p /= UDP(sport=57363); "dnl
+"p /= VXLAN(vni=123, flags='Instance'); "dnl
+"p /= Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73'); "dnl
+"p /= IPv6(src='fe80::2', dst='fe80::1'); "dnl
+"p /= UDP(sport=54392, dport=2222); "dnl
+"p /= Raw(i for i in range(64)); "dnl
+"print(p.build().hex())" > good_expected
+
+cat good_frame | sed -e "s/358c/dead/" > bad_frame
+dnl 0x358c + (5201-2222) == 0x412f
+dnl 0xdead + (5201-2222) == 0xea50
+cat good_expected | sed -e "s/871d/ddfb/" -e "s/412f/ea50/" > bad_expected
+
+dnl Tx offloads disabled.
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Inner Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Outer Tx offloads enabled.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum=true])
+
+CHECK_L4_CHECKSUMS(p1, p2, [good_frame], [bad_frame], [good_expected], [bad_expected])
+
+dnl Special case, to check if Tx offloads did happen in the driver.
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_out_udp_tx_csum_disabled=true])
+AT_CHECK([ovs-vsctl set Interface p2 options:ol_l4_tx_csum_disabled=true])
+
+cat good_expected | sed -e "s/871d/ffff/" -e "s/412f/dead/" > bad_updated
+
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [bad_updated])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum_disabled])
+
+dnl Special case 2, to check if inner Tx offload did happen in the driver.
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_out_udp_tx_csum])
+
+dnl The inner part will be fixed by datapath.
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_good, [bad_frame], [good_expected])
+
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum_disabled])
+AT_CHECK([ovs-vsctl remove Interface p2 options ol_l4_tx_csum])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([dpif-netdev - conntrack])
 AT_KEYWORDS([userspace offload])
 OVS_VSWITCHD_START(
