@@ -233,9 +233,17 @@ static struct recirc_id_node *
 recirc_alloc_id__(const struct frozen_state *state, uint32_t hash)
 {
     ovs_assert(state->action_set_len <= state->ofpacts_len);
+    struct recirc_id_node *node = NULL;
+    struct recirc_id_node *existing_node = NULL;
 
-    struct recirc_id_node *node = xzalloc(sizeof *node);
+    /* First try to find an existing node with the same state. */
+    existing_node = recirc_ref_equal(state, hash);
+    if (existing_node) {
+        return existing_node;
+    }
 
+    /* No existing node found, create a new one. */
+    node = xzalloc(sizeof *node);
     node->hash = hash;
     ovs_refcount_init(&node->refcount);
     frozen_state_clone(CONST_CAST(struct frozen_state *, &node->state), state);
