@@ -130,6 +130,8 @@ _man_pages = [
      u'utility for configuring running Open vSwitch daemons'),
     ('ovs-ctl.8',
      u'OVS startup helper script'),
+    ('ovs-exporter.8',
+     u'OVS metrics exporter'),
     ('ovs-flowviz.8',
      u'utility for visualizing OpenFlow and datapath flows'),
     ('ovs-l3ping.8',

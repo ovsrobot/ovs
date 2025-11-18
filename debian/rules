@@ -121,11 +121,13 @@ override_dh_installinit:
 	dh_installinit -popenvswitch-switch --name=ovsdb-server --no-start
 	dh_installinit -popenvswitch-switch --name=ovs-vswitchd --no-start
 	dh_installinit -popenvswitch-switch --name=ovs-record-hostname --no-start
+	dh_installinit -popenvswitch-switch --name=ovs-exporter --no-start --no-enable
 
 override_dh_installsystemd:
 	dh_installsystemd -popenvswitch-switch --name=ovsdb-server --no-start
 	dh_installsystemd -popenvswitch-switch --name=ovs-vswitchd --no-start
 	dh_installsystemd -popenvswitch-switch --name=ovs-record-hostname --no-start
+	dh_installsystemd -popenvswitch-switch --name=ovs-exporter --no-start --no-enable
 	dh_installsystemd --restart-after-upgrade -Xovs-vswitchd.service -Xovsdb-server.service -Xovs-record-hostname.service
 
 override_dh_strip:

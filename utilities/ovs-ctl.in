@@ -259,6 +259,16 @@ start_ovs_ipsec () {
     return 0
 }
 
+start_ovs_exporter () {
+    if daemon_is_running ovs-exporter; then
+        log_success_msg "ovs-exporter is already running"
+    else
+        set ovs-exporter --unixctl
+        set "$@" -vconsole:emer -vsyslog:err -vfile:info
+        start_daemon "-10" "" "" "$@" || return 1
+    fi
+}
+
 ## ---- ##
 ## stop ##
 ## ---- ##
@@ -277,6 +287,10 @@ stop_forwarding () {
 
 stop_ovs_ipsec () {
     stop_daemon ovs-monitor-ipsec
+}
+
+stop_ovs_exporter () {
+    stop_daemon ovs-exporter
 }
 
 ## --------------- ##
@@ -416,6 +430,8 @@ Commands:
                               ports
   start-ovs-ipsec             start Open vSwitch ipsec daemon
   stop-ovs-ipsec              stop Open vSwitch ipsec daemon
+  start-ovs-exporter          start Open vSwitch metrics exporter
+  stop-ovs-exporter           stop Open vSwitch metrics exporter
   record-hostname-if-not-set  determine the system hostname and record it in
                               the Open vSwitch database if not already set
   help                        display this help message
@@ -612,6 +628,12 @@ case $command in
         ;;
     stop-ovs-ipsec)
         stop_ovs_ipsec
+        ;;
+    start-ovs-exporter)
+        start_ovs_exporter
+        ;;
+    stop-ovs-exporter)
+        stop_ovs_exporter
         ;;
     record-hostname-if-not-set)
         set_hostname

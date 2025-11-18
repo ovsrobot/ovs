@@ -225,7 +225,7 @@ install -p -D -m 0644 \
         rhel/usr_share_openvswitch_scripts_systemd_sysconfig.template \
         $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/openvswitch
 for service in openvswitch ovsdb-server ovs-vswitchd ovs-delete-transient-ports \
-                openvswitch-ipsec; do
+                openvswitch-ipsec ovs-exporter; do
         install -p -D -m 0644 \
                         rhel/usr_lib_systemd_system_${service}.service \
                         $RPM_BUILD_ROOT%{_unitdir}/${service}.service
@@ -235,6 +235,9 @@ install -m 0755 rhel/etc_init.d_openvswitch \
 
 install -p -D -m 0644 rhel/etc_openvswitch_default.conf \
         $RPM_BUILD_ROOT/%{_sysconfdir}/openvswitch/default.conf
+
+install -p -D -m 0644 rhel/etc_openvswitch_ovs-exporter.conf \
+        $RPM_BUILD_ROOT/%{_sysconfdir}/openvswitch/ovs-exporter.conf
 
 install -p -D -m 0644 rhel/etc_logrotate.d_openvswitch \
         $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.d/openvswitch
@@ -450,6 +453,7 @@ fi
 %endif
 %dir %{_sysconfdir}/openvswitch
 %{_sysconfdir}/openvswitch/default.conf
+%{_sysconfdir}/openvswitch/ovs-exporter.conf
 %config %ghost %{_sharedstatedir}/openvswitch/conf.db
 %ghost %{_sharedstatedir}/openvswitch/.conf.db.~lock~
 %config %ghost %{_sysconfdir}/openvswitch/system-id.conf
@@ -461,6 +465,7 @@ fi
 %{_unitdir}/openvswitch.service
 %{_unitdir}/ovsdb-server.service
 %{_unitdir}/ovs-vswitchd.service
+%{_unitdir}/ovs-exporter.service
 %{_unitdir}/ovs-delete-transient-ports.service
 %{_datadir}/openvswitch/scripts/openvswitch.init
 %if ! (0%{?rhel} > 7 || (0%{?fedora} > 28 && 0%{?fedora} < 41))
@@ -483,6 +488,7 @@ fi
 %{_bindir}/ovs-docker
 %{_bindir}/ovs-dpctl
 %{_bindir}/ovs-dpctl-top
+%{_bindir}/ovs-exporter
 %{_bindir}/ovs-metrics
 %{_bindir}/ovs-ofctl
 %{_bindir}/ovs-vsctl
@@ -514,6 +520,7 @@ fi
 %{_mandir}/man8/ovs-dpctl.8*
 %{_mandir}/man8/ovs-dpctl-top.8*
 %{_mandir}/man8/ovs-kmod-ctl.8*
+%{_mandir}/man8/ovs-exporter.8*
 %{_mandir}/man8/ovs-metrics.8*
 %{_mandir}/man8/ovs-ofctl.8*
 %{_mandir}/man8/ovs-pki.8*

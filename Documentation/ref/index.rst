@@ -42,6 +42,7 @@ time:
    ovs-actions.7
    ovs-appctl.8
    ovs-ctl.8
+   ovs-exporter.8
    ovs-flowviz.8
    ovs-metrics.8
    ovs-l3ping.8

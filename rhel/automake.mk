@@ -11,6 +11,7 @@ EXTRA_DIST += \
 	rhel/etc_init.d_openvswitch \
 	rhel/etc_logrotate.d_openvswitch \
 	rhel/etc_openvswitch_default.conf \
+	rhel/etc_openvswitch_ovs-exporter.conf \
 	rhel/etc_sysconfig_network-scripts_ifdown-ovs \
 	rhel/etc_sysconfig_network-scripts_ifup-ovs \
 	rhel/openvswitch.spec \
@@ -24,6 +25,7 @@ EXTRA_DIST += \
 	rhel/usr_lib_systemd_system_openvswitch.service \
 	rhel/usr_lib_systemd_system_ovsdb-server.service \
 	rhel/usr_lib_systemd_system_ovs-vswitchd.service.in \
+	rhel/usr_lib_systemd_system_ovs-exporter.service \
 	rhel/usr_lib_systemd_system_ovs-delete-transient-ports.service \
 	rhel/usr_lib_systemd_system_openvswitch-ipsec.service
 

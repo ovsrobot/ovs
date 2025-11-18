@@ -1,0 +1,18 @@
+[Unit]
+Description=Open vSwitch Metrics Exporter
+After=ovs-vswitchd.service network-pre.target
+Wants=ovs-vswitchd.service
+DefaultDependencies=no
+
+[Service]
+Type=forking
+PIDFile=/run/openvswitch/ovs-exporter.pid
+Restart=on-failure
+Environment=HOME=/var/run/openvswitch
+EnvironmentFile=-/etc/openvswitch/ovs-exporter
+ExecStart=/usr/share/openvswitch/scripts/ovs-ctl --no-monitor start-ovs-exporter $OVS_CTL_OPTS
+ExecStop=/usr/share/openvswitch/scripts/ovs-ctl stop-ovs-exporter
+TimeoutSec=10
+
+[Install]
+WantedBy=ovs-vswitchd.service

@@ -18,6 +18,7 @@
 /ovs-l3ping.8
 /ovs-lib
 /ovs-metrics
+/ovs-exporter
 /ovs-ofctl
 /ovs-ofctl.8
 /ovs-parse-backtrace
