@@ -16,6 +16,7 @@
 
 #include <config.h>
 #include "coverage.h"
+#include "coverage-private.h"
 #include <inttypes.h>
 #include <stdlib.h>
 #include "openvswitch/dynamic-string.h"
@@ -29,11 +30,11 @@
 VLOG_DEFINE_THIS_MODULE(coverage);
 
 /* The coverage counters. */
-static struct coverage_counter **coverage_counters = NULL;
-static size_t n_coverage_counters = 0;
-static size_t allocated_coverage_counters = 0;
+struct coverage_counter **coverage_counters = NULL;
+size_t n_coverage_counters = 0;
+size_t allocated_coverage_counters = 0;
 
-static struct ovs_mutex coverage_mutex = OVS_MUTEX_INITIALIZER;
+struct ovs_mutex coverage_mutex = OVS_MUTEX_INITIALIZER;
 
 DEFINE_STATIC_PER_THREAD_DATA(long long int, coverage_clear_time, LLONG_MIN);
 static long long int coverage_run_time = LLONG_MIN;
@@ -100,6 +101,7 @@ coverage_init(void)
                              coverage_unixctl_show, NULL);
     unixctl_command_register("coverage/read-counter", "COUNTER", 1, 1,
                              coverage_unixctl_read_counter, NULL);
+    coverage_metrics_init();
 }
 
 /* Sorts coverage counters in descending order by total, within equal
