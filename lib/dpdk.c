@@ -600,3 +600,41 @@ dpdk_status(const struct ovsrec_open_vswitch *cfg)
         ovsrec_open_vswitch_set_dpdk_version(cfg, rte_version());
     }
 }
+
+int
+dpdk_get_hugepage_stats(struct ovs_dpdk_hugepage_stats *odhs)
+{
+    struct rte_malloc_socket_stats sock_stats;
+    struct ovs_numa_info_numa *numa;
+    struct ovs_numa_dump *affinity;
+    int ret = 0;
+
+    if (odhs == NULL) {
+        return EINVAL;
+    }
+
+    if (dpdk_initialized == false) {
+        return EOPNOTSUPP;
+    }
+
+    affinity = ovs_numa_thread_getaffinity_dump();
+    if (affinity == NULL) {
+        return ENODEV;
+    }
+
+    memset(odhs, 0, sizeof *odhs);
+
+    FOR_EACH_NUMA_ON_DUMP(numa, affinity) {
+        ret = rte_malloc_get_socket_stats(numa->numa_id, &sock_stats);
+        if (ret) {
+            goto free_affinity;
+        }
+        odhs->capacity_bytes += sock_stats.heap_totalsz_bytes;
+        odhs->free_bytes += sock_stats.heap_freesz_bytes;
+        odhs->allocated_bytes += sock_stats.heap_allocsz_bytes;
+    }
+
+free_affinity:
+    ovs_numa_dump_destroy(affinity);
+    return ret;
+}

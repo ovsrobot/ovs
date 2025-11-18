@@ -18,6 +18,7 @@
 #define DPDK_H
 
 #include <stdbool.h>
+#include <stdlib.h>
 
 #ifdef DPDK_NETDEV
 
@@ -41,5 +42,13 @@ void dpdk_detach_thread(void);
 bool dpdk_available(void);
 void print_dpdk_version(void);
 void dpdk_status(const struct ovsrec_open_vswitch *);
+
+struct ovs_dpdk_hugepage_stats {
+    size_t capacity_bytes; /* Total bytes reserved by DPDK from hugepages. */
+    size_t free_bytes; /* Non-allocated bytes from reserved pages in bytes. */
+    size_t allocated_bytes; /* Allocated bytes from reserved pages in bytes. */
+};
+
+int dpdk_get_hugepage_stats(struct ovs_dpdk_hugepage_stats *odhs);
 
 #endif /* dpdk.h */

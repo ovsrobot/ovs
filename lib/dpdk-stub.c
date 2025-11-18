@@ -18,6 +18,8 @@
 #include <config.h>
 #include "dpdk.h"
 
+#include <errno.h>
+
 #include "smap.h"
 #include "ovs-thread.h"
 #include "openvswitch/vlog.h"
@@ -67,4 +69,10 @@ dpdk_status(const struct ovsrec_open_vswitch *cfg)
         ovsrec_open_vswitch_set_dpdk_initialized(cfg, false);
         ovsrec_open_vswitch_set_dpdk_version(cfg, "none");
     }
+}
+
+int
+dpdk_get_hugepage_stats(struct ovs_dpdk_hugepage_stats *odhs OVS_UNUSED)
+{
+    return EOPNOTSUPP;
 }
