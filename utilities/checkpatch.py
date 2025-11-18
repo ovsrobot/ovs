@@ -404,7 +404,7 @@ def check_spelling(line, comment_type):
         words = ""
         matched = re.search(r'#([^!].*)$', line)
         if matched:
-            words = matched.group(1)
+            words = matched[1]
         else:
             words = line.replace("'''", '').replace('"""', '').strip()
     else:
