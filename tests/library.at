@@ -32,6 +32,11 @@ AT_CHECK([ovstest test-rculist], [0], [.....
 ])
 AT_CLEANUP
 
+AT_SETUP([histogram])
+AT_KEYWORDS([histogram])
+AT_CHECK([ovstest test-histogram], [0], [])
+AT_CLEANUP
+
 AT_SETUP([cuckoo hash])
 AT_KEYWORDS([cmap])
 AT_CHECK([ovstest test-cmap check 1], [0], [...
