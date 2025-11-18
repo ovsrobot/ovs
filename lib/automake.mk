@@ -124,6 +124,8 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/dp-packet-gso.c \
 	lib/dp-packet-gso.h \
 	lib/dpdk.h \
+	lib/dpif-metrics.c \
+	lib/dpif-metrics.h \
 	lib/dpif-netdev-extract-study.c \
 	lib/dpif-netdev-lookup.h \
 	lib/dpif-netdev-lookup.c \
@@ -200,6 +202,13 @@ lib_libopenvswitch_la_SOURCES = \
 	lib/memory.c \
 	lib/memory.h \
 	lib/meta-flow.c \
+	lib/metrics.c \
+	lib/metrics-array.c \
+	lib/metrics-histogram.c \
+	lib/metrics-visitor.c \
+	lib/metrics-unixctl.c \
+	lib/metrics.h \
+	lib/metrics-private.h \
 	lib/mov-avg.h \
 	lib/mpsc-queue.c \
 	lib/mpsc-queue.h \

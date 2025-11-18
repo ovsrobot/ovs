@@ -107,7 +107,7 @@ setup_args = dict(
                                       extra_compile_args=extra_cflags,
                                       extra_link_args=extra_libs)],
     cmdclass={'build_ext': try_build_ext},
-    install_requires=['sortedcontainers'],
+    install_requires=['sortedcontainers', 'prometheus_client'],
     extras_require={':sys_platform == "win32"': ['pywin32 >= 1.0'],
                     'dns': ['unbound'],
                     'flow': flow_extras_require,

@@ -483,6 +483,7 @@ fi
 %{_bindir}/ovs-docker
 %{_bindir}/ovs-dpctl
 %{_bindir}/ovs-dpctl-top
+%{_bindir}/ovs-metrics
 %{_bindir}/ovs-ofctl
 %{_bindir}/ovs-vsctl
 %{_bindir}/ovsdb-client
@@ -513,6 +514,7 @@ fi
 %{_mandir}/man8/ovs-dpctl.8*
 %{_mandir}/man8/ovs-dpctl-top.8*
 %{_mandir}/man8/ovs-kmod-ctl.8*
+%{_mandir}/man8/ovs-metrics.8*
 %{_mandir}/man8/ovs-ofctl.8*
 %{_mandir}/man8/ovs-pki.8*
 %{_mandir}/man8/ovs-vsctl.8*

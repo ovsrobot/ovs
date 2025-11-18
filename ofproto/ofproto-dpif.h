@@ -49,6 +49,7 @@
 #include "dpif.h"
 #include "fail-open.h"
 #include "hmapx.h"
+#include "metrics.h"
 #include "odp-util.h"
 #include "id-pool.h"
 #include "ovs-atomic.h"
@@ -374,6 +375,9 @@ struct ofproto_dpif *ofproto_dpif_lookup_by_uuid(const struct uuid *uuid);
 
 ovs_version_t ofproto_dpif_get_tables_version(struct ofproto_dpif *);
 
+const struct shash_node **
+ofproto_dpif_get_ofprotos(struct shash *ofproto_shash);
+
 void ofproto_dpif_credit_table_stats(struct ofproto_dpif *, uint8_t table_id,
                                      uint64_t n_matches, uint64_t n_misses);
 
@@ -418,5 +422,10 @@ bool ofproto_dpif_ct_zone_timeout_policy_get_name(
 
 bool ovs_explicit_drop_action_supported(struct ofproto_dpif *);
 bool ovs_psample_supported(struct ofproto_dpif *);
+
+void ofproto_dpif_metrics_register(void);
+
+METRICS_DECLARE(ofproto_dpif);
+METRICS_DECLARE(foreach_dpif_backer);
 
 #endif /* ofproto-dpif.h */

@@ -10,6 +10,7 @@ usr/bin/ovs-tcpdump
 usr/bin/ovs-tcpundump
 usr/bin/ovs-vlan-test
 usr/bin/ovs-vsctl
+usr/bin/ovs-metrics
 usr/sbin/ovs-vswitchd usr/lib/openvswitch-switch/
 usr/share/man/man1/ovs-pcap.1
 usr/share/man/man1/ovs-tcpundump.1
@@ -22,6 +23,7 @@ usr/share/man/man8/ovs-tcpdump.8
 usr/share/man/man8/ovs-vlan-test.8
 usr/share/man/man8/ovs-vsctl.8
 usr/share/man/man8/ovs-vswitchd.8
+usr/share/man/man8/ovs-metrics.8
 usr/share/openvswitch/scripts/ovs-check-dead-ifs
 usr/share/openvswitch/scripts/ovs-ctl
 usr/share/openvswitch/scripts/ovs-kmod-ctl

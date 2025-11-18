@@ -379,6 +379,7 @@
 #include <stdint.h>
 
 #include "dpdk.h"
+#include "dpif-metrics.h"
 #include "dp-packet.h"
 #include "netdev.h"
 #include "openflow/openflow.h"

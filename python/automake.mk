@@ -39,6 +39,7 @@ ovs_pyfiles = \
 	python/ovs/flow/ofp_fields.py \
 	python/ovs/json.py \
 	python/ovs/jsonrpc.py \
+	python/ovs/metrics.py \
 	python/ovs/ovsuuid.py \
 	python/ovs/poller.py \
 	python/ovs/process.py \

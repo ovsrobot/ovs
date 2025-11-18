@@ -595,6 +595,8 @@ void ofproto_ref(struct ofproto *);
 void ofproto_unref(struct ofproto *);
 bool ofproto_try_ref(struct ofproto *);
 
+void ofproto_metrics_register(void);
+
 #ifdef  __cplusplus
 }
 #endif

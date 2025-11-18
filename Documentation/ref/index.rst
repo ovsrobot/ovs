@@ -43,6 +43,7 @@ time:
    ovs-appctl.8
    ovs-ctl.8
    ovs-flowviz.8
+   ovs-metrics.8
    ovs-l3ping.8
    ovs-pki.8
    ovs-sim.1

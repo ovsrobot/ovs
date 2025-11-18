@@ -28,6 +28,7 @@
 #include "fail-open.h"
 #include "guarded-list.h"
 #include "latch.h"
+#include "metrics.h"
 #include "openvswitch/list.h"
 #include "netlink.h"
 #include "openvswitch/ofpbuf.h"
@@ -114,6 +115,7 @@ struct revalidator {
     struct udpif *udpif;               /* Parent udpif. */
     pthread_t thread;                  /* Thread ID. */
     unsigned int id;                   /* ovsthread_id_self(). */
+    struct histogram flow_del_latency;
 };
 
 /* An upcall handler for ofproto_dpif.
@@ -1002,6 +1004,9 @@ udpif_revalidator(void *arg)
     long long int start_time = 0;
     uint64_t last_reval_seq = 0;
     size_t n_flows = 0;
+    histogram_walls_set_log(&revalidator->flow_del_latency,
+                            1, 10000);
+
 
     revalidator->id = ovsthread_id_self();
     for (;;) {
@@ -2957,6 +2962,10 @@ revalidate(struct revalidator *revalidator)
             if (kill_them_all || (used && used < now - max_idle)) {
                 result = UKEY_DELETE;
                 del_reason = (kill_them_all) ? FDR_FLOW_LIMIT : FDR_FLOW_IDLE;
+                if (used && used < now - max_idle) {
+                    histogram_add_sample(&revalidator->flow_del_latency,
+                                         (now - max_idle) - used);
+                }
             } else {
                 result = revalidate_ukey(udpif, ukey, &stats, &odp_actions,
                                          reval_seq, &recircs, &del_reason);
@@ -3739,3 +3748,115 @@ udpif_flow_unprogram(struct udpif *udpif, struct udpif_key *ukey,
 
     return opsp->error;
 }
+
+enum {
+    OF_DPIF_TOTAL_HANDLERS,
+    OF_DPIF_TOTAL_REVALIDATORS,
+};
+
+static void
+udpif_total_read_value(double *values, void *it OVS_UNUSED)
+{
+    uint32_t n_handlers_, n_revalidators_;
+    struct udpif *udpif;
+
+    n_handlers_ = 0;
+    n_revalidators_ = 0;
+    LIST_FOR_EACH (udpif, list_node, &all_udpifs) {
+        n_handlers_ += udpif->n_handlers;
+        n_revalidators_ += udpif->n_revalidators;
+    }
+
+    values[OF_DPIF_TOTAL_HANDLERS] = n_handlers_;
+    values[OF_DPIF_TOTAL_REVALIDATORS] = n_revalidators_;
+}
+
+METRICS_ENTRIES(ofproto_dpif, udpif_total_entries,
+    "", udpif_total_read_value,
+    [OF_DPIF_TOTAL_HANDLERS] = METRICS_GAUGE(handler_n_threads,
+        "Number of upcall handler threads in total."),
+    [OF_DPIF_TOTAL_REVALIDATORS] = METRICS_GAUGE(revalidator_n_threads,
+        "Number of revalidator threads in total."),
+);
+
+static void
+do_foreach_udpif(metrics_visitor_cb callback,
+                 struct metrics_visitor *visitor,
+                 struct metrics_node *node,
+                 struct metrics_label *labels,
+                 size_t n_labels OVS_UNUSED)
+{
+    struct udpif *udpif;
+
+    LIST_FOR_EACH (udpif, list_node, &all_udpifs) {
+        visitor->it = udpif;
+        labels[0].value = dpif_name(udpif->dpif);
+        callback(visitor, node);
+    }
+}
+
+METRICS_FOREACH(ofproto_dpif, foreach_udpif,
+                do_foreach_udpif, "name");
+
+enum {
+    OF_DPIF_N_HANDLERS,
+    OF_DPIF_N_REVALIDATORS,
+};
+
+static void
+udpif_read_value(double *values, void *it)
+{
+    struct udpif *udpif = it;
+
+    values[OF_DPIF_N_HANDLERS] = udpif->n_handlers;
+    values[OF_DPIF_N_REVALIDATORS] = udpif->n_revalidators;
+}
+
+METRICS_ENTRIES(foreach_udpif, udpif_entries,
+    "datapath", udpif_read_value,
+    [OF_DPIF_N_HANDLERS] = METRICS_GAUGE(n_handlers,
+        "Number of upcall handler threads."),
+    [OF_DPIF_N_REVALIDATORS] = METRICS_GAUGE(n_revalidators,
+        "Number of revalidator threads."),
+);
+
+METRICS_IF(foreach_udpif, foreach_udpif_dbg, metrics_dbg_enabled);
+
+static void
+do_foreach_revalidator(metrics_visitor_cb callback,
+                       struct metrics_visitor *visitor,
+                       struct metrics_node *node,
+                       struct metrics_label *labels,
+                       size_t n_labels OVS_UNUSED)
+{
+    struct udpif *udpif = visitor->it;
+    struct revalidator *r;
+    char id[30];
+    size_t i;
+
+    labels[0].value = id;
+
+    for (i = 0; i < udpif->n_revalidators; i++) {
+        r = &udpif->revalidators[i];
+        snprintf(id, sizeof id, "%u", r->id);
+        visitor->it = r;
+        callback(visitor, node);
+    }
+    labels[0].value = NULL;
+}
+
+METRICS_FOREACH(foreach_udpif_dbg, foreach_revalidator_dbg,
+                do_foreach_revalidator, "thread_num");
+
+static struct histogram *
+revalidator_flow_del_latency_get(void *it)
+{
+    struct revalidator *r = it;
+
+    return &r->flow_del_latency;
+}
+
+METRICS_HISTOGRAM(foreach_revalidator_dbg, revalidator_flow_del_latency,
+                  "A distribution of flow deletion orders latency for this "
+                  "revalidator in milliseconds.",
+                  revalidator_flow_del_latency_get);

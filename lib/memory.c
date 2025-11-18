@@ -19,8 +19,10 @@
 #include <stdbool.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include "dpdk.h"
 #include "openvswitch/dynamic-string.h"
 #include "openvswitch/poll-loop.h"
+#include "metrics.h"
 #include "simap.h"
 #include "timeval.h"
 #include "unixctl.h"
@@ -167,6 +169,9 @@ memory_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
 }
 
 static void
+memory_metrics_register(void);
+
+static void
 memory_init(void)
 {
     static bool inited = false;
@@ -175,7 +180,134 @@ memory_init(void)
         inited = true;
         unixctl_command_register("memory/show", "", 0, 0,
                                  memory_unixctl_show, NULL);
+        memory_metrics_register();
 
         next_check = time_boot_msec() + MEMORY_CHECK_INTERVAL;
     }
 }
+
+#if defined(__linux__) && defined(__GLIBC__)
+
+struct memory_measure {
+    size_t vms; /* Total size in bytes. */
+    size_t rss; /* RSS in bytes. */
+    size_t shared; /* Resident shared pages: RssFile+RssShmem in bytes. */
+    size_t text; /* Text size of the process (code) in bytes. */
+    size_t data; /* (data + stack) size of the process in bytes. */
+};
+
+static bool
+memory_read_statm(struct memory_measure *m)
+{
+    size_t pagesize = get_page_size();
+    FILE *stream;
+    int n;
+
+    stream = fopen("/proc/self/statm", "r");
+    if (!stream) {
+        return false;
+    }
+
+    n = fscanf(stream,
+            "%lu"  /* vmSize */
+            "%lu"  /* RSSize */
+            "%lu"  /* Shared */
+            "%lu"  /* Text */
+            "%*d"  /* (lib) */
+            "%lu"  /* Data + stack */
+            "%*d"  /* (dirty pages) */
+            , &m->vms, &m->rss,
+            &m->shared, &m->text, &m->data);
+
+    fclose(stream);
+
+    if (n != 5) {
+        return false;
+    }
+
+    m->vms *= pagesize;
+    m->rss *= pagesize;
+    m->shared *= pagesize;
+    m->text *= pagesize;
+    m->data *= pagesize;
+
+    return true;
+}
+
+static void
+memory_measure_read(struct memory_measure *m)
+{
+    memset(m, 0, sizeof(*m));
+    memory_read_statm(m);
+}
+
+METRICS_SUBSYSTEM(memory);
+
+enum {
+    MEMORY_VMS,
+    MEMORY_RSS,
+    MEMORY_DATA,
+    MEMORY_HUGE_MAPPED,
+    MEMORY_HUGE_FREE,
+    MEMORY_HUGE_IN_USE,
+    MEMORY_TOTAL_MAPPED,
+};
+
+static void
+memory_read_value(double *values, void *it OVS_UNUSED)
+{
+    struct ovs_dpdk_hugepage_stats odhs;
+    struct memory_measure m;
+
+    memory_measure_read(&m);
+
+    values[MEMORY_VMS] = m.vms;
+    values[MEMORY_RSS] = m.rss;
+    values[MEMORY_DATA] = m.data;
+
+    memset(&odhs, 0, sizeof odhs);
+    dpdk_get_hugepage_stats(&odhs);
+
+    values[MEMORY_HUGE_MAPPED] = odhs.capacity_bytes;
+    values[MEMORY_HUGE_FREE] = odhs.free_bytes;
+    values[MEMORY_HUGE_IN_USE] = odhs.allocated_bytes;
+
+    values[MEMORY_TOTAL_MAPPED] = m.rss + odhs.capacity_bytes;
+}
+
+METRICS_ENTRIES(memory, memory_entries,
+    "memory", memory_read_value,
+    [MEMORY_VMS] = METRICS_GAUGE(vmsize,
+        "The process virtual memory size in bytes."),
+    [MEMORY_RSS] = METRICS_GAUGE(rss,
+        "The process resident set size in bytes."),
+    [MEMORY_DATA] = METRICS_GAUGE(data,
+        "The process sum of data and stack size in bytes."),
+    [MEMORY_HUGE_MAPPED] = METRICS_GAUGE(hugepage_mapped,
+        "The amount of hugepage mapped by the process in bytes."),
+    [MEMORY_HUGE_FREE] = METRICS_GAUGE(hugepage_free,
+        "The amount of memory currently available from pre-allocated hugepages in bytes."),
+    [MEMORY_HUGE_IN_USE] = METRICS_GAUGE(hugepage_allocated,
+        "The amount of memory currently used from pre-allocated hugepages in bytes."),
+    [MEMORY_TOTAL_MAPPED] = METRICS_GAUGE(total_mapped,
+        "The amount of memory of all types (heap, hugepages) mapped by the process in bytes."),
+);
+
+static void
+memory_metrics_register(void)
+{
+    static bool inited = false;
+
+    if (!inited) {
+        METRICS_REGISTER(memory_entries);
+        inited = true;
+    }
+}
+
+#else /* !__linux__ || !__GLIBC__ */
+
+static void
+memory_metrics_register(void)
+{}
+
+#endif /* __linux__ && __GLIBC__ */

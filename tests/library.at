@@ -318,3 +318,7 @@ AT_CHECK([ovstest test-cooperative-multitasking-nested-yield], [0], [], [dnl
 cooperative_multitasking|ERR|Nested yield avoided, this is a bug! Enable debug logging for more details.
 ])
 AT_CLEANUP
+
+AT_SETUP([metrics framework])
+AT_CHECK([ovstest test-metrics > /dev/null], [0], [])
+AT_CLEANUP
