@@ -114,6 +114,7 @@ COVERAGE_DEFINE(datapath_drop_upcall_error);
 COVERAGE_DEFINE(datapath_drop_lock_error);
 COVERAGE_DEFINE(datapath_drop_userspace_action_error);
 COVERAGE_DEFINE(datapath_drop_tunnel_push_error);
+COVERAGE_DEFINE(datapath_drop_tunnel_mtu_drop);
 COVERAGE_DEFINE(datapath_drop_tunnel_pop_error);
 COVERAGE_DEFINE(datapath_drop_recirc_error);
 COVERAGE_DEFINE(datapath_drop_invalid_port);
@@ -9033,13 +9034,78 @@ pmd_send_port_cache_lookup(const struct dp_netdev_pmd_thread *pmd,
     return tx_port_lookup(&pmd->send_port_cache, port_no);
 }
 
+static struct dp_packet *
+netdev_generate_icmp_frag_needed(struct dp_packet *packet, int mtu)
+{
+    const struct eth_header *eth;
+    const void *l3;
+    size_t l3_len;
+    bool is_ipv6;
+
+    eth = dp_packet_eth(packet);
+    if (!eth) {
+        return NULL;
+    }
+
+    is_ipv6 = (eth->eth_type == htons(ETH_TYPE_IPV6));
+
+    if (!is_ipv6 && eth->eth_type != htons(ETH_TYPE_IP)) {
+        return NULL;
+    }
+
+    l3 = dp_packet_l3(packet);
+    l3_len = dp_packet_l3_size(packet);
+
+    if (is_ipv6) {
+        const struct ovs_16aligned_ip6_hdr *ip6;
+        struct in6_addr ip6_src;
+        struct in6_addr ip6_dst;
+        size_t max_payload;
+
+        ip6 = (const struct ovs_16aligned_ip6_hdr *) l3;
+
+        max_payload = 1280 - ETH_HEADER_LEN - IPV6_HEADER_LEN -
+                      ICMP6_DATA_HEADER_LEN;
+        l3_len = l3_len < max_payload ? l3_len : max_payload;
+
+        memcpy(&ip6_src, &ip6->ip6_dst, sizeof(ip6_dst));
+        memcpy(&ip6_dst, &ip6->ip6_src, sizeof(ip6_dst));
+        return compose_ipv6_ptb(eth->eth_dst, eth->eth_src,
+                                &ip6_dst, &ip6_src,
+                                htonl(mtu), l3, l3_len);
+
+    } else {
+        const struct ip_header *ip;
+        size_t icmp_payload_len;
+        size_t available;
+
+        ip = (const struct ip_header *) l3;
+        icmp_payload_len = IP_IHL(ip->ip_ihl_ver) * 4 + ICMP_ERROR_DATA_L4_LEN;
+
+        available = l3_len;
+        if (icmp_payload_len > available) {
+            icmp_payload_len = available;
+        }
+
+        return compose_ipv4_fn(eth->eth_dst, eth->eth_src,
+                               get_16aligned_be32(&ip->ip_dst),
+                               get_16aligned_be32(&ip->ip_src),
+                               htons(mtu), l3, icmp_payload_len);
+    }
+}
+
 static int
-push_tnl_action(const struct dp_netdev_pmd_thread *pmd,
+push_tnl_action(struct dp_netdev_pmd_thread *pmd,
                 const struct nlattr *attr,
                 struct dp_packet_batch *batch)
 {
-    struct tx_port *tun_port;
+    size_t i, size = dp_packet_batch_size(batch);
     const struct ovs_action_push_tnl *data;
+    uint32_t *depth = recirc_depth_get();
+    struct dp_packet *packet;
+    struct tx_port *tun_port;
+    struct netdev *netdev;
+    int mtu;
     int err;
 
     data = nl_attr_get(attr);
@@ -9049,7 +9115,41 @@ push_tnl_action(const struct dp_netdev_pmd_thread *pmd,
         err = -EINVAL;
         goto error;
     }
-    err = netdev_push_header(tun_port->port->netdev, batch, data);
+
+    netdev = tun_port->port->netdev;
+    if (netdev->mtu_user_config &&
+        netdev_get_mtu(netdev, &mtu) == 0 &&
+        *depth < MAX_RECIRC_DEPTH) {
+        struct dp_packet_batch icmp_batch;
+
+        dp_packet_batch_init(&icmp_batch);
+        DP_PACKET_BATCH_REFILL_FOR_EACH (i, size, packet, batch) {
+            int len = dp_packet_get_send_len(packet) + data->header_len;
+            if (mtu < len) {
+                struct dp_packet *icmp;
+
+                COVERAGE_INC(datapath_drop_tunnel_mtu_drop);
+                icmp = netdev_generate_icmp_frag_needed(packet, mtu);
+                dp_packet_delete(packet);
+
+                if (!icmp) {
+                    continue;
+                }
+
+                pkt_metadata_init(&icmp->md, data->tnl_port);
+
+                dp_packet_batch_add(&icmp_batch, icmp);
+            } else {
+                dp_packet_batch_refill(batch, packet, i);
+            }
+        }
+        if (dp_packet_batch_size(&icmp_batch) > 0) {
+            (*depth)++;
+            dp_netdev_recirculate(pmd, &icmp_batch);
+            (*depth)--;
+        }
+    }
+    err = netdev_push_header(netdev, batch, data);
     if (!err) {
         return 0;
     }

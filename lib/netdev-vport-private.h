@@ -42,6 +42,7 @@ struct netdev_vport {
     /* Tunnels. */
     char egress_iface[IFNAMSIZ];
     bool carrier_status;
+    int mtu;
 
     /* Patch Ports. */
     char *peer;
