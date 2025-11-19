@@ -53,7 +53,7 @@ OVS_VSWITCHD_START([add-port br0 p0 -- set Interface p0 type=gre \
 
 ovs-appctl time/stop
 AT_CHECK([ovs-appctl ofproto/list-tunnels], [0], [dnl
-port 1: p0 (gre: ::->1.2.3.4, key=0, legacy_l2, dp port=1, ttl=64)
+port 1: p0 (gre: ::->1.2.3.4, key=0, legacy_l2, port=0, ttl=64)
 ])
 
 AT_CHECK([ovs-vsctl set Interface p0 cfm_mpid=1])

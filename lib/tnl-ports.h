@@ -24,9 +24,10 @@
 #include "packets.h"
 #include "util.h"
 
+struct netdev_tunnel_config;
 odp_port_t tnl_port_map_lookup(struct flow *flow, struct flow_wildcards *wc);
 
-void tnl_port_map_insert(odp_port_t, ovs_be16 tp_port,
+void tnl_port_map_insert(odp_port_t,  const struct netdev_tunnel_config *cfg,
                          const char dev_name[], const char type[]);
 
 void tnl_port_map_delete(odp_port_t, const char type[]);

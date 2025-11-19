@@ -80,10 +80,10 @@ on_exit 'ip link del ovs-veth0'
 
 AT_CHECK([ovs-vsctl add-port br0 ovs-veth0])
 
-OVS_WAIT_UNTIL([ip link show | grep -q " genev_sys_[[0-9]]*: .* ovs-system "])
+OVS_WAIT_UNTIL([ip link show | grep -q " genev_sys_6081: .* ovs-system "])
 
 dnl Store the output of ip link for geneve port to compare ifindex later.
-AT_CHECK([ip link show | grep " genev_sys_[[0-9]]*: .* ovs-system " > geneve.0])
+AT_CHECK([ip link show | grep " genev_sys_6081: .* ovs-system " > geneve.0])
 
 AT_CHECK([ovs-appctl dpctl/show | grep port], [0], [dnl
   port 0: ovs-system (internal)
@@ -95,7 +95,7 @@ AT_CHECK([ovs-appctl dpctl/show | grep port], [0], [dnl
 OVS_APP_EXIT_AND_WAIT_BY_TARGET([ovs-vswitchd], [ovs-vswitchd.pid])
 
 dnl Check that geneve backing interface is still in the datapath.
-AT_CHECK([ip link show | grep " genev_sys_[[0-9]]*: .* ovs-system " | diff -u - geneve.0])
+AT_CHECK([ip link show | grep " genev_sys_6081: .* ovs-system " | diff -u - geneve.0])
 
 dnl Remove the veth port from the database while ovs-vswitchd is down.
 AT_CHECK([ovs-vsctl --no-wait del-port ovs-veth0])
@@ -118,7 +118,7 @@ AT_CHECK([ovs-appctl dpctl/show | grep port], [0], [dnl
 
 dnl Check that geneve backing interface is still in the datapath and it wasn't
 dnl re-created, i.e. the ifindex is the same.
-AT_CHECK([ip link show | grep " genev_sys_[[0-9]]*: .* ovs-system " | diff -u - geneve.0])
+AT_CHECK([ip link show | grep " genev_sys_6081: .* ovs-system " | diff -u - geneve.0])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
