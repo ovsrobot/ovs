@@ -589,11 +589,13 @@ dpif_port_open_type(const char *datapath_type, const char *port_type)
 int
 dpif_port_add(struct dpif *dpif, struct netdev *netdev, odp_port_t *port_nop)
 {
+    const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
     const char *netdev_name = netdev_get_name(netdev);
     odp_port_t port_no = ODPP_NONE;
     int error;
 
     COVERAGE_INC(dpif_port_add);
+    netdev_set_dpif_type(netdev, dpif_type_str);
 
     if (port_nop) {
         port_no = *port_nop;
@@ -606,10 +608,8 @@ dpif_port_add(struct dpif *dpif, struct netdev *netdev, odp_port_t *port_nop)
 
         if (!dpif_is_tap_port(netdev_get_type(netdev))) {
 
-            const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
             struct dpif_port dpif_port;
 
-            netdev_set_dpif_type(netdev, dpif_type_str);
 
             dpif_port.type = CONST_CAST(char *, netdev_get_type(netdev));
             dpif_port.name = CONST_CAST(char *, netdev_name);

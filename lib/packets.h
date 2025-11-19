@@ -1184,6 +1184,11 @@ static inline bool ipv6_addr_equals(const struct in6_addr *a,
 #endif
 }
 
+/* Returns true if 'a' and 'b' are equal for set mask bits. */
+bool ipv6_addr_equals_masked(const struct in6_addr *a,
+                             const struct in6_addr *b,
+                             const struct in6_addr *mask);
+
 /* Checks the IPv6 address in 'mask' for all zeroes. */
 static inline bool ipv6_mask_is_any(const struct in6_addr *mask) {
     return ipv6_addr_equals(mask, &in6addr_any);

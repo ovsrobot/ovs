@@ -132,8 +132,15 @@ netdev_vport_get_dpif_port(const struct netdev *netdev,
 {
     const struct netdev_class *class = netdev_get_class(netdev);
     const char *dpif_port = netdev_vport_class_get_dpif_port(class);
+    const char *dpif_type = netdev_get_dpif_type(netdev);
 
     if (!dpif_port) {
+        return netdev_get_name(netdev);
+    }
+
+    if (class->get_config == get_tunnel_config && dpif_type &&
+        strcmp(dpif_type, "system")) {
+        /* For userspace datapath tunnels, always return the netdev name. */
         return netdev_get_name(netdev);
     }
 

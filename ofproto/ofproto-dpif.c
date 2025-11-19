@@ -4141,6 +4141,9 @@ port_add(struct ofproto *ofproto_, struct netdev *netdev)
         sset_add(&ofproto->ghost_ports, netdev_get_name(netdev));
         return 0;
     }
+    struct dpif *dpif = ofproto->backer->dpif;
+    const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
+    netdev_set_dpif_type(netdev, dpif_type_str);
 
     dp_port_name = netdev_vport_get_dpif_port(netdev, namebuf, sizeof namebuf);
     if (!dpif_port_exists(ofproto->backer->dpif, dp_port_name)) {
@@ -4156,9 +4159,6 @@ port_add(struct ofproto *ofproto_, struct netdev *netdev)
                       dp_port_name, odp_to_u32(port_no));
         }
     } else {
-        struct dpif *dpif = ofproto->backer->dpif;
-        const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
-        netdev_set_dpif_type(netdev, dpif_type_str);
     }
 
     if (netdev_get_tunnel_config(netdev)) {
