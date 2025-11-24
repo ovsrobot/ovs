@@ -2283,12 +2283,11 @@ port_construct(struct ofport *port_)
             dpif_port_destroy(&dpif_port);
             return EBUSY;
         }
-
-        ovs_rwlock_wrlock(&ofproto->backer->odp_to_ofport_lock);
-        hmap_insert(&ofproto->backer->odp_to_ofport_map, &port->odp_port_node,
-                    hash_odp_port(port->odp_port));
-        ovs_rwlock_unlock(&ofproto->backer->odp_to_ofport_lock);
     }
+    ovs_rwlock_wrlock(&ofproto->backer->odp_to_ofport_lock);
+    hmap_insert(&ofproto->backer->odp_to_ofport_map, &port->odp_port_node,
+                hash_odp_port(port->odp_port));
+    ovs_rwlock_unlock(&ofproto->backer->odp_to_ofport_lock);
     dpif_port_destroy(&dpif_port);
 
     if (ofproto->sflow) {
@@ -2350,7 +2349,7 @@ port_destruct(struct ofport *port_, bool del)
         port->peer = NULL;
     }
 
-    if (port->odp_port != ODPP_NONE && !port->is_tunnel) {
+    if (port->odp_port != ODPP_NONE) {
         ovs_rwlock_wrlock(&ofproto->backer->odp_to_ofport_lock);
         hmap_remove(&ofproto->backer->odp_to_ofport_map, &port->odp_port_node);
         ovs_rwlock_unlock(&ofproto->backer->odp_to_ofport_lock);

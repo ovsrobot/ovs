@@ -940,3 +940,72 @@ AT_CHECK([grep -q "GENEVE_ACT" stdout])
 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([tunnel_push_pop_ipv6 - tunnel ICMPv6 fragmentation needed])
+OVS_VSWITCHD_START(
+    [add-port br0 p0 \
+     -- set Interface p0 type=dummy ofport_request=1 \
+                         other-config:hwaddr=aa:55:aa:55:00:00])
+AT_CHECK([ovs-appctl vlog/set dpif_netdev:dbg])
+AT_CHECK([ovs-vsctl add-br int-br -- set bridge int-br datapath_type=dummy])
+AT_CHECK([ovs-vsctl add-port int-br t1 \
+          -- set Interface t1 type=geneve \
+                              options:remote_ip=2001:cafe::92 \
+                              options:key=123 ofport_request=2 \
+                              options:df_default=true mtu_request=1400])
+
+dnl Setup an IP address.
+AT_CHECK([ovs-appctl netdev-dummy/ip6addr br0 2001:cafe::88/64], [0], [OK
+])
+dnl Checking that a local route for added IP was successfully installed.
+AT_CHECK([ovs-appctl ovs/route/show | grep Cached | sort], [0], [dnl
+Cached: 2001:cafe::/64 dev br0 SRC 2001:cafe::88 local
+])
+
+AT_CHECK([ovs-ofctl add-flow br0 action=normal])
+
+dnl This Neighbor Advertisement from p0 has two effects:
+dnl 1. The neighbor cache will learn that 2001:cafe::92 is at f8:bc:12:44:34:b6.
+dnl 2. The br0 mac learning will learn that f8:bc:12:44:34:b6 is on p0.
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 dnl
+ 'recirc_id(0),in_port(1),dnl
+  eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00),eth_type(0x86dd),dnl
+  ipv6(src=2001:cafe::92,dst=2001:cafe::88,label=0,proto=58,tclass=0,hlimit=255,frag=no),dnl
+  icmpv6(type=136,code=0),dnl
+  nd(target=2001:cafe::92,sll=00:00:00:00:00:00,tll=f8:bc:12:44:34:b6)'
+])
+
+AT_CHECK([ovs-vsctl -- set Interface int-br options:pcap=int-br.pcap])
+
+dnl Verify MTU is set on tunnel interface
+AT_CHECK([ovs-vsctl get interface t1 mtu], [0], [dnl
+1400
+])
+
+AT_CHECK([ovs-ofctl add-flow int-br "priority=100,in_port=LOCAL,actions=output:2"])
+AT_CHECK([ovs-ofctl add-flow int-br "priority=1,actions=normal"])
+
+dnl Send a 1500 byte packet, exceeding the tunnel's MTU.
+zeros1458=$(printf '0%.0s' $(seq 2916))
+AT_CHECK([ovs-appctl netdev-dummy/receive int-br ]dnl
+[aa55aa550000f8bc1244cafe86dd]dnl
+[6000000005ba11402001cafe0000000000000000000000922001cafe000000000000000000000088]dnl
+[c853003a05ba54d3]dnl
+[${zeros1458}])
+
+ovs-appctl time/warp 1000
+
+dnl Verify that tunnel drop occured.
+AT_CHECK([ovs-appctl coverage/read-counter datapath_drop_tunnel_mtu_drop], [0], [1
+])
+
+dnl Check for ICMP Fragmentation Needed.
+AT_CHECK([ovs-pcap int-br.pcap 2>/dev/null | grep -q ]dnl
+[f8bc1244cafeaa55aa55000086dd]dnl
+[6000000004ca3aff2001cafe0000000000000000000000922001cafe000000000000000000000088]dnl
+[0200ab3a00000578]dnl
+[6000000005ba11402001cafe0000000000000000000000922001cafe000000000000000000000088]dnl
+[c853003a05ba54d3], [0])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP

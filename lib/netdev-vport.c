@@ -101,6 +101,33 @@ get_netdev_tunnel_config(const struct netdev *netdev)
     return vport_tunnel_config(netdev_vport_cast(netdev));
 }
 
+static int
+get_tunnel_mtu(const struct netdev *netdev, int *mtup)
+{
+    struct netdev_vport *dev = netdev_vport_cast(netdev);
+
+    ovs_mutex_lock(&dev->mutex);
+    *mtup = dev->mtu;
+    ovs_mutex_unlock(&dev->mutex);
+
+    return 0;
+}
+
+static int
+set_tunnel_mtu(struct netdev *netdev, int mtu)
+{
+    struct netdev_vport *dev = netdev_vport_cast(netdev);
+
+    ovs_mutex_lock(&dev->mutex);
+    if (dev->mtu != mtu) {
+        dev->mtu = mtu;
+    }
+    ovs_mutex_unlock(&dev->mutex);
+    netdev_change_seq_changed(netdev);
+
+    return 0;
+}
+
 bool
 netdev_vport_is_patch(const struct netdev *netdev)
 {
@@ -423,7 +450,8 @@ parse_tunnel_ip(const char *value, bool accept_mcast, bool *flow,
         if (lookup_ipv6(value, ipv6)) {
             return ENOENT;
         }
-        if (!accept_mcast && ipv6_addr_is_multicast(ipv6)) {
+        if (!accept_mcast &&
+            ipv6_addr_is_multicast((union ovs_16aligned_in6_addr *) ipv6)) {
             return EINVAL;
         }
         *protocol = ETH_TYPE_IPV6;
@@ -1265,6 +1293,8 @@ netdev_vport_get_ifindex(const struct netdev *netdev_)
     .get_config = get_tunnel_config,                \
     .set_config = set_tunnel_config,                \
     .get_tunnel_config = get_netdev_tunnel_config,  \
+    .get_mtu = get_tunnel_mtu,                      \
+    .set_mtu = set_tunnel_mtu,                      \
     .get_status = tunnel_get_status
 
 void

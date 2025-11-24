@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <netinet/icmp6.h>
 #ifndef PACKETS_H
 #define PACKETS_H 1
 
@@ -671,6 +672,16 @@ ip_is_multicast(ovs_be32 ip)
     return (ip & htonl(0xf0000000)) == htonl(0xe0000000);
 }
 static inline bool
+ip_is_broadcast(ovs_be32 ip)
+{
+    return ip == htonl(0xffffffff);
+}
+static inline bool
+ip_is_loopback(ovs_be32 ip)
+{
+    return (ip & htonl(0xff000000)) == htonl(0x7f000000);
+}
+static inline bool
 ip_is_local_multicast(ovs_be32 ip)
 {
     return (ip & htonl(0xffffff00)) == htonl(0xe0000000);
@@ -788,6 +799,20 @@ BUILD_ASSERT_DECL(ICMP_HEADER_LEN == sizeof(struct icmp_header));
 
 /* ICMPV4 */
 #define ICMP_ERROR_DATA_L4_LEN 8
+
+static inline bool
+packet_icmp_is_err(uint8_t type) {
+    switch (type) {
+    case ICMP4_DST_UNREACH:
+    case ICMP4_SOURCEQUENCH:
+    case ICMP4_REDIRECT:
+    case ICMP4_TIME_EXCEEDED:
+    case ICMP4_PARAM_PROB:
+        return true;
+    default:
+        return false;
+    }
+}
 
 #define IGMP_HEADER_LEN 8
 struct igmp_header {
@@ -1035,6 +1060,19 @@ struct icmp6_data_header {
 };
 BUILD_ASSERT_DECL(ICMP6_DATA_HEADER_LEN == sizeof(struct icmp6_data_header));
 
+static inline bool
+packet_icmpv6_is_err(uint8_t type) {
+    switch (type) {
+    case ICMP6_DST_UNREACH:
+    case ICMP6_PACKET_TOO_BIG:
+    case ICMP6_TIME_EXCEEDED:
+    case ICMP6_PARAM_PROB:
+        return true;
+    default:
+        return false;
+    }
+}
+
 uint32_t packet_csum_pseudoheader6(const struct ovs_16aligned_ip6_hdr *);
 ovs_be16 packet_csum_upperlayer6(const struct ovs_16aligned_ip6_hdr *,
                                  const void *, uint8_t, uint16_t);
@@ -1206,8 +1244,23 @@ static inline bool ipv6_addr_is_set(const struct in6_addr *addr) {
     return !ipv6_addr_equals(addr, &in6addr_any);
 }
 
-static inline bool ipv6_addr_is_multicast(const struct in6_addr *ip) {
-    return ip->s6_addr[0] == 0xff;
+static inline bool
+ipv6_addr_is_multicast(const union ovs_16aligned_in6_addr *ip) {
+    return (ip->be16[0] & htons(0xff00)) == htons(0xff00);
+}
+
+static inline bool
+ipv6_addr_is_loopback(const union ovs_16aligned_in6_addr *ip) {
+    return ip->be16[0] == 0 && ip->be16[1] == 0 &&
+           ip->be16[2] == 0 && ip->be16[3] == 0 &&
+           ip->be16[5] == 0 && ip->be16[6] == 0;
+}
+
+static inline bool
+ipv6_addr_is_any(const union ovs_16aligned_in6_addr *ip) {
+    return ip->be16[0] == 0 && ip->be16[1] == 0 &&
+           ip->be16[2] == 0 && ip->be16[3] == 0 &&
+           ip->be16[5] == 0 && ip->be16[6] == htons(1);
 }
 
 static inline struct in6_addr
@@ -1667,6 +1720,17 @@ void compose_arp(struct dp_packet *, uint16_t arp_op,
                  const struct eth_addr arp_sha,
                  const struct eth_addr arp_tha, bool broadcast,
                  ovs_be32 arp_spa, ovs_be32 arp_tpa);
+struct dp_packet *compose_ipv6_ptb(const struct eth_addr eth_src,
+                                   const struct eth_addr eth_dst,
+                                   const struct in6_addr *ipv6_src,
+                                   const struct in6_addr *ipv6_dst,
+                                   ovs_be32 mtu, const void *body,
+                                   size_t body_len);
+struct dp_packet *compose_ipv4_fn(const struct eth_addr eth_src,
+                                   const struct eth_addr eth_dst,
+                                   ovs_be32 ip_src, ovs_be32 ip_dst,
+                                   ovs_be16 mtu, const void *body,
+                                   size_t body_len);
 void compose_nd_ns(struct dp_packet *, const struct eth_addr eth_src,
                    const struct in6_addr *ipv6_src,
                    const struct in6_addr *ipv6_dst);

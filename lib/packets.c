@@ -1783,6 +1783,102 @@ compose_ipv6(struct dp_packet *packet, uint8_t proto,
     return data;
 }
 
+/* Compose an ICMP Fragmentation Needed message. */
+struct dp_packet *
+compose_ipv4_fn(const struct eth_addr eth_src,
+                 const struct eth_addr eth_dst,
+                 const ovs_be32 ip_src,
+                 const ovs_be32 ip_dst,
+                 ovs_be16 mtu, const void *body, size_t body_len)
+{
+    struct icmp_header *icmp;
+    struct ip_header *ip;
+    struct dp_packet *b;
+
+    b = dp_packet_new(ETH_HEADER_LEN + IP_HEADER_LEN +
+                      ICMP_HEADER_LEN + body_len);
+    if (!b) {
+        return NULL;
+    }
+
+    ip = (struct ip_header *) eth_compose(b, eth_dst, eth_src, ETH_TYPE_IP,
+                                          IP_HEADER_LEN);
+
+    ip->ip_ihl_ver = IP_IHL_VER(5, IP_VERSION);
+    ip->ip_tos = 0xc0;
+    ip->ip_tot_len = htons(IP_HEADER_LEN + ICMP_HEADER_LEN + body_len);
+    ip->ip_id = 0;
+    ip->ip_frag_off = 0;
+    ip->ip_ttl = 64;
+    ip->ip_proto = IPPROTO_ICMP;
+    ip->ip_csum = 0;
+
+    put_16aligned_be32(&ip->ip_src, ip_src);
+    put_16aligned_be32(&ip->ip_dst, ip_dst);
+    ip->ip_csum = csum(ip, IP_HEADER_LEN);
+
+    icmp = (struct icmp_header *) dp_packet_put_zeros(b, ICMP_HEADER_LEN +
+                                                         body_len);
+
+    icmp->icmp_type = ICMP4_DST_UNREACH;
+    icmp->icmp_code = 4;
+    icmp->icmp_csum = 0;
+
+    icmp->icmp_fields.frag.mtu = mtu;
+
+    if (body && body_len) {
+        void *payload = (void *)(icmp + 1);
+        memcpy(payload, body, body_len);
+    }
+
+    uint32_t csum_val = csum_continue(0, icmp, ICMP_HEADER_LEN + body_len);
+    icmp->icmp_csum = csum_finish(csum_val);
+
+    dp_packet_set_l3(b, ip);
+    dp_packet_set_l4(b, icmp);
+
+    return b;
+}
+
+/* Compose an ICMP Packet Too Big message. */
+struct dp_packet *
+compose_ipv6_ptb(const struct eth_addr eth_src,
+                 const struct eth_addr eth_dst,
+                 const struct in6_addr *ipv6_src,
+                 const struct in6_addr *ipv6_dst,
+                 ovs_be32 mtu, const void *body, size_t body_len)
+{
+    struct dp_packet *b;
+        struct icmp6_data_header *icmp6;
+
+    b = dp_packet_new(ETH_HEADER_LEN + IPV6_HEADER_LEN +
+                      ICMP6_DATA_HEADER_LEN + body_len);
+    if (!b) {
+        return NULL;
+    }
+
+    eth_compose(b, eth_dst, eth_src, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
+
+    icmp6 = compose_ipv6(b, IPPROTO_ICMPV6, ipv6_src, ipv6_dst,
+                         0, 0, 255, ICMP6_DATA_HEADER_LEN + body_len);
+
+    icmp6->icmp6_base.icmp6_type = ICMP6_PACKET_TOO_BIG;
+    icmp6->icmp6_base.icmp6_code = 0;
+    icmp6->icmp6_base.icmp6_cksum = 0;
+    put_16aligned_be32(&icmp6->icmp6_data.be32[0], mtu);
+    if (body && body_len) {
+        void *payload = (void *)(icmp6 + 1);
+        memcpy(payload, body, body_len);
+    }
+
+    uint32_t icmp_csum = packet_csum_pseudoheader6(dp_packet_l3(b));
+    icmp6->icmp6_base.icmp6_cksum = csum_finish(
+        csum_continue(icmp_csum, icmp6, ICMP6_DATA_HEADER_LEN + body_len));
+
+    dp_packet_set_l4(b, icmp6);
+    return b;
+}
+
 /* Compose an IPv6 Neighbor Discovery Neighbor Solicitation message. */
 void
 compose_nd_ns(struct dp_packet *b, const struct eth_addr eth_src,
