@@ -45,7 +45,7 @@ struct tnl_match {
     ovs_be64 in_key;
     struct in6_addr ipv6_src;
     struct in6_addr ipv6_dst;
-    odp_port_t odp_port;
+    ovs_be16 tp_port;
     bool in_key_flow;
     bool ip_src_flow;
     bool ip_dst_flow;
@@ -61,6 +61,7 @@ struct tnl_port {
     struct netdev *netdev;
 
     struct tnl_match match;
+    odp_port_t odp_port;
 };
 
 static struct fat_rwlock rwlock;
@@ -163,6 +164,7 @@ tnl_port_add__(const struct ofport_dpif *ofport, const struct netdev *netdev,
     tnl_port->ofport = ofport;
     tnl_port->netdev = netdev_ref(netdev);
     tnl_port->change_seq = netdev_get_change_seq(tnl_port->netdev);
+    tnl_port->odp_port = odp_port;
 
     tnl_port->match.in_key = cfg->in_key;
     tnl_port->match.ipv6_src = cfg->ipv6_src;
@@ -170,7 +172,7 @@ tnl_port_add__(const struct ofport_dpif *ofport, const struct netdev *netdev,
     tnl_port->match.ip_src_flow = cfg->ip_src_flow;
     tnl_port->match.ip_dst_flow = cfg->ip_dst_flow;
     tnl_port->match.in_key_flow = cfg->in_key_flow;
-    tnl_port->match.odp_port = odp_port;
+    tnl_port->match.tp_port = cfg->dst_port;
     tnl_port->match.pt_mode = netdev_get_pt_mode(netdev);
 
     map = tnl_match_map(&tnl_port->match);
@@ -202,7 +204,7 @@ tnl_port_add__(const struct ofport_dpif *ofport, const struct netdev *netdev,
         const char *type;
 
         type = netdev_get_type(netdev);
-        tnl_port_map_insert(odp_port, cfg->dst_port, name, type);
+        tnl_port_map_insert(odp_port, cfg, name, type);
 
     }
     return true;
@@ -248,7 +250,7 @@ tnl_port_reconfigure(const struct ofport_dpif *ofport,
         changed = tnl_port_add__(ofport, netdev, new_odp_port, false,
                                  native_tnl, name);
     } else if (tnl_port->netdev != netdev
-               || tnl_port->match.odp_port != new_odp_port
+               || tnl_port->odp_port != new_odp_port
                || tnl_port->change_seq != netdev_get_change_seq(tnl_port->netdev)) {
         VLOG_DBG("reconfiguring %s", tnl_port_get_name(tnl_port));
         tnl_port_del__(ofport, old_odp_port);
@@ -404,7 +406,7 @@ tnl_port_send(const struct ofport_dpif *ofport, struct flow *flow,
 
     fat_rwlock_rdlock(&rwlock);
     tnl_port = tnl_find_ofport(ofport);
-    out_port = tnl_port ? tnl_port->match.odp_port : ODPP_NONE;
+    out_port = tnl_port ? tnl_port->odp_port : ODPP_NONE;
     if (!tnl_port) {
         goto out;
     }
@@ -582,7 +584,7 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
                     if (!ip_dst_flow) {
                         match.ipv6_dst = flow_tnl_src(&flow->tunnel);
                     }
-                    match.odp_port = flow->in_port.odp_port;
+                    match.tp_port = flow->tunnel.tp_dst;
                     match.in_key_flow = in_key_flow;
                     match.ip_dst_flow = ip_dst_flow;
                     match.ip_src_flow = ip_src == IP_SRC_FLOW;
@@ -653,7 +655,7 @@ tnl_match_fmt(const struct tnl_match *match, struct ds *ds)
         = (match->pt_mode == NETDEV_PT_LEGACY_L2 ? "legacy_l2"
            : match->pt_mode == NETDEV_PT_LEGACY_L3 ? "legacy_l3"
            : "ptap");
-    ds_put_format(ds, ", %s, dp port=%"PRIu32, pt_mode, match->odp_port);
+    ds_put_format(ds, ", %s, port=%"PRIu16, pt_mode, match->tp_port);
 }
 
 static void
@@ -676,7 +678,7 @@ tnl_port_format(const struct tnl_port *tnl_port, struct ds *ds)
     const struct netdev_tunnel_config *cfg =
         netdev_get_tunnel_config(tnl_port->netdev);
 
-    ds_put_format(ds, "port %"PRIu32": %s (%s: ", tnl_port->match.odp_port,
+    ds_put_format(ds, "port %"PRIu32": %s (%s: ", tnl_port->odp_port,
                   tnl_port_get_name(tnl_port),
                   netdev_get_type(tnl_port->netdev));
     tnl_match_fmt(&tnl_port->match, ds);

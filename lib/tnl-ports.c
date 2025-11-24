@@ -40,6 +40,7 @@ struct ip_device {
     struct netdev *dev;
     struct eth_addr mac;
     struct in6_addr *addr;
+    struct in6_addr *mask;
     int n_addr;
     uint64_t change_seq;
     struct ovs_list node;
@@ -53,6 +54,7 @@ struct tnl_port {
     struct ovs_refcount ref_cnt;
     ovs_be16 tp_port;
     uint8_t nw_proto;
+    struct in6_addr remote_ip;
     char dev_name[IFNAMSIZ];
     struct ovs_list node;
 };
@@ -83,7 +85,8 @@ tnl_port_free(struct tnl_port_in *p)
 
 static void
 tnl_port_init_flow(struct flow *flow, struct eth_addr mac,
-                   struct in6_addr *addr, uint8_t nw_proto, ovs_be16 tp_port)
+                   struct in6_addr *addr, uint8_t nw_proto, ovs_be16 tp_port,
+                   struct in6_addr *remote_ip)
 {
     memset(flow, 0, sizeof *flow);
 
@@ -91,9 +94,11 @@ tnl_port_init_flow(struct flow *flow, struct eth_addr mac,
     if (IN6_IS_ADDR_V4MAPPED(addr)) {
         flow->dl_type = htons(ETH_TYPE_IP);
         flow->nw_dst = in6_addr_get_mapped_ipv4(addr);
+        flow->nw_src = in6_addr_get_mapped_ipv4(remote_ip);
     } else {
         flow->dl_type = htons(ETH_TYPE_IPV6);
         flow->ipv6_dst = *addr;
+        flow->ipv6_src = *remote_ip;
     }
 
     flow->nw_proto = nw_proto;
@@ -101,21 +106,37 @@ tnl_port_init_flow(struct flow *flow, struct eth_addr mac,
 }
 
 static void
-map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
-           uint8_t nw_proto, ovs_be16 tp_port, const char dev_name[])
+tnl_port_unref(const struct cls_rule *cr)
 {
+    struct tnl_port_in *p = tnl_port_cast(cr);
+
+    if (cr && ovs_refcount_unref_relaxed(&p->ref_cnt) == 1) {
+        classifier_remove(&cls, cr);
+        ovsrcu_postpone(tnl_port_free, p);
+    }
+}
+
+static void
+map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
+           uint8_t nw_proto, ovs_be16 tp_port, const char dev_name[],
+           bool force, struct in6_addr *remote_ip)
+{
+    struct tnl_port_in *p = NULL;
     const struct cls_rule *cr;
-    struct tnl_port_in *p;
     struct match match;
 
     memset(&match, 0, sizeof match);
-    tnl_port_init_flow(&match.flow, mac, addr, nw_proto, tp_port);
+    tnl_port_init_flow(&match.flow, mac, addr, nw_proto, tp_port, remote_ip);
 
-    do {
-        cr = classifier_lookup(&cls, OVS_VERSION_MAX, &match.flow, NULL, NULL);
-        p = tnl_port_cast(cr);
-        /* Try again if the rule was released before we get the reference. */
-    } while (p && !ovs_refcount_try_ref_rcu(&p->ref_cnt));
+    if (!force) {
+        do {
+            cr = classifier_lookup(&cls, OVS_VERSION_MAX, &match.flow, NULL,
+                                   NULL);
+            p = tnl_port_cast(cr);
+            /* Try again if the rule was released before we get the
+             * reference. */
+        } while (p && !ovs_refcount_try_ref_rcu(&p->ref_cnt));
+    }
 
     if (!p) {
         p = xzalloc(sizeof *p);
@@ -136,6 +157,14 @@ map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
         } else {
             match.wc.masks.ipv6_dst = in6addr_exact;
         }
+        if (ipv6_addr_is_set(remote_ip)) {
+            if (IN6_IS_ADDR_V4MAPPED(remote_ip)) {
+                match.wc.masks.nw_src = OVS_BE32_MAX;
+            } else {
+                match.wc.masks.ipv6_src = in6addr_exact;
+            }
+        }
+
         match.wc.masks.vlans[0].tci = OVS_BE16_MAX;
         memset(&match.wc.masks.dl_dst, 0xff, sizeof (struct eth_addr));
 
@@ -143,20 +172,26 @@ map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
         ovs_refcount_init(&p->ref_cnt);
         ovs_strlcpy(p->dev_name, dev_name, sizeof p->dev_name);
 
-        classifier_insert(&cls, &p->cr, OVS_VERSION_MIN, NULL, 0);
+        cr = classifier_replace(&cls, &p->cr, OVS_VERSION_MIN, NULL, 0);
+        tnl_port_unref(cr);
     }
 }
 
 static void
 map_insert_ipdev__(struct ip_device *ip_dev, char dev_name[],
-                   odp_port_t port, uint8_t nw_proto, ovs_be16 tp_port)
+                   odp_port_t port, uint8_t nw_proto, ovs_be16 tp_port,
+                   struct in6_addr *remote_ip)
 {
     if (ip_dev->n_addr) {
         int i;
 
         for (i = 0; i < ip_dev->n_addr; i++) {
+            bool force = ipv6_addr_equals_masked(remote_ip, &ip_dev->addr[i],
+                                                 &ip_dev->mask[i]);
+
             map_insert(port, ip_dev->mac, &ip_dev->addr[i],
-                       nw_proto, tp_port, dev_name);
+                       nw_proto, tp_port, dev_name, force,
+                       remote_ip);
         }
     }
 }
@@ -179,7 +214,7 @@ tnl_type_to_nw_proto(const char type[], uint8_t nw_protos[2])
 }
 
 static void
-tnl_port_map_insert__(odp_port_t port, ovs_be16 tp_port,
+tnl_port_map_insert__(odp_port_t port, const struct netdev_tunnel_config *cfg,
                       const char dev_name[], uint8_t nw_proto)
 {
     struct tnl_port *p;
@@ -195,14 +230,16 @@ tnl_port_map_insert__(odp_port_t port, ovs_be16 tp_port,
 
     p = xzalloc(sizeof *p);
     p->port = port;
-    p->tp_port = tp_port;
+    p->remote_ip = cfg->ipv6_dst;
+    p->tp_port = cfg->dst_port;
     p->nw_proto = nw_proto;
     ovs_strlcpy(p->dev_name, dev_name, sizeof p->dev_name);
     ovs_refcount_init(&p->ref_cnt);
     ovs_list_insert(&port_list, &p->node);
 
     LIST_FOR_EACH(ip_dev, node, &addr_list) {
-        map_insert_ipdev__(ip_dev, p->dev_name, p->port, p->nw_proto, p->tp_port);
+        map_insert_ipdev__(ip_dev, p->dev_name, p->port, p->nw_proto,
+                           p->tp_port, &p->remote_ip);
     }
 
 out:
@@ -210,7 +247,7 @@ out:
 }
 
 void
-tnl_port_map_insert(odp_port_t port, ovs_be16 tp_port,
+tnl_port_map_insert(odp_port_t port, const struct netdev_tunnel_config *cfg,
                     const char dev_name[], const char type[])
 {
     uint8_t nw_protos[2];
@@ -220,43 +257,34 @@ tnl_port_map_insert(odp_port_t port, ovs_be16 tp_port,
 
     for (i = 0; i < 2; i++) {
         if (nw_protos[i]) {
-            tnl_port_map_insert__(port, tp_port, dev_name, nw_protos[i]);
+            tnl_port_map_insert__(port, cfg, dev_name, nw_protos[i]);
         }
     }
 }
 
 static void
-tnl_port_unref(const struct cls_rule *cr)
-{
-    struct tnl_port_in *p = tnl_port_cast(cr);
-
-    if (cr && ovs_refcount_unref_relaxed(&p->ref_cnt) == 1) {
-        classifier_remove_assert(&cls, cr);
-        ovsrcu_postpone(tnl_port_free, p);
-    }
-}
-
-static void
 map_delete(struct eth_addr mac, struct in6_addr *addr,
-           ovs_be16 tp_port, uint8_t nw_proto)
+           ovs_be16 tp_port, uint8_t nw_proto, struct in6_addr *remote_ip)
 {
     const struct cls_rule *cr;
     struct flow flow;
 
-    tnl_port_init_flow(&flow, mac, addr, nw_proto, tp_port);
+    tnl_port_init_flow(&flow, mac, addr, nw_proto, tp_port, remote_ip);
 
     cr = classifier_lookup(&cls, OVS_VERSION_MAX, &flow, NULL, NULL);
     tnl_port_unref(cr);
 }
 
 static void
-ipdev_map_delete(struct ip_device *ip_dev, ovs_be16 tp_port, uint8_t nw_proto)
+ipdev_map_delete(struct ip_device *ip_dev, ovs_be16 tp_port, uint8_t nw_proto,
+                 struct in6_addr *remote_ip)
 {
     if (ip_dev->n_addr) {
         int i;
 
         for (i = 0; i < ip_dev->n_addr; i++) {
-            map_delete(ip_dev->mac, &ip_dev->addr[i], tp_port, nw_proto);
+            map_delete(ip_dev->mac, &ip_dev->addr[i], tp_port, nw_proto,
+                       remote_ip);
         }
     }
 }
@@ -273,7 +301,8 @@ tnl_port_map_delete__(odp_port_t port, uint8_t nw_proto)
                     ovs_refcount_unref_relaxed(&p->ref_cnt) == 1) {
             ovs_list_remove(&p->node);
             LIST_FOR_EACH(ip_dev, node, &addr_list) {
-                ipdev_map_delete(ip_dev, p->tp_port, p->nw_proto);
+                ipdev_map_delete(ip_dev, p->tp_port, p->nw_proto,
+                                 &p->remote_ip);
             }
             free(p);
             break;
@@ -367,7 +396,8 @@ tnl_port_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
     }
 
     LIST_FOR_EACH(p, node, &port_list) {
-        ds_put_format(&ds, "%s (%"PRIu32") ref_cnt=%u\n", p->dev_name, p->port,
+        ds_put_format(&ds, "%s (%"PRIu32") ref_cnt=%u\n", p->dev_name,
+                      p->tp_port ? ntohs(p->tp_port) : odp_to_u32(p->port),
                       ovs_refcount_read(&p->ref_cnt));
     }
 
@@ -383,13 +413,15 @@ map_insert_ipdev(struct ip_device *ip_dev)
     struct tnl_port *p;
 
     LIST_FOR_EACH(p, node, &port_list) {
-        map_insert_ipdev__(ip_dev, p->dev_name, p->port, p->nw_proto, p->tp_port);
+        map_insert_ipdev__(ip_dev, p->dev_name, p->port, p->nw_proto,
+                           p->tp_port, &p->remote_ip);
     }
 }
 
 static void
 insert_ipdev__(struct netdev *dev,
-               struct in6_addr *addr, int n_addr)
+               struct in6_addr *addr, int n_addr,
+               struct in6_addr *mask)
 {
     struct ip_device *ip_dev;
     enum netdev_flags flags;
@@ -408,6 +440,7 @@ insert_ipdev__(struct netdev *dev,
         goto err_free_ipdev;
     }
     ip_dev->addr = addr;
+    ip_dev->mask = mask;
     ip_dev->n_addr = n_addr;
     ovs_strlcpy(ip_dev->dev_name, netdev_get_name(dev), sizeof ip_dev->dev_name);
     ovs_list_insert(&addr_list, &ip_dev->node);
@@ -419,6 +452,7 @@ err_free_ipdev:
     free(ip_dev);
 err:
     free(addr);
+    free(mask);
 }
 
 static void
@@ -438,8 +472,7 @@ insert_ipdev(const char dev_name[])
         netdev_close(dev);
         return;
     }
-    free(mask);
-    insert_ipdev__(dev, addr, n_in6);
+    insert_ipdev__(dev, addr, n_in6, mask);
     netdev_close(dev);
 }
 
@@ -449,11 +482,12 @@ delete_ipdev(struct ip_device *ip_dev)
     struct tnl_port *p;
 
     LIST_FOR_EACH(p, node, &port_list) {
-        ipdev_map_delete(ip_dev, p->tp_port, p->nw_proto);
+        ipdev_map_delete(ip_dev, p->tp_port, p->nw_proto, &p->remote_ip);
     }
 
     ovs_list_remove(&ip_dev->node);
     netdev_close(ip_dev->dev);
+    free(ip_dev->mask);
     free(ip_dev->addr);
     free(ip_dev);
 }
