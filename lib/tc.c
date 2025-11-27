@@ -3834,7 +3834,7 @@ nl_msg_put_flower_options(struct ofpbuf *request, struct tc_flower *flower)
         }
     }
 
-    if (policy == TC_POLICY_NONE) {
+    if (!flower->probing && policy == TC_POLICY_NONE) {
         policy = tc_policy;
     }
 

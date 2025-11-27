@@ -30,6 +30,7 @@
 #include "openvswitch/types.h"
 #include "openvswitch/util.h"
 #include "openvswitch/vlog.h"
+#include "ovs-atomic.h"
 #include "netdev-linux.h"
 #include "netdev-offload-provider.h"
 #include "netdev-provider.h"
@@ -56,6 +57,13 @@ static uint16_t ct_state_support;
 static bool vxlan_gbp_support = false;
 static bool enc_flags_support = false;
 
+/* Per-netdev probe state for enc flags support. */
+enum ovs_probe_state {
+    OVS_PROBE_ENC_FLAGS_UNINIT = 0,
+    OVS_PROBE_ENC_FLAGS_STARTED = 1,
+    OVS_PROBE_ENC_FLAGS_DONE_SUPPORTED = 2,
+    OVS_PROBE_ENC_FLAGS_DONE_UNSUPPORTED = 3,
+};
 struct netlink_field {
     int offset;
     int flower_offset;
@@ -79,6 +87,11 @@ struct policer_node {
     uint32_t police_idx;
 };
 
+/* Per-netdev TC offload data */
+struct netdev_tc_data {
+    atomic_int enc_flags_probe_state; /* OVS_PROBE_ENC_FLAGS_* */
+};
+
 /* ccmap and protective mutex for counting recirculation id (chain) usage. */
 static struct ovs_mutex used_chains_mutex = OVS_MUTEX_INITIALIZER;
 static struct ccmap used_chains;
@@ -88,6 +101,7 @@ static struct ovs_mutex meter_police_ids_mutex = OVS_MUTEX_INITIALIZER;
 static struct id_pool *meter_police_ids OVS_GUARDED_BY(meter_police_ids_mutex);
 /* Protects below meter hashmaps. */
 static struct ovs_mutex meter_mutex = OVS_MUTEX_INITIALIZER;
+static struct ovs_mutex tc_data_alloc_mutex = OVS_MUTEX_INITIALIZER;
 static struct hmap meter_id_to_police_idx OVS_GUARDED_BY(meter_mutex)
     = HMAP_INITIALIZER(&meter_id_to_police_idx);
 static struct hmap police_idx_to_meter_id OVS_GUARDED_BY(meter_mutex)
@@ -109,6 +123,9 @@ static void parse_tc_flower_to_stats(struct tc_flower *flower,
 
 static int get_ufid_adjust_stats(const ovs_u128 *ufid,
                                  struct dpif_flow_stats *stats);
+static void netdev_tc_cleanup_data(struct netdev *netdev);
+static bool netdev_tc_get_enc_flags_support(struct netdev *netdev);
+static struct netdev_tc_data * get_netdev_tc_data(struct netdev *netdev);
 
 static bool
 is_internal_port(const char *type)
@@ -2398,7 +2415,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         memset(&tnl_mask->gbp_flags, 0, sizeof tnl_mask->gbp_flags);
         tnl_mask->flags &= ~FLOW_TNL_F_KEY;
 
-        if (enc_flags_support) {
+        if (netdev_tc_get_enc_flags_support(netdev)) {
             if (tnl_mask->flags & FLOW_TNL_F_OAM) {
                 if (tnl->flags & FLOW_TNL_F_OAM) {
                     flower.key.tunnel.tc_enc_flags |=
@@ -3026,22 +3043,90 @@ out:
     tc_add_del_qdisc(ifindex, false, block_id, TC_INGRESS);
 }
 
-static void
-probe_enc_flags_support(int ifindex)
+/* Helper functions for per-netdev TC data */
+static struct netdev_tc_data * get_netdev_tc_data(struct netdev *netdev)
 {
+    struct netdev_tc_data *tc_data;
+
+    /* avoid races on allocation/ovsrcu_set */
+    ovs_mutex_lock(&tc_data_alloc_mutex);
+    tc_data = (struct netdev_tc_data *) ovsrcu_get_protected(void *,
+                                                &netdev->hw_info.offload_data);
+    if (!tc_data) {
+        tc_data = xzalloc(sizeof *tc_data);
+        atomic_store_relaxed(&tc_data->enc_flags_probe_state,
+                             OVS_PROBE_ENC_FLAGS_UNINIT);
+        ovsrcu_set(&netdev->hw_info.offload_data, tc_data);
+    }
+    ovs_mutex_unlock(&tc_data_alloc_mutex);
+    return tc_data;
+}
+
+/* Returns the enc flags support for the given netdev, return global flag if
+ * not probed yet (non tunnel devices) */
+static bool netdev_tc_get_enc_flags_support(struct netdev *netdev)
+{
+    struct netdev_tc_data *tc_data = (struct netdev_tc_data *)
+                            ovsrcu_get(void *, &netdev->hw_info.offload_data);
+
+    if (!tc_data) {
+        return enc_flags_support;
+    }
+
+    int state;
+    atomic_read_relaxed(&tc_data->enc_flags_probe_state, &state);
+    switch (state) {
+    case OVS_PROBE_ENC_FLAGS_DONE_SUPPORTED:
+        return true;
+    case OVS_PROBE_ENC_FLAGS_DONE_UNSUPPORTED:
+        return false;
+    case OVS_PROBE_ENC_FLAGS_UNINIT:
+    case OVS_PROBE_ENC_FLAGS_STARTED:
+    default:
+        return enc_flags_support;
+    }
+}
+
+/* Cleanup the per-netdev TC data */
+static void netdev_tc_cleanup_data(struct netdev *netdev)
+{
+    struct netdev_tc_data *tc_data;
+
+    tc_data = (struct netdev_tc_data *)
+              ovsrcu_get(void *, &netdev->hw_info.offload_data);
+
+    if (tc_data) {
+        ovsrcu_set(&netdev->hw_info.offload_data, NULL);
+        ovsrcu_postpone(free, tc_data);
+    }
+}
+
+static void
+probe_enc_flags_support(int ifindex, struct netdev *netdev,
+                        struct netdev_tc_data *tc_data,
+                        enum tc_offload_policy policy)
+{
+    const char *netdev_type = netdev_get_type(netdev);
+    const char *netdev_name = netdev_get_name(netdev);
     struct tc_flower flower;
     struct tcf_id id;
     int block_id = 0;
     int prio = TC_RESERVED_PRIORITY_FEATURE_PROBE;
     int error;
+    bool created_qdisc = false;
 
     error = tc_add_del_qdisc(ifindex, true, block_id, TC_INGRESS);
-    if (error) {
+    if (error && error != EEXIST) {
+        atomic_store_relaxed(&tc_data->enc_flags_probe_state,
+                             OVS_PROBE_ENC_FLAGS_DONE_UNSUPPORTED);
         return;
+    } else if (!error) {
+        created_qdisc = true;
     }
 
     memset(&flower, 0, sizeof flower);
-    flower.tc_policy = TC_POLICY_SKIP_HW;
+
+    flower.tc_policy = policy;
     flower.key.eth_type = htons(ETH_P_IP);
     flower.mask.eth_type = OVS_BE16_MAX;
     flower.tunnel = true;
@@ -3049,24 +3134,59 @@ probe_enc_flags_support(int ifindex)
     flower.mask.tunnel.ipv4.ipv4_src = OVS_BE32_MAX;
     flower.mask.tunnel.ipv4.ipv4_dst = OVS_BE32_MAX;
     flower.mask.tunnel.tp_dst = OVS_BE16_MAX;
-    flower.mask.tunnel.tc_enc_flags = TCA_FLOWER_KEY_FLAGS_TUNNEL_CRIT_OPT;
+
+    /* respect the policy */
+    if (policy == TC_POLICY_NONE) {
+        flower.key.tunnel.tp_dst = htons(4789 );
+        flower.mask.tunnel.tc_enc_flags = TCA_FLOWER_KEY_FLAGS_TUNNEL_DONT_FRAGMENT |
+                                          TCA_FLOWER_KEY_FLAGS_TUNNEL_CSUM;
+        flower.key.tunnel.tc_enc_flags = TCA_FLOWER_KEY_FLAGS_TUNNEL_DONT_FRAGMENT |
+                                         TCA_FLOWER_KEY_FLAGS_TUNNEL_CSUM;
+    } else {
+        flower.key.tunnel.tp_dst = htons(46354);
+        flower.mask.tunnel.tc_enc_flags = TCA_FLOWER_KEY_FLAGS_TUNNEL_CRIT_OPT;
+        flower.key.tunnel.tc_enc_flags = TCA_FLOWER_KEY_FLAGS_TUNNEL_CRIT_OPT;
+    }
+
     flower.key.tunnel.ipv4.ipv4_src = htonl(0x01010101);
     flower.key.tunnel.ipv4.ipv4_dst = htonl(0x01010102);
-    flower.key.tunnel.tp_dst = htons(46354);
-    flower.key.tunnel.tc_enc_flags = TCA_FLOWER_KEY_FLAGS_TUNNEL_CRIT_OPT;
 
     id = tc_make_tcf_id(ifindex, block_id, prio, TC_INGRESS);
+    flower.probing = true;
     error = tc_replace_flower(&id, &flower);
     if (error) {
+        VLOG_INFO("probe tc: enc flags are not supported for %s device %s.",
+                  netdev_type, netdev_name);
         goto out;
     }
 
+    /* Query the newly-added rule, check its offload state before deletion
+     * when policy is TC_POLICY_NONE it's the case of tunnel device */
+    enum ovs_probe_state result = OVS_PROBE_ENC_FLAGS_DONE_SUPPORTED;
+    if (policy == TC_POLICY_NONE) {
+        struct tc_flower flower_state;
+
+        memset(&flower_state, 0, sizeof flower_state);
+        if (tc_get_flower(&id, &flower_state) ||
+            flower_state.offloaded_state != TC_OFFLOADED_STATE_IN_HW) {
+            result = OVS_PROBE_ENC_FLAGS_DONE_UNSUPPORTED;
+        }
+    }
+    atomic_store_relaxed(&tc_data->enc_flags_probe_state, result);
+
     tc_del_flower_filter(&id);
 
-    enc_flags_support = true;
-    VLOG_INFO("probe tc: enc flags are supported.");
+    if (result == OVS_PROBE_ENC_FLAGS_DONE_SUPPORTED) {
+        VLOG_INFO("probe tc: enc flags with tc_policy(%d) are offloaded for %s device %s.",
+                  policy, netdev_type, netdev_name);
+    } else {
+        VLOG_INFO("probe tc: enc flags with tc_policy(%d) are not offloaded for %s device %s.",
+                  policy, netdev_type, netdev_name);
+    }
 out:
-    tc_add_del_qdisc(ifindex, false, block_id, TC_INGRESS);
+    if (created_qdisc) {
+        tc_add_del_qdisc(ifindex, false, block_id, TC_INGRESS);
+    }
 }
 
 static int
@@ -3152,11 +3272,13 @@ netdev_tc_init_flow_api(struct netdev *netdev)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     enum tc_qdisc_hook hook = get_tc_qdisc_hook(netdev);
+    struct netdev_tc_data dummy_tcdata = {0};
     static bool get_chain_supported = true;
+    struct netdev_tc_data *tc_data;
     uint32_t block_id = 0;
     struct tcf_id id;
     int ifindex;
-    int error;
+    int error, expected;
 
     if (netdev_vport_is_vport_class(netdev->netdev_class)
         && strcmp(netdev_get_dpif_type(netdev), "system")) {
@@ -3199,7 +3321,10 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         probe_multi_mask_per_prio(ifindex);
         probe_ct_state_support(ifindex);
         probe_vxlan_gbp_support(ifindex);
-        probe_enc_flags_support(ifindex);
+        probe_enc_flags_support(ifindex, netdev, &dummy_tcdata,
+                                TC_POLICY_SKIP_HW);
+        atomic_read_relaxed(&dummy_tcdata.enc_flags_probe_state, &expected);
+        enc_flags_support = (expected == OVS_PROBE_ENC_FLAGS_DONE_SUPPORTED);
 
         ovs_mutex_lock(&meter_police_ids_mutex);
         meter_police_ids = id_pool_create(METER_POLICE_IDS_BASE,
@@ -3209,6 +3334,18 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         ovs_mutex_unlock(&meter_police_ids_mutex);
 
         ovsthread_once_done(&once);
+    }
+
+    /* probe if tunnel device and hw offload is enabled */
+    if (netdev_get_tunnel_config(netdev) && netdev_is_flow_api_enabled()) {
+        tc_data = get_netdev_tc_data(netdev);
+        expected = OVS_PROBE_ENC_FLAGS_UNINIT;
+        if (atomic_compare_exchange_strong_relaxed(
+                &tc_data->enc_flags_probe_state,
+                &expected,
+                OVS_PROBE_ENC_FLAGS_STARTED)) {
+            probe_enc_flags_support(ifindex, netdev, tc_data, TC_POLICY_NONE);
+        }
     }
 
     error = tc_add_del_qdisc(ifindex, true, block_id, hook);
@@ -3424,6 +3561,12 @@ meter_tc_del_policer(ofproto_meter_id meter_id,
     return err;
 }
 
+static void
+netdev_tc_uninit_flow_api(struct netdev *netdev)
+{
+    netdev_tc_cleanup_data(netdev);
+}
+
 const struct netdev_flow_api netdev_offload_tc = {
    .type = "linux_tc",
    .flow_flush = netdev_tc_flow_flush,
@@ -3438,4 +3581,5 @@ const struct netdev_flow_api netdev_offload_tc = {
    .meter_get = meter_tc_get_policer,
    .meter_del = meter_tc_del_policer,
    .init_flow_api = netdev_tc_init_flow_api,
+   .uninit_flow_api = netdev_tc_uninit_flow_api,
 };

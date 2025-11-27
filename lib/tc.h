@@ -403,6 +403,8 @@ struct tc_flower {
     enum tc_offloaded_state offloaded_state;
     /* Used to force skip_hw when probing tc features. */
     enum tc_offload_policy tc_policy;
+    /* Used to indicate that the flower is being probed. */
+    bool probing;
 };
 
 int tc_replace_flower(struct tcf_id *id, struct tc_flower *flower);
