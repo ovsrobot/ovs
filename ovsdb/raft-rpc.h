@@ -289,7 +289,7 @@ struct jsonrpc_msg *raft_rpc_to_jsonrpc(const struct uuid *cid,
                                         const struct uuid *sid,
                                         const union raft_rpc *);
 struct ovsdb_error *raft_rpc_from_jsonrpc(struct uuid *cid,
-                                          const struct uuid *sid,
+                                          struct uuid *sid,
                                           const struct jsonrpc_msg *,
                                           union raft_rpc *)
     OVS_WARN_UNUSED_RESULT;

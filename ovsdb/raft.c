@@ -1534,13 +1534,41 @@ raft_conn_receive(struct raft *raft, struct raft_conn *conn,
         return false;
     }
 
-    struct ovsdb_error *error = raft_rpc_from_jsonrpc(&raft->cid, &raft->sid,
-                                                      msg, rpc);
+    struct uuid cid, sid;
+    struct ovsdb_error *error = raft_rpc_from_jsonrpc(&cid, &sid, msg, rpc);
     jsonrpc_msg_destroy(msg);
     if (error) {
         char *s = ovsdb_error_to_string_free(error);
         VLOG_INFO("%s: %s", jsonrpc_session_get_name(conn->js), s);
         free(s);
+        return false;
+    }
+
+    if (!uuid_is_zero(&cid)) {
+        if (uuid_is_zero(&raft->cid)) {
+            raft->cid = cid;
+            VLOG_INFO("%s: learned cluster ID "CID_FMT,
+                      jsonrpc_session_get_name(conn->js), CID_ARGS(&cid));
+        } else if (!uuid_equals(&raft->cid, &cid)) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+            VLOG_WARN_RL(&rl, "%s: ignoring message to unexpected cluster ID "
+                         "(addressed to "CID_FMT" but we are "CID_FMT")",
+                         jsonrpc_session_get_name(conn->js),
+                         CID_ARGS(&cid), CID_ARGS(&raft->cid));
+            raft_rpc_uninit(rpc);
+            jsonrpc_session_force_reconnect(conn->js);
+            return false;
+        }
+    }
+
+    if (!uuid_is_zero(&sid) && !uuid_equals(&raft->sid, &sid)) {
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+        VLOG_WARN_RL(&rl, "%s: ignoring message to unexpected server ID "
+                     "(addressed to "SID_FMT" but we are "SID_FMT")",
+                     jsonrpc_session_get_name(conn->js),
+                     SID_ARGS(&sid), SID_ARGS(&raft->sid));
+        raft_rpc_uninit(rpc);
+        jsonrpc_session_force_reconnect(conn->js);
         return false;
     }
 
@@ -1551,11 +1579,12 @@ raft_conn_receive(struct raft *raft, struct raft_conn *conn,
                      jsonrpc_session_get_name(conn->js), SID_ARGS(&conn->sid));
     } else if (!uuid_equals(&conn->sid, &rpc->common.sid)) {
         static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
-        VLOG_WARN_RL(&rl, "%s: ignoring message with unexpected server ID "
+        VLOG_WARN_RL(&rl, "%s: ignoring message from unexpected server ID "
                      SID_FMT" (expected "SID_FMT")",
                      jsonrpc_session_get_name(conn->js),
                      SID_ARGS(&rpc->common.sid), SID_ARGS(&conn->sid));
         raft_rpc_uninit(rpc);
+        jsonrpc_session_force_reconnect(conn->js);
         return false;
     }
 

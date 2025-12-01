@@ -858,16 +858,16 @@ raft_rpc_to_jsonrpc(const struct uuid *cid,
                                  json_array_create_1(args));
 }
 
-/* Parses 'msg' as a Raft message directed to 'sid' and initializes 'rpc'
- * appropriately.  On success, returns NULL and the caller owns the contents of
- * 'rpc' and must eventually uninitialize it with raft_rpc_uninit().  On
- * failure, returns an error that the caller must eventually free.
+/* Parses 'msg' as a Raft message and initializes 'rpc' appropriately.
+ * On success, returns NULL and the caller owns the contents of 'rpc'
+ * and must eventually uninitialize it with raft_rpc_uninit().
+ * On failure, returns an error that the caller must eventually free.
  *
- * 'cidp' must point to the Raft cluster's ID.  If the cluster ID isn't yet
- * known, then '*cidp' must be UUID_ZERO and this function will attempt to
- * initialize it based on 'msg'. */
+ * 'cid' and 'sid' will be set to the cluster id and destination server id
+ * if the corresponding fields in the Raft message are set. Otherwise they
+ * are set to UUID_ZERO. */
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
-raft_rpc_from_jsonrpc(struct uuid *cidp, const struct uuid *sid,
+raft_rpc_from_jsonrpc(struct uuid *cid, struct uuid *sid,
                       const struct jsonrpc_msg *msg, union raft_rpc *rpc)
 {
     memset(rpc, 0, sizeof *rpc);
@@ -893,26 +893,8 @@ raft_rpc_from_jsonrpc(struct uuid *cidp, const struct uuid *sid,
     bool is_hello = rpc->type == RAFT_RPC_HELLO_REQUEST;
     bool is_add = rpc->type == RAFT_RPC_ADD_SERVER_REQUEST;
 
-    struct uuid cid;
-    if (raft_parse_uuid(&p, "cluster", is_add, &cid)
-        && !uuid_equals(&cid, cidp)) {
-        if (uuid_is_zero(cidp)) {
-            *cidp = cid;
-            VLOG_INFO("learned cluster ID "CID_FMT, CID_ARGS(&cid));
-        } else {
-            ovsdb_parser_raise_error(&p, "wrong cluster "CID_FMT" "
-                                     "(expected "CID_FMT")",
-                                     CID_ARGS(&cid), CID_ARGS(cidp));
-        }
-    }
-
-    struct uuid to_sid;
-    if (raft_parse_uuid(&p, "to", is_add || is_hello, &to_sid)
-        && !uuid_equals(&to_sid, sid)) {
-        ovsdb_parser_raise_error(&p, "misrouted message (addressed to "
-                                 SID_FMT" but we're "SID_FMT")",
-                                 SID_ARGS(&to_sid), SID_ARGS(sid));
-    }
+    raft_parse_uuid(&p, "cluster", is_add, cid);
+    raft_parse_uuid(&p, "to", is_add || is_hello, sid);
 
     rpc->common.sid = raft_parse_required_uuid(&p, "from");
     rpc->common.comment = nullable_xstrdup(
