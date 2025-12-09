@@ -28,6 +28,7 @@
 #include "daemon.h"
 #include "dirs.h"
 #include "dpif.h"
+#include "dpif-offload.h"
 #include "dpdk.h"
 #include "hash.h"
 #include "openvswitch/hmap.h"
@@ -3394,8 +3395,11 @@ bridge_run(void)
     }
     cfg = ovsrec_open_vswitch_first(idl);
 
+     if (cfg && ovsdb_idl_get_seqno(idl) != idl_seqno) {
+         dpif_offload_set_global_cfg(cfg);
+     }
+
     if (cfg) {
-        netdev_set_flow_api_enabled(&cfg->other_config);
         dpdk_init(&cfg->other_config);
         userspace_tso_init(&cfg->other_config);
     }

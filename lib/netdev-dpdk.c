@@ -47,6 +47,7 @@
 #include "dirs.h"
 #include "dp-packet.h"
 #include "dpdk.h"
+#include "dpif-offload.h"
 #include "dpif-netdev.h"
 #include "fatal-signal.h"
 #include "if-notifier.h"
@@ -1315,7 +1316,7 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
                                      RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
                                      RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
 
-    if (netdev_is_flow_api_enabled()) {
+    if (dpif_offload_is_offload_enabled()) {
         /*
          * Full tunnel offload requires that tunnel ID metadata be
          * delivered with "miss" packets from the hardware to the
@@ -2268,7 +2269,7 @@ dpdk_set_rx_steer_config(struct netdev *netdev, struct netdev_dpdk *dev,
         flags = 0;
     }
 
-    if (flags && netdev_is_flow_api_enabled()) {
+    if (flags && dpif_offload_is_offload_enabled()) {
         VLOG_WARN_BUF(errp, "%s: options:rx-steering "
                       "is incompatible with hw-offload",
                       netdev_get_name(netdev));
@@ -6515,7 +6516,7 @@ out:
 }
 
 bool
-netdev_dpdk_flow_api_supported(struct netdev *netdev)
+netdev_dpdk_flow_api_supported(struct netdev *netdev, bool check_only)
 {
     struct netdev_dpdk *dev;
     bool ret = false;
@@ -6534,7 +6535,7 @@ netdev_dpdk_flow_api_supported(struct netdev *netdev)
     dev = netdev_dpdk_cast(netdev);
     ovs_mutex_lock(&dev->mutex);
     if (dev->type == DPDK_DEV_ETH) {
-        if (dev->requested_rx_steer_flags) {
+        if (dev->requested_rx_steer_flags && !check_only) {
             VLOG_WARN("%s: rx-steering is mutually exclusive with hw-offload,"
                       " falling back to default rss mode",
                       netdev_get_name(netdev));

@@ -440,8 +440,7 @@ struct dpif_dp_stats {
 int dpif_get_dp_stats(const struct dpif *, struct dpif_dp_stats *);
 
 int dpif_set_features(struct dpif *, uint32_t new_features);
-
-int dpif_get_n_offloaded_flows(struct dpif *dpif, uint64_t *n_flows);
+uint32_t dpif_get_features(struct dpif *dpif);
 
 
 /* Port operations. */
@@ -524,7 +523,7 @@ struct dpif_flow_attrs {
 
 struct dpif_flow_dump_types {
     bool ovs_flows;
-    bool netdev_flows;
+    bool offloaded_flows;
 };
 
 void dpif_flow_stats_extract(const struct flow *, const struct dp_packet *packet,
@@ -794,14 +793,6 @@ struct dpif_op {
 void dpif_operate(struct dpif *, struct dpif_op **ops, size_t n_ops,
                   enum dpif_offload_type);
 
-/* Queries the datapath for hardware offloads stats.
- *
- * Statistics are written in 'stats' following the 'netdev_custom_stats'
- * format. They are allocated on the heap and must be freed by the caller,
- * using 'netdev_free_custom_stats_counters'.
- */
-int dpif_offload_stats_get(struct dpif *dpif,
-                           struct netdev_custom_stats *stats);
 
 /* Upcalls. */
 
@@ -945,7 +936,6 @@ char *dpif_get_dp_version(const struct dpif *);
 bool dpif_supports_tnl_push_pop(const struct dpif *);
 bool dpif_may_support_explicit_drop_action(const struct dpif *);
 bool dpif_may_support_psample(const struct dpif *);
-bool dpif_synced_dp_layers(struct dpif *);
 
 /* Log functions. */
 struct vlog_module;

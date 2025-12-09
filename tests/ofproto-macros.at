@@ -127,7 +127,7 @@ strip_xids () {
 
 # Changes all 'used:...' to say 'used:0.0', to make output easier to compare.
 strip_used () {
-    sed 's/used:[[0-9]]\.[[0-9]]*/used:0.0/'
+    sed -E 's/used:[[0-9]]+\.[[0-9]]*/used:0.0/'
 }
 
 # Removes all 'duration=...' to make output easier to compare.
@@ -224,14 +224,15 @@ m4_define([_OVS_VSWITCHD_START],
 /ofproto|INFO|datapath ID changed to fedcba9876543210/d
 /dpdk|INFO|DPDK Disabled - Use other_config:dpdk-init to enable/d
 /netlink_socket|INFO|netlink: could not enable listening to all nsid/d
-/netdev_offload|INFO|netdev: Flow API Enabled/d
+/dpif_offload|INFO|hw-offload API Enabled/d
 /probe tc:/d
 /setting extended ack support failed/d
-/tc: Using policy/d']])
+/tc: Using policy/d
+/'"'"'hw-offload-priority'"'"' configuration has an unknown type;/d']])
 ])
 
 # OVS_VSWITCHD_START([vsctl-args], [vsctl-output], [=override],
-#                    [vswitchd-aux-args])
+#                    [vswitchd-aux-args] [dbinit-aux-args])
 #
 # Creates a database and starts ovsdb-server, starts ovs-vswitchd
 # connected to that database, calls ovs-vsctl to create a bridge named
@@ -248,7 +249,9 @@ m4_define([_OVS_VSWITCHD_START],
 # 'vswitchd-aux-args' provides a way to pass extra command line arguments
 # to ovs-vswitchd
 m4_define([OVS_VSWITCHD_START],
-  [_OVS_VSWITCHD_START([--enable-dummy$3 --disable-system --disable-system-route $4])
+  [_OVS_VSWITCHD_START(
+      [--enable-dummy$3 --disable-system --disable-system-route $4],
+      [$5])
    AT_CHECK([add_of_br 0 $1 m4_if([$2], [], [], [| uuidfilt])], [0], [$2])
 ])
 

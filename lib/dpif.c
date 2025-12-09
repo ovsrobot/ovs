@@ -27,6 +27,8 @@
 #include "dp-packet.h"
 #include "dpctl.h"
 #include "dpif-netdev.h"
+#include "dpif-offload.h"
+#include "dpif-offload-provider.h"
 #include "flow.h"
 #include "netdev-offload.h"
 #include "netdev-provider.h"
@@ -125,6 +127,7 @@ dp_initialize(void)
         tnl_port_map_init();
         tnl_neigh_cache_init();
         route_table_init();
+        dp_offload_initialize();
 
         for (i = 0; i < ARRAY_SIZE(base_dpif_classes); i++) {
             dp_register_provider(base_dpif_classes[i]);
@@ -359,6 +362,8 @@ do_open(const char *name, const char *type, bool create, struct dpif **dpifp)
 
         ovs_assert(dpif->dpif_class == registered_class->dpif_class);
 
+        dpif_offload_attach_providers(dpif);
+
         DPIF_PORT_FOR_EACH(&dpif_port, &port_dump, dpif) {
             struct netdev *netdev;
             int err;
@@ -371,7 +376,6 @@ do_open(const char *name, const char *type, bool create, struct dpif **dpifp)
 
             if (!err) {
                 netdev_set_dpif_type(netdev, dpif_type_str);
-                netdev_ports_insert(netdev, &dpif_port);
                 netdev_close(netdev);
             } else {
                 VLOG_WARN("could not open netdev %s type %s: %s",
@@ -433,19 +437,6 @@ dpif_create_and_open(const char *name, const char *type, struct dpif **dpifp)
     return error;
 }
 
-static void
-dpif_remove_netdev_ports(struct dpif *dpif) {
-    const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
-    struct dpif_port_dump port_dump;
-    struct dpif_port dpif_port;
-
-    DPIF_PORT_FOR_EACH (&dpif_port, &port_dump, dpif) {
-        if (!dpif_is_tap_port(dpif_port.type)) {
-            netdev_ports_remove(dpif_port.port_no, dpif_type_str);
-        }
-    }
-}
-
 /* Closes and frees the connection to 'dpif'.  Does not destroy the datapath
  * itself; call dpif_delete() first, instead, if that is desirable. */
 void
@@ -456,9 +447,7 @@ dpif_close(struct dpif *dpif)
 
         rc = shash_find_data(&dpif_classes, dpif->dpif_class->type);
 
-        if (rc->refcount == 1) {
-            dpif_remove_netdev_ports(dpif);
-        }
+        dpif_offload_detach_providers(dpif);
         dpif_uninit(dpif, true);
         dp_class_unref(rc);
     }
@@ -555,10 +544,20 @@ dpif_get_dp_stats(const struct dpif *dpif, struct dpif_dp_stats *stats)
 int
 dpif_set_features(struct dpif *dpif, uint32_t new_features)
 {
-    int error = dpif->dpif_class->set_features(dpif, new_features);
+    int error = dpif->dpif_class->set_features
+                    ? dpif->dpif_class->set_features(dpif, new_features)
+                    : EOPNOTSUPP;
 
     log_operation(dpif, "set_features", error);
     return error;
+}
+
+uint32_t
+dpif_get_features(struct dpif *dpif)
+{
+    return dpif->dpif_class->get_features
+               ? dpif->dpif_class->get_features(dpif)
+               : 0;
 }
 
 const char *
@@ -605,16 +604,10 @@ dpif_port_add(struct dpif *dpif, struct netdev *netdev, odp_port_t *port_nop)
                     dpif_name(dpif), netdev_name, port_no);
 
         if (!dpif_is_tap_port(netdev_get_type(netdev))) {
-
             const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
-            struct dpif_port dpif_port;
 
             netdev_set_dpif_type(netdev, dpif_type_str);
-
-            dpif_port.type = CONST_CAST(char *, netdev_get_type(netdev));
-            dpif_port.name = CONST_CAST(char *, netdev_name);
-            dpif_port.port_no = port_no;
-            netdev_ports_insert(netdev, &dpif_port);
+            dpif_offload_port_add(dpif, netdev, port_no);
         }
     } else {
         VLOG_WARN_RL(&error_rl, "%s: failed to add %s as port: %s",
@@ -646,7 +639,7 @@ dpif_port_del(struct dpif *dpif, odp_port_t port_no, bool local_delete)
         }
     }
 
-    netdev_ports_remove(port_no, dpif_normalize_type(dpif_type(dpif)));
+    dpif_offload_port_del(dpif, port_no);
     return error;
 }
 
@@ -697,6 +690,7 @@ dpif_port_set_config(struct dpif *dpif, odp_port_t port_no,
         if (error) {
             log_operation(dpif, "port_set_config", error);
         }
+        dpif_offload_port_set_config(dpif, port_no, cfg);
     }
 
     return error;
@@ -942,6 +936,7 @@ dpif_flow_flush(struct dpif *dpif)
 
     error = dpif->dpif_class->flow_flush(dpif);
     log_operation(dpif, "flow_flush", error);
+    dpif_offload_flow_flush(dpif);
     return error;
 }
 
@@ -1098,7 +1093,15 @@ int
 dpif_flow_dump_destroy(struct dpif_flow_dump *dump)
 {
     const struct dpif *dpif = dump->dpif;
-    int error = dpif->dpif_class->flow_dump_destroy(dump);
+    int error;
+    int offload_error;
+
+    offload_error = dpif_offload_flow_dump_destroy(dump);
+    error = dpif->dpif_class->flow_dump_destroy(dump);
+
+    if (!error || error == EOF) {
+        error = offload_error;
+    }
     log_operation(dpif, "flow_dump_destroy", error);
     return error == EOF ? 0 : error;
 }
@@ -1114,7 +1117,8 @@ dpif_flow_dump_thread_create(struct dpif_flow_dump *dump)
 void
 dpif_flow_dump_thread_destroy(struct dpif_flow_dump_thread *thread)
 {
-    thread->dpif->dpif_class->flow_dump_thread_destroy(thread);
+    dpif_offload_flow_dump_thread_destroy(thread);
+    thread->dump->dpif->dpif_class->flow_dump_thread_destroy(thread);
 }
 
 /* Attempts to retrieve up to 'max_flows' more flows from 'thread'.  Returns 0
@@ -1139,11 +1143,18 @@ int
 dpif_flow_dump_next(struct dpif_flow_dump_thread *thread,
                     struct dpif_flow *flows, int max_flows)
 {
-    struct dpif *dpif = thread->dpif;
-    int n;
+    struct dpif *dpif = thread->dump->dpif;
+    int n = 0;
 
     ovs_assert(max_flows > 0);
-    n = dpif->dpif_class->flow_dump_next(thread, flows, max_flows);
+
+    if (!thread->offload_dump_done) {
+        n = dpif_offload_flow_dump_next(thread, flows, max_flows);
+    }
+    if (n == 0) {
+        n = dpif->dpif_class->flow_dump_next(thread, flows, max_flows);
+    }
+
     if (n > 0) {
         struct dpif_flow *f;
 
@@ -1335,7 +1346,8 @@ void
 dpif_operate(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
              enum dpif_offload_type offload_type)
 {
-    if (offload_type == DPIF_OFFLOAD_ALWAYS && !netdev_is_flow_api_enabled()) {
+    if (offload_type == DPIF_OFFLOAD_ALWAYS
+        && !dpif_offload_is_offload_enabled()) {
         size_t i;
         for (i = 0; i < n_ops; i++) {
             struct dpif_op *op = ops[i];
@@ -1364,7 +1376,24 @@ dpif_operate(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
              * handle itself, without help. */
             size_t i;
 
-            dpif->dpif_class->operate(dpif, ops, chunk, offload_type);
+            /* See if we can handle some flow add/del/get through the
+             * dpif-offload provider. */
+            if (offload_type != DPIF_OFFLOAD_NEVER
+                && dpif_offload_is_offload_enabled()) {
+                struct dpif_op **ops_copy;
+                size_t ops_left;
+
+                ops_copy = xmemdup(ops, sizeof(*ops_copy) * chunk);
+
+                ops_left = dpif_offload_operate(dpif, ops_copy, chunk,
+                                                offload_type);
+                if (ops_left) {
+                    dpif->dpif_class->operate(dpif, ops_copy, ops_left);
+                }
+                free(ops_copy);
+            } else {
+                dpif->dpif_class->operate(dpif, ops, chunk);
+            }
 
             for (i = 0; i < chunk; i++) {
                 struct dpif_op *op = ops[i];
@@ -1434,14 +1463,6 @@ dpif_operate(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
             n_ops--;
         }
     }
-}
-
-int dpif_offload_stats_get(struct dpif *dpif,
-                           struct netdev_custom_stats *stats)
-{
-    return (dpif->dpif_class->offload_stats_get
-            ? dpif->dpif_class->offload_stats_get(dpif, stats)
-            : EOPNOTSUPP);
 }
 
 /* Returns a string that represents 'type', for use in log messages. */
@@ -1587,6 +1608,7 @@ dpif_set_config(struct dpif *dpif, const struct smap *cfg)
         if (error) {
             log_operation(dpif, "set_config", error);
         }
+        dpif_offload_set_config(dpif, cfg);
     }
 
     return error;
@@ -1711,6 +1733,7 @@ dpif_init(struct dpif *dpif, const struct dpif_class *dpif_class,
     dpif->full_name = xasprintf("%s@%s", dpif_class->type, name);
     dpif->netflow_engine_type = netflow_engine_type;
     dpif->netflow_engine_id = netflow_engine_id;
+    ovsrcu_set(&dpif->dp_offload, NULL);
 }
 
 /* Undoes the results of initialization.
@@ -1922,7 +1945,7 @@ bool
 dpif_may_support_explicit_drop_action(const struct dpif *dpif)
 {
     /* TC does not support offloading this action. */
-    return dpif_is_netdev(dpif) || !netdev_is_flow_api_enabled();
+    return dpif_is_netdev(dpif) || !dpif_offload_is_offload_enabled();
 }
 
 bool
@@ -1985,6 +2008,7 @@ dpif_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
     if (!error) {
         VLOG_DBG_RL(&dpmsg_rl, "%s: DPIF meter %"PRIu32" set",
                     dpif_name(dpif), meter_id.uint32);
+        dpif_offload_meter_set(dpif, meter_id, config);
     } else {
         VLOG_WARN_RL(&error_rl, "%s: failed to set DPIF meter %"PRIu32": %s",
                      dpif_name(dpif), meter_id.uint32, ovs_strerror(error));
@@ -2004,6 +2028,7 @@ dpif_meter_get(const struct dpif *dpif, ofproto_meter_id meter_id,
     if (!error) {
         VLOG_DBG_RL(&dpmsg_rl, "%s: DPIF meter %"PRIu32" get stats",
                     dpif_name(dpif), meter_id.uint32);
+        dpif_offload_meter_get(dpif, meter_id, stats);
     } else {
         VLOG_WARN_RL(&error_rl,
                      "%s: failed to get DPIF meter %"PRIu32" stats: %s",
@@ -2027,6 +2052,7 @@ dpif_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
     if (!error) {
         VLOG_DBG_RL(&dpmsg_rl, "%s: DPIF meter %"PRIu32" deleted",
                     dpif_name(dpif), meter_id.uint32);
+        dpif_offload_meter_del(dpif, meter_id, stats);
     } else {
         VLOG_WARN_RL(&error_rl,
                      "%s: failed to delete DPIF meter %"PRIu32": %s",
@@ -2068,29 +2094,6 @@ dpif_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
 }
 
 int
-dpif_get_n_offloaded_flows(struct dpif *dpif, uint64_t *n_flows)
-{
-    const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
-    struct dpif_port_dump port_dump;
-    struct dpif_port dpif_port;
-    int ret, n_devs = 0;
-    uint64_t nflows;
-
-    *n_flows = 0;
-    DPIF_PORT_FOR_EACH (&dpif_port, &port_dump, dpif) {
-        ret = netdev_ports_get_n_flows(dpif_type_str, dpif_port.port_no,
-                                       &nflows);
-        if (!ret) {
-            *n_flows += nflows;
-        } else if (ret == EOPNOTSUPP) {
-            continue;
-        }
-        n_devs++;
-    }
-    return n_devs ? 0 : EOPNOTSUPP;
-}
-
-int
 dpif_cache_get_supported_levels(struct dpif *dpif, uint32_t *levels)
 {
     return dpif->dpif_class->cache_get_supported_levels
@@ -2120,10 +2123,4 @@ dpif_cache_set_size(struct dpif *dpif, uint32_t level, uint32_t size)
     return dpif->dpif_class->cache_set_size
            ? dpif->dpif_class->cache_set_size(dpif, level, size)
            : EOPNOTSUPP;
-}
-
-bool
-dpif_synced_dp_layers(struct dpif *dpif)
-{
-    return dpif->dpif_class->synced_dp_layers;
 }
