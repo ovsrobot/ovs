@@ -16,7 +16,11 @@ Post-v3.6.0
      * New ovsdb_idl_txn_assert_read_only() interface to mark transactions
        as read-only and trigger assertion failure when application attempts
        to modify the database data through this transaction.
-
+   - Deprecation of support for running OVS with AVX512-specific features.
+     * Deprecate AVX512-based optimized DPCLS lookups.
+     * Deprecate AVX512-based optimized action handling.
+     * Deprecate AVX512-based optimized miniflow extraction.
+     * Deprecate AVX512-based optimized DPIF input processing.
 
 v3.6.0 - 18 Aug 2025
 --------------------
