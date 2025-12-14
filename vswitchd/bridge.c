@@ -4015,10 +4015,10 @@ bridge_configure_remotes(struct bridge *br,
 
     for (size_t i = 0; i < n_controllers; i++) {
         struct ovsrec_controller *c = controllers[i];
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(2, 5);
         if (daemon_should_self_confine()
             && (!strncmp(c->target, "punix:", 6)
             || !strncmp(c->target, "unix:", 5))) {
-            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
             char *allowed;
 
             if (!strncmp(c->target, "unix:", 5)) {
@@ -4061,6 +4061,11 @@ bridge_configure_remotes(struct bridge *br,
             }
 
             free(allowed);
+        }
+
+        if (shash_find(&ocs, c->target)) {
+            VLOG_WARN_RL(&rl, "bridge %s: Duplicate controllers \"%s\"", br->name, c->target);
+            continue;
         }
 
         bridge_configure_local_iface_netdev(br, c);
