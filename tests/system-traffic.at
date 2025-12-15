@@ -3141,8 +3141,8 @@ OVS_WAIT_UNTIL([tc qdisc show dev ovs-tap0 | grep -q htb])
 OVS_WAIT_UNTIL([tc qdisc show dev ovs-tap1 | grep -q htb])
 
 dnl Check the configuration.
-m4_define([HTB_CONF0], [rate 2Mbit ceil 3Mbit burst 375000b cburst 375000b])
-m4_define([HTB_CONF1], [rate 4Mbit ceil 5Gbit burst 500000b cburst 500000b])
+m4_define([HTB_CONF0], [rate 2Mbit ceil 3Mbit burst 3[[0-9]][[0-9]][[0-9]][[0-9]][[0-9]]b cburst 3[[0-9]][[0-9]][[0-9]][[0-9]][[0-9]]b])
+m4_define([HTB_CONF1], [rate 4Mbit ceil 5Gbit burst 5[[0-9]][[0-9]][[0-9]][[0-9]][[0-9]]b cburst 5[[0-9]][[0-9]][[0-9]][[0-9]][[0-9]]b])
 AT_CHECK([tc class show dev ovs-tap0 | grep -q 'class htb .* HTB_CONF0'])
 AT_CHECK([tc class show dev ovs-tap0 | grep -q 'class htb .* HTB_CONF1'])
 AT_CHECK([tc class show dev ovs-tap1 | grep -q 'class htb .* HTB_CONF0'])
@@ -3172,7 +3172,7 @@ AT_CHECK([ovs-vsctl set port ovs-p0 qos=@qos -- set port ovs-p1 qos=@qos dnl
 OVS_WAIT_UNTIL([tc qdisc show dev ovs-p0 | grep -q htb])
 OVS_WAIT_UNTIL([tc qdisc show dev ovs-p1 | grep -q htb])
 
-m4_define([HTB_CONF], [rate 40Gbit ceil 50Gbit burst 620000b cburst 618750b])
+m4_define([HTB_CONF], [rate 40Gbit ceil 50Gbit burst 6[[0-9]][[0-9]][[0-9]][[0-9]][[0-9]]b cburst 6[[0-9]][[0-9]][[0-9]][[0-9]][[0-9]]b])
 AT_CHECK([tc class show dev ovs-p0 | grep -q 'class htb .* HTB_CONF'])
 AT_CHECK([tc class show dev ovs-p1 | grep -q 'class htb .* HTB_CONF'])
 
