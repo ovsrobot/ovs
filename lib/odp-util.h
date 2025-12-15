@@ -207,7 +207,10 @@ int odp_flow_from_string(const char *s, const struct simap *port_names,
                                                                              \
     /* If true, it means that the datapath supports the IPv6 Neigh           \
      * Discovery Extension bits. */                                          \
-    ODP_SUPPORT_FIELD(bool, nd_ext, "IPv6 ND Extension")
+    ODP_SUPPORT_FIELD(bool, nd_ext, "IPv6 ND Extension")                     \
+                                                                             \
+    /* Tunnel ethernet type matching supported. */                           \
+    ODP_SUPPORT_FIELD(bool, tun_eth_type, "Tunnel Ethernet Type")
 
 /* Indicates support for various fields. This defines how flows will be
  * serialised. */

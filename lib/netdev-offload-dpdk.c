@@ -1253,6 +1253,9 @@ parse_tnl_ip_match(struct flow_patterns *patterns,
         return -1;
     }
 
+    /* Temporary ignore. */
+    match->wc.masks.tunnel.eth_type = 0;
+
     return 0;
 }
 

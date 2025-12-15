@@ -447,6 +447,7 @@ enum ovs_tunnel_key_attr {
 #ifndef __KERNEL__
 	/* Only used within userspace data path. */
 	OVS_TUNNEL_KEY_ATTR_GTPU_OPTS,		/* struct gtpu_metadata */
+	OVS_TUNNEL_KEY_ATTR_ETHERTYPE,		/* be16 Ethernet type */
 #endif
 	__OVS_TUNNEL_KEY_ATTR_MAX
 };

@@ -95,6 +95,7 @@ ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
     void *nh;
     struct ip_header *ip;
     struct ovs_16aligned_ip6_hdr *ip6;
+    const struct eth_header *eth;
     void *l4;
     int l3_size;
 
@@ -173,6 +174,11 @@ ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
         VLOG_WARN_RL(&err_rl, "ipv4 packet has invalid version (%d)",
                      IP_VER(ip->ip_ihl_ver));
         return NULL;
+    }
+
+    eth = dp_packet_eth(packet);
+    if (eth) {
+        tnl->eth_type = eth->eth_type;
     }
 
     return l4;

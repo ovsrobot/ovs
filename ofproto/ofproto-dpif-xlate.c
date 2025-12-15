@@ -8081,6 +8081,8 @@ xlate_wc_init(struct xlate_ctx *ctx)
 static void
 xlate_wc_finish(struct xlate_ctx *ctx)
 {
+    struct ofproto_dpif *ofproto = ctx->xbridge->ofproto;
+    struct dpif_backer *backer = ofproto->backer;
     int i;
 
     /* Clear the metadata and register wildcard masks, because we won't
@@ -8148,9 +8150,14 @@ xlate_wc_finish(struct xlate_ctx *ctx)
             ctx->wc->masks.vlans[i].tci = 0;
         }
     }
-    /* Clear tunnel wc bits if original packet is non-tunnel. */
+    /* Handle tunnel wildcarding and unwildcarding. */
     if (!flow_tnl_dst_is_set(&ctx->xin->upcall_flow->tunnel)) {
+        /* Clear tunnel wc bits if original packet is non-tunnel. */
         memset(&ctx->wc->masks.tunnel, 0, sizeof ctx->wc->masks.tunnel);
+    } else if (backer->rt_support.odp.tun_eth_type &&
+               ctx->xin->upcall_flow->tunnel.eth_type != 0) {
+        /* Unwildcard tunnel eth_type when supported and present. */
+        ctx->wc->masks.tunnel.eth_type = OVS_BE16_MAX;
     }
 }
 

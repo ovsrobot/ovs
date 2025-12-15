@@ -1323,6 +1323,9 @@ flow_get_metadata(const struct flow *flow, struct match *flow_metadata)
         match_set_tun_flags(flow_metadata,
                             flow->tunnel.flags & FLOW_TNL_PUB_F_MASK);
     }
+    if (flow->tunnel.eth_type) {
+        match_set_tun_eth_type(flow_metadata, flow->tunnel.eth_type);
+    }
     if (flow->tunnel.ip_src) {
         match_set_tun_src(flow_metadata, flow->tunnel.ip_src);
     }

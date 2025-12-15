@@ -1508,6 +1508,7 @@ ovs-ofctl add-flow br-int 'in_port=3,tun_src=192.168.1.1,tun_id=5001 actions=1'
       </diagram>
     </field>
 
+    <field id="MFF_TUN_ETH_TYPE" title="Tunnel Ethernet type" internal="yes"/>
     <field id="MFF_TUN_SRC" title="Tunnel IPv4 Source">
       <p>
         When a packet is received from a tunnel, this field is the

@@ -1659,6 +1659,75 @@ check_psample(struct dpif_backer *backer)
     return supported;
 }
 
+static bool
+check_tun_eth_type(struct dpif_backer *backer)
+{
+    struct flow flow;
+    struct odputil_keybuf keybuf;
+    struct ofpbuf key;
+    struct ofpbuf reply;
+    struct dpif_flow returned_flow;
+    uint64_t stub[DPIF_FLOW_BUFSIZE / 8];
+    bool enable = false;
+    ovs_be16 expected_eth_type = htons(ETH_TYPE_IP);
+    struct odp_flow_key_parms odp_parms = {
+        .flow = &flow,
+        .support = {
+            .tun_eth_type = true,
+        },
+    };
+
+    memset(&flow, 0, sizeof flow);
+    flow.tunnel.eth_type = expected_eth_type;
+    flow.tunnel.ip_dst = htonl(0x01020304);
+    flow.tunnel.ip_src = htonl(0x05060708);
+    flow.dl_type = htons(ETH_TYPE_IP);
+
+    ofpbuf_use_stack(&key, &keybuf, sizeof keybuf);
+    odp_flow_key_from_flow(&odp_parms, &key);
+
+    /* Try to install the flow */
+    int error = dpif_flow_put(backer->dpif,
+                              DPIF_FP_CREATE | DPIF_FP_PROBE,
+                              key.data, key.size, NULL, 0,
+                              NULL, 0, NULL, NON_PMD_CORE_ID, NULL);
+    if (error) {
+        goto out;
+    }
+
+    /* Read it back and verify the field is preserved */
+    ofpbuf_use_stack(&reply, &stub, sizeof stub);
+    error = dpif_flow_get(backer->dpif, key.data, key.size, NULL,
+                          NON_PMD_CORE_ID, &reply, &returned_flow);
+    if (error) {
+        goto cleanup;
+    }
+
+    /* Parse the returned flow and check if eth_type matches */
+    struct flow returned_flow_struct;
+    error = odp_flow_key_to_flow(returned_flow.key, returned_flow.key_len,
+                                  &returned_flow_struct, NULL);
+    if (!error && returned_flow_struct.tunnel.eth_type == expected_eth_type) {
+        enable = true;
+    }
+
+cleanup:
+    /* Clean up the test flow */
+    dpif_flow_del(backer->dpif, key.data, key.size, NULL,
+                  NON_PMD_CORE_ID, NULL);
+
+out:
+    if (enable) {
+        VLOG_INFO("%s: Datapath supports tun_eth_type",
+                  dpif_name(backer->dpif));
+    } else {
+        VLOG_INFO("%s: Datapath does not support tun_eth_type",
+                  dpif_name(backer->dpif));
+    }
+
+    return enable;
+}
+
 #define CHECK_FEATURE__(NAME, SUPPORT, FIELD, VALUE, ETHTYPE)               \
 static bool                                                                 \
 check_##NAME(struct dpif_backer *backer)                                    \
@@ -1759,6 +1828,7 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.odp.ct_orig_tuple = check_ct_orig_tuple(backer);
     backer->rt_support.odp.ct_orig_tuple6 = check_ct_orig_tuple6(backer);
     backer->rt_support.odp.nd_ext = check_nd_extensions(backer);
+    backer->rt_support.odp.tun_eth_type = check_tun_eth_type(backer);
 }
 
 /* TC does not support offloading the explicit drop action. As such we need to
@@ -5924,6 +5994,7 @@ get_datapath_cap(const char *datapath_type, struct smap *cap)
     smap_add(cap, "ct_orig_tuple", s->odp.ct_orig_tuple ? "true" : "false");
     smap_add(cap, "ct_orig_tuple6", s->odp.ct_orig_tuple6 ? "true" : "false");
     smap_add(cap, "nd_ext", s->odp.nd_ext ? "true" : "false");
+    smap_add(cap, "tun_eth_type", s->odp.tun_eth_type ? "true" : "false");
 
     /* DPIF_SUPPORT_FIELDS */
     smap_add(cap, "masked_set_action",

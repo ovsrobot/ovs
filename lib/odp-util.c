@@ -2877,6 +2877,7 @@ static const struct attr_len_tbl ovs_tun_key_attr_lens[OVS_TUNNEL_KEY_ATTR_MAX +
     [OVS_TUNNEL_KEY_ATTR_IPV6_DST]      = { .len = 16 },
     [OVS_TUNNEL_KEY_ATTR_ERSPAN_OPTS]   = { .len = ATTR_LEN_VARIABLE },
     [OVS_TUNNEL_KEY_ATTR_GTPU_OPTS]   = { .len = ATTR_LEN_VARIABLE },
+    [OVS_TUNNEL_KEY_ATTR_ETHERTYPE]     = { .len = 2 },
 };
 
 const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = {
@@ -3278,6 +3279,9 @@ odp_tun_key_from_attr__(const struct nlattr *attr, bool is_mask,
             tun->gtpu_msgtype = opts->msgtype;
             break;
         }
+        case OVS_TUNNEL_KEY_ATTR_ETHERTYPE:
+            tun->eth_type = nl_attr_get_be16(a);
+            break;
 
         default:
             /* Allow this to show up as unexpected, if there are unknown
@@ -3402,6 +3406,11 @@ tun_key_to_attr(struct ofpbuf *a, const struct flow_tnl *tun_key,
         nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_GTPU_OPTS,
                           &opts, sizeof(opts));
     }
+
+    if (tun_key->eth_type) {
+        nl_msg_put_be16(a, OVS_TUNNEL_KEY_ATTR_ETHERTYPE, tun_key->eth_type);
+    }
+
     nl_msg_end_nested(a, tun_key_ofs);
 }
 
@@ -4176,6 +4185,10 @@ format_odp_tun_attr(const struct nlattr *attr, const struct nlattr *mask_attr,
             ds_put_cstr(ds, "gtpu(");
             format_odp_tun_gtpu_opt(a, ma, ds, verbose);
             ds_put_cstr(ds, "),");
+            break;
+        case OVS_TUNNEL_KEY_ATTR_ETHERTYPE:
+            format_be16x(ds, "eth_type", nl_attr_get_be16(a),
+                         ma ? nl_attr_get(ma) : NULL, verbose);
             break;
         case __OVS_TUNNEL_KEY_ATTR_MAX:
         default:
@@ -6064,6 +6077,8 @@ parse_odp_key_mask_attr__(struct parse_odp_context *context, const char *s,
 
     SCAN_BEGIN_NESTED("tunnel(", OVS_KEY_ATTR_TUNNEL) {
         SCAN_FIELD_NESTED("tun_id=", ovs_be64, be64, OVS_TUNNEL_KEY_ATTR_ID);
+        SCAN_FIELD_NESTED("eth_type=", ovs_be16, be16,
+                          OVS_TUNNEL_KEY_ATTR_ETHERTYPE);
         SCAN_FIELD_NESTED("src=", ovs_be32, ipv4, OVS_TUNNEL_KEY_ATTR_IPV4_SRC);
         SCAN_FIELD_NESTED("dst=", ovs_be32, ipv4, OVS_TUNNEL_KEY_ATTR_IPV4_DST);
         SCAN_FIELD_NESTED("ipv6_src=", struct in6_addr, in6_addr, OVS_TUNNEL_KEY_ATTR_IPV6_SRC);
