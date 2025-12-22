@@ -190,7 +190,7 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
 }
 
 /* Return RTNLGRP_LINK on success, 0 on parse error. */
-static int
+int
 rtnetlink_parse_cb(struct ofpbuf *buf, void *change)
 {
     return rtnetlink_parse(buf, change) ? RTNLGRP_LINK : 0;
@@ -206,12 +206,20 @@ rtnetlink_parse_cb(struct ofpbuf *buf, void *change)
  *
  * xxx Joins more multicast groups when needed.
  *
+ * Callbacks might find that netdev-linux netdevs still hold outdated cached
+ * information. If the notification has to trigger some kind of reconfiguration
+ * that requires up-to-date netdev cache, it should do it asynchronously, for
+ * instance by setting a flag in the callback and acting on it during the
+ * normal "*_run()" operation.
+ *
+ * Notifications might come from any network namespace.
+ *
  * Returns an initialized nln_notifier if successful, NULL otherwise. */
 struct nln_notifier *
 rtnetlink_notifier_create(rtnetlink_notify_func *cb, void *aux)
 {
     if (!nln) {
-        nln = nln_create(NETLINK_ROUTE, false, rtnetlink_parse_cb,
+        nln = nln_create(NETLINK_ROUTE, true, rtnetlink_parse_cb,
                          &rtn_change);
     }
 

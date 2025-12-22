@@ -25,6 +25,7 @@
  * Linux-specific code. */
 
 struct netdev;
+struct rtnetlink_change;
 
 int netdev_linux_ethtool_set_flag(struct netdev *netdev, uint32_t flag,
                                   const char *flag_name, bool enable);
@@ -34,5 +35,7 @@ int tc_add_policer_action(uint32_t index, uint64_t kbits_rate,
                           uint32_t pkts_burst, bool update);
 int tc_del_policer_action(uint32_t index, struct ofputil_meter_stats *stats);
 int tc_get_policer_action(uint32_t index, struct ofputil_meter_stats *stats);
+void netdev_linux_rtnetlink_update(const struct rtnetlink_change *change,
+                                   int nsid, void *);
 
 #endif /* netdev-linux.h */

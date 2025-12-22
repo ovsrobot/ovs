@@ -1,5 +1,4 @@
-/*
- * Copyright (c) 2009 Nicira, Inc.
+/* Copyright (c) 2009 Nicira, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,4 +50,5 @@ void nln_notifier_destroy(struct nln_notifier *);
 void nln_run(struct nln *);
 void nln_wait(struct nln *);
 void nln_report(const struct nln *nln, void *change, int group, int nsid);
+int rtnetlink_parse_cb(struct ofpbuf *buf, void *change);
 #endif /* netlink-notifier.h */

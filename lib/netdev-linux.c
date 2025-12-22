@@ -297,6 +297,10 @@ static struct ovs_mutex lag_mutex = OVS_MUTEX_INITIALIZER;
 static struct shash lag_shash OVS_GUARDED_BY(lag_mutex)
     = SHASH_INITIALIZER(&lag_shash);
 
+static struct rtnetlink_change netlink_change;
+static struct nln *nln = NULL;
+static struct nln_notifier *notifiers[4] = {NULL, NULL, NULL, NULL};
+
 /* Traffic control. */
 
 /* An instance of a traffic control class.  Always associated with a particular
@@ -647,40 +651,6 @@ static void netdev_linux_changed(struct netdev_linux *netdev,
                                  unsigned int ifi_flags, unsigned int mask)
     OVS_REQUIRES(netdev->mutex);
 
-/* Returns a NETLINK_ROUTE socket listening for RTNLGRP_LINK,
- * RTNLGRP_IPV4_IFADDR and RTNLGRP_IPV6_IFADDR changes, or NULL
- * if no such socket could be created. */
-static struct nl_sock *
-netdev_linux_notify_sock(void)
-{
-    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
-    static struct nl_sock *sock;
-    unsigned int mcgroups[] = {RTNLGRP_LINK, RTNLGRP_IPV4_IFADDR,
-                                RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV6_IFINFO};
-
-    if (ovsthread_once_start(&once)) {
-        int error;
-
-        error = nl_sock_create(NETLINK_ROUTE, &sock);
-        if (!error) {
-            size_t i;
-
-            nl_sock_listen_all_nsid(sock, true);
-            for (i = 0; i < ARRAY_SIZE(mcgroups); i++) {
-                error = nl_sock_join_mcgroup(sock, mcgroups[i]);
-                if (error) {
-                    nl_sock_destroy(sock);
-                    sock = NULL;
-                    break;
-                }
-            }
-        }
-        ovsthread_once_done(&once);
-    }
-
-    return sock;
-}
-
 static bool
 netdev_linux_miimon_enabled(void)
 {
@@ -698,7 +668,7 @@ netdev_linux_kind_is_lag(const char *kind)
 }
 
 static void
-netdev_linux_update_lag(struct rtnetlink_change *change)
+netdev_linux_update_lag(const struct rtnetlink_change *change)
     OVS_REQUIRES(lag_mutex)
 {
     struct linux_lag_member *lag;
@@ -763,99 +733,126 @@ netdev_linux_update_lag(struct rtnetlink_change *change)
 }
 
 void
-netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
+netdev_linux_rtnetlink_update(const struct rtnetlink_change *change, int nsid,
+                              void *aux OVS_UNUSED)
 {
-    struct nl_sock *sock;
-    int error;
+    struct netdev *netdev_ = NULL;
 
-    if (netdev_linux_miimon_enabled()) {
-        netdev_linux_miimon_run();
-    }
+    if (change && change->irrelevant) {
+        return;
+    } else if (!change) {
+        struct shash device_shash;
+        struct shash_node *node;
 
-    sock = netdev_linux_notify_sock();
-    if (!sock) {
+        shash_init(&device_shash);
+        netdev_get_devices(&netdev_linux_class, &device_shash);
+        SHASH_FOR_EACH (node, &device_shash) {
+            struct netdev_linux *netdev = netdev_linux_cast(netdev_);
+            netdev_ = node->data;
+            int error;
+
+            ovs_mutex_lock(&netdev->mutex);
+            error = update_flags_local(netdev);
+            netdev_linux_changed(netdev, netdev->ifi_flags,
+                                 error ? 0 : VALID_FLAGS);
+            ovs_mutex_unlock(&netdev->mutex);
+
+            netdev_close(netdev_);
+        }
+        shash_destroy(&device_shash);
         return;
     }
 
-    do {
-        uint64_t buf_stub[4096 / 8];
-        int nsid;
-        struct ofpbuf buf;
+    if (change->ifname) {
+        netdev_ = netdev_from_name(change->ifname);
+    }
 
-        ofpbuf_use_stub(&buf, buf_stub, sizeof buf_stub);
-        error = nl_sock_recv(sock, &buf, &nsid, false);
-        if (!error) {
-            struct rtnetlink_change change;
+    if (netdev_ && is_netdev_linux_class(netdev_->netdev_class)) {
+        struct netdev_linux *netdev = netdev_linux_cast(netdev_);
 
-            if (rtnetlink_parse(&buf, &change) && !change.irrelevant) {
-                struct netdev *netdev_ = NULL;
-                char dev_name[IFNAMSIZ];
+        ovs_mutex_lock(&netdev->mutex);
+        netdev_linux_update(netdev, nsid, change);
+        ovs_mutex_unlock(&netdev->mutex);
+    }
 
-                if (!change.ifname) {
-                     change.ifname = if_indextoname(change.if_index, dev_name);
-                }
+    if (change->ifname &&
+        rtnetlink_type_is_rtnlgrp_link(change->nlmsg_type)) {
 
-                if (change.ifname) {
-                    netdev_ = netdev_from_name(change.ifname);
-                }
-                if (netdev_ && is_netdev_linux_class(netdev_->netdev_class)) {
-                    struct netdev_linux *netdev = netdev_linux_cast(netdev_);
+        /* Need to try updating the LAG information. */
+        ovs_mutex_lock(&lag_mutex);
+        netdev_linux_update_lag(change);
+        ovs_mutex_unlock(&lag_mutex);
+    }
+    netdev_close(netdev_);
+}
 
-                    ovs_mutex_lock(&netdev->mutex);
-                    netdev_linux_update(netdev, nsid, &change);
-                    ovs_mutex_unlock(&netdev->mutex);
-                }
+static void
+netdev_linux_nln_cb(const void *change, int nsid, void *aux)
+{
+    netdev_linux_rtnetlink_update(change, nsid, aux);
+}
 
-                if (change.ifname &&
-                    rtnetlink_type_is_rtnlgrp_link(change.nlmsg_type)) {
+static void
+netdev_linux_rtnetlink_config(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
 
-                    /* Need to try updating the LAG information. */
-                    ovs_mutex_lock(&lag_mutex);
-                    netdev_linux_update_lag(&change);
-                    ovs_mutex_unlock(&lag_mutex);
-                }
-                netdev_close(netdev_);
-            }
-        } else if (error == ENOBUFS) {
-            struct shash device_shash;
-            struct shash_node *node;
+    if (ovsthread_once_start(&once)) {
+        unsigned int extra_mcgroups[] = {RTNLGRP_IPV4_IFADDR,
+                                RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV6_IFINFO};
+        struct nln_notifier *notifier;
+        int i;
 
-            nl_sock_drain(sock);
+        ovs_assert(ARRAY_SIZE(notifiers) == ARRAY_SIZE(extra_mcgroups) + 1);
 
-            shash_init(&device_shash);
-            netdev_get_devices(&netdev_linux_class, &device_shash);
-            SHASH_FOR_EACH (node, &device_shash) {
-                struct netdev *netdev_ = node->data;
-                struct netdev_linux *netdev = netdev_linux_cast(netdev_);
-
-                ovs_mutex_lock(&netdev->mutex);
-                update_flags_local(netdev);
-                netdev_linux_changed(netdev, netdev->ifi_flags, VALID_FLAGS);
-                ovs_mutex_unlock(&netdev->mutex);
-
-                netdev_close(netdev_);
-            }
-            shash_destroy(&device_shash);
-        } else if (error != EAGAIN) {
-            static struct vlog_rate_limit rll = VLOG_RATE_LIMIT_INIT(1, 5);
-            VLOG_WARN_RL(&rll, "error reading or parsing netlink (%s)",
-                         ovs_strerror(error));
+        nln = nln_create(NETLINK_ROUTE, true, rtnetlink_parse_cb,
+                         &netlink_change);
+        if (!nln) {
+            VLOG_ERR("failed to create nln notifier");
         }
-        ofpbuf_uninit(&buf);
-    } while (!error);
+
+        for (i = 0; i < ARRAY_SIZE(extra_mcgroups); i++) {
+            notifier = nln_notifier_create(nln, extra_mcgroups[i],
+                                           netdev_linux_nln_cb, NULL);
+            if (!notifier) {
+                VLOG_ERR("failed to create nln notifier for mcgroup %d",
+                         extra_mcgroups[i]);
+            }
+            notifiers[i] = notifier;
+        }
+
+        notifier = rtnetlink_notifier_create(netdev_linux_rtnetlink_update,
+                                             NULL);
+        if (!notifier) {
+            VLOG_ERR("failed to create rtnetlink notifier");
+        }
+        notifiers[i] = notifier;
+
+        ovsthread_once_done(&once);
+    }
+}
+
+void
+netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
+{
+    rtnetlink_run();
+    if (nln) {
+        nln_run(nln);
+    }
+    if (netdev_linux_miimon_enabled()) {
+        netdev_linux_miimon_run();
+    }
 }
 
 static void
 netdev_linux_wait(const struct netdev_class *netdev_class OVS_UNUSED)
 {
-    struct nl_sock *sock;
-
+    rtnetlink_wait();
+    if (nln) {
+        nln_wait(nln);
+    }
     if (netdev_linux_miimon_enabled()) {
         netdev_linux_miimon_wait();
-    }
-    sock = netdev_linux_notify_sock();
-    if (sock) {
-        nl_sock_wait(sock, POLLIN);
     }
 }
 
@@ -899,9 +896,6 @@ netdev_linux_update__(struct netdev_linux *dev,
                 dev->etheraddr = change->mac;
                 dev->cache_valid |= VALID_ETHERADDR;
                 dev->ether_addr_error = 0;
-
-                /* The mac addr has been changed, report it now. */
-                rtnetlink_report_link();
             }
 
             if (change->primary && netdev_linux_kind_is_lag(change->primary)) {
@@ -963,6 +957,7 @@ netdev_linux_common_construct(struct netdev *netdev_)
                      name);
         return EINVAL;
     }
+    netdev_linux_rtnetlink_config();
 
     /* The device could be in the same network namespace or in another one. */
     netnsid_unset(&netdev->netnsid);
