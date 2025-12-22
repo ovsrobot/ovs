@@ -17,6 +17,7 @@ AT_CHECK([ip link add ovs-veth0 type veth peer name ovs-veth1])
 AT_CHECK([ovs-vsctl del-port br0 ovs-veth0])
 
 OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/failed to get flags for network device ovs-veth0/d
 /could not open network device ovs-veth0/d
 /cannot get .*STP status on nonexistent port/d
 /ethtool command .*on network device ovs-veth0 failed/d
