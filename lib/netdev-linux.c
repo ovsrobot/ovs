@@ -816,6 +816,37 @@ netdev_linux_wait(const struct netdev_class *netdev_class OVS_UNUSED)
     }
 }
 
+
+/* Check whether the current state of the netdev is the same as the one
+ * reported by netlink. */
+static bool
+netdev_linux_check(struct netdev_linux *dev,
+                   const struct rtnetlink_change *change)
+    OVS_REQUIRES(dev->mutex)
+{
+    bool result = true;
+
+    if (dev->ifi_flags != change->ifi_flags) {
+        result = false;
+    }
+    if (dev->mtu != change->mtu) {
+        result = false;
+    }
+    if (!eth_addr_is_zero(change->mac) &&
+        !eth_addr_equals(dev->etheraddr, change->mac)) {
+        result = false;
+    }
+    if (dev->ifindex != change->if_index) {
+        result = false;
+    }
+    if (dev->is_lag_primary != (change->primary &&
+        netdev_linux_kind_is_lag(change->primary))) {
+        result = false;
+    }
+
+    return result;
+}
+
 static void
 netdev_linux_changed(struct netdev_linux *dev,
                      unsigned int ifi_flags, unsigned int mask)
@@ -2276,7 +2307,7 @@ netdev_linux_get_stats(const struct netdev *netdev_,
 
     ovs_mutex_lock(&netdev->mutex);
     get_stats_via_vport(netdev_, stats);
-    error = get_stats_via_netlink(netdev_, &dev_stats);
+    error = get_stats_via_netlink(netdev, &dev_stats);
     if (error) {
         if (!netdev->vport_stats_error) {
             error = 0;
@@ -2315,7 +2346,7 @@ netdev_tap_get_stats(const struct netdev *netdev_, struct netdev_stats *stats)
 
     ovs_mutex_lock(&netdev->mutex);
     get_stats_via_vport(netdev_, stats);
-    error = get_stats_via_netlink(netdev_, &dev_stats);
+    error = get_stats_via_netlink(netdev, &dev_stats);
     if (error) {
         if (!netdev->vport_stats_error) {
             error = 0;
@@ -6737,7 +6768,9 @@ netdev_stats_from_rtnl_link_stats64(struct netdev_stats *dst,
 }
 
 int
-get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
+get_stats_via_netlink(struct netdev_linux *netdev,
+                      struct netdev_stats *stats)
+    OVS_REQUIRES(netdev->mutex)
 {
     struct rtnetlink_change change = {0};
     struct rtnl_link_stats64 _stats64;
@@ -6754,7 +6787,7 @@ get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
                         sizeof(struct ifinfomsg) + NL_ATTR_SIZE(IFNAMSIZ),
                         RTM_GETLINK, NLM_F_REQUEST);
     ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
-    nl_msg_put_string(&request, IFLA_IFNAME, netdev_get_name(netdev_));
+    nl_msg_put_string(&request, IFLA_IFNAME, netdev_get_name(&netdev->up));
     error = nl_transact(NETLINK_ROUTE, &request, &reply);
     ofpbuf_uninit(&request);
     if (error) {
@@ -6774,6 +6807,13 @@ get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
             VLOG_WARN_RL(&rl, "RTM_GETLINK reply lacks stats");
             error = EPROTO;
         }
+
+        /* Verify the internal state of netdevs matches the one given by
+         * netlink. */
+        if (!netdev_linux_check(netdev, &change)) {
+            netdev_linux_update__(netdev, &change);
+        }
+
     } else {
         VLOG_WARN_RL(&rl, "invalid RTM_GETLINK reply");
         error = EPROTO;
