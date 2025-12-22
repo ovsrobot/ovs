@@ -23,6 +23,7 @@
 #include <stdlib.h>
 
 #include "netlink-notifier.h"
+#include "netnsid.h"
 #include "ovstest.h"
 #include "packets.h"
 #include "route-table.h"
@@ -72,6 +73,7 @@ rt_table_name(uint32_t id)
 
 static void
 test_lib_route_table_handle_msg(const struct route_table_msg *change,
+                                int nsid,
                                 void *data OVS_UNUSED)
 {
     struct ds nexthop_addr = DS_EMPTY_INITIALIZER;
@@ -83,10 +85,10 @@ test_lib_route_table_handle_msg(const struct route_table_msg *change,
     ipv6_format_mapped(&change->rd.rta_prefsrc, &rta_prefsrc);
     ipv6_format_mapped(&change->rd.rta_dst, &rta_dst);
 
-    printf("%s/%u relevant: %d nlmsg_type: %d rtm_protocol: %s (%u) "
+    printf("%s/%u nsid %d relevant: %d nlmsg_type: %d rtm_protocol: %s (%u) "
            "rtn_local: %d rta_prefsrc: %s rta_mark: %"PRIu32" "
            "rta_table_id: %s rta_priority: %"PRIu32"\n",
-           ds_cstr(&rta_dst), rd->rtm_dst_len, change->relevant,
+           ds_cstr(&rta_dst), rd->rtm_dst_len, nsid, change->relevant,
            change->nlmsg_type, rt_prot_name(rd->rtm_protocol),
            rd->rtm_protocol, rd->rtn_local, ds_cstr(&rta_prefsrc),
            rd->rta_mark, rt_table_name(rd->rta_table_id), rd->rta_priority);
@@ -109,18 +111,26 @@ test_lib_route_table_handle_msg(const struct route_table_msg *change,
 }
 
 static void
+__test_lib_route_table_dump(const struct route_table_msg *change,
+                          void *data OVS_UNUSED) {
+
+    test_lib_route_table_handle_msg(change, NETNSID_LOCAL, NULL);
+}
+
+static void
 test_lib_route_table_dump(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
 {
     route_table_dump_one_table(RT_TABLE_UNSPEC,
-                               test_lib_route_table_handle_msg,
+                               __test_lib_route_table_dump,
                                NULL);
 }
 
 static void
 test_lib_route_table_change(struct route_table_msg *change,
+                            int nsid,
                             void *aux OVS_UNUSED)
 {
-    test_lib_route_table_handle_msg(change, NULL);
+    test_lib_route_table_handle_msg(change, nsid, NULL);
     route_data_destroy(&change->rd);
 }
 
@@ -138,7 +148,7 @@ test_lib_route_table_monitor(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    nln = nln_create(NETLINK_ROUTE, route_table_parse, &rtmsg);
+    nln = nln_create(NETLINK_ROUTE, false, route_table_parse, &rtmsg);
 
     route_notifier =
         nln_notifier_create(nln, RTNLGRP_IPV4_ROUTE,

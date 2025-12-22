@@ -63,7 +63,7 @@ struct rtnetlink_change {
  * have changed.  'aux' is as specified in the call to
  * rtnetlink_notifier_register().  */
 typedef
-void rtnetlink_notify_func(const struct rtnetlink_change *change,
+void rtnetlink_notify_func(const struct rtnetlink_change *change, int nsid,
                            void *aux);
 
 bool rtnetlink_type_is_rtnlgrp_link(uint16_t type);

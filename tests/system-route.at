@@ -128,7 +128,7 @@ Cached: 10.0.0.17/32 dev p1-route SRC 10.0.0.17 local
 Cached: 10.0.0.18/32 dev p1-route SRC 10.0.0.17
 ])
 AT_CHECK([ovstest test-lib-route-table-dump | \
-          awk '/rta_table_id:.*42/{print$1" "$15" "$16}' | sort], [0], [dnl
+          awk '/rta_table_id:.*42/{print$1" "$17" "$18}' | sort], [0], [dnl
 10.0.0.19/32 rta_table_id: 42
 10.0.0.20/32 rta_table_id: 1042
 ])
@@ -299,7 +299,7 @@ on_exit 'ip link del p1-route'
 dnl Add ip address.
 AT_CHECK([ip addr add 10.0.0.17/24 dev p1-route], [0], [stdout])
 AT_CHECK([ovstest test-lib-route-table-dump | \
-          awk '/^10.0.0.17/{print$1" "$6" "$7}'], [0], [dnl
+          awk '/^10.0.0.17/{print$1" "$8" "$9}'], [0], [dnl
 10.0.0.17/32 rtm_protocol: RTPROT_KERNEL
 ])
 
@@ -307,11 +307,11 @@ dnl Add route.
 AT_CHECK([ip route add 192.168.10.12/32 dev p1-route via 10.0.0.18], [0],
          [stdout])
 AT_CHECK([ovstest test-lib-route-table-dump | \
-          awk '/^192.168.10.12/{print$1" "$17" "$18}'], [0], [dnl
+          awk '/^192.168.10.12/{print$1" "$19" "$20}'], [0], [dnl
 192.168.10.12/32 rta_priority: 0
 ])
 AT_CHECK([ovstest test-lib-route-table-dump | \
-          awk '/^192.168.10.12/{print$1" "$6" "$7}'], [0], [dnl
+          awk '/^192.168.10.12/{print$1" "$8" "$9}'], [0], [dnl
 192.168.10.12/32 rtm_protocol: RTPROT_BOOT
 ])
 
@@ -323,11 +323,11 @@ dnl Add route with priority.
 AT_CHECK([ip route add 192.168.10.12/32 dev p1-route via 10.0.0.18 metric 42],
          [0], [stdout])
 AT_CHECK([ovstest test-lib-route-table-dump | \
-          awk '/^192.168.10.12/{print$1" "$17" "$18}'], [0], [dnl
+          awk '/^192.168.10.12/{print$1" "$19" "$20}'], [0], [dnl
 192.168.10.12/32 rta_priority: 42
 ])
 AT_CHECK([ovstest test-lib-route-table-dump | \
-          awk '/^192.168.10.12/{print$1" "$6" "$7}'], [0], [dnl
+          awk '/^192.168.10.12/{print$1" "$8" "$9}'], [0], [dnl
 192.168.10.12/32 rtm_protocol: RTPROT_BOOT
 ])
 

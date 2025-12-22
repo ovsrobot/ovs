@@ -32,8 +32,9 @@ struct ofpbuf;
  * specific change filled out by an nln_parse_func.  It may be null if the
  * buffer of change information overflowed, in which case the function must
  * assume that everything may have changed. 'aux' is as specified in
- * nln_notifier_register(). */
-typedef void nln_notify_func(const void *change, void *aux);
+ * nln_notifier_register().  'nsid` is the network namespace id from which the
+ * netlink event came from. */
+typedef void nln_notify_func(const void *change, int nsid, void *aux);
 
 /* Function called to parse incoming nln notifications.  The 'buf' message
  * should be parsed into 'change' as specified in nln_create().
@@ -41,12 +42,13 @@ typedef void nln_notify_func(const void *change, void *aux);
  */
 typedef int nln_parse_func(struct ofpbuf *buf, void *change);
 
-struct nln *nln_create(int protocol, nln_parse_func *, void *change);
+struct nln *nln_create(int protocol, bool all_netns, nln_parse_func *,
+                       void *change);
 void nln_destroy(struct nln *);
 struct nln_notifier *nln_notifier_create(struct nln *, int multicast_group,
                                          nln_notify_func *, void *aux);
 void nln_notifier_destroy(struct nln_notifier *);
 void nln_run(struct nln *);
 void nln_wait(struct nln *);
-void nln_report(const struct nln *nln, void *change, int group);
+void nln_report(const struct nln *nln, void *change, int group, int nsid);
 #endif /* netlink-notifier.h */

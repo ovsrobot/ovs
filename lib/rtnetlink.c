@@ -24,6 +24,7 @@
 
 #include "netlink.h"
 #include "netlink-notifier.h"
+#include "netnsid.h"
 #include "openvswitch/ofpbuf.h"
 #include "packets.h"
 
@@ -210,7 +211,8 @@ struct nln_notifier *
 rtnetlink_notifier_create(rtnetlink_notify_func *cb, void *aux)
 {
     if (!nln) {
-        nln = nln_create(NETLINK_ROUTE, rtnetlink_parse_cb, &rtn_change);
+        nln = nln_create(NETLINK_ROUTE, false, rtnetlink_parse_cb,
+                         &rtn_change);
     }
 
     return nln_notifier_create(nln, RTNLGRP_LINK, (nln_notify_func *) cb, aux);
@@ -249,6 +251,6 @@ void
 rtnetlink_report_link(void)
 {
     if (nln) {
-        nln_report(nln, NULL, RTNLGRP_LINK);
+        nln_report(nln, NULL, RTNLGRP_LINK, NETNSID_UNSET);
     }
 }

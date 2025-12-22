@@ -32,6 +32,7 @@
 #include "netlink.h"
 #include "netlink-notifier.h"
 #include "netlink-socket.h"
+#include "netnsid.h"
 #include "openvswitch/list.h"
 #include "openvswitch/ofpbuf.h"
 #include "ovs-router.h"
@@ -74,11 +75,12 @@ static bool route_table_valid = false;
 
 static void route_table_reset(void);
 static void route_table_handle_msg(const struct route_table_msg *, void *aux);
-static void route_table_change(struct route_table_msg *, void *aux);
+static void route_table_change(struct route_table_msg *, int nsid, void *aux);
 static void route_map_clear(void);
 
 static void name_table_init(void);
-static void name_table_change(const struct rtnetlink_change *, void *);
+static void name_table_change(const struct rtnetlink_change *, int nsid,
+                              void *);
 
 static void
 route_data_destroy_nexthops__(struct route_data *rd)
@@ -116,7 +118,8 @@ route_table_init(void)
     ovs_assert(!route6_notifier);
 
     ovs_router_init();
-    nln = nln_create(NETLINK_ROUTE, route_table_parse, &nln_rtmsg_change);
+    nln = nln_create(NETLINK_ROUTE, false, route_table_parse,
+                     &nln_rtmsg_change);
 
     route_notifier =
         nln_notifier_create(nln, RTNLGRP_IPV4_ROUTE,
@@ -538,10 +541,12 @@ is_standard_table_id(uint32_t table_id)
 }
 
 static void
-route_table_change(struct route_table_msg *change, void *aux OVS_UNUSED)
+route_table_change(struct route_table_msg *change, int nsid,
+                   void *aux OVS_UNUSED)
 {
     if (!change
         || (change->relevant
+            && nsid == NETNSID_LOCAL
             && is_standard_table_id(change->rd.rta_table_id))) {
         route_table_valid = false;
     }
@@ -599,10 +604,10 @@ name_table_init(void)
 
 
 static void
-name_table_change(const struct rtnetlink_change *change,
+name_table_change(const struct rtnetlink_change *change, int nsid,
                   void *aux OVS_UNUSED)
 {
-    if (change && change->irrelevant) {
+    if (change && (nsid != NETNSID_LOCAL || change->irrelevant)) {
         return;
     }
 
