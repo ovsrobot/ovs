@@ -6900,6 +6900,7 @@ get_ifindex(const struct netdev *netdev_, int *ifindexp)
 
 static int
 netdev_linux_update_via_netlink(struct netdev_linux *netdev)
+    OVS_REQUIRES(netdev->mutex)
 {
     struct ofpbuf request;
     struct ofpbuf *reply;
@@ -6933,44 +6934,8 @@ netdev_linux_update_via_netlink(struct netdev_linux *netdev)
     if (rtnetlink_parse(reply, change)
         && !change->irrelevant
         && change->nlmsg_type == RTM_NEWLINK) {
-        bool changed = false;
-        error = 0;
-
-        /* Update netdev from rtnl msg and increment its seq if needed. */
-        if ((change->ifi_flags ^ netdev->ifi_flags) & IFF_RUNNING) {
-            netdev->carrier_resets++;
-            changed = true;
-        }
-        if (change->ifi_flags != netdev->ifi_flags) {
-            netdev->ifi_flags = change->ifi_flags;
-            changed = true;
-        }
-        netdev->cache_valid |= VALID_FLAGS;
-
-        if (change->mtu && change->mtu != netdev->mtu) {
-            netdev->mtu = change->mtu;
-            netdev->cache_valid |= VALID_MTU;
-            netdev->netdev_mtu_error = 0;
-            changed = true;
-        }
-        if (!eth_addr_is_zero(change->mac)
-            && !eth_addr_equals(change->mac, netdev->etheraddr)) {
-            netdev->etheraddr = change->mac;
-            netdev->cache_valid |= VALID_ETHERADDR;
-            netdev->ether_addr_error = 0;
-            changed = true;
-        }
-        if (change->if_index != netdev->ifindex) {
-            netdev->ifindex = change->if_index;
-            netdev->cache_valid |= VALID_IFINDEX;
-            netdev->get_ifindex_error = 0;
-            changed = true;
-        }
-        if (change->primary && netdev_linux_kind_is_lag(change->primary)) {
-            netdev->is_lag_primary = true;
-        }
-        if (changed) {
-            netdev_change_seq_changed(&netdev->up);
+        if (!netdev_linux_check(netdev, change)) {
+            netdev_linux_update__(netdev, change);
         }
     } else {
         error = EINVAL;
