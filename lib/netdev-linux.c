@@ -206,46 +206,6 @@ static inline uint32_t rpl_ethtool_cmd_speed(const struct ethtool_cmd *ep)
 #define SPEED_100000 100000
 #endif
 
-/* Linux 2.6.35 introduced IFLA_STATS64 and rtnl_link_stats64.
- *
- * Tests for rtnl_link_stats64 don't seem to consistently work, e.g. on
- * 2.6.32-431.29.2.el6.x86_64 (see report at
- * https://mail.openvswitch.org/pipermail/ovs-dev/2014-October/291521.html).
- * Maybe if_link.h is not self-contained on those kernels.  It is easiest to
- * unconditionally define a replacement. */
-#ifndef IFLA_STATS64
-#define IFLA_STATS64 23
-#endif
-#define rtnl_link_stats64 rpl_rtnl_link_stats64
-struct rtnl_link_stats64 {
-    uint64_t rx_packets;
-    uint64_t tx_packets;
-    uint64_t rx_bytes;
-    uint64_t tx_bytes;
-    uint64_t rx_errors;
-    uint64_t tx_errors;
-    uint64_t rx_dropped;
-    uint64_t tx_dropped;
-    uint64_t multicast;
-    uint64_t collisions;
-
-    uint64_t rx_length_errors;
-    uint64_t rx_over_errors;
-    uint64_t rx_crc_errors;
-    uint64_t rx_frame_errors;
-    uint64_t rx_fifo_errors;
-    uint64_t rx_missed_errors;
-
-    uint64_t tx_aborted_errors;
-    uint64_t tx_carrier_errors;
-    uint64_t tx_fifo_errors;
-    uint64_t tx_heartbeat_errors;
-    uint64_t tx_window_errors;
-
-    uint64_t rx_compressed;
-    uint64_t tx_compressed;
-};
-
 /* Linux 3.19 introduced virtio_types.h.  It might be missing
  * if we are using old kernel. */
 #ifndef HAVE_VIRTIO_TYPES
@@ -6779,6 +6739,9 @@ netdev_stats_from_rtnl_link_stats64(struct netdev_stats *dst,
 int
 get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
 {
+    struct rtnetlink_change change = {0};
+    struct rtnl_link_stats64 _stats64;
+    struct rtnl_link_stats _stats;
     struct ofpbuf request;
     struct ofpbuf *reply;
     int error;
@@ -6798,34 +6761,23 @@ get_stats_via_netlink(const struct netdev *netdev_, struct netdev_stats *stats)
         return error;
     }
 
-    if (ofpbuf_try_pull(reply, NLMSG_HDRLEN + sizeof(struct ifinfomsg))) {
-        const struct nlattr *a = nl_attr_find(reply, 0, IFLA_STATS64);
-        if (a && nl_attr_get_size(a) >= sizeof(struct rtnl_link_stats64)) {
-            const struct rtnl_link_stats64 *lstats = nl_attr_get(a);
-            struct rtnl_link_stats64 aligned_lstats;
-
-            if (!IS_PTR_ALIGNED(lstats)) {
-                memcpy(&aligned_lstats, (void *) lstats,
-                       sizeof aligned_lstats);
-                lstats = &aligned_lstats;
-            }
-            netdev_stats_from_rtnl_link_stats64(stats, lstats);
+    change.stats = &_stats;
+    change.stats64 = &_stats64;
+    if (rtnetlink_parse(reply, &change)) {
+        if (change.stats_present == RTNL_LINK_STATS64) {
+            netdev_stats_from_rtnl_link_stats64(stats, &_stats64);
+            error = 0;
+        } else if (change.stats_present == RTNL_LINK_STATS) {
+            netdev_stats_from_rtnl_link_stats(stats, &_stats);
             error = 0;
         } else {
-            a = nl_attr_find(reply, 0, IFLA_STATS);
-            if (a && nl_attr_get_size(a) >= sizeof(struct rtnl_link_stats)) {
-                netdev_stats_from_rtnl_link_stats(stats, nl_attr_get(a));
-                error = 0;
-            } else {
-                VLOG_WARN_RL(&rl, "RTM_GETLINK reply lacks stats");
-                error = EPROTO;
-            }
+            VLOG_WARN_RL(&rl, "RTM_GETLINK reply lacks stats");
+            error = EPROTO;
         }
     } else {
-        VLOG_WARN_RL(&rl, "short RTM_GETLINK reply");
+        VLOG_WARN_RL(&rl, "invalid RTM_GETLINK reply");
         error = EPROTO;
     }
-
 
     ofpbuf_delete(reply);
     return error;
@@ -6911,7 +6863,7 @@ netdev_linux_update_via_netlink(struct netdev_linux *netdev)
 {
     struct ofpbuf request;
     struct ofpbuf *reply;
-    struct rtnetlink_change chg;
+    struct rtnetlink_change chg = {0};
     struct rtnetlink_change *change = &chg;
     int error;
 

@@ -20,6 +20,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <linux/if_ether.h>
+#include <linux/if_link.h>
 
 #include "openvswitch/types.h"
 
@@ -28,6 +29,46 @@ struct nln_notifier;
 
 /* These functions are Linux specific, so they should be used directly only by
  * Linux-specific code. */
+
+/* Linux 2.6.35 introduced IFLA_STATS64 and rtnl_link_stats64.
+ *
+ * Tests for rtnl_link_stats64 don't seem to consistently work, e.g. on
+ * 2.6.32-431.29.2.el6.x86_64 (see report at
+ * https://mail.openvswitch.org/pipermail/ovs-dev/2014-October/291521.html).
+ * Maybe if_link.h is not self-contained on those kernels.  It is easiest to
+ * unconditionally define a replacement. */
+#ifndef IFLA_STATS64
+#define IFLA_STATS64 23
+#endif
+#define rtnl_link_stats64 rpl_rtnl_link_stats64
+struct rtnl_link_stats64 {
+    uint64_t rx_packets;
+    uint64_t tx_packets;
+    uint64_t rx_bytes;
+    uint64_t tx_bytes;
+    uint64_t rx_errors;
+    uint64_t tx_errors;
+    uint64_t rx_dropped;
+    uint64_t tx_dropped;
+    uint64_t multicast;
+    uint64_t collisions;
+
+    uint64_t rx_length_errors;
+    uint64_t rx_over_errors;
+    uint64_t rx_crc_errors;
+    uint64_t rx_frame_errors;
+    uint64_t rx_fifo_errors;
+    uint64_t rx_missed_errors;
+
+    uint64_t tx_aborted_errors;
+    uint64_t tx_carrier_errors;
+    uint64_t tx_fifo_errors;
+    uint64_t tx_heartbeat_errors;
+    uint64_t tx_window_errors;
+
+    uint64_t rx_compressed;
+    uint64_t tx_compressed;
+};
 
 /* A digested version of an rtnetlink_link message sent down by the kernel to
  * indicate that a network device's status (link or address) has been changed.
@@ -55,6 +96,15 @@ struct rtnetlink_change {
     /* Link bonding info. */
     const char *primary;        /* Kind of primary (NULL if not primary). */
     const char *sub;            /* Kind of subordinate (NULL if not sub). */
+
+    struct rtnl_link_stats64 *stats64; /* Optional storage for IFLA_STATS64. */
+    struct rtnl_link_stats *stats;     /* Optional storage for IFLA_STATS. */
+    enum {
+        RTNL_LINK_NO_STATS = 0,
+        RTNL_LINK_STATS64,
+        RTNL_LINK_STATS,
+    } stats_present;                    /* Flag indicating what kind of stats
+                                           where present in the message. */
 };
 
 /* Function called to report that a netdev has changed.  'change' describes the
