@@ -723,7 +723,6 @@ lacp_update_attached(struct lacp *lacp) OVS_REQUIRES(mutex)
         }
 
         member_get_priority(member, &pri);
-        bool enable = member_may_enable__(member);
 
         /* Check if partner MAC address is the same as on the working
          * interface. Activate member only if the MAC is the same, or
@@ -733,6 +732,8 @@ lacp_update_attached(struct lacp *lacp) OVS_REQUIRES(mutex)
                                lead_current->partner.sys_id))) {
             member->attached = true;
         }
+
+        bool enable = member_may_enable__(member);
         if (member->attached &&
                 (!lead
                  || enable > lead_enable
