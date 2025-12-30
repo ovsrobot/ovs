@@ -143,6 +143,10 @@ static void rule_criteria_init(struct rule_criteria *, uint8_t table_id,
 static void rule_criteria_require_rw(struct rule_criteria *,
                                      bool can_write_readonly);
 static void rule_criteria_destroy(struct rule_criteria *);
+static void rule_criteria_clone(struct rule_criteria *,
+                                const struct rule_criteria *);
+static void rule_criteria_replace(struct rule_criteria *,
+                                  const struct rule_criteria *);
 
 static enum ofperr collect_rules_loose(struct ofproto *,
                                        const struct rule_criteria *,
@@ -4600,6 +4604,31 @@ rules_mark_for_removal(struct ofproto *ofproto, struct rule_collection *rules)
     rule_collection_destroy(rules);
 }
 
+static void
+rule_criteria_clone(struct rule_criteria *dst,
+                    const struct rule_criteria *src)
+{
+    cls_rule_clone(&dst->cr, &src->cr);
+    dst->table_id = src->table_id;
+    dst->version = src->version;
+    dst->cookie = src->cookie;
+    dst->cookie_mask = src->cookie_mask;
+    dst->out_port = src->out_port;
+    dst->out_group = src->out_group;
+    dst->include_hidden = src->include_hidden;
+    dst->include_readonly = src->include_readonly;
+}
+
+static void
+rule_criteria_replace(struct rule_criteria *dst,
+                      const struct rule_criteria *src)
+{
+    if (dst->version != OVS_VERSION_NOT_REMOVED) {
+        rule_criteria_destroy(dst);
+    }
+    rule_criteria_clone(dst, src);
+}
+
 /* Schedules postponed removal of rules, destroys 'rules'. */
 static void
 remove_rules_postponed(struct rule_collection *rules)
@@ -5605,12 +5634,25 @@ ofproto_flow_mod_learn_start(struct ofproto_flow_mod *ofm)
     OVS_REQUIRES(ofproto_mutex)
 {
     struct rule *rule = ofm->temp_rule;
+    struct rule_criteria saved_criteria;
+    bool saved = false;
+
+    if (ofm->keep_flow_mod
+        && ofm->criteria.version != OVS_VERSION_NOT_REMOVED) {
+        rule_criteria_clone(&saved_criteria, &ofm->criteria);
+        saved = true;
+    }
 
     /* ofproto_flow_mod_start() consumes the reference, so we
      * take a new one. */
     ofproto_rule_ref(rule);
     enum ofperr error = ofproto_flow_mod_start(rule->ofproto, ofm);
     ofm->temp_rule = rule;
+
+    if (saved) {
+        rule_criteria_replace(&ofm->criteria, &saved_criteria);
+        rule_criteria_destroy(&saved_criteria);
+    }
 
     return error;
 }
@@ -5673,6 +5715,8 @@ ofproto_flow_mod_learn(struct ofproto_flow_mod *ofm, bool keep_ref,
     enum ofperr error = ofproto_flow_mod_learn_refresh(ofm, last_used);
     struct rule *rule = ofm->temp_rule;
     bool below_limit = true;
+
+    ofm->keep_flow_mod = keep_ref;
 
     /* Do we need to insert the rule? */
     if (!error && rule->state == RULE_INITIALIZED) {
@@ -8232,6 +8276,7 @@ ofproto_flow_mod_init(struct ofproto *ofproto, struct ofproto_flow_mod *ofm,
     ofm->conjs = NULL;
     ofm->n_conjs = 0;
     ofm->table_id = fm->table_id;
+    ofm->keep_flow_mod = false;
 
     /* Initialize flag used by ofproto_dpif_xcache_execute(). */
     ofm->learn_adds_rule = false;

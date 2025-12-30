@@ -2007,6 +2007,7 @@ struct ofproto_flow_mod {
     bool modify_keep_counts;
     enum nx_flow_update_event event;
     uint8_t table_id;
+    bool keep_flow_mod;              /* Preserve criteria beyond start. */
 
     /* These are only used during commit execution.
      * ofproto_flow_mod_uninit() does NOT clean these up. */
