@@ -4793,7 +4793,7 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
             tuple_swap(&ctx->xin->flow, ctx->wc);
         }
 
-        if (rule) {
+        if (rule && ofproto_rule_try_ref(&rule->up)) {
             /* Fill in the cache entry here instead of xlate_recursively
              * to make the reference counting more explicit.  We take a
              * reference in the lookups above if we are going to cache the
@@ -4804,6 +4804,8 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
                 entry = xlate_cache_add_entry(ctx->xin->xcache, XC_RULE);
                 entry->rule = rule;
                 ofproto_rule_ref(&rule->up);
+            } else {
+                ofproto_rule_unref(&rule->up);
             }
 
             struct ovs_list *old_trace = ctx->xin->trace;
