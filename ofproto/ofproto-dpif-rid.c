@@ -292,6 +292,8 @@ recirc_alloc_id(struct ofproto_dpif *ofproto)
     struct frozen_state state = {
         .table_id = TBL_INTERNAL,
         .ofproto_uuid = ofproto->uuid,
+        /* Avoid duplicate mirrors on bond using BM_TCP with dp_hash. */
+        .mirrors = UINT32_MAX,
         .metadata = {
             .tunnel = {
                 .ip_dst = htonl(0),
