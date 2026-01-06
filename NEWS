@@ -30,6 +30,7 @@ Post-v3.6.0
      * The OOT kernel module: was deprecated in v2.15; was last present in
        the v2.17 release; and is no longer present in any supported release
        since v2.17 went EOL when v3.5 was released.
+   - Increased the number of registers to 32.
 
 
 v3.6.0 - 18 Aug 2025
