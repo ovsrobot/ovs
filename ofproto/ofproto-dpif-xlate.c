@@ -4793,7 +4793,7 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
             tuple_swap(&ctx->xin->flow, ctx->wc);
         }
 
-        if (rule) {
+        if (rule && ofproto_rule_try_ref(&rule->up)) {
             /* Fill in the cache entry here instead of xlate_recursively
              * to make the reference counting more explicit.  We take a
              * reference in the lookups above if we are going to cache the
@@ -4805,6 +4805,7 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
                 entry->rule = rule;
                 ofproto_rule_ref(&rule->up);
             }
+            ofproto_rule_unref(&rule->up);
 
             struct ovs_list *old_trace = ctx->xin->trace;
             xlate_report_table(ctx, rule, table_id);
@@ -8457,12 +8458,14 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         if (ctx.xin->resubmit_stats) {
             rule_dpif_credit_stats(ctx.rule, ctx.xin->resubmit_stats, false);
         }
-        if (ctx.xin->xcache) {
-            struct xc_entry *entry;
-
-            entry = xlate_cache_add_entry(ctx.xin->xcache, XC_RULE);
-            entry->rule = ctx.rule;
-            ofproto_rule_ref(&ctx.rule->up);
+        if (ctx.rule && ofproto_rule_try_ref(&ctx.rule->up)) {
+            if (ctx.xin->xcache) {
+                struct xc_entry *entry;
+                entry = xlate_cache_add_entry(ctx.xin->xcache, XC_RULE);
+                entry->rule = ctx.rule;
+                ofproto_rule_ref(&ctx.rule->up);
+            }
+            ofproto_rule_unref(&ctx.rule->up);
         }
 
         xlate_report_table(&ctx, ctx.rule, ctx.table_id);
