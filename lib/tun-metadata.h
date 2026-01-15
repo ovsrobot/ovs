@@ -54,7 +54,7 @@ void tun_metadata_set_match(const struct mf_field *,
                             char **err_str);
 void tun_metadata_get_fmd(const struct flow_tnl *, struct match *flow_metadata);
 
-void tun_metadata_from_geneve_nlattr(const struct nlattr *attr, bool is_mask,
+int tun_metadata_from_geneve_nlattr(const struct nlattr *attr, bool is_mask,
                                      struct flow_tnl *tun);
 void tun_metadata_to_geneve_nlattr(const struct flow_tnl *tun,
                                    const struct flow_tnl *flow,

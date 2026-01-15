@@ -3255,7 +3255,11 @@ odp_tun_key_from_attr__(const struct nlattr *attr, bool is_mask,
             break;
         }
         case OVS_TUNNEL_KEY_ATTR_GENEVE_OPTS:
-            tun_metadata_from_geneve_nlattr(a, is_mask, tun);
+            if (tun_metadata_from_geneve_nlattr(a, is_mask, tun)) {
+                odp_parse_error(&rl, errorp,
+                                "Geneve options length exceeds maximum");
+                return ODP_FIT_ERROR;
+            }
             break;
         case OVS_TUNNEL_KEY_ATTR_ERSPAN_OPTS: {
             const struct erspan_metadata *opts = nl_attr_get(a);

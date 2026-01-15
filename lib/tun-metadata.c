@@ -605,12 +605,15 @@ tun_metadata_del_entry(struct tun_table *map, uint8_t idx)
  * on the wire. By always using UDPIF format, this allows us to process the
  * flow key without any knowledge of the mapping table. We can do the
  * conversion later if necessary. */
-void
+int
 tun_metadata_from_geneve_nlattr(const struct nlattr *attr, bool is_mask,
                                 struct flow_tnl *tun)
 {
     int attr_len = nl_attr_get_size(attr);
 
+    if (attr_len > sizeof(tun->metadata.opts.gnv)) {
+        return -EINVAL;
+    }
     memcpy(tun->metadata.opts.gnv, nl_attr_get(attr), attr_len);
     tun->flags |= FLOW_TNL_F_UDPIF;
 
@@ -622,6 +625,8 @@ tun_metadata_from_geneve_nlattr(const struct nlattr *attr, bool is_mask,
          * at the beginning but with additional options after. */
         tun->metadata.present.len = 0xff;
     }
+
+    return 0;
 }
 
 /* Converts from the flat Geneve options representation extracted directly
