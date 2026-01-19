@@ -160,6 +160,9 @@ static int print_bare = 0;
 /* -bad-csum: Makes "compose-packet" generate an invalid checksum. */
 static int bad_csum = 0;
 
+/* --len: Makes "compose-packet" truncate or extend the payload. */
+static unsigned int opt_len = 0;
+
 /* --raw: Makes "ofp-print" read binary data from stdin. */
 static int raw = 0;
 
@@ -223,6 +226,7 @@ parse_options(int argc, char *argv[])
         OPT_COLOR,
         OPT_MAY_CREATE,
         OPT_READ_ONLY,
+        OPT_LEN,
         DAEMON_OPTION_ENUMS,
         OFP_VERSION_OPTION_ENUMS,
         VLOG_OPTION_ENUMS,
@@ -253,6 +257,7 @@ parse_options(int argc, char *argv[])
         {"bad-csum", no_argument, &bad_csum, 1},
         {"raw", no_argument, &raw, 1},
         {"read-only", no_argument, NULL, OPT_READ_ONLY},
+        {"len", required_argument, NULL, OPT_LEN},
         DAEMON_LONG_OPTIONS,
         OFP_VERSION_LONG_OPTIONS,
         VLOG_LONG_OPTIONS,
@@ -380,6 +385,12 @@ parse_options(int argc, char *argv[])
 
         case OPT_MAY_CREATE:
             may_create = true;
+            break;
+
+        case OPT_LEN:
+            if (!str_to_uint(optarg, 10, &opt_len)) {
+                ovs_fatal(0, "value %s on --len is invalid", optarg);
+            }
             break;
 
         DAEMON_OPTION_HANDLERS
@@ -4934,9 +4945,10 @@ ofctl_parse_key_value(struct ovs_cmdl_context *ctx)
     }
 }
 
-/* "compose-packet [--pcap|--bare] [--bad-csum] FLOW [L7]": Converts the
- * OpenFlow flow specification FLOW to a packet with flow_compose() and prints
- * the hex bytes of the packet, with offsets, to stdout.
+/* "compose-packet [--pcap|--bare] [--bad-csum] [--len <length>] FLOW [L7]":
+ * Converts the OpenFlow flow specification FLOW to a packet with
+ * flow_compose() and prints the hex bytes of the packet, with offsets, to
+ * stdout.
  *
  * With --pcap, prints the packet in pcap format, so that you can do something
  * like "ovs-ofctl --pcap compose-packet udp | tcpdump -vvvv -r-" to use
@@ -4948,6 +4960,9 @@ ofctl_parse_key_value(struct ovs_cmdl_context *ctx)
  * FLOW)"
  *
  * With --bad-csum, produces a packet with an invalid IP checksum. (For IPv4.)
+ *
+ * With --len, produces a packet that is either truncated or extended (with
+ * zeros) to the given length.
  *
  * Regardless of the mode, the command also verifies that the flow extracted
  * from that packet matches the original FLOW.
@@ -4990,6 +5005,16 @@ ofctl_compose_packet(struct ovs_cmdl_context *ctx)
     }
     flow_compose(&p, &flow1, l7, l7_len, bad_csum);
     free(l7);
+
+    if (opt_len) {
+        size_t p_len = dp_packet_size(&p);
+
+        if (opt_len > p_len) {
+            dp_packet_put_zeros(&p, opt_len - p_len);
+        } else {
+            dp_packet_set_size(&p, opt_len);
+        }
+    }
 
     if (print_pcap) {
         struct pcap_file *p_file = ovs_pcap_stdout();
