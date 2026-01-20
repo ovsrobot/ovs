@@ -9996,12 +9996,12 @@ dnl Send the NSH packet with TCP SYN payload from p0(at_ns0) interface directed
 dnl to p1(at_ns1) interface.
 NS_CHECK_EXEC([at_ns0], [$PYTHON3 $srcdir/sendpkt.py p0 \
     "$(ovs-ofctl compose-packet --bare 'NSH_HEADER')" \
-    "$(ovs-ofctl compose-packet --bare 'TCP_SYN_PKT')"],
+    "$(ovs-ofctl compose-packet --len 64 --bare 'TCP_SYN_PKT')"],
   [0], [ignore])
 
 dnl Check the expected de-capsulated TCP packet on the egress interface
 OVS_WAIT_UNTIL([ovs-pcap p1.pcap | grep -q \
-    "^$(ovs-ofctl compose-packet --bare 'TCP_SYN_PKT')0*\$"])
+    "^$(ovs-ofctl compose-packet --len 64 --bare 'TCP_SYN_PKT')\$"])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
