@@ -194,6 +194,16 @@ dp_packet_gso__(struct dp_packet *p, struct dp_packet_batch **batches,
     udp_tnl = dp_packet_tunnel_vxlan(p) || dp_packet_tunnel_geneve(p);
     gre_tnl = dp_packet_tunnel_gre(p);
 
+    if (dp_packet_tunnel(p)) {
+        hdr_len = (char *) dp_packet_get_inner_tcp_payload(p)
+                  - (char *) dp_packet_eth(p);
+        data_len = dp_packet_get_inner_tcp_payload_length(p);
+    } else {
+        hdr_len = (char *) dp_packet_get_tcp_payload(p)
+                  - (char *) dp_packet_eth(p);
+        data_len = dp_packet_get_tcp_payload_length(p);
+    }
+
     /* Put back the first segment in the batch, it will be trimmed after
      * all segments have been copied. */
     if (dp_packet_batch_is_full(curr_batch)) {
@@ -203,16 +213,6 @@ dp_packet_gso__(struct dp_packet *p, struct dp_packet_batch **batches,
 
     if (n_segs <= 1) {
         goto out;
-    }
-
-    if (dp_packet_tunnel(p)) {
-        hdr_len = (char *) dp_packet_get_inner_tcp_payload(p)
-                  - (char *) dp_packet_eth(p);
-        data_len = dp_packet_get_inner_tcp_payload_length(p);
-    } else {
-        hdr_len = (char *) dp_packet_get_tcp_payload(p)
-                  - (char *) dp_packet_eth(p);
-        data_len = dp_packet_get_tcp_payload_length(p);
     }
 
     if (partial_seg) {
