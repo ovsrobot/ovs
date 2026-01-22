@@ -3728,12 +3728,36 @@ netdev_linux_get_status(const struct netdev *netdev_, struct smap *smap)
 
         COVERAGE_INC(netdev_get_ethtool);
         memset(&netdev->drvinfo, 0, sizeof netdev->drvinfo);
+        netdev->peer_ifindex = 0;
         error = netdev_linux_do_ethtool(netdev->up.name,
                                         cmd,
                                         ETHTOOL_GDRVINFO,
                                         "ETHTOOL_GDRVINFO");
         if (!error) {
             netdev->cache_valid |= VALID_DRVINFO;
+
+            /* For veth devices, also get the peer_ifindex via ETHTOOL_GSTATS */
+            if (!strcmp(netdev->drvinfo.driver, "veth") && netdev->drvinfo.n_stats > 0) {
+                /* Dynamically allocate based on n_stats from ETHTOOL_GDRVINFO. */
+                size_t n_stats = netdev->drvinfo.n_stats;
+                size_t req_size = sizeof(struct ethtool_stats) + sizeof(__u64) * n_stats;
+
+                struct ethtool_stats *req = xzalloc(req_size);
+                req->cmd = ETHTOOL_GSTATS;
+                req->n_stats = n_stats;
+                
+                int peer_error = netdev_linux_do_ethtool(netdev->up.name,
+                                                (struct ethtool_cmd *)req,
+                                                ETHTOOL_GSTATS,
+                                                "ETHTOOL_GSTATS");
+
+                /* peer_ifindex is the first stat for veth devices */
+                if (!peer_error && req->n_stats > 0 && req->data[0] > 0) {
+                    netdev->peer_ifindex = req->data[0];
+                }
+                
+                free(req);
+            }
         }
     }
 
@@ -3741,6 +3765,11 @@ netdev_linux_get_status(const struct netdev *netdev_, struct smap *smap)
         smap_add(smap, "driver_name", netdev->drvinfo.driver);
         smap_add(smap, "driver_version", netdev->drvinfo.version);
         smap_add(smap, "firmware_version", netdev->drvinfo.fw_version);
+
+        /* For veth devices, report the cached peer_ifindex. */
+        if (netdev->peer_ifindex > 0) {
+            smap_add_format(smap, "peer_ifindex", "%"PRIu64, netdev->peer_ifindex);
+        }
     }
     ovs_mutex_unlock(&netdev->mutex);
 
