@@ -20,12 +20,13 @@
 #include "dpif.h"
 
 /* Forward declarations of private structures. */
+struct dpif_offload_provider_collection;
 struct dpif_offload_class;
 struct dpif_offload;
 
 /* Structure used by the dpif_offload_dump_* functions. */
 struct dpif_offload_dump {
-    const struct dpif *dpif;
+    const struct dpif_offload_provider_collection *collection;
     int error;
     void *state;
 };

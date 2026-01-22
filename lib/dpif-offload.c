@@ -188,6 +188,25 @@ dpif_get_offload_provider_collection(const struct dpif *dpif)
                       &dpif->offload_provider_collection);
 }
 
+static struct dpif_offload_provider_collection*
+dpif_get_offload_provider_collection_with_ref(const struct dpif *dpif)
+{
+    struct dpif_offload_provider_collection *collection;
+
+    ovs_mutex_lock(&dpif_offload_mutex);
+
+    collection = ovsrcu_get(struct dpif_offload_provider_collection *,
+                            &dpif->offload_provider_collection);
+
+    if (!ovs_refcount_try_ref_rcu(&collection->ref_cnt)) {
+        collection = NULL;
+    }
+
+    ovs_mutex_unlock(&dpif_offload_mutex);
+
+    return collection;
+}
+
 static void
 dpif_attach_offload_provider_collection(
     struct dpif *dpif, struct dpif_offload_provider_collection *collection)
@@ -354,6 +373,26 @@ provider_collection_free_rcu(
     free(collection);
 }
 
+static void
+dpif_offload_unref_collection(
+    struct dpif_offload_provider_collection *collection)
+{
+    if (!collection) {
+        return;
+    }
+
+    /* Take dpif_offload_mutex so that, if collection->ref_cnt falls to
+     * zero, we can't get a new reference to 'collection' through the
+     * 'dpif_offload_providers' shash. */
+    ovs_mutex_lock(&dpif_offload_mutex);
+    if (ovs_refcount_unref_relaxed(&collection->ref_cnt) == 1) {
+        shash_find_and_delete(&dpif_offload_providers,
+                              collection->dpif_name);
+        ovsrcu_postpone(provider_collection_free_rcu, collection);
+    }
+    ovs_mutex_unlock(&dpif_offload_mutex);
+}
+
 void
 dpif_detach_offload_providers(struct dpif *dpif)
 {
@@ -361,16 +400,7 @@ dpif_detach_offload_providers(struct dpif *dpif)
 
     collection = dpif_get_offload_provider_collection(dpif);
     if (collection) {
-        /* Take dpif_offload_mutex so that, if collection->ref_cnt falls to
-         * zero, we can't get a new reference to 'collection' through the
-         * 'dpif_offload_providers' shash. */
-        ovs_mutex_lock(&dpif_offload_mutex);
-        if (ovs_refcount_unref_relaxed(&collection->ref_cnt) == 1) {
-            shash_find_and_delete(&dpif_offload_providers,
-                                  collection->dpif_name);
-            ovsrcu_postpone(provider_collection_free_rcu, collection);
-        }
-        ovs_mutex_unlock(&dpif_offload_mutex);
+        dpif_offload_unref_collection(collection);
         ovsrcu_set(&dpif->offload_provider_collection, NULL);
     }
 }
@@ -641,57 +671,36 @@ dpif_offload_dump_start(struct dpif_offload_dump *dump,
                         const struct dpif *dpif)
 {
     memset(dump, 0, sizeof *dump);
-    dump->dpif = dpif;
+    dump->collection = dpif_get_offload_provider_collection_with_ref(dpif);
+    if (!dump->collection) {
+        dump->error = EIDRM;
+    }
 }
 
 bool
 dpif_offload_dump_next(struct dpif_offload_dump *dump,
                        struct dpif_offload **offload)
 {
-    struct dpif_offload_provider_collection *collection;
-
-    if (!offload || !dump || dump->error) {
-        return false;
-    }
-
-    collection = dpif_get_offload_provider_collection(dump->dpif);
-    if (!collection) {
+    if (!offload || !dump || dump->error || !dump->collection) {
         return false;
     }
 
     if (dump->state) {
-        struct dpif_offload *offload_entry;
-        bool valid_member = false;
+        struct dpif_offload *offload_entry =dump->state;
 
-        /* In theory, list entries should not be removed.  However, in case
-         * someone calls this during destruction and the node has disappeared,
-         * we will return EIDRM (Identifier removed). */
-        LIST_FOR_EACH (offload_entry, dpif_list_node, &collection->list) {
-            if (offload_entry == dump->state) {
-                valid_member = true;
-                break;
-            }
+        LIST_FOR_EACH_CONTINUE (offload_entry, dpif_list_node,
+                                &dump->collection->list) {
+            *offload = offload_entry;
+            dump->state = offload_entry;
+            return true;
         }
-
-        if (valid_member) {
-            offload_entry = dump->state;
-
-            LIST_FOR_EACH_CONTINUE (offload_entry, dpif_list_node,
-                                    &collection->list) {
-                *offload = offload_entry;
-                dump->state = offload_entry;
-                return true;
-            }
-
-            dump->error = EOF;
-        } else {
-            dump->error = EIDRM;
-        }
+        dump->error = EOF;
     } else {
         /* Get the first entry in the list. */
         struct dpif_offload *offload_entry;
 
-        LIST_FOR_EACH (offload_entry, dpif_list_node, &collection->list) {
+        LIST_FOR_EACH (offload_entry, dpif_list_node,
+                       &dump->collection->list) {
             break;
         }
 
@@ -709,6 +718,10 @@ dpif_offload_dump_next(struct dpif_offload_dump *dump,
 int
 dpif_offload_dump_done(struct dpif_offload_dump *dump)
 {
+    dpif_offload_unref_collection(
+        CONST_CAST(struct dpif_offload_provider_collection *,
+                   dump->collection));
+
     return dump->error == EOF ? 0 : dump->error;
 }
 
