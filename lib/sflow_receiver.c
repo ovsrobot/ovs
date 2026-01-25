@@ -387,7 +387,7 @@ inline static void putMplsLdpFec(SFLReceiver *receiver, SFLExtended_mpls_LDP_FEC
     putNet32(receiver, ldpfec->mplsFecAddrPrefixLength);
 }
 
-inline static u_int32_t mplsLdpFecEncodingLength(SFLExtended_mpls_LDP_FEC *ldpfec) {
+inline static u_int32_t mplsLdpFecEncodingLength(SFLExtended_mpls_LDP_FEC *ldpfec OVS_UNUSED) {
     return 4;
 }
 
