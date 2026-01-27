@@ -3730,11 +3730,52 @@ netdev_linux_get_status(const struct netdev *netdev_, struct smap *smap)
 
         COVERAGE_INC(netdev_get_ethtool);
         memset(&netdev->drvinfo, 0, sizeof netdev->drvinfo);
+        netdev->peer_ifindex = 0;
         error = netdev_linux_do_ethtool(netdev->up.name,
                                         cmd,
                                         ETHTOOL_GDRVINFO,
                                         "ETHTOOL_GDRVINFO");
         if (!error) {
+            /* For veth devices, also get the 'peer_ifindex'. */
+            size_t n_stats = netdev->drvinfo.n_stats;
+            if (!strcmp(netdev->drvinfo.driver, "veth") &&
+                n_stats > 0) {
+                struct ethtool_gstrings *names = NULL;
+                struct ethtool_stats *stats = NULL;
+                int s_error;
+
+                /* Get the names of the statistics. */
+                s_error = netdev_linux_read_definitions(netdev,
+                    ETH_SS_STATS,
+                    &names);
+                if (!s_error) {
+                    stats = xzalloc(sizeof *stats +
+                                    n_stats * sizeof stats->data[0]);
+                    stats->cmd = ETHTOOL_GSTATS;
+                    stats->n_stats = n_stats;
+                    /* Get the statistics values. */
+                    s_error = netdev_linux_do_ethtool(netdev->up.name,
+                        (struct ethtool_cmd *) stats,
+                        ETHTOOL_GSTATS,
+                        "ETHTOOL_GSTATS");
+                    if (!s_error) {
+                        /* Find 'peer_ifindex' in names and get value. */
+                        for (uint32_t i = 0;
+                            i < names->len && i < stats->n_stats;
+                            i++) {
+                            char *name =
+                                (char *) &names->data[i * ETH_GSTRING_LEN];
+                            if (!strcmp(name, "peer_ifindex") &&
+                                stats->data[i] > 0) {
+                                netdev->peer_ifindex = stats->data[i];
+                                break;
+                            }
+                        }
+                    }
+                    free(stats);
+                }
+                free(names);
+            }
             netdev->cache_valid |= VALID_DRVINFO;
         }
     }
@@ -3743,6 +3784,14 @@ netdev_linux_get_status(const struct netdev *netdev_, struct smap *smap)
         smap_add(smap, "driver_name", netdev->drvinfo.driver);
         smap_add(smap, "driver_version", netdev->drvinfo.version);
         smap_add(smap, "firmware_version", netdev->drvinfo.fw_version);
+
+        /* Report the cached 'peer_ifindex' (for veth devices). */
+        if (netdev->peer_ifindex > 0) {
+            smap_add_format(smap,
+                "peer_ifindex",
+                "%"PRIu64,
+                netdev->peer_ifindex);
+        }
     }
     ovs_mutex_unlock(&netdev->mutex);
 
