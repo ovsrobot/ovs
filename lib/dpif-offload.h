@@ -57,6 +57,7 @@ bool dpif_offload_rebalance_policy_enabled(void);
 /* Per dpif specific functions. */
 void dpif_offload_init(struct dpif_offload *,
                        const struct dpif_offload_class *, struct dpif *);
+void dpif_offload_destroy(struct dpif_offload *);
 int dpif_attach_offload_providers(struct dpif *);
 void dpif_detach_offload_providers(struct dpif *);
 const char *dpif_offload_name(const struct dpif_offload *);
@@ -101,7 +102,7 @@ enum dpif_offload_impl_type dpif_offload_get_impl_type_by_class(
           : (dpif_offload_dump_done(DUMP), false));      \
         )
 
-struct dpif_offload_port {
+struct dpif_offload_port_dump_port {
     struct netdev *netdev;
     odp_port_t port_no;
 };
@@ -116,7 +117,7 @@ struct dpif_offload_port_dump {
 void dpif_offload_port_dump_start(struct dpif_offload_port_dump *,
                                   const struct dpif *);
 bool dpif_offload_port_dump_next(struct dpif_offload_port_dump *,
-                                 struct dpif_offload_port *);
+                                 struct dpif_offload_port_dump_port *);
 int dpif_offload_port_dump_done(struct dpif_offload_port_dump *);
 
 /* Iterates through each DPIF_OFFLOAD_PORT in DPIF, using DUMP as state.
