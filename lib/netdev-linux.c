@@ -595,9 +595,9 @@ netdev_linux_netnsid_update__(struct netdev_linux *netdev)
 
     error = dpif_netlink_vport_get(netdev_get_name(&netdev->up), &reply, &buf);
     if (error) {
-        if (error == ENOENT) {
+        if (error == ENOENT || error == ENODEV) {
             /* Assume it is local if there is no API (e.g. if the openvswitch
-             * kernel module is not loaded). */
+             * kernel module is not loaded) or if the device is not a vport. */
             netnsid_set_local(&netdev->netnsid);
         } else {
             netnsid_unset(&netdev->netnsid);
