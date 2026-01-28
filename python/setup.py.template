@@ -118,6 +118,10 @@ setup_args = dict(
     package_data={'ovs.flowviz': ['ovs-flowviz.conf']},
 )
 
+# Conditional build option: Add 'ovstest' to packages if requested
+if os.environ.get('enable_ovstest') == 'yes':
+    setup_args['packages'].append('ovstest')
+
 try:
     setuptools.setup(**setup_args)
 except BuildFailed:
