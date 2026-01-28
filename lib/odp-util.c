@@ -1985,7 +1985,7 @@ scan_ct_nat(const char *s, struct ct_nat_params *p)
         memset(p, 0, sizeof *p);
 
         if (ovs_scan_len(s, &n, "(")) {
-            char *end;
+            const char *end;
             int end_n;
 
             end = strchr(s + n, ')');
@@ -2106,7 +2106,7 @@ parse_conntrack_action(const char *s_, struct ofpbuf *actions)
         struct ct_nat_params nat_params;
         bool have_nat = false;
         size_t start;
-        char *end;
+        const char *end;
 
         memset(&ct_label, 0, sizeof(ct_label));
 
