@@ -1,5 +1,7 @@
 Post-v3.7.0
 --------------------
+   - Userspace datapath:
+     * ARP/ND lookups for native tunnel are now rate limited.
 
 
 v3.7.0 - xx xxx xxxx

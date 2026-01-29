@@ -47,6 +47,7 @@
 
 #define NEIGH_ENTRY_DEFAULT_IDLE_TIME_MS  (15 * 60 * 1000)
 #define NEIGH_ENTRY_MAX_AGING_TIME_S  3600
+#define NEIGH_ENTRY_LOOKUP_HOLDOUT_MS   1000
 
 struct tnl_neigh_entry {
     struct cmap_node cmap_node;
@@ -54,11 +55,15 @@ struct tnl_neigh_entry {
     struct eth_addr mac;
     atomic_llong expires;       /* Expiration time in ms. */
     char br_name[IFNAMSIZ];
+    atomic_bool complete;
 };
 
 static struct cmap table = CMAP_INITIALIZER;
 static struct ovs_mutex mutex = OVS_MUTEX_INITIALIZER;
 static atomic_uint32_t neigh_aging;
+
+void
+tnl_neigh_set_partial(const char name[IFNAMSIZ], const struct in6_addr *dst);
 
 static uint32_t
 tnl_neigh_hash(const struct in6_addr *ip)
@@ -85,6 +90,16 @@ tnl_neigh_get_aging(void)
     return aging;
 }
 
+static bool
+tnl_neigh_is_complete(struct tnl_neigh_entry *neigh)
+{
+    bool complete;
+
+    atomic_read_explicit(&neigh->complete, &complete, memory_order_acquire);
+
+    return complete;
+}
+
 static struct tnl_neigh_entry *
 tnl_neigh_lookup__(const char br_name[IFNAMSIZ], const struct in6_addr *dst)
 {
@@ -98,9 +113,12 @@ tnl_neigh_lookup__(const char br_name[IFNAMSIZ], const struct in6_addr *dst)
                 return NULL;
             }
 
-            atomic_store_explicit(&neigh->expires, time_msec() +
-                                  tnl_neigh_get_aging(),
-                                  memory_order_release);
+            if (tnl_neigh_is_complete(neigh)) {
+                atomic_store_explicit(&neigh->expires, time_msec() +
+                                      tnl_neigh_get_aging(),
+                                      memory_order_release);
+            }
+
             return neigh;
         }
     }
@@ -109,16 +127,24 @@ tnl_neigh_lookup__(const char br_name[IFNAMSIZ], const struct in6_addr *dst)
 
 int
 tnl_neigh_lookup(const char br_name[IFNAMSIZ], const struct in6_addr *dst,
-                 struct eth_addr *mac)
+                 struct eth_addr *mac, bool readonly)
 {
     struct tnl_neigh_entry *neigh;
     int res = ENOENT;
 
     neigh = tnl_neigh_lookup__(br_name, dst);
     if (neigh) {
-        *mac = neigh->mac;
-        res = 0;
+        if (tnl_neigh_is_complete(neigh)) {
+            *mac = neigh->mac;
+            res = 0;
+        } else {
+            res = EINPROGRESS;
+        }
+    } else if (!readonly) {
+        /* Insert a partial entry. */
+        tnl_neigh_set_partial(br_name, dst);
     }
+
     return res;
 }
 
@@ -142,6 +168,7 @@ tnl_neigh_set(const char name[IFNAMSIZ], const struct in6_addr *dst,
 {
     ovs_mutex_lock(&mutex);
     struct tnl_neigh_entry *neigh = tnl_neigh_lookup__(name, dst);
+    bool insert = true;
     if (neigh) {
         if (eth_addr_equals(neigh->mac, mac)) {
             atomic_store_relaxed(&neigh->expires, time_msec() +
@@ -149,18 +176,30 @@ tnl_neigh_set(const char name[IFNAMSIZ], const struct in6_addr *dst,
             ovs_mutex_unlock(&mutex);
             return;
         }
-        tnl_neigh_delete(neigh);
+        if (tnl_neigh_is_complete(neigh)) {
+            tnl_neigh_delete(neigh);
+        } else {
+            insert = false;
+        }
+    }
+
+    if (insert) {
+        neigh = xmalloc(sizeof *neigh);
+
+        neigh->ip = *dst;
+        ovs_strlcpy(neigh->br_name, name, sizeof neigh->br_name);
+        insert = true;
     }
     seq_change(tnl_conf_seq);
 
-    neigh = xmalloc(sizeof *neigh);
-
-    neigh->ip = *dst;
     neigh->mac = mac;
     atomic_store_relaxed(&neigh->expires, time_msec() +
                          tnl_neigh_get_aging());
-    ovs_strlcpy(neigh->br_name, name, sizeof neigh->br_name);
-    cmap_insert(&table, &neigh->cmap_node, tnl_neigh_hash(&neigh->ip));
+    atomic_store_relaxed(&neigh->complete, true);
+
+    if (insert) {
+        cmap_insert(&table, &neigh->cmap_node, tnl_neigh_hash(&neigh->ip));
+    }
     ovs_mutex_unlock(&mutex);
 }
 
@@ -170,6 +209,37 @@ tnl_arp_set(const char name[IFNAMSIZ], ovs_be32 dst,
 {
     struct in6_addr dst6 = in6_addr_mapped_ipv4(dst);
     tnl_neigh_set(name, &dst6, mac);
+}
+
+void
+tnl_neigh_set_partial(const char name[IFNAMSIZ], const struct in6_addr *dst)
+{
+    ovs_mutex_lock(&mutex);
+    struct tnl_neigh_entry *neigh = tnl_neigh_lookup__(name, dst);
+    if (neigh) {
+        if (!tnl_neigh_is_complete(neigh)) {
+            atomic_store_relaxed(&neigh->expires, time_msec() +
+                                 NEIGH_ENTRY_LOOKUP_HOLDOUT_MS);
+            goto done;
+        } else if (!tnl_neigh_expired(neigh)) {
+            /* Case where initial lookup did not find a complete entry but it
+             * was inserted before we aquired a lock. */
+            goto done;
+        }
+        tnl_neigh_delete(neigh);
+    }
+    seq_change(tnl_conf_seq);
+
+    neigh = xmalloc(sizeof *neigh);
+
+    neigh->ip = *dst;
+    neigh->complete = false;
+    neigh->expires = time_msec() + NEIGH_ENTRY_LOOKUP_HOLDOUT_MS;
+    ovs_strlcpy(neigh->br_name, name, sizeof neigh->br_name);
+    cmap_insert(&table, &neigh->cmap_node, tnl_neigh_hash(&neigh->ip));
+
+done:
+    ovs_mutex_unlock(&mutex);
 }
 
 static int
@@ -381,6 +451,9 @@ tnl_neigh_cache_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
     CMAP_FOR_EACH(neigh, cmap_node, &table) {
         int start_len, need_ws;
 
+        if (!tnl_neigh_is_complete(neigh)) {
+            continue;
+        }
         start_len = ds.length;
         ipv6_format_mapped(&neigh->ip, &ds);
 
