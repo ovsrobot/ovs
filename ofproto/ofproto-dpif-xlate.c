@@ -4563,6 +4563,9 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
         /* Commit accumulated flow updates before output. */
         xlate_commit_actions(ctx);
 
+        /* Flag to decide whether the output should be mirrored. */
+        bool mirrored = true;
+
         if (xr && bond_use_lb_output_action(xport->xbundle->bond)) {
             /*
              * If bond mode is balance-tcp and optimize balance tcp is enabled
@@ -4592,6 +4595,9 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
             /* Recirc action. */
             nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_RECIRC,
                            xr->recirc_id);
+
+            /* Avoid mirroring on recirculation. */
+            mirrored = false;
         } else if (is_native_tunnel) {
             /* Output to native tunnel port. */
             native_tunnel_output(ctx, xport, flow, odp_port, truncate,
@@ -4632,12 +4638,17 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
         ctx->sflow_odp_port = odp_port;
         ctx->sflow_n_outputs++;
         ctx->nf_output_iface = ofp_port;
-    }
 
-    if (mbridge_has_mirrors(ctx->xbridge->mbridge) && xport->xbundle) {
-        mirror_packet(ctx, xport->xbundle,
-                      xbundle_mirror_dst(xport->xbundle->xbridge,
-                                         xport->xbundle));
+        /* Mirror only when we actually perform an output action.
+         * Recirculation does not send the packet anywhere, so it
+         * should not trigger mirroring.
+         */
+        if (mirrored && mbridge_has_mirrors(ctx->xbridge->mbridge)
+            && xport->xbundle) {
+            mirror_packet(ctx, xport->xbundle,
+                          xbundle_mirror_dst(xport->xbundle->xbridge,
+                                             xport->xbundle));
+        }
     }
 
 out:
