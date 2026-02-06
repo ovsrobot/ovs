@@ -1202,6 +1202,11 @@ static inline bool ipv6_is_all_hosts(const struct in6_addr *addr) {
     return ipv6_addr_equals(addr, &in6addr_all_hosts);
 }
 
+static inline bool ipv4_addr_is_set(const struct in6_addr *addr) {
+    return IN6_IS_ADDR_V4MAPPED(addr) &&
+           !ipv6_addr_equals(addr, &in6addr_v4mapped_any);
+}
+
 static inline bool ipv6_addr_is_set(const struct in6_addr *addr) {
     return !ipv6_addr_equals(addr, &in6addr_any);
 }
