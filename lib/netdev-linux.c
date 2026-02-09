@@ -962,6 +962,13 @@ netdev_linux_common_construct(struct netdev *netdev_)
                      name);
         return EINVAL;
     }
+    if (strlen(name) >= IFNAMSIZ) {
+        static struct vlog_rate_limit rll = VLOG_RATE_LIMIT_INIT(1, 1);
+
+        VLOG_WARN_RL(&rll, "%s: Linux forbids network device with this name "
+                     "(too long)", name);
+        return ENAMETOOLONG;
+    }
 
     /* The device could be in the same network namespace or in another one. */
     netnsid_unset(&netdev->netnsid);

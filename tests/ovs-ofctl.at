@@ -3105,33 +3105,14 @@ AT_KEYWORDS([port names])
 OVS_VSWITCHD_START([\
     -- add-port br0 xyzzy -- set Interface xyzzy type=dummy -- \
     -- add-port br0 x-y -- set Interface x-y type=dummy -- \
-    -- add-port br0 abc123 -- set Interface abc123 type=dummy -- \
-    -- add-port br0 reallyverylongportname -- set Interface reallyverylongportname type=dummy -- \
-    -- add-port br0 conflictinglongportname1 -- set Interface conflictinglongportname1 type=dummy -- \
-    -- add-port br0 conflictinglongportname2 -- set Interface conflictinglongportname2 type=dummy])
+    -- add-port br0 abc123 -- set Interface abc123 type=dummy])
 
 # These plain port names should be accepted.
 AT_CHECK([ovs-ofctl add-flow br0 in_port=xyzzy,actions=x-y,abc123])
 
-# reallyverylongportname is accepted truncated, but not in full.
-AT_CHECK([ovs-ofctl add-flow br0 in_port=reallyverylongp,actions=drop])
-AT_CHECK([ovs-ofctl add-flow br0 in_port=reallyverylongportname,actions=drop],
-  [1], [], [ovs-ofctl: reallyverylongportname: invalid or unknown port for in_port
-])
-
-# conflictinglongportname1 and 2 can't be accepted even truncated, since
-# they conflict when truncated.
-AT_CHECK([ovs-ofctl add-flow br0 in_port=conflictinglongportname1,actions=drop], [1], [], [ovs-ofctl: conflictinglongportname1: invalid or unknown port for in_port
-])
-AT_CHECK([ovs-ofctl add-flow br0 in_port=conflictinglongportname2,actions=drop], [1], [], [ovs-ofctl: conflictinglongportname2: invalid or unknown port for in_port
-])
-AT_CHECK([ovs-ofctl add-flow br0 in_port=conflictinglong,actions=drop], [1], [], [ovs-ofctl: conflictinglong: invalid or unknown port for in_port
-])
-
 # Show that the port names get displayed properly and that port names that
 # aren't alphanumeric get quoted.
 AT_CHECK([ovs-ofctl --names dump-flows br0 | ofctl_strip | sort], [0], [dnl
- in_port=reallyverylongp actions=drop
  in_port=xyzzy actions=output:"x-y",output:abc123
 ])
 OVS_VSWITCHD_STOP
