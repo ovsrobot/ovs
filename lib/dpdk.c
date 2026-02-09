@@ -227,8 +227,10 @@ construct_dpdk_mutex_options(const struct smap *ovs_other_config,
 static void
 construct_dpdk_args(const struct smap *ovs_other_config, struct svec *args)
 {
-    const char *extra_configuration = smap_get(ovs_other_config, "dpdk-extra");
+    const char *extra_configuration;
 
+    extra_configuration = smap_get_def(ovs_other_config, "dpdk-extra",
+                                       "-a 0000:00:00.0");
     if (extra_configuration) {
         svec_parse_words(args, extra_configuration);
     }
