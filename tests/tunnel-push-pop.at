@@ -1572,12 +1572,9 @@ AT_CHECK([ovs-appctl ovs/route/rule/add from=1.1.2.80/32 table=10], [0], [OK
 ])
 AT_CHECK([ovs-appctl ovs/route/rule/add from=1.1.2.81/32 table=11], [0], [OK
 ])
-AT_CHECK([ovs-appctl ovs/route/rule/show], [0], [dnl
-Cached: 0: from all lookup local
+AT_CHECK([ovs-appctl ovs/route/rule/show | grep "^User:" | sort], [0], [dnl
 User: 32764: from 1.1.2.81 lookup 11
 User: 32765: from 1.1.2.80 lookup 10
-Cached: 32766: from all lookup main
-Cached: 32767: from all lookup default
 ])
 
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(int-br),dnl

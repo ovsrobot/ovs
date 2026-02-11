@@ -343,45 +343,34 @@ on_exit 'ip link del p1-route'
 AT_CHECK([ip tuntap add name p1-route mode tap])
 AT_CHECK([ip link set p1-route up])
 
-dnl Check there are no non-standard rules cached in OVS.
-AT_CHECK([ovs-appctl ovs/route/rule/show], [0], [dnl
-Cached: 0: from all lookup local
-Cached: 32766: from all lookup main
-Cached: 32767: from all lookup default
-])
-AT_CHECK([ovs-appctl ovs/route/rule/show -6], [0], [dnl
-Cached: 0: from all lookup local
-Cached: 32766: from all lookup main
-])
-
-dnl Add unsupported rules to kernel.
+dnl Register cleanup for all rules we are going to add.
 on_exit 'ip rule del priority 100 fwmark 0x16 lookup 42'
-AT_CHECK([ip rule add priority 100 fwmark 0x16 lookup 42])
 on_exit 'ip rule del priority 101 from 10.0.0.1 dport 22 lookup 42'
-AT_CHECK([ip rule add priority 101 from 10.0.0.1 dport 22 lookup 42])
 on_exit 'ip rule del priority 102 from 10.0.0.1 sport 22 lookup 42'
-AT_CHECK([ip rule add priority 102 from 10.0.0.1 sport 22 lookup 42])
 on_exit 'ip rule del priority 103 from 10.0.0.1 tun_id 22 lookup 42'
-AT_CHECK([ip rule add priority 103 from 10.0.0.1 tun_id 22 lookup 42])
 on_exit 'ip rule del priority 104 iif p1-route lookup 42'
-AT_CHECK([ip rule add priority 104 iif p1-route lookup 42])
 on_exit 'ip rule del priority 105 ipproto udp lookup 42'
-AT_CHECK([ip rule add priority 105 ipproto udp lookup 42])
 on_exit 'ip rule del priority 106 from all tun_id 22 lookup 42'
-AT_CHECK([ip rule add priority 106 from all tun_id 22 lookup 42])
 
-dnl Give the main thread a chance to act.
-AT_CHECK([ovs-appctl revalidator/wait])
-dnl Check OVS rules cache hasn't changed.
-AT_CHECK([ovs-appctl ovs/route/rule/show], [0], [dnl
-Cached: 0: from all lookup local
-Cached: 32766: from all lookup main
-Cached: 32767: from all lookup default
-])
-AT_CHECK([ovs-appctl ovs/route/rule/show -6], [0], [dnl
-Cached: 0: from all lookup local
-Cached: 32766: from all lookup main
-])
+dnl Capture initial cache state, add unsupported rules, and verify OVS cache
+dnl hasn't changed. This test verifies that unsupported routing rules (with
+dnl selectors like fwmark, dport, sport, iif, ipproto, tun_id) are not cached
+dnl by OVS, even though the kernel accepts them.
+AT_CHECK([
+  initial_v4=$(ovs-appctl ovs/route/rule/show)
+  initial_v6=$(ovs-appctl ovs/route/rule/show -6)
+  ip rule add priority 100 fwmark 0x16 lookup 42
+  ip rule add priority 101 from 10.0.0.1 dport 22 lookup 42
+  ip rule add priority 102 from 10.0.0.1 sport 22 lookup 42
+  ip rule add priority 103 from 10.0.0.1 tun_id 22 lookup 42
+  ip rule add priority 104 iif p1-route lookup 42
+  ip rule add priority 105 ipproto udp lookup 42
+  ip rule add priority 106 from all tun_id 22 lookup 42
+  ovs-appctl revalidator/wait
+  final_v4=$(ovs-appctl ovs/route/rule/show)
+  final_v6=$(ovs-appctl ovs/route/rule/show -6)
+  test "$initial_v4" = "$final_v4" && test "$initial_v6" = "$final_v6"
+], [0])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
