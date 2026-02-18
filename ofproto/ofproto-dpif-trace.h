@@ -98,5 +98,7 @@ bool oftrace_add_recirc_node(struct ovs_list *recirc_queue,
                              const uint16_t zone);
 
 void ofproto_append_ports_to_map(struct ofputil_port_map *, struct hmap ports);
-
+void oftrace_node_list_destroy(struct ovs_list *nodes);
+void oftrace_node_print_details(struct ds *, const struct ovs_list *nodes,
+                                int level);
 #endif /* ofproto-dpif-trace.h */

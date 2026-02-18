@@ -61,7 +61,7 @@ oftrace_node_type_is_terminal(enum oftrace_node_type type)
     OVS_NOT_REACHED();
 }
 
-static void
+void
 oftrace_node_list_destroy(struct ovs_list *nodes)
 {
     if (nodes) {
@@ -140,7 +140,7 @@ oftrace_pop_ct_state(struct ovs_list *next_ct_states)
     OVS_NOT_REACHED();
 }
 
-static void
+void
 oftrace_node_print_details(struct ds *output,
                            const struct ovs_list *nodes, int level)
 {

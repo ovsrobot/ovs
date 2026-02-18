@@ -263,6 +263,8 @@ struct upcall {
     struct user_action_cookie cookie;
 
     uint64_t odp_actions_stub[1024 / 8]; /* Stub for odp_actions. */
+
+    struct upcall_trace *trace;    /* Upcall trace. */
 };
 
 /* Ukeys must transition through these states using transition_ukey(). */
@@ -377,6 +379,11 @@ static void udpif_pause_revalidators(struct udpif *);
 static void udpif_resume_revalidators(struct udpif *);
 static void *udpif_upcall_handler(void *);
 static void *udpif_revalidator(void *);
+static struct upcall_trace *udpif_trace_from_upcall(const struct upcall *);
+
+static struct upcall_trace
+*udpif_trace_from_frozen_upcall(const struct upcall *,
+                                const struct frozen_state *);
 static unsigned long udpif_get_n_flows(struct udpif *);
 static void revalidate(struct revalidator *);
 static void revalidator_pause(struct revalidator *);
@@ -410,6 +417,10 @@ static void upcall_unixctl_ofproto_detrace(struct unixctl_conn *, int argc,
 static void upcall_unixctl_trace_create(struct unixctl_conn *, int argc,
                                         const char *argv[], void *aux);
 static void upcall_unixctl_trace_show(struct unixctl_conn *, int argc,
+                                      const char *argv[], void *aux);
+static void upcall_unixctl_trace_list(struct unixctl_conn *, int argc,
+                                      const char *argv[], void *aux);
+static void upcall_unixctl_trace_get(struct unixctl_conn *, int argc,
                                       const char *argv[], void *aux);
 static void upcall_unixctl_trace_delete(struct unixctl_conn *, int argc,
                                         const char *argv[], void *aux);
@@ -496,6 +507,10 @@ udpif_init(void)
                                  upcall_unixctl_trace_create, NULL);
         unixctl_command_register("upcall/trace/show", "", 0, 0,
                                  upcall_unixctl_trace_show, NULL);
+        unixctl_command_register("upcall/trace/list", "", 0, 1,
+                                 upcall_unixctl_trace_list, NULL);
+        unixctl_command_register("upcall/trace/get", "bridge trace_id", 1, 1,
+                                 upcall_unixctl_trace_get, NULL);
         unixctl_command_register("upcall/trace/delete", "", 0, 1,
                                  upcall_unixctl_trace_delete, NULL);
         ovsthread_once_done(&once);
@@ -1287,6 +1302,7 @@ upcall_receive(struct upcall *upcall, const struct dpif_backer *backer,
 
     upcall->out_tun_key = NULL;
     upcall->actions = NULL;
+    upcall->trace = udpif_trace_from_upcall(upcall);
 
     return 0;
 }
@@ -1310,6 +1326,14 @@ upcall_xlate(struct udpif *udpif, struct upcall *upcall,
                   upcall->flow, upcall->ofp_in_port, NULL,
                   stats.tcp_flags, upcall->packet, wc, odp_actions);
 
+    if (!upcall->trace && xin.frozen_state) {
+        upcall->trace =
+            udpif_trace_from_frozen_upcall(upcall, xin.frozen_state);
+    }
+
+    /* Set trace_id in xlate_in so it propagates through freezes. */
+    xin.trace_id = upcall_trace_get_trace_id(upcall->trace);
+
     if (upcall->type == MISS_UPCALL) {
         xin.resubmit_stats = &stats;
 
@@ -1331,6 +1355,8 @@ upcall_xlate(struct udpif *udpif, struct upcall *upcall,
     }
 
     upcall->reval_seq = seq_read(udpif->reval_seq);
+
+    xin.trace = upcall_trace_xlate_start(upcall->trace, &xin);
 
     xerr = xlate_actions(&xin, &upcall->xout);
 
@@ -1400,6 +1426,9 @@ upcall_uninit(struct upcall *upcall)
         } else if (upcall->have_recirc_ref) {
             /* The reference was transferred to the ukey if one was created. */
             recirc_id_node_unref(upcall->recirc);
+        }
+        if (upcall->trace) {
+            upcall_trace_unref(upcall->trace);
         }
     }
 }
@@ -3477,6 +3506,66 @@ static void upcall_unixctl_trace_show(struct unixctl_conn *conn,
     ds_destroy(&ds);
 }
 
+static void upcall_unixctl_trace_list(struct unixctl_conn *conn,
+                                      int argc OVS_UNUSED,
+                                      const char *argv[] OVS_UNUSED,
+                                      void *aux OVS_UNUSED)
+{
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    const struct shash_node **backers;
+    int i;
+
+    backers = shash_sort(&all_dpif_backers);
+    for (i = 0; i < shash_count(&all_dpif_backers); i++) {
+        struct dpif_backer *backer = backers[i]->data;
+        struct upcall_tracing *tracing =
+            ovsrcu_get(struct upcall_tracing *, &backer->udpif->tracing);
+        if (tracing) {
+            ds_put_format(&ds, "%s:\n", dpif_name(backer->dpif));
+            upcall_tracing_format_list(tracing, &ds);
+        }
+    }
+    free(backers);
+    unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
+}
+
+static void upcall_unixctl_trace_get(struct unixctl_conn *conn,
+                                      int argc OVS_UNUSED,
+                                      const char *argv[] OVS_UNUSED,
+                                      void *aux OVS_UNUSED)
+{
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    const struct shash_node **backers;
+    uint64_t trace_id;
+    int i;
+
+    if (!strncmp(argv[1], "0x", 2) || !strncmp(argv[1], "0X", 2)) {
+        if (sscanf(argv[1], "%"SCNx64, &trace_id) != 1) {
+            unixctl_command_reply_error(conn, "invalid trace_id");
+            return;
+        }
+    } else {
+        if (sscanf(argv[1], "%"SCNu64, &trace_id) != 1) {
+            unixctl_command_reply_error(conn, "invalid trace_id");
+            return;
+        }
+    }
+
+    backers = shash_sort(&all_dpif_backers);
+    for (i = 0; i < shash_count(&all_dpif_backers); i++) {
+        struct dpif_backer *backer = backers[i]->data;
+        struct upcall_tracing *tracing =
+            ovsrcu_get(struct upcall_tracing *, &backer->udpif->tracing);
+        if (tracing) {
+            upcall_tracing_format_id(tracing, trace_id, &ds);
+        }
+    }
+
+    unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
+}
+
 static void upcall_unixctl_trace_delete(struct unixctl_conn *conn,
                                         int argc OVS_UNUSED,
                                         const char *argv[] OVS_UNUSED,
@@ -3838,4 +3927,37 @@ udpif_flow_unprogram(struct udpif *udpif, struct udpif_key *ukey,
     dpif_operate(udpif->dpif, &opsp, 1, offload_type);
 
     return opsp->error;
+}
+
+static struct upcall_trace *
+udpif_trace_from_upcall(const struct upcall *upcall)
+{
+    struct upcall_trace *trace = NULL;
+    struct upcall_tracing *tracing = ovsrcu_get(struct upcall_tracing *,
+                                    &upcall->ofproto->backer->udpif->tracing);
+
+    /* Only check the filter for non-recirculated flows.  For recirculated
+     * flows, the trace_id will be retrieved from frozen_state later in
+     * udpif_tracer_from_frozen_upcall(). */
+    if (OVS_UNLIKELY(tracing) && upcall->flow->recirc_id == 0) {
+        trace = upcall_tracing_trace_from_flow(tracing, upcall->flow,
+                                       &upcall->ofp_in_port);
+    }
+    return trace;
+}
+
+static struct upcall_trace *
+udpif_trace_from_frozen_upcall(const struct upcall *upcall,
+                                const struct frozen_state *state)
+{
+    struct upcall_trace *trace = NULL;
+    struct upcall_tracing *tracing = ovsrcu_get(struct upcall_tracing *,
+                                    &upcall->ofproto->backer->udpif->tracing);
+
+    if (OVS_UNLIKELY(tracing) && state && state->trace_id) {
+        trace = upcall_tracing_append_to_id(tracing, state->trace_id,
+                                           upcall->flow->recirc_id,
+                                           upcall->flow);
+    }
+    return trace;
 }

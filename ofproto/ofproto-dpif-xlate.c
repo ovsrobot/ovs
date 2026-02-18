@@ -5265,6 +5265,7 @@ xlate_controller_action(struct xlate_ctx *ctx, int len,
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
         .was_mpls = ctx->was_mpls,
+        .trace_id = ctx->xin->trace_id,
         .ofpacts = NULL,
         .ofpacts_len = 0,
         .action_set = NULL,
@@ -5310,6 +5311,7 @@ finish_freezing__(struct xlate_ctx *ctx, uint8_t table)
         .conntracked = ctx->conntracked,
         .was_mpls = ctx->was_mpls,
         .xport_uuid = ctx->xin->xport_uuid,
+        .trace_id = ctx->xin->trace_id,
         .ofpacts = ctx->frozen_actions.data,
         .ofpacts_len = ctx->frozen_actions.size,
         .action_set = ctx->action_set.data,
@@ -5382,7 +5384,7 @@ compose_recirculate_and_fork(struct xlate_ctx *ctx, uint8_t table,
     ctx->freezing = true;
     recirc_id = finish_freezing__(ctx, table);
 
-    if (OVS_UNLIKELY(ctx->xin->trace) && recirc_id) {
+    if (OVS_UNLIKELY(ctx->xin->trace) && recirc_id && ctx->xin->recirc_queue) {
         if (oftrace_add_recirc_node(ctx->xin->recirc_queue,
                                     OFT_RECIRC_CONNTRACK, &ctx->xin->flow,
                                     ctx->ct_nat_action, ctx->xin->packet,
@@ -7918,6 +7920,7 @@ xlate_in_init(struct xlate_in *xin, struct ofproto_dpif *ofproto,
     xin->in_packet_out = false;
     xin->recirc_queue = NULL;
     xin->xport_uuid = UUID_ZERO;
+    xin->trace_id = 0;
 
     /* Do recirc lookup. */
     xin->frozen_state = NULL;

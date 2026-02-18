@@ -174,6 +174,10 @@ struct xlate_in {
     /* If true, port names are displayed instead of port numbers in
      * tracing translation. */
     bool names;
+
+    /* If non-zero, this xlate is being traced and the trace_id should be
+     * propagated through recirculations. */
+    uint64_t trace_id;
 };
 
 void xlate_ofproto_set(struct ofproto_dpif *, const char *name, struct dpif *,

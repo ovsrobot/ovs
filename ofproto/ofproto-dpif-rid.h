@@ -155,6 +155,7 @@ struct frozen_state {
     bool conntracked;             /* Conntrack occurred prior to freeze. */
     bool was_mpls;                /* MPLS packet */
     struct uuid xport_uuid;       /* UUID of 1st port packet received on. */
+    uint64_t trace_id;            /* Non-zero if selected for tracing. */
 
     /* Actions to be translated when thawing. */
     struct ofpact *ofpacts;

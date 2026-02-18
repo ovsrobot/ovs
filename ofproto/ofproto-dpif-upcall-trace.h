@@ -25,9 +25,32 @@ struct upcall_tracing {
     size_t max_blocks;
     uint64_t last_trace_id;
 };
+struct upcall_trace;
+
 char * upcall_tracing_create(int argc, const char *argv[],
                              struct ofproto_dpif **ofprotop,
                              struct upcall_tracing **tracingp);
 void upcall_tracing_destroy(struct upcall_tracing *);
 void upcall_tracing_format(const struct upcall_tracing *, struct ds *);
+void upcall_tracing_format_list(struct upcall_tracing *, struct ds *);
+void upcall_tracing_format_id(struct upcall_tracing *, uint64_t trace_id,
+                              struct ds *);
+
+void upcall_tracing_flush(struct upcall_tracing *, uint64_t trace_id);
+void upcall_tracing_flush_all(struct upcall_tracing *);
+
+struct upcall_trace *
+upcall_tracing_trace_from_flow(struct upcall_tracing *tracing,
+                               const struct flow *flow,
+                               const ofp_port_t *ofp_in_port);
+struct upcall_trace *
+upcall_tracing_append_to_id(struct upcall_tracing *tracing,
+                            uint64_t trace_id,
+                            uint32_t recirc_id,
+                            const struct flow *flow);
+struct ovs_list *upcall_trace_xlate_start(struct upcall_trace *,
+                                         struct xlate_in *);
+uint64_t upcall_trace_get_trace_id(const struct upcall_trace *);
+void upcall_trace_unref(struct upcall_trace *);
+
 #endif /*OFPROTO_DPIF_UPCALL_TRACE_H */
