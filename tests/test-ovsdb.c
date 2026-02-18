@@ -2047,6 +2047,23 @@ print_idl_row_updated_link2(const struct idltest_link2 *l2, int step)
 }
 
 static void
+print_idl_row_updated_link3(const struct idltest_link3 *l3, int step)
+{
+    struct ds updates = DS_EMPTY_INITIALIZER;
+    for (size_t i = 0; i < IDLTEST_LINK3_N_COLUMNS; i++) {
+        if (idltest_link3_is_updated(l3, i)) {
+            ds_put_format(&updates, " %s", idltest_link3_columns[i].name);
+        }
+    }
+    if (updates.length) {
+        print_and_log("%03d: table %s: updated columns:%s",
+                      step, l3->header_.table->class_->name,
+                      ds_cstr(&updates));
+        ds_destroy(&updates);
+    }
+}
+
+static void
 print_idl_row_updated_indexed(const struct idltest_indexed *ind, int step)
 {
     struct ds updates = DS_EMPTY_INITIALIZER;
@@ -2188,6 +2205,11 @@ print_idl_row_link1(const struct idltest_link1 *l1, int step, bool terse)
         ds_put_format(&msg, "%"PRId64, l1->l2->i);
     }
 
+    ds_put_cstr(&msg, " l3=");
+    if (l1->l3) {
+        ds_put_format(&msg, "%"PRId64, l1->l3->i);
+    }
+
     char *row_msg = format_idl_row(&l1->header_, step, ds_cstr(&msg), terse);
     print_and_log("%s", row_msg);
     ds_destroy(&msg);
@@ -2211,6 +2233,23 @@ print_idl_row_link2(const struct idltest_link2 *l2, int step, bool terse)
     free(row_msg);
 
     print_idl_row_updated_link2(l2, step);
+}
+
+static void
+print_idl_row_link3(const struct idltest_link3 *l3, int step, bool terse)
+{
+    struct ds msg = DS_EMPTY_INITIALIZER;
+    ds_put_format(&msg, "i=%"PRId64" l1=", l3->i);
+    if (l3->l1) {
+        ds_put_format(&msg, "%"PRId64, l3->l1->i);
+    }
+
+    char *row_msg = format_idl_row(&l3->header_, step, ds_cstr(&msg), terse);
+    print_and_log("%s", row_msg);
+    ds_destroy(&msg);
+    free(row_msg);
+
+    print_idl_row_updated_link3(l3, step);
 }
 
 static void
@@ -2315,6 +2354,7 @@ print_idl(struct ovsdb_idl *idl, int step, bool terse)
     const struct idltest_simple *s;
     const struct idltest_link1 *l1;
     const struct idltest_link2 *l2;
+    const struct idltest_link3 *l3;
     const struct idltest_singleton *sng;
     int n = 0;
 
@@ -2328,6 +2368,10 @@ print_idl(struct ovsdb_idl *idl, int step, bool terse)
     }
     IDLTEST_LINK2_FOR_EACH (l2, idl) {
         print_idl_row_link2(l2, step, terse);
+        n++;
+    }
+    IDLTEST_LINK3_FOR_EACH (l3, idl) {
+        print_idl_row_link3(l3, step, terse);
         n++;
     }
     IDLTEST_SIMPLE3_FOR_EACH (s3, idl) {
@@ -2365,6 +2409,7 @@ print_idl_track(struct ovsdb_idl *idl, int step, bool terse)
     const struct idltest_simple *s;
     const struct idltest_link1 *l1;
     const struct idltest_link2 *l2;
+    const struct idltest_link3 *l3;
     int n = 0;
 
     IDLTEST_SIMPLE_FOR_EACH_TRACKED (s, idl) {
@@ -2377,6 +2422,10 @@ print_idl_track(struct ovsdb_idl *idl, int step, bool terse)
     }
     IDLTEST_LINK2_FOR_EACH_TRACKED (l2, idl) {
         print_idl_row_link2(l2, step, terse);
+        n++;
+    }
+    IDLTEST_LINK3_FOR_EACH_TRACKED (l3, idl) {
+        print_idl_row_link3(l3, step, terse);
         n++;
     }
     IDLTEST_SIMPLE3_FOR_EACH_TRACKED (s3, idl) {
@@ -2670,6 +2719,8 @@ find_table_class(const char *name)
         return &idltest_table_link1;
     } else if (!strcmp(name, "link2")) {
         return &idltest_table_link2;
+    } else if (!strcmp(name, "link3")) {
+        return &idltest_table_link3;
     } else if (!strcmp(name, "simple3")) {
         return &idltest_table_simple3;
     } else if (!strcmp(name, "simple4")) {

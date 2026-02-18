@@ -33,11 +33,37 @@
             },
             "min": 0
           }
+        },
+        "l3": {
+          "type": {
+            "key": {
+              "type": "uuid",
+              "refTable": "link3"
+            },
+            "min": 0
+          }
         }
       },
       "isRoot" : true
     },
     "link2": {
+      "columns": {
+        "i": {
+          "type": "integer"
+        },
+        "l1": {
+          "type": {
+            "key": {
+              "type": "uuid",
+              "refTable": "link1"
+            },
+            "min": 0
+          }
+        }
+      },
+      "isRoot" : true
+    },
+    "link3": {
       "columns": {
         "i": {
           "type": "integer"

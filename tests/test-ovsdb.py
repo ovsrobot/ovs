@@ -281,6 +281,8 @@ def get_link1_table_printable_row(row):
         s.append("] l2=")
     if hasattr(row, "l2") and row.l2:
         s.append(str(row.l2[0].i))
+    if hasattr(row, "l3"):
+        s.append(f" l3={row.l3[0].i if row.l3 else ''}")
     return ''.join(s)
 
 

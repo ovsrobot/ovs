@@ -93,6 +93,9 @@ struct ovsdb_idl {
     struct ovsdb_idl_txn *txn;
     struct hmap outstanding_txns;
     bool verify_write_only;
+    struct ovs_list pending_deletions_rows; /* Stores rows deleted in the
+                                             * current run until all inserts
+                                             * and updates will be parsed. */
     struct ovs_list deleted_untracked_rows; /* Stores rows deleted in the
                                              * current run, that are not yet
                                              * added to the track_list. */
@@ -152,7 +155,8 @@ static bool ovsdb_idl_modify_row(struct ovsdb_idl_row *,
                                  const struct shash *values, bool xor);
 static void ovsdb_idl_parse_update(struct ovsdb_idl *,
                                    const struct ovsdb_cs_update_event *);
-static void ovsdb_idl_reparse_deleted(struct ovsdb_idl *);
+static void ovsdb_idl_process_pending_deletions(struct ovsdb_idl *db);
+static void ovsdb_idl_reparse_untracked_deletions(struct ovsdb_idl *);
 static void ovsdb_idl_reparse_refs_to_inserted(struct ovsdb_idl *);
 
 static void ovsdb_idl_txn_process_reply(struct ovsdb_idl *,
@@ -266,6 +270,8 @@ ovsdb_idl_create_unconnected(const struct ovsdb_idl_class *class,
         .txn = NULL,
         .outstanding_txns = HMAP_INITIALIZER(&idl->outstanding_txns),
         .verify_write_only = false,
+        .pending_deletions_rows
+            = OVS_LIST_INITIALIZER(&idl->pending_deletions_rows),
         .deleted_untracked_rows
             = OVS_LIST_INITIALIZER(&idl->deleted_untracked_rows),
         .rows_to_reparse
@@ -399,10 +405,14 @@ ovsdb_idl_set_leader_only(struct ovsdb_idl *idl, bool leader_only)
 static void
 ovsdb_idl_clear(struct ovsdb_idl *db)
 {
-    /* Process deleted rows, removing them from the 'deleted_untracked_rows'
-     * list and reparsing their backrefs.
+    /* Process rows that have been marked for deletion. */
+    ovsdb_idl_process_pending_deletions(db);
+
+    /* Process deleted rows that are not yet added to the track_list,
+     * removing them from the 'deleted_untracked_rows' list and reparsing
+     * their backrefs.
      */
-    ovsdb_idl_reparse_deleted(db);
+    ovsdb_idl_reparse_untracked_deletions(db);
 
     /* Process backrefs of inserted rows, removing them from the
      * 'rows_to_reparse' list.
@@ -447,6 +457,7 @@ ovsdb_idl_clear(struct ovsdb_idl *db)
 
     /* Free rows deleted from tables with change tracking enabled. */
     ovsdb_idl_track_clear__(db, true);
+    ovs_assert(ovs_list_is_empty(&db->pending_deletions_rows));
     ovs_assert(ovs_list_is_empty(&db->deleted_untracked_rows));
     ovs_assert(ovs_list_is_empty(&db->rows_to_reparse));
     db->change_seqno++;
@@ -493,7 +504,8 @@ ovsdb_idl_run(struct ovsdb_idl *idl)
         ovsdb_cs_event_destroy(event);
     }
     ovsdb_idl_reparse_refs_to_inserted(idl);
-    ovsdb_idl_reparse_deleted(idl);
+    ovsdb_idl_process_pending_deletions(idl);
+    ovsdb_idl_reparse_untracked_deletions(idl);
     ovsdb_idl_row_destroy_postprocess(idl);
 }
 
@@ -1588,14 +1600,33 @@ ovsdb_idl_parse_update(struct ovsdb_idl *idl,
     }
 }
 
-/* Reparses references to rows that have been deleted in the current IDL run.
+/* Processes all rows that have been deleted in the current IDL run.
  *
- * To ensure that reference sources that are deleted are not reparsed,
- * this function must be called after all updates have been processed in
- * the current IDL run, i.e., after all calls to ovsdb_idl_parse_update().
+ * This function must be called after all iserts and updates from the current
+ * IDL run have been parsed i.e., after all calls to ovsdb_idl_parse_update().
  */
 static void
-ovsdb_idl_reparse_deleted(struct ovsdb_idl *db)
+ovsdb_idl_process_pending_deletions(struct ovsdb_idl *db)
+{
+    struct ovsdb_idl_row *row;
+
+    LIST_FOR_EACH_POP (row, pending_deletion_node,
+                       &db->pending_deletions_rows) {
+        ovs_list_init(&row->pending_deletion_node);
+
+        ovsdb_idl_delete_row(row);
+    }
+}
+
+/* Reparses references to rows that have been deleted in the current IDL run
+ * and that are not yet added to the track_list.
+ *
+ * To ensure that reference sources that are deleted are not reparsed,
+ * this function must be called after all deletions have been processed
+ * i.e., after all calls to ovsdb_idl_process_pending_deletions().
+ */
+static void
+ovsdb_idl_reparse_untracked_deletions(struct ovsdb_idl *db)
 {
     struct ovsdb_idl_row *row;
 
@@ -1674,7 +1705,11 @@ ovsdb_idl_process_update(struct ovsdb_idl_table *table,
     case OVSDB_CS_ROW_DELETE:
         if (row && !ovsdb_idl_row_is_orphan(row)) {
             /* XXX perhaps we should check the 'old' values? */
-            ovsdb_idl_delete_row(row);
+            /* Defer deletion processing until all updates of the
+             * current IDL run.
+             */
+            ovs_list_push_back(&row->table->idl->pending_deletions_rows,
+                               &row->pending_deletion_node);
         } else {
             VLOG_ERR_RL(&semantic_rl, "cannot delete missing row "UUID_FMT" "
                         "from table %s",
@@ -2359,6 +2394,7 @@ ovsdb_idl_row_create__(const struct ovsdb_idl_table_class *class)
     class->row_init(row);
     ovs_list_init(&row->src_arcs);
     ovs_list_init(&row->dst_arcs);
+    ovs_list_init(&row->pending_deletion_node);
     ovs_list_init(&row->reparse_node);
     hmap_node_nullify(&row->txn_node);
     ovs_list_init(&row->track_node);
@@ -2489,10 +2525,6 @@ ovsdb_idl_insert_row(struct ovsdb_idl_row *row, const struct shash *data)
 static void
 ovsdb_idl_delete_row(struct ovsdb_idl_row *row)
 {
-    /* If row has to be reparsed, reparse it before it's deleted. */
-    if (!ovs_list_is_empty(&row->reparse_node)) {
-        ovsdb_idl_row_parse(row);
-    }
     ovsdb_idl_remove_from_indexes(row);
     ovsdb_idl_row_clear_arcs(row, true);
     ovsdb_idl_row_destroy(row);
