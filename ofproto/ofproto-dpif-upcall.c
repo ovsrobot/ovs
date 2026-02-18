@@ -34,6 +34,7 @@
 #include "openvswitch/ofpbuf.h"
 #include "ofproto-dpif-ipfix.h"
 #include "ofproto-dpif-sflow.h"
+#include "ofproto-dpif-upcall-trace.h"
 #include "ofproto-dpif-xlate.h"
 #include "ofproto-dpif-xlate-cache.h"
 #include "ofproto-dpif-trace.h"
@@ -196,6 +197,8 @@ struct udpif {
     size_t n_conns;                    /* Number of connections waiting. */
 
     long long int offload_rebalance_time;  /* Time of last offload rebalance */
+
+    OVSRCU_TYPE(struct upcall_tracing *) tracing;  /* Tracing configuration. */
 };
 
 enum upcall_type {
@@ -404,6 +407,13 @@ static void upcall_unixctl_resume(struct unixctl_conn *conn, int argc,
 static void upcall_unixctl_ofproto_detrace(struct unixctl_conn *, int argc,
                                            const char *argv[], void *aux);
 
+static void upcall_unixctl_trace_create(struct unixctl_conn *, int argc,
+                                        const char *argv[], void *aux);
+static void upcall_unixctl_trace_show(struct unixctl_conn *, int argc,
+                                      const char *argv[], void *aux);
+static void upcall_unixctl_trace_delete(struct unixctl_conn *, int argc,
+                                        const char *argv[], void *aux);
+
 static struct udpif_key *ukey_create_from_upcall(struct upcall *,
                                                  struct flow_wildcards *);
 static int ukey_create_from_dpif_flow(const struct udpif *,
@@ -482,6 +492,12 @@ udpif_init(void)
                                  upcall_unixctl_resume, NULL);
         unixctl_command_register("ofproto/detrace", "UFID [pmd=PMD-ID]", 1, 2,
                                  upcall_unixctl_ofproto_detrace, NULL);
+        unixctl_command_register("upcall/trace/create", "bridge flow", 2, 2,
+                                 upcall_unixctl_trace_create, NULL);
+        unixctl_command_register("upcall/trace/show", "", 0, 0,
+                                 upcall_unixctl_trace_show, NULL);
+        unixctl_command_register("upcall/trace/delete", "", 0, 1,
+                                 upcall_unixctl_trace_delete, NULL);
         ovsthread_once_done(&once);
     }
 }
@@ -3411,6 +3427,79 @@ upcall_unixctl_ofproto_detrace(struct unixctl_conn *conn, int argc,
     ds_destroy(&ds);
 }
 
+static void upcall_unixctl_trace_create(struct unixctl_conn *conn, int argc,
+                                        const char *argv[],
+                                        void *aux OVS_UNUSED)
+{
+    struct upcall_tracing *tracing;
+    struct ofproto_dpif *ofproto;
+    struct udpif *udpif;
+    char *error;
+
+    error = upcall_tracing_create(argc, argv, &ofproto, &tracing);
+    if (error) {
+        unixctl_command_reply_error(conn, error);
+        free(error);
+        return;
+    }
+
+    udpif = ofproto->backer->udpif;
+    struct upcall_tracing *old_tracing =
+        ovsrcu_get_protected(struct upcall_tracing *, &udpif->tracing);
+
+    if (old_tracing) {
+        ovsrcu_postpone(upcall_tracing_destroy, old_tracing);
+    }
+
+    ovsrcu_set(&udpif->tracing, tracing);
+    unixctl_command_reply(conn, "");
+}
+
+static void upcall_unixctl_trace_show(struct unixctl_conn *conn,
+                                      int argc OVS_UNUSED,
+                                      const char *argv[] OVS_UNUSED,
+                                      void *aux OVS_UNUSED)
+{
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    const struct shash_node **backers;
+    int i;
+
+    backers = shash_sort(&all_dpif_backers);
+    for (i = 0; i < shash_count(&all_dpif_backers); i++) {
+        struct dpif_backer *backer = (struct dpif_backer *)(backers[i]->data);
+        struct upcall_tracing *tracing =
+            ovsrcu_get(struct upcall_tracing *, &backer->udpif->tracing);
+        ds_put_format(&ds, "%s: ", dpif_name(backer->dpif));
+        upcall_tracing_format(tracing, &ds);
+        ds_put_cstr(&ds, "\n");
+    }
+    unixctl_command_reply(conn, ds_cstr(&ds));
+    ds_destroy(&ds);
+}
+
+static void upcall_unixctl_trace_delete(struct unixctl_conn *conn,
+                                        int argc OVS_UNUSED,
+                                        const char *argv[] OVS_UNUSED,
+                                        void *aux OVS_UNUSED)
+{
+    const struct shash_node **backers;
+    int i;
+
+    backers = shash_sort(&all_dpif_backers);
+    for (i = 0; i < shash_count(&all_dpif_backers); i++) {
+        struct dpif_backer *backer = (struct dpif_backer *)(backers[i]->data);
+        struct upcall_tracing *old_tracing =
+            ovsrcu_get_protected(struct upcall_tracing *,
+                                 &backer->udpif->tracing);
+
+        if (old_tracing) {
+            ovsrcu_postpone(upcall_tracing_destroy, old_tracing);
+        }
+
+        ovsrcu_set(&backer->udpif->tracing, NULL);
+    }
+    unixctl_command_reply(conn, "");
+}
 
 /* Flows are sorted in the following order:
  * netdev, flow state (offloaded/kernel path), flow_pps_rate.

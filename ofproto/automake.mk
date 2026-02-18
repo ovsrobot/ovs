@@ -44,6 +44,8 @@ ofproto_libofproto_la_SOURCES = \
 	ofproto/ofproto-dpif-trace.h \
 	ofproto/ofproto-dpif-upcall.c \
 	ofproto/ofproto-dpif-upcall.h \
+	ofproto/ofproto-dpif-upcall-trace.c \
+	ofproto/ofproto-dpif-upcall-trace.h \
 	ofproto/ofproto-dpif-xlate.c \
 	ofproto/ofproto-dpif-xlate.h \
 	ofproto/ofproto-provider.h \
