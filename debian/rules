@@ -81,6 +81,9 @@ endif # nocheck
 
 export PYBUILD_DESTDIR = $(CURDIR)/debian/tmp
 export PYBUILD_DIR = $(CURDIR)/python
+# pybuild in sid no longer auto-detects setup.py, see
+# https://bugs.debian.org/1126096
+export PYBUILD_SYSTEM = distutils
 
 pybuild = \
 	export PKG_CONFIG_PATH=$(CURDIR)/debian/tmp/usr/lib/pkgconfig; \
