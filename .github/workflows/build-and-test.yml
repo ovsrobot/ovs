@@ -622,12 +622,6 @@ jobs:
       run:  cd ovs && make -j4
 
   build-linux-deb:
-    env:
-      deb_dependencies: |
-        linux-headers-$(uname -r) build-essential fakeroot devscripts equivs
-      DEB_PACKAGE: yes
-      DPDK:        ${{ matrix.dpdk }}
-
     name: linux deb ${{ matrix.dpdk }} dpdk
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -639,33 +633,56 @@ jobs:
           - dpdk: no
 
     steps:
+    - name: install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential fakeroot devscripts equivs
+
     - name: checkout
       uses: actions/checkout@v4
 
-    - name: update PATH
-      run:  |
-        echo "$HOME/bin"        >> $GITHUB_PATH
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    - name: generate debian metadata
+      run: |
+        ./debian/prepare.sh ${{ matrix.dpdk == 'yes' && '--dpdk' || '' }}
 
-    - name: update APT cache
-      run:  sudo apt update || true
-    - name: install dependencies for debian packages
-      run:  sudo apt install -y ${{ env.deb_dependencies }}
-    - name: install dpdk-dev
-      if:   matrix.dpdk != 'no'
-      run:  sudo apt install -y libdpdk-dev
+    - name: install build dependencies
+      run: |
+        sudo mk-build-deps -i -r -t 'sudo apt-get -y --no-install-recommends' debian/control
 
-    - name: prepare
-      run:  ./.ci/linux-prepare.sh
+    - name: set common DEB_BUILD_OPTIONS
+      run: |
+        echo "DEB_BUILD_OPTIONS=nocheck parallel=$(nproc)" >> $GITHUB_ENV
 
-    - name: build
-      run:  ./.ci/linux-build.sh
+    - name: disable DPDK
+      if: matrix.dpdk != 'yes'
+      run: |
+        echo "DEB_BUILD_OPTIONS=$DEB_BUILD_OPTIONS nodpdk" >> $GITHUB_ENV
+
+    - name: build Debian packages
+      run: |
+        dpkg-buildpackage -us -uc -b
+
+    - name: install deb packages
+      run: |
+        sudo apt-get install -y ../*.deb
+
+    - name: check that python C extension is built correctly
+      run: |
+        python3 -c "
+        from ovs import _json
+        import ovs.json
+        assert ovs.json.from_string('{\"a\": 42}') == {'a': 42}"
+
+    - name: collect deb packages
+      run: |
+        mkdir -p deb-packages
+        cp ../*.deb deb-packages/
 
     - name: upload deb packages
       uses: actions/upload-artifact@v4
       with:
         name: deb-packages-${{ matrix.dpdk }}-dpdk
-        path: '/home/runner/work/ovs/*.deb'
+        path: deb-packages/
 
   build-linux-rpm:
     name: linux rpm fedora

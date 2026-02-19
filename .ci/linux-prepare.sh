@@ -2,12 +2,6 @@
 
 set -ev
 
-if [ "$DEB_PACKAGE" ]; then
-    # We're not using sparse for debian packages, tests are skipped and
-    # all extra dependencies tracked by mk-build-deps.
-    exit 0
-fi
-
 # Build and install sparse.
 #
 # Disabling sqlite support because sindex build fails and we don't

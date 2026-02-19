@@ -76,38 +76,6 @@ function clang_analyze()
     fi;
 }
 
-if [ "$DEB_PACKAGE" ]; then
-    ./boot.sh && ./configure --with-dpdk=$DPDK && make debian
-    mk-build-deps --install --root-cmd sudo --remove debian/control
-    dpkg-checkbuilddeps
-    make debian-deb
-    packages=$(ls $(pwd)/../*.deb)
-    deps=""
-    for pkg in $packages; do
-        _ifs=$IFS
-        IFS=","
-        for dep in $(dpkg-deb -f $pkg Depends); do
-            dep_name=$(echo "$dep"|awk '{print$1}')
-            # Don't install internal package inter-dependencies from apt
-            echo $dep_name | grep -q openvswitch && continue
-            deps+=" $dep_name"
-        done
-        IFS=$_ifs
-    done
-    # install package dependencies from apt
-    echo $deps | xargs sudo apt -y install
-    # install the locally built openvswitch packages
-    sudo dpkg -i $packages
-
-    # Check that python C extension is built correctly.
-    python3 -c "
-from ovs import _json
-import ovs.json
-assert ovs.json.from_string('{\"a\": 42}') == {'a': 42}"
-
-    exit 0
-fi
-
 if [ "$DPDK" ] || [ "$DPDK_SHARED" ]; then
     install_dpdk
 fi

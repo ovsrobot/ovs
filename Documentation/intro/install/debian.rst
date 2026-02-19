@@ -50,38 +50,47 @@ Git tree with these instructions.
 
 You do not need to be the superuser to build the Debian packages.
 
-1. Install the "build-essential" and "fakeroot" packages. For example::
+1. Install the "build-essential", "fakeroot", "devscripts", and "equivs"
+   packages::
 
-       $ apt-get install build-essential fakeroot
+       $ apt-get install build-essential fakeroot devscripts equivs
 
 2. Obtain and unpack an Open vSwitch source distribution and ``cd`` into its
    top level directory.
 
-3. Install the build dependencies listed under "Build-Depends:" near the top of
-   ``debian/control.in``. You can install these any way you like, e.g.  with
-   ``apt-get install``.
+3. Generate ``debian/control`` and ``debian/copyright`` from their templates.
 
-4. Prepare the package source.
+   If you want to build the package with DPDK support::
 
-   If you want to build the package with DPDK support execute the following
-   command::
-
-       $ ./boot.sh && ./configure --with-dpdk=shared && make debian
+       $ ./debian/prepare.sh --dpdk
 
    If not::
 
-       $ ./boot.sh && ./configure && make debian
+       $ ./debian/prepare.sh
 
-Check your work by running ``dpkg-checkbuilddeps`` in the top level of your OVS
-directory. If you've installed all the dependencies properly,
-``dpkg-checkbuilddeps`` will exit without printing anything. If you forgot to
-install some dependencies, it will tell you which ones.
+4. Install the build dependencies::
 
-5. Build the package::
+       $ mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' \
+           debian/control
 
-       $ make debian-deb
+   Check your work by running ``dpkg-checkbuilddeps`` in the top level of your
+   OVS directory. If you've installed all the dependencies properly,
+   ``dpkg-checkbuilddeps`` will exit without printing anything. If you forgot
+   to install some dependencies, it will tell you which ones.
 
-5. The generated .deb files will be in the parent directory of the Open vSwitch
+5. Build the package.
+
+   Without DPDK::
+
+       $ DEB_BUILD_OPTIONS='nocheck parallel=`nproc` nodpdk' \
+           dpkg-buildpackage -us -uc -b
+
+   With DPDK::
+
+       $ DEB_BUILD_OPTIONS='nocheck parallel=`nproc`' \
+           dpkg-buildpackage -us -uc -b
+
+6. The generated .deb files will be in the parent directory of the Open vSwitch
    source distribution.
 
 Installing .deb Packages

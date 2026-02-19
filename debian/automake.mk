@@ -58,6 +58,7 @@ EXTRA_DIST += \
 	debian/openvswitch-vtep.init \
 	debian/openvswitch-vtep.install \
 	debian/ovs-systemd-reload \
+	debian/prepare.sh \
 	debian/python3-openvswitch.install \
 	debian/rules \
 	debian/source/format \
@@ -80,51 +81,4 @@ check-debian-changelog-version:
 ALL_LOCAL += check-debian-changelog-version
 DIST_HOOKS += check-debian-changelog-version
 
-
-update_deb_copyright = \
-	$(AM_V_GEN) \
-	{ sed -n -e '/%AUTHORS%/q' -e p < $(srcdir)/debian/copyright.in;   \
-	  tail -n +28 $(srcdir)/AUTHORS.rst | sed '1,/^$$/d' |		   \
-		sed -n -e '/^$$/q' -e 's/^/  /p';			   \
-	  sed -e '1,/%AUTHORS%/d' $(srcdir)/debian/copyright.in;	   \
-	} > debian/copyright
-
-debian/copyright: AUTHORS.rst debian/copyright.in
-	$(update_deb_copyright)
-
-CLEANFILES += debian/copyright
-
-
-if DPDK_NETDEV
-update_deb_control = \
-	$(AM_V_GEN) sed -e 's/^\# DPDK_NETDEV //' \
-		< $(srcdir)/debian/control.in > debian/control
-DEB_BUILD_OPTIONS ?= nocheck parallel=`nproc`
-else
-update_deb_control = \
-	$(AM_V_GEN) grep -v '^\# DPDK_NETDEV' \
-		< $(srcdir)/debian/control.in > debian/control
-DEB_BUILD_OPTIONS ?= nocheck parallel=`nproc` nodpdk
-endif
-
-debian/control: $(srcdir)/debian/control.in Makefile
-	$(update_deb_control)
-
-CLEANFILES += debian/control
-
-
-debian: debian/copyright debian/control
-.PHONY: debian
-
-
-debian-deb: debian
-	@if test X"$(srcdir)" != X"$(top_builddir)"; then			\
-		echo "Debian packages should be built from $(abs_srcdir)/";	\
-		exit 1;								\
-	fi
-	$(MAKE) distclean
-	$(update_deb_copyright)
-	$(update_deb_control)
-	$(AM_V_GEN) fakeroot debian/rules clean
-	$(AM_V_GEN) DEB_BUILD_OPTIONS="$(DEB_BUILD_OPTIONS)" \
-		fakeroot debian/rules binary
+CLEANFILES += debian/copyright debian/control
