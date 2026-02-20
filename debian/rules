@@ -84,6 +84,7 @@ export PYBUILD_DIR = $(CURDIR)/python
 
 pybuild = \
 	export PKG_CONFIG_PATH=$(CURDIR)/debian/tmp/usr/lib/pkgconfig; \
+	export PYBUILD_SYSTEM=distutils; \
 	export PKG_CONFIG_SYSROOT_DIR=$(CURDIR)/debian/tmp; \
 	export PKG_CONFIG_SYSTEM_INCLUDE_PATH=/; \
 	export PKG_CONFIG_SYSTEM_LIBRARY_PATH=/; \
