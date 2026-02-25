@@ -15,6 +15,7 @@ EXTRA_DIST += \
 	build-aux/gen_ofp_field_decoders \
 	build-aux/generate-dhparams-c \
 	build-aux/initial-tab-allowed-files \
+	build-aux/prepare-debian.sh \
 	build-aux/sodepends.py \
 	build-aux/soexpand.py \
 	build-aux/text2c \
