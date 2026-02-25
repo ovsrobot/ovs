@@ -95,6 +95,7 @@ EXTRA_DIST += \
 	python/ovs/flowviz/ovs-flowviz.conf \
 	python/README.rst \
 	python/setup.py \
+	python/ovstest/setup.py \
 	python/test_requirements.txt
 
 # C extension support.
@@ -177,6 +178,15 @@ $(srcdir)/python/setup.py: python/setup.py.template config.status
 	if cmp -s $(@F).tmp $@; then touch $@; else cp $(@F).tmp $@; fi; rm $(@F).tmp
 EXTRA_DIST += python/setup.py.template
 CLEANFILES += python/setup.py
+
+ALL_LOCAL += $(srcdir)/python/ovstest/setup.py
+$(srcdir)/python/ovstest/setup.py: python/ovstest/setup.py.template config.status
+	$(AM_V_GEN)sed \
+		-e 's,[@]VERSION[@],$(VERSION),g' \
+		< $(srcdir)/python/ovstest/setup.py.template > $@.tmp && \
+	if cmp -s $@.tmp $@; then touch $@; else cp $@.tmp $@; fi; rm $@.tmp
+EXTRA_DIST += python/ovstest/setup.py.template
+CLEANFILES += python/ovstest/setup.py
 
 EXTRA_DIST += python/TODO.rst
 
