@@ -1263,6 +1263,9 @@ ovs_router_rules_flush(bool flush_all)
 {
     ovs_mutex_lock(&mutex);
     ovs_router_rules_flush_protected(flush_all);
+    if (!flush_all) {
+        init_standard_rules();
+    }
     ovs_mutex_unlock(&mutex);
 }
 
