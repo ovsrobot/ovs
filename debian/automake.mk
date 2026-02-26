@@ -80,42 +80,24 @@ check-debian-changelog-version:
 ALL_LOCAL += check-debian-changelog-version
 DIST_HOOKS += check-debian-changelog-version
 
-
-update_deb_copyright = \
-	$(AM_V_GEN) \
-	{ sed -n -e '/%AUTHORS%/q' -e p < $(srcdir)/debian/copyright.in;   \
-	  tail -n +28 $(srcdir)/AUTHORS.rst | sed '1,/^$$/d' |		   \
-		sed -n -e '/^$$/q' -e 's/^/  /p';			   \
-	  sed -e '1,/%AUTHORS%/d' $(srcdir)/debian/copyright.in;	   \
-	} > debian/copyright
-
-debian/copyright: AUTHORS.rst debian/copyright.in
-	$(update_deb_copyright)
-
-CLEANFILES += debian/copyright
-
-
+debian/control: $(srcdir)/debian/control.in Makefile
+debian/copyright: AUTHORS.rst debian/copyright.in debian/control
 if DPDK_NETDEV
-update_deb_control = \
-	$(AM_V_GEN) sed -e 's/^\# DPDK_NETDEV //' \
-		< $(srcdir)/debian/control.in > debian/control
+PREPARE_DEBIAN_FLAGS = --dpdk
 DEB_BUILD_OPTIONS ?= nocheck parallel=`nproc`
 else
-update_deb_control = \
-	$(AM_V_GEN) grep -v '^\# DPDK_NETDEV' \
-		< $(srcdir)/debian/control.in > debian/control
+PREPARE_DEBIAN_FLAGS =
 DEB_BUILD_OPTIONS ?= nocheck parallel=`nproc` nodpdk
 endif
 
-debian/control: $(srcdir)/debian/control.in Makefile
-	$(update_deb_control)
-
-CLEANFILES += debian/control
-
+debian/control debian/copyright:
+	./build-aux/prepare-debian.sh $(PREPARE_DEBIAN_FLAGS)
 
 debian: debian/copyright debian/control
 .PHONY: debian
 
+CLEANFILES += debian/copyright
+CLEANFILES += debian/control
 
 debian-deb: debian
 	@if test X"$(srcdir)" != X"$(top_builddir)"; then			\
@@ -123,8 +105,7 @@ debian-deb: debian
 		exit 1;								\
 	fi
 	$(MAKE) distclean
-	$(update_deb_copyright)
-	$(update_deb_control)
+	./build-aux/prepare-debian.sh $(PREPARE_DEBIAN_FLAGS)
 	$(AM_V_GEN) fakeroot debian/rules clean
 	$(AM_V_GEN) DEB_BUILD_OPTIONS="$(DEB_BUILD_OPTIONS)" \
 		fakeroot debian/rules binary
