@@ -123,6 +123,9 @@ COVERAGE_DEFINE(datapath_drop_rx_invalid_packet);
 COVERAGE_DEFINE(datapath_drop_hw_post_process);
 COVERAGE_DEFINE(datapath_drop_hw_post_process_consumed);
 
+COVERAGE_DEFINE(dpif_netdev_output_big_batch);
+COVERAGE_DEFINE(dpif_netdev_recirc_big_batch);
+
 /* Protects against changes to 'dp_netdevs'. */
 struct ovs_mutex dp_netdev_mutex = OVS_MUTEX_INITIALIZER;
 
@@ -6798,6 +6801,8 @@ dp_netdev_run_meter(struct dp_netdev *dp, struct dp_packet_batch *packets_,
         return;
     }
 
+    ovs_assert(cnt <= NETDEV_MAX_BURST);
+
     /* Initialize as negative values. */
     memset(exceeded_band, 0xff, cnt * sizeof *exceeded_band);
     /* Initialize as zeroes. */
@@ -8221,6 +8226,27 @@ static void
 dp_netdev_recirculate(struct dp_netdev_pmd_thread *pmd,
                       struct dp_packet_batch *packets)
 {
+    if (dp_packet_batch_size(packets) > NETDEV_MAX_BURST) {
+        struct dp_packet_batch smaller_batch;
+        size_t batch_cnt;
+        size_t sent = 0;
+
+        COVERAGE_INC(dpif_netdev_recirc_big_batch);
+        batch_cnt = dp_packet_batch_size(packets);
+        dp_packet_batch_init(&smaller_batch);
+        do {
+            size_t count = MIN(batch_cnt - sent, NETDEV_MAX_BURST);
+
+            smaller_batch.trunc = packets->trunc;
+            smaller_batch.count = 0;
+            dp_packet_batch_add_array(&smaller_batch, &packets->packets[sent],
+                                      count);
+            dp_netdev_input__(pmd, &smaller_batch, true, 0);
+            sent += count;
+        } while (sent < batch_cnt);
+        return;
+    }
+
     dp_netdev_input__(pmd, packets, true, 0);
 }
 
@@ -8378,17 +8404,32 @@ dp_execute_userspace_action(struct dp_netdev_pmd_thread *pmd,
     }
 }
 
+static size_t
+dp_execute_output_chunk(struct dp_netdev_pmd_thread *pmd, struct tx_port *p,
+                        struct dp_packet **packets, size_t count)
+{
+    count = MIN(count, NETDEV_MAX_BURST - p->output_pkts.count);
+
+    for (unsigned i = 0; i < count; i++) {
+        p->output_pkts_rxqs[p->output_pkts.count + i] = pmd->ctx.last_rxq;
+    }
+    dp_packet_batch_add_array(&p->output_pkts, packets, count);
+
+    return count;
+}
+
 static bool
 dp_execute_output_action(struct dp_netdev_pmd_thread *pmd,
                          struct dp_packet_batch *packets_,
                          bool should_steal, odp_port_t port_no)
 {
     struct tx_port *p = pmd_send_port_cache_lookup(pmd, port_no);
+    size_t batch_cnt = dp_packet_batch_size(packets_);
     struct dp_packet_batch out;
+    size_t sent;
 
     if (!OVS_LIKELY(p)) {
-        COVERAGE_ADD(datapath_drop_invalid_port,
-                     dp_packet_batch_size(packets_));
+        COVERAGE_ADD(datapath_drop_invalid_port, batch_cnt);
         dp_packet_delete_batch(packets_, should_steal);
         return false;
     }
@@ -8398,20 +8439,22 @@ dp_execute_output_action(struct dp_netdev_pmd_thread *pmd,
         packets_ = &out;
     }
     dp_packet_batch_apply_cutlen(packets_);
-    if (dp_packet_batch_size(&p->output_pkts)
-        + dp_packet_batch_size(packets_) > NETDEV_MAX_BURST) {
-        /* Flush here to avoid overflow. */
+    if (dp_packet_batch_size(&p->output_pkts) == NETDEV_MAX_BURST) {
         dp_netdev_pmd_flush_output_on_port(pmd, p);
     }
     if (dp_packet_batch_is_empty(&p->output_pkts)) {
         pmd->n_output_batches++;
     }
 
-    struct dp_packet *packet;
-    DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
-        p->output_pkts_rxqs[dp_packet_batch_size(&p->output_pkts)] =
-            pmd->ctx.last_rxq;
-        dp_packet_batch_add(&p->output_pkts, packet);
+    sent = dp_execute_output_chunk(pmd, p, packets_->packets, batch_cnt);
+    if (OVS_UNLIKELY(sent < batch_cnt)) {
+        COVERAGE_INC(dpif_netdev_output_big_batch);
+        do {
+            dp_netdev_pmd_flush_output_on_port(pmd, p);
+            pmd->n_output_batches++;
+            sent += dp_execute_output_chunk(pmd, p, &packets_->packets[sent],
+                                            batch_cnt - sent);
+        } while (sent < batch_cnt);
     }
     return true;
 }
