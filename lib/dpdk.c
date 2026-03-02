@@ -29,6 +29,7 @@
 #include <rte_version.h>
 
 #include "dirs.h"
+#include "dpif-offload-provider.h"
 #include "fatal-signal.h"
 #include "netdev-dpdk.h"
 #include "openvswitch/dynamic-string.h"
@@ -506,6 +507,7 @@ dpdk_init__(const struct smap *ovs_other_config)
     RTE_PER_LCORE(_lcore_id) = NON_PMD_CORE_ID;
 
     /* Finally, register the dpdk classes */
+    dpif_offload_register_provider(&dpif_offload_dpdk_class);
     netdev_dpdk_register(ovs_other_config);
     return true;
 }

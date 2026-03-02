@@ -45,9 +45,6 @@ static const struct dpif_offload_class *base_dpif_offload_classes[] = {
 #if defined(__linux__)
     &dpif_offload_tc_class,
 #endif
-#ifdef DPDK_NETDEV
-    &dpif_offload_dpdk_class,
-#endif
     /* While adding a new offload class to this structure make sure to also
      * update the dpif_offload_provider_priority_list below. */
     &dpif_offload_dummy_class,
@@ -90,7 +87,7 @@ dpif_offload_register_provider__(const struct dpif_offload_class *class)
     return 0;
 }
 
-static int
+int
 dpif_offload_register_provider(const struct dpif_offload_class *class)
 {
     int error;

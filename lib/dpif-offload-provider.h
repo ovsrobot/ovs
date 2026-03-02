@@ -353,6 +353,7 @@ struct dpif_offload_port *dpif_offload_port_mgr_find_by_odp_port(
     CMAP_FOR_EACH (PORT, odp_port_node, &(OFFLOAD)->ports->odp_port_to_port)
 
 /* Global functions, called by the dpif layer or offload providers. */
+int dpif_offload_register_provider(const struct dpif_offload_class *);
 void dpif_offload_module_init(void);
 void dpif_offload_set_config(struct dpif *, const struct smap *other_cfg);
 void dpif_offload_port_add(struct dpif *, struct netdev *, odp_port_t);
