@@ -9,10 +9,16 @@ vswitchd_ovs_vswitchd_SOURCES = \
 	vswitchd/ovs-vswitchd.c \
 	vswitchd/system-stats.c \
 	vswitchd/system-stats.h
+if DPDK_NETDEV
+DPDK_vswitchd_LDADD = lib/libopenvswitchdpdk.la
+endif
+
 vswitchd_ovs_vswitchd_LDADD = \
 	ofproto/libofproto.la \
 	lib/libsflow.la \
-	lib/libopenvswitch.la
+	$(DPDK_vswitchd_LDADD) \
+	lib/libopenvswitch.la \
+	$(DPDK_LIBS)
 vswitchd_ovs_vswitchd_LDFLAGS = $(AM_LDFLAGS) $(DPDK_vswitchd_LDFLAGS)
 MAN_ROOTS += vswitchd/ovs-vswitchd.8.in
 

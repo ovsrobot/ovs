@@ -425,6 +425,7 @@ AC_DEFUN([OVS_CHECK_DPDK], [
 
     ovs_save_CFLAGS="$CFLAGS"
     ovs_save_LDFLAGS="$LDFLAGS"
+    ovs_save_LIBS="$LIBS"
     CFLAGS="$CFLAGS $DPDK_INCLUDE"
 
     AC_CHECK_HEADERS([rte_config.h], [], [
@@ -489,6 +490,7 @@ AC_DEFUN([OVS_CHECK_DPDK], [
 
     CFLAGS="$ovs_save_CFLAGS"
     LDFLAGS="$ovs_save_LDFLAGS"
+    LIBS="$ovs_save_LIBS"
     # Stripping out possible instruction set specific configuration that DPDK
     # forces in pkg-config since this could override user-specified options.
     # It's enough to have -mssse3 to build with DPDK headers.
@@ -517,9 +519,11 @@ AC_DEFUN([OVS_CHECK_DPDK], [
     DPDK_vswitchd_LDFLAGS="-Wl,$DPDK_vswitchd_LDFLAGS"
 
     AC_SUBST([DPDK_vswitchd_LDFLAGS])
+    DPDK_LIBS="$DPDK_LIB"
     AC_DEFINE([DPDK_NETDEV], [1], [System uses the DPDK module.])
   fi
 
+  AC_SUBST([DPDK_LIBS])
   AM_CONDITIONAL([DPDK_NETDEV], test "$DPDKLIB_FOUND" = true)
 ])
 

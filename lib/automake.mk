@@ -503,16 +503,19 @@ lib_libopenvswitch_la_SOURCES += \
 endif
 
 if DPDK_NETDEV
-lib_libopenvswitch_la_SOURCES += \
+noinst_LTLIBRARIES += lib/libopenvswitchdpdk.la
+lib_libopenvswitchdpdk_la_SOURCES = \
 	lib/dpdk.c \
 	lib/dpif-offload-dpdk.c \
 	lib/dpif-offload-dpdk-netdev.c \
 	lib/dpif-offload-dpdk-private.h \
 	lib/netdev-dpdk.c
-else
-lib_libopenvswitch_la_SOURCES += \
-	lib/dpdk-stub.c
+lib_libopenvswitchdpdk_la_LDFLAGS = -static
 endif
+
+lib_libopenvswitch_la_SOURCES += \
+	lib/dpdk-stub.c \
+	lib/dpdk-link-stubs.c
 
 if WIN32
 lib_libopenvswitch_la_SOURCES += \

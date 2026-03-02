@@ -64,6 +64,7 @@
 #define OVS_PRINTF_FORMAT(FMT, ARG1) __attribute__((__format__(printf, FMT, ARG1)))
 #define OVS_SCANF_FORMAT(FMT, ARG1) __attribute__((__format__(scanf, FMT, ARG1)))
 #define OVS_WARN_UNUSED_RESULT __attribute__((__warn_unused_result__))
+#define OVS_WEAK __attribute__((__weak__))
 #define OVS_LIKELY(CONDITION) __builtin_expect(!!(CONDITION), 1)
 #define OVS_UNLIKELY(CONDITION) __builtin_expect(!!(CONDITION), 0)
 #else
@@ -71,6 +72,7 @@
 #define OVS_PRINTF_FORMAT(FMT, ARG1)
 #define OVS_SCANF_FORMAT(FMT, ARG1)
 #define OVS_WARN_UNUSED_RESULT
+#define OVS_WEAK
 #define OVS_LIKELY(CONDITION) (!!(CONDITION))
 #define OVS_UNLIKELY(CONDITION) (!!(CONDITION))
 #endif
