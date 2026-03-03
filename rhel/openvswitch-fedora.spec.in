@@ -57,7 +57,8 @@ Source: http://openvswitch.org/releases/%{name}-%{version}.tar.gz
 BuildRequires: gcc gcc-c++
 BuildRequires: autoconf automake libtool
 BuildRequires: systemd-units openssl openssl-devel
-BuildRequires: python3-devel
+BuildRequires: python3-devel python3-setuptools
+%{?fedora:BuildRequires: python3-sortedcontainers}
 BuildRequires: desktop-file-utils
 BuildRequires: groff graphviz
 BuildRequires: checkpolicy, selinux-policy-devel
@@ -98,6 +99,11 @@ Obsoletes: openvswitch-controller <= 0:2.1.0-1
 %bcond_without check
 %bcond_with check_datapath_kernel
 
+%if 0%{?rhel}
+# sortedcontainers are not packaged on RHEL yet, but ovs includes it
+%global __requires_exclude ^python%{python3_version}dist\\(sortedcontainers\\)$
+%endif
+
 %description
 Open vSwitch provides standard network bridging functions and
 support for the OpenFlow protocol for remote per-flow control of
@@ -115,8 +121,10 @@ Tailored Open vSwitch SELinux policy
 %package -n python3-openvswitch
 Summary: Open vSwitch python3 bindings
 License: ASL 2.0
-BuildArch: noarch
+%if (0%{?fedora} && 0%{?fedora} < 31) || (0%{?rhel} && 0%{?rhel} < 9)
+%{?python_provide:%python_provide python3-openvswitch = %{version}-%{release}}
 Requires: python3
+%endif
 
 # DNS resolution support in Python IDL.
 Suggests: python3-unbound
@@ -125,15 +133,14 @@ Suggests: python3-netaddr python3-pyparsing
 # Dependencies of ovs-flowviz.
 Suggests: python3-click python3-graphviz python3-rich
 
-%{?python_provide:%python_provide python3-openvswitch = %{version}-%{release}}
-
 %description -n python3-openvswitch
 Python bindings for the Open vSwitch database
 
 %package test
 Summary: Open vSwitch testing utilities
 License: ASL 2.0
-BuildArch: noarch
+Requires: python3-openvswitch = %{version}-%{release}
+Requires: tcpdump
 
 %description test
 Utilities that are useful to diagnose performance and connectivity
@@ -162,13 +169,26 @@ service.
 %package ipsec
 Summary: Open vSwitch IPsec tunneling support
 License: ASL 2.0
-Requires: openvswitch python3-openvswitch libreswan
+Requires: openvswitch = %{version}-%{release}
+Requires: python3-openvswitch = %{version}-%{release}
+Requires: libreswan
 
 %description ipsec
 This package provides IPsec tunneling support for OVS tunnels.
 
 %prep
 %setup -q
+
+%if 0%{?fedora} >= 31 || 0%{?rhel} >= 9
+%generate_buildrequires
+cd python
+# sortedcontainers are not packaged on RHEL yet, but ovs includes it
+%if 0%{?rhel} >= 9
+%pyproject_buildrequires -R
+%else
+%pyproject_buildrequires
+%endif
+%endif
 
 %build
 %configure \
@@ -206,6 +226,26 @@ build-aux/dpdkstrip.py \
 
 make %{?_smp_mflags}
 make selinux-policy
+
+pushd python
+(
+export CPPFLAGS="-I $PWD/../include"
+export LDFLAGS="%{__global_ldflags} -L $PWD/../lib/.libs"
+%if 0%{?fedora} >= 31 || 0%{?rhel} >= 9
+%pyproject_wheel
+%else
+%py3_build
+%endif
+)
+popd
+
+pushd python/ovstest
+%if 0%{?fedora} >= 31 || 0%{?rhel} >= 9
+%pyproject_wheel
+%else
+%py3_build
+%endif
+popd
 
 %install
 rm -rf $RPM_BUILD_ROOT
@@ -250,12 +290,17 @@ install -p -m 0755 rhel/etc_sysconfig_network-scripts_ifup-ovs \
         $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/network-scripts/ifup-ovs
 %endif
 
-install -d -m 0755 $RPM_BUILD_ROOT%{python3_sitelib}
-cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
-   $RPM_BUILD_ROOT%{python3_sitelib}
-
-mv $RPM_BUILD_ROOT%{python3_sitelib}/ovs/flowviz/ovs-flowviz \
-   $RPM_BUILD_ROOT/%{_bindir}/ovs-flowviz
+pushd python
+%if 0%{?fedora} >= 31 || 0%{?rhel} >= 9
+%pyproject_install
+%else
+%py3_install
+pushd ovstest
+%py3_install
+popd
+%endif
+[ -f "$RPM_BUILD_ROOT/%{python3_sitearch}/ovs/_json$(python3-config --extension-suffix)" ]
+popd
 
 rm -rf $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/
 
@@ -412,7 +457,12 @@ fi
 %files -n python3-openvswitch
 %{_bindir}/ovs-flowviz
 %{_mandir}/man8/ovs-flowviz.8*
-%{python3_sitelib}/ovs
+%{python3_sitearch}/ovs/
+%if 0%{?fedora} >= 31 || 0%{?rhel} >= 9
+%{python3_sitearch}/ovs-%{version}.dist-info/
+%else
+%{python3_sitearch}/ovs-%{version}-py%{python3_version}.egg-info/
+%endif
 
 %files test
 %{_bindir}/ovs-test
@@ -428,7 +478,12 @@ fi
 %{_mandir}/man1/ovs-pcap.1*
 %{_mandir}/man8/ovs-tcpdump.8*
 %{_mandir}/man1/ovs-tcpundump.1*
-%{python3_sitelib}/ovstest
+%{python3_sitelib}/ovstest/
+%if 0%{?fedora} >= 31 || 0%{?rhel} >= 9
+%{python3_sitelib}/ovstest-%{version}.dist-info/
+%else
+%{python3_sitelib}/ovstest-%{version}-py%{python3_version}.egg-info/
+%endif
 
 %files devel
 %{_libdir}/lib*.so
