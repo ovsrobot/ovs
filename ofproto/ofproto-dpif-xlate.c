@@ -3679,16 +3679,28 @@ process_special(struct xlate_ctx *ctx, const struct xport *xport)
 static int
 tnl_route_lookup_flow(const struct xlate_ctx *ctx,
                       const struct flow *oflow,
-                      struct in6_addr *ip, struct in6_addr *src,
+                      struct in6_addr *ip, struct in6_addr *out_src,
                       struct xport **out_port)
 {
-    char out_dev[IFNAMSIZ];
     struct xbridge *xbridge;
-    struct in6_addr gw;
+    char out_dev[IFNAMSIZ];
+    struct in6_addr in_src;
+    struct in6_addr *_in_src = &in_src;
     struct in6_addr dst;
+    struct in6_addr gw;
+
+    /* If tunnel src address is set, it overrides route lookup. */
+    if (oflow->tunnel.ip_src) {
+        in6_addr_set_mapped_ipv4(&in_src, oflow->tunnel.ip_src);
+    } else if (ipv6_addr_is_set(&oflow->tunnel.ipv6_src)) {
+        in_src = oflow->tunnel.ipv6_src;
+    } else {
+        _in_src = NULL;
+    }
 
     dst = flow_tnl_dst(&oflow->tunnel);
-    if (!ovs_router_lookup(oflow->pkt_mark, &dst, out_dev, src, &gw)) {
+    if (!ovs_router_lookup(oflow->pkt_mark, &dst, _in_src, out_dev, out_src,
+                           &gw)) {
         return -ENOENT;
     }
 
@@ -3878,8 +3890,8 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     struct ovs_action_push_tnl tnl_push_data;
     struct xport *out_dev = NULL;
     ovs_be32 s_ip = 0, d_ip = 0;
-    struct in6_addr s_ip6 = in6addr_any;
-    struct in6_addr d_ip6 = in6addr_any;
+    struct in6_addr s_ip6;
+    struct in6_addr d_ip6;
     struct eth_addr smac;
     struct eth_addr dmac;
     int err;
@@ -3896,12 +3908,6 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     /* Backup flow & base_flow data. */
     memcpy(&old_base_flow, &ctx->base_flow, sizeof old_base_flow);
     memcpy(&old_flow, &ctx->xin->flow, sizeof old_flow);
-
-    if (flow->tunnel.ip_src) {
-        in6_addr_set_mapped_ipv4(&s_ip6, flow->tunnel.ip_src);
-    } else if (ipv6_addr_is_set(&flow->tunnel.ipv6_src)) {
-        s_ip6 = flow->tunnel.ipv6_src;
-    }
 
     err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
     if (err) {

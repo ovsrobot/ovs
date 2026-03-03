@@ -3731,7 +3731,7 @@ flow_get_tunnel_netdev(struct flow_tnl *tunnel)
         return NULL;
     }
 
-    if (!ovs_router_lookup(0, &ip6, iface, NULL, &gw)) {
+    if (!ovs_router_lookup(0, &ip6, NULL, iface, NULL, &gw)) {
         return NULL;
     }
 

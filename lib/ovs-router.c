@@ -173,90 +173,94 @@ ovs_router_lookup_fallback(const struct in6_addr *ip6_dst,
     return true;
 }
 
+/* If the caller does not want to match on source prefix, src_in must be NULL.
+ * If src_in is not NULL, src_out will be set based on it instead of the route
+ * entry. */
 bool
 ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
+                  const struct in6_addr *src_in,
                   char output_netdev[],
-                  struct in6_addr *src, struct in6_addr *gw)
+                  struct in6_addr *src_out, struct in6_addr *gw)
 {
-    struct flow flow = {.ipv6_dst = *ip6_dst, .pkt_mark = mark};
-    const struct in6_addr *from_src = src;
-    const struct cls_rule *cr = NULL;
+    bool is_ipv4 = IN6_IS_ADDR_V4MAPPED(ip6_dst);
+    ovs_be16 dl_type = is_ipv4 ? htons(ETH_TYPE_IP) : htons(ETH_TYPE_IPV6);
+    const struct cls_rule *cr;
     struct router_rule *rule;
+    struct classifier *cls;
+    struct flow flow;
 
-    if (src && ipv6_addr_is_set(src)) {
-        struct flow flow_src = {.ipv6_dst = *src, .pkt_mark = mark};
-        struct classifier *cls_local = cls_find(CLS_LOCAL);
-        const struct cls_rule *cr_src;
+    if (src_in) {
+        flow = (struct flow) {.ipv6_dst = *src_in, .pkt_mark = mark,
+                              .dl_type = dl_type};
+        ovs_assert(is_ipv4 == IN6_IS_ADDR_V4MAPPED(src_in));
 
-        if (!cls_local) {
+        cls = cls_find(CLS_LOCAL);
+
+        if (!cls) {
             return false;
         }
 
-        cr_src = classifier_lookup(cls_local, OVS_VERSION_MAX, &flow_src,
+        cr = classifier_lookup(cls, OVS_VERSION_MAX, &flow,
                                    NULL, NULL);
-        if (!cr_src) {
+        if (!cr) {
             return false;
+        }
+        if (src_out) {
+            *src_out = *src_in;
+            src_out = NULL;
+        }
+    } else {
+        if (is_ipv4) {
+            src_in = &in6addr_v4mapped_any;
+        } else {
+            src_in = &in6addr_any;
         }
     }
 
-    if (!from_src) {
-        if (IN6_IS_ADDR_V4MAPPED(ip6_dst)) {
-            from_src = &in6addr_v4mapped_any;
-        } else {
-            from_src = &in6addr_any;
-        }
-    }
+    flow = (struct flow){.ipv6_dst = *ip6_dst, .pkt_mark = mark,
+                         .dl_type = dl_type};
 
     PVECTOR_FOR_EACH (rule, &rules) {
         uint8_t plen = rule->ipv4 ? rule->src_prefix + 96 : rule->src_prefix;
         bool matched;
 
-        if ((IN6_IS_ADDR_V4MAPPED(from_src) && !rule->ipv4) ||
-            (!IN6_IS_ADDR_V4MAPPED(from_src) && rule->ipv4)) {
+        if (is_ipv4 != rule->ipv4) {
             continue;
         }
 
         matched = (!rule->src_prefix ||
-                   ipv6_addr_equals_masked(&rule->from_addr, from_src, plen));
+                   ipv6_addr_equals_masked(&rule->from_addr, src_in, plen));
 
         if (rule->invert) {
             matched = !matched;
         }
 
-        if (matched) {
-            struct classifier *cls = cls_find(rule->lookup_table);
-
-            if (!cls) {
-                /* A rule can be added before the table is created. */
-                continue;
-            }
-            cr = classifier_lookup(cls, OVS_VERSION_MAX, &flow, NULL,
-                                   NULL);
-            if (cr) {
-                struct ovs_router_entry *p = ovs_router_entry_cast(cr);
-                /* Avoid matching mapped IPv4 of a packet against default IPv6
-                 * route entry.  Either packet dst is IPv6 or both packet and
-                 * route entry dst are mapped IPv4.
-                 */
-                if (!IN6_IS_ADDR_V4MAPPED(ip6_dst) ||
-                    IN6_IS_ADDR_V4MAPPED(&p->nw_addr)) {
-                    break;
-                }
-            }
+        if (!matched) {
+            continue;
         }
-    }
+        cls = cls_find(rule->lookup_table);
 
-    if (cr) {
+        if (!cls) {
+            /* A rule can be added before the table is created. */
+            continue;
+        }
+        cr = classifier_lookup(cls, OVS_VERSION_MAX, &flow, NULL,
+                               NULL);
+        if (!cr) {
+            continue;
+        }
+
         struct ovs_router_entry *p = ovs_router_entry_cast(cr);
 
         ovs_strlcpy(output_netdev, p->output_netdev, IFNAMSIZ);
         *gw = p->gw;
-        if (src && !ipv6_addr_is_set(src)) {
-            *src = p->src_addr;
+        if (src_out) {
+            *src_out = p->src_addr;
         }
         return true;
     }
-    return ovs_router_lookup_fallback(ip6_dst, output_netdev, src, gw);
+
+    return ovs_router_lookup_fallback(ip6_dst, output_netdev, src_out, gw);
 }
 
 static void
@@ -272,14 +276,23 @@ static void rt_init_match(struct match *match, uint32_t mark,
 {
     struct in6_addr dst;
     struct in6_addr mask;
+    ovs_be16 dl_type;
+
+    if (IN6_IS_ADDR_V4MAPPED(ip6_dst)) {
+        dl_type = htons(ETH_TYPE_IP);
+    } else {
+        dl_type = htons(ETH_TYPE_IPV6);
+    }
 
     mask = ipv6_create_mask(plen);
 
     dst = ipv6_addr_bitand(ip6_dst, &mask);
     memset(match, 0, sizeof *match);
     match->flow.ipv6_dst = dst;
+    match->flow.dl_type = dl_type;
     match->wc.masks.ipv6_dst = mask;
     match->wc.masks.pkt_mark = UINT32_MAX;
+    match->wc.masks.dl_type = htons(UINT16_MAX);
     match->flow.pkt_mark = mark;
 }
 
@@ -1129,7 +1142,8 @@ static void
 ovs_router_lookup_cmd(struct unixctl_conn *conn, int argc,
                       const char *argv[], void *aux OVS_UNUSED)
 {
-    struct in6_addr gw, src6 = in6addr_any;
+    struct in6_addr gw, src_out, src6;
+    struct in6_addr *src_in = NULL;
     char src6_s[IPV6_SCAN_LEN + 1];
     char iface[IFNAMSIZ];
     struct in6_addr ip6;
@@ -1159,10 +1173,13 @@ ovs_router_lookup_cmd(struct unixctl_conn *conn, int argc,
         if (is_ipv6) {
             if (ovs_scan(argv[i], "src="IPV6_SCAN_FMT, src6_s) &&
                 ipv6_parse(src6_s, &src6)) {
+                src_in = &src6;
                 continue;
             }
         } else {
             if (ovs_scan(argv[i], "src="IP_SCAN_FMT, IP_SCAN_ARGS(&src))) {
+                in6_addr_set_mapped_ipv4(&src6, src);
+                src_in = &src6;
                 continue;
             }
         }
@@ -1171,15 +1188,11 @@ ovs_router_lookup_cmd(struct unixctl_conn *conn, int argc,
         return;
     }
 
-    if (src) {
-        in6_addr_set_mapped_ipv4(&src6, src);
-    }
-
-    if (ovs_router_lookup(mark, &ip6, iface, &src6, &gw)) {
+    if (ovs_router_lookup(mark, &ip6, src_in, iface, &src_out, &gw)) {
         struct ds ds = DS_EMPTY_INITIALIZER;
 
         ds_put_format(&ds, "src ");
-        ipv6_format_mapped(&src6, &ds);
+        ipv6_format_mapped(&src_out, &ds);
         ds_put_format(&ds, "\ngateway ");
         ipv6_format_mapped(&gw, &ds);
         ds_put_format(&ds, "\ndev %s\n", iface);
