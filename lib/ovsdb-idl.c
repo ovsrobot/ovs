@@ -99,6 +99,9 @@ struct ovsdb_idl {
     struct ovs_list rows_to_reparse; /* Stores rows that might need to be
                                       * re-parsed due to insertion of a
                                       * referenced row. */
+    void (*idl_connect_notifier)(void *idl); /* callback to notify consumer
+                                              * the idl connects to the remote
+                                              * db successfully. */
 };
 
 static struct ovsdb_cs_ops ovsdb_idl_cs_ops;
@@ -302,6 +305,13 @@ ovsdb_idl_create_unconnected(const struct ovsdb_idl_class *class,
     }
 
     return idl;
+}
+
+void
+ovsdb_idl_set_notifier(struct ovsdb_idl *idl,
+                       void (*connect_notifier)(void *idl_))
+{
+    idl->idl_connect_notifier = connect_notifier;
 }
 
 /* Changes the remote and creates a new session.
@@ -853,7 +863,13 @@ ovsdb_idl_compose_monitor_request(const struct json *schema_json, void *idl_)
                             json_array_create_1(monitor_request));
         }
     }
+
     ovsdb_cs_free_schema(schema);
+
+    if (idl->idl_connect_notifier) {
+        /* Notify consumers the idl connects to remote db successfully. */
+        idl->idl_connect_notifier(idl);
+    }
 
     return monitor_requests;
 }

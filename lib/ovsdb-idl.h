@@ -502,6 +502,9 @@ void ovsdb_idl_cursor_next_eq(struct ovsdb_idl_cursor *);
 
 struct ovsdb_idl_row *ovsdb_idl_cursor_data(struct ovsdb_idl_cursor *);
 
+void ovsdb_idl_set_notifier(struct ovsdb_idl *idl,
+                            void (*connect_notifier)(void *idl_));
+
 #ifdef __cplusplus
 }
 #endif

@@ -412,12 +412,6 @@ ovsdb_cs_retry_at(struct ovsdb_cs *cs, const char *where)
 static void
 ovsdb_cs_restart_fsm(struct ovsdb_cs *cs)
 {
-    /* Resync data DB table conditions to avoid missing updates due to
-     * conditions that were in flight or changed locally while the connection
-     * was down.
-     */
-    ovsdb_cs_db_sync_condition(&cs->data);
-
     ovsdb_cs_send_schema_request(cs, &cs->server);
     ovsdb_cs_transition(cs, CS_S_SERVER_SCHEMA_REQUESTED);
     cs->data.monitor_version = 0;
@@ -1510,6 +1504,10 @@ ovsdb_cs_send_monitor_request(struct ovsdb_cs *cs, struct ovsdb_cs_db *db,
         db->schema, db->ops_aux);
     /* XXX handle failure */
     ovs_assert(mrs->type == JSON_OBJECT);
+
+    /* We need to resync the condition since the IDL cosumer can update monitor
+     * conditions in compose_monitor_requests callback. */
+    ovsdb_cs_db_sync_condition(&cs->data);
 
     if (version > 1) {
         struct ovsdb_cs_db_table *table;
