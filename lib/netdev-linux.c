@@ -614,7 +614,12 @@ static int
 netdev_linux_netnsid_update(struct netdev_linux *netdev)
 {
     if (netnsid_is_unset(netdev->netnsid)) {
-        if (netdev_get_class(&netdev->up) == &netdev_tap_class) {
+        const char *dpif_type = netdev_get_dpif_type(&netdev->up);
+
+        if (netdev_get_class(&netdev->up) == &netdev_tap_class
+            || (dpif_type && strcmp(dpif_type, "system"))) {
+            /* vport netlink lookup makes no sense for
+             * non-system dpif types, set nsid to local. */
             netnsid_set_local(&netdev->netnsid);
         } else {
             return netdev_linux_netnsid_update__(netdev);
@@ -931,7 +936,15 @@ netdev_linux_update(struct netdev_linux *dev, int nsid,
                     const struct rtnetlink_change *change)
     OVS_REQUIRES(dev->mutex)
 {
-    if (netdev_linux_netnsid_is_eq(dev, nsid)) {
+    const char *dpif_type = netdev_get_dpif_type(&dev->up);
+
+    /* With NETLINK_LISTEN_ALL_NSID, local RTM events carry the kernel-assigned
+     * nsid, not NETNSID_LOCAL.  In netdev_linux_netnsid_update() non-system
+     * devices have their nsid forced to NETNSID_LOCAL (no vport lookup),
+     * so the equality check would always fail and events would be dropped.
+     * The nsid equality check for these devices is, therefore, skipped. */
+    if ((dpif_type && strcmp(dpif_type, "system"))
+        || netdev_linux_netnsid_is_eq(dev, nsid)) {
         netdev_linux_update__(dev, change);
     }
 }
