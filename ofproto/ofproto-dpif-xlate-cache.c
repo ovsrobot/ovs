@@ -305,6 +305,7 @@ xlate_cache_steal_entries(struct xlate_cache *dst, struct xlate_cache *src)
 void
 xlate_xcache_format(struct ds *s, const struct xlate_cache *xcache)
 {
+    struct ofproto_dpif *last_ofproto = NULL;
     struct ofpbuf entries = xcache->entries;
     struct xc_entry *entry;
     struct ofgroup *ofg;
@@ -312,16 +313,30 @@ xlate_xcache_format(struct ds *s, const struct xlate_cache *xcache)
     XC_ENTRY_FOR_EACH (entry, &entries) {
         switch (entry->type) {
         case XC_RULE:
+            ds_put_cstr(s, "  ");
             ofproto_rule_stats_ds(s, &entry->rule->up, true);
             break;
+
         case XC_GROUP:
+            ds_put_cstr(s, "  ");
             ofg = &entry->group.group->up;
             ofputil_group_format(s, ofg->group_id, ofg->type,
                                  entry->group.bucket, &ofg->buckets,
                                  &ofg->props, OFP15_VERSION,
                                  false, NULL, NULL);
             break;
+
         case XC_TABLE:
+            if (last_ofproto != entry->table.ofproto) {
+                ds_put_format(s, "%s\n", entry->table.ofproto->up.name);
+                last_ofproto = entry->table.ofproto;
+            }
+            if (!entry->table.match) {
+                ds_put_format(s, "  table_id=%"PRIu8", no match\n",
+                              entry->table.id);
+            }
+            break;
+
         case XC_BOND:
         case XC_NETDEV:
         case XC_NETFLOW:
