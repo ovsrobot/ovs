@@ -1,6 +1,11 @@
 Post-v3.7.0
 --------------------
-
+   - libopenvswitch API/ABI change:
+     * To make the link time dependencies (and disk space) a bit clearer,
+       the libopenvswitch library has been split into two:
+       - libopenvswitch (which is mostly datapath related)
+       - libovscommon (which contains the container datastructures, general
+         utilities, etc).
 
 v3.7.0 - 16 Feb 2026
 --------------------
