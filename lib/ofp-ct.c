@@ -25,11 +25,13 @@
 #include "openvswitch/ofp-ct.h"
 #include "openflow/nicira-ext.h"
 #include "openvswitch/dynamic-string.h"
+#include "net-proto.h"
 #include "openvswitch/ofp-msgs.h"
 #include "openvswitch/ofp-parse.h"
 #include "openvswitch/ofp-errors.h"
 #include "openvswitch/ofp-prop.h"
 #include "openvswitch/ofp-util.h"
+#include "openvswitch/ofpbuf.h"
 #include "openvswitch/packets.h"
 #include "openvswitch/vlog.h"
 
