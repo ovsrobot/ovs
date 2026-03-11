@@ -33,6 +33,7 @@
 #include "netlink.h"
 #include "netlink-notifier.h"
 #include "netlink-socket.h"
+#include "netnsid.h"
 #include "openvswitch/list.h"
 #include "openvswitch/ofpbuf.h"
 #include "ovs-router.h"
@@ -84,7 +85,7 @@ static struct nln_notifier *name_notifier = NULL;
 static bool route_table_valid = false;
 static bool rules_valid = false;
 
-static int route_nln_parse(struct ofpbuf *, void *change);
+static int route_nln_parse(struct ofpbuf *, int nsid, void *change);
 
 static void rule_handle_msg(const struct route_table_msg *);
 static int rule_parse(struct ofpbuf *, void *change);
@@ -137,7 +138,7 @@ route_table_init(void)
     ovs_assert(!rule6_notifier);
 
     ovs_router_init();
-    nln = nln_create(NETLINK_ROUTE, route_nln_parse, &nln_rtmsg_change);
+    nln = nln_create(NETLINK_ROUTE, false, route_nln_parse, &nln_rtmsg_change);
 
     route_notifier =
         nln_notifier_create(nln, RTNLGRP_IPV4_ROUTE,
@@ -295,7 +296,7 @@ rule_handle_msg(const struct route_table_msg *change)
 }
 
 static int
-route_nln_parse(struct ofpbuf *buf, void *change_)
+route_nln_parse(struct ofpbuf *buf, int nsid OVS_UNUSED, void *change_)
 {
     const struct nlmsghdr *nlmsg = buf->data;
 
@@ -795,10 +796,9 @@ name_table_init(void)
 
 
 static void
-name_table_change(const struct rtnetlink_change *change,
-                  void *aux OVS_UNUSED)
+name_table_change(const struct rtnetlink_change *change, void *aux OVS_UNUSED)
 {
-    if (change && change->irrelevant) {
+    if (change && (change->nsid != NETNSID_LOCAL || change->irrelevant)) {
         return;
     }
 

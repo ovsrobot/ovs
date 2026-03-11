@@ -79,7 +79,7 @@
  *     static struct route_table_msg nln_change;
  *     static struct nln *nln = NULL;
  *
- *     nln = nln_create(NETLINK_ROUTE, route_table_parse, NULL);
+ *     nln = nln_create(NETLINK_ROUTE, false, nln_route_table_parse, NULL);
  *
  *     route6_notifier =
  *        nln_notifier_create(nln, RTNLGRP_IPV6_ROUTE,

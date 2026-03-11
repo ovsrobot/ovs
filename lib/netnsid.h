@@ -18,6 +18,7 @@
 #define NETNSID_H 1
 
 #include <stdbool.h>
+#include "util.h"
 
 #ifdef HAVE_LINUX_NET_NAMESPACE_H
 #include <linux/net_namespace.h>

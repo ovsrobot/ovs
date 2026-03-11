@@ -22,6 +22,7 @@
 #include "ct-dpif.h"
 #include "netlink-conntrack.h"
 #include "netlink-notifier.h"
+#include "netnsid.h"
 #include "ovstest.h"
 #include "openvswitch/poll-loop.h"
 
@@ -32,9 +33,13 @@ struct test_change {
 };
 
 static int
-event_parse(struct ofpbuf *buf, void *change_)
+event_parse(struct ofpbuf *buf, int nsid, void *change_)
 {
     struct test_change *change = change_;
+
+    if (nsid != NETNSID_LOCAL) {
+        return 0;
+    }
 
     if (nl_ct_parse_entry(buf, &change->entry, &change->type)) {
         switch (change->type) {
@@ -80,7 +85,7 @@ test_nl_ct_monitor(struct ovs_cmdl_context *ctx OVS_UNUSED)
 
     unsigned i;
 
-    nln = nln_create(NETLINK_NETFILTER, event_parse, &change);
+    nln = nln_create(NETLINK_NETFILTER, false, event_parse, &change);
 
     for (i = 0; i < ARRAY_SIZE(groups); i++) {
         notifiers[i] = nln_notifier_create(nln, groups[i], event_print, NULL);

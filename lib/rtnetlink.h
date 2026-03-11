@@ -39,6 +39,8 @@ struct rtnetlink_change {
     /* Common attributes. */
     int if_index;               /* Index of network device. */
     const char *ifname;         /* Name of network device. */
+    int nsid;                   /* Network namespace id of the from which
+                                   the event comes from. */
 
     /* Network device link status. */
     int master_ifindex;         /* Ifindex of datapath master (0 if none). */
@@ -63,8 +65,7 @@ struct rtnetlink_change {
  * have changed.  'aux' is as specified in the call to
  * rtnetlink_notifier_register().  */
 typedef
-void rtnetlink_notify_func(const struct rtnetlink_change *change,
-                           void *aux);
+void rtnetlink_notify_func(const struct rtnetlink_change *change, void *aux);
 
 bool rtnetlink_type_is_rtnlgrp_link(uint16_t type);
 bool rtnetlink_type_is_rtnlgrp_addr(uint16_t type);

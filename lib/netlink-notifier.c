@@ -25,6 +25,7 @@
 #include "coverage.h"
 #include "netlink.h"
 #include "netlink-socket.h"
+#include "netnsid.h"
 #include "openvswitch/ofpbuf.h"
 #include "openvswitch/vlog.h"
 
@@ -41,6 +42,7 @@ struct nln {
     int protocol;                /* Protocol passed to nl_sock_create(). */
     nln_parse_func *parse;       /* Message parsing function. */
     void *change;                /* Change passed to parse. */
+    bool all_netns;              /* Whether to listen on all namespaces. */
 };
 
 struct nln_notifier {
@@ -55,10 +57,11 @@ struct nln_notifier {
 /* Creates an nln handle which may be used to manage change notifications.  The
  * created handle will listen for netlink messages on 'multicast_group' using
  * netlink protocol 'protocol' (e.g. NETLINK_ROUTE, NETLINK_GENERIC, ...).
+ * If 'all_netns', it will listen for events on all network namespaces.
  * Incoming messages will be parsed with 'parse' which will be passed 'change'
  * as an argument. */
 struct nln *
-nln_create(int protocol, nln_parse_func *parse, void *change)
+nln_create(int protocol, bool all_netns, nln_parse_func *parse, void *change)
 {
     struct nln *nln;
 
@@ -68,6 +71,7 @@ nln_create(int protocol, nln_parse_func *parse, void *change)
     nln->parse = parse;
     nln->change = change;
     nln->has_run = false;
+    nln->all_netns = all_netns;
 
     ovs_list_init(&nln->all_notifiers);
     return nln;
@@ -111,6 +115,9 @@ nln_notifier_create(struct nln *nln, int multicast_group, nln_notify_func *cb,
             VLOG_WARN("could not create netlink socket: %s",
                       ovs_strerror(error));
             return NULL;
+        }
+        if (nln->all_netns) {
+            nl_sock_listen_all_nsid(sock, true);
         }
         nln->notify_sock = sock;
     } else {
@@ -181,13 +188,14 @@ nln_run(struct nln *nln)
     nln->has_run = true;
     for (;;) {
         uint64_t buf_stub[4096 / 8];
+        int nsid = NETNSID_UNSET;
         struct ofpbuf buf;
         int error;
 
         ofpbuf_use_stub(&buf, buf_stub, sizeof buf_stub);
-        error = nl_sock_recv(nln->notify_sock, &buf, NULL, false);
+        error = nl_sock_recv(nln->notify_sock, &buf, &nsid, false);
         if (!error) {
-            int group = nln->parse(&buf, nln->change);
+            int group = nln->parse(&buf, nsid, nln->change);
 
             if (group != 0) {
                 nln_report(nln, nln->change, group);

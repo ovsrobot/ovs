@@ -129,6 +129,13 @@ test_lib_route_table_change(struct route_table_msg *change,
     route_data_destroy(&change->rd);
 }
 
+static int
+test_lib_route_table_parse(struct ofpbuf *buf, int nsid OVS_UNUSED,
+                           void *change)
+{
+    return route_table_parse(buf, change);
+}
+
 static void
 test_lib_route_table_monitor(int argc, char *argv[])
 {
@@ -143,7 +150,7 @@ test_lib_route_table_monitor(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    nln = nln_create(NETLINK_ROUTE, route_table_parse, &rtmsg);
+    nln = nln_create(NETLINK_ROUTE, false, test_lib_route_table_parse, &rtmsg);
 
     route_notifier =
         nln_notifier_create(nln, RTNLGRP_IPV4_ROUTE,
