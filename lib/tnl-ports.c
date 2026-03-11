@@ -402,13 +402,13 @@ insert_ipdev__(struct netdev *dev,
 
     ip_dev = xzalloc(sizeof *ip_dev);
     ip_dev->dev = netdev_ref(dev);
-    ip_dev->change_seq = netdev_get_change_seq(dev);
     error = netdev_get_etheraddr(ip_dev->dev, &ip_dev->mac);
     if (error) {
         goto err_free_ipdev;
     }
     ip_dev->addr = addr;
     ip_dev->n_addr = n_addr;
+    ip_dev->change_seq = netdev_get_change_seq(dev);
     ovs_strlcpy(ip_dev->dev_name, netdev_get_name(dev), sizeof ip_dev->dev_name);
     ovs_list_insert(&addr_list, &ip_dev->node);
     map_insert_ipdev(ip_dev);
