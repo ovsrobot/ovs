@@ -200,6 +200,7 @@ nln_run(struct nln *nln)
             return;
         } else {
             if (error == ENOBUFS) {
+                nl_sock_drain(nln->notify_sock);
                 /* The socket buffer might be full, there could be too many
                  * notifications, so it makes sense to call nln_report() */
                 nln_report(nln, NULL, 0);
