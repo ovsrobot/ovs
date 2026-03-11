@@ -29,6 +29,9 @@ NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 10.1.1.2 | FORMAT_PING], [0], 
 OVS_START_L7([at_ns1], [http])
 NS_CHECK_EXEC([at_ns0], OVS_GET_HTTP([10.1.1.2]), [0], [ignore], [ignore])
 
-OVS_TRAFFIC_VSWITCHD_STOP(["/.*ethtool command ETHTOOL_G.*/d"])
+OVS_TRAFFIC_VSWITCHD_STOP(["dnl
+/.*ethtool command ETHTOOL_G.*/d
+/.*failed to get flags for network device/d
+"])
 
 AT_CLEANUP

@@ -4297,7 +4297,8 @@ tcp,orig=(src=10.1.1.1,dst=10.1.1.2,sport=<cleared>,dport=<cleared>),reply=(src=
 
 OVS_TRAFFIC_VSWITCHD_STOP(["dnl
 /ioctl(SIOCGIFINDEX) on .* device failed: No such device/d
-/removing policing failed: No such device/d"])
+/removing policing failed: No such device/d
+/failed to get flags for network device/d"])
 AT_CLEANUP
 
 AT_SETUP([conntrack - ct_mark])

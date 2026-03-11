@@ -564,7 +564,8 @@ static int netdev_linux_do_ethtool(const char *name, struct ethtool_cmd *,
                                    int cmd, const char *cmd_name);
 static int get_flags(const struct netdev *, unsigned int *flags);
 static int set_flags(const char *, unsigned int flags);
-static int update_flags(struct netdev_linux *netdev, enum netdev_flags off,
+static int update_flags_local(struct netdev_linux *);
+static int modify_flags(struct netdev_linux *netdev, enum netdev_flags off,
                         enum netdev_flags on, enum netdev_flags *old_flagsp)
     OVS_REQUIRES(netdev->mutex);
 static int get_ifindex(const struct netdev *, int *ifindexp);
@@ -826,11 +827,10 @@ netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
             SHASH_FOR_EACH (node, &device_shash) {
                 struct netdev *netdev_ = node->data;
                 struct netdev_linux *netdev = netdev_linux_cast(netdev_);
-                unsigned int flags;
 
                 ovs_mutex_lock(&netdev->mutex);
-                get_flags(netdev_, &flags);
-                netdev_linux_changed(netdev, flags, 0);
+                update_flags_local(netdev);
+                netdev_linux_changed(netdev, netdev->ifi_flags, 0);
                 ovs_mutex_unlock(&netdev->mutex);
 
                 netdev_close(netdev_);
@@ -991,7 +991,7 @@ netdev_linux_construct(struct netdev *netdev_)
         netdev_linux_set_ol(netdev_);
     }
 
-    error = get_flags(&netdev->up, &netdev->ifi_flags);
+    error = update_flags_local(netdev);
     if (error == ENODEV) {
         if (netdev->up.netdev_class != &netdev_internal_class) {
             /* The device does not exist, so don't allow it to be opened. */
@@ -1038,7 +1038,7 @@ netdev_linux_construct_tap(struct netdev *netdev_)
     }
 
     /* Create tap device. */
-    get_flags(&netdev->up, &netdev->ifi_flags);
+    update_flags_local(netdev);
 
     if (ovsthread_once_start(&once)) {
         if (ioctl(netdev->tap_fd, TUNGETFEATURES, &up) == -1) {
@@ -1907,7 +1907,7 @@ netdev_linux_set_etheraddr(struct netdev *netdev_, const struct eth_addr mac)
 
     /* Tap devices must be brought down before setting the address. */
     if (is_tap_netdev(netdev_)) {
-        update_flags(netdev, NETDEV_UP, 0, &old_flags);
+        modify_flags(netdev, NETDEV_UP, 0, &old_flags);
     }
     error = set_etheraddr(netdev_get_name(netdev_), mac);
     if (!error || error == ENODEV) {
@@ -1919,7 +1919,7 @@ netdev_linux_set_etheraddr(struct netdev *netdev_, const struct eth_addr mac)
     }
 
     if (is_tap_netdev(netdev_) && old_flags & NETDEV_UP) {
-        update_flags(netdev, 0, NETDEV_UP, &old_flags);
+        modify_flags(netdev, 0, NETDEV_UP, &old_flags);
     }
 
 exit:
@@ -3846,7 +3846,14 @@ iff_to_nd_flags(unsigned int iff)
 }
 
 static int
-update_flags(struct netdev_linux *netdev, enum netdev_flags off,
+update_flags_local(struct netdev_linux *netdev)
+    OVS_REQUIRES(netdev->mutex)
+{
+    return get_flags(&netdev->up, &netdev->ifi_flags);
+}
+
+static int
+modify_flags(struct netdev_linux *netdev, enum netdev_flags off,
              enum netdev_flags on, enum netdev_flags *old_flagsp)
     OVS_REQUIRES(netdev->mutex)
 {
@@ -3858,7 +3865,7 @@ update_flags(struct netdev_linux *netdev, enum netdev_flags off,
     new_flags = (old_flags & ~nd_to_iff_flags(off)) | nd_to_iff_flags(on);
     if (new_flags != old_flags) {
         error = set_flags(netdev_get_name(&netdev->up), new_flags);
-        get_flags(&netdev->up, &netdev->ifi_flags);
+        update_flags_local(netdev);
     }
 
     return error;
@@ -3878,14 +3885,13 @@ netdev_linux_update_flags(struct netdev *netdev_, enum netdev_flags off,
             error = EOPNOTSUPP;
             goto exit;
         }
-        error = update_flags(netdev, off, on, old_flagsp);
+        error = modify_flags(netdev, off, on, old_flagsp);
     } else {
         /* Try reading flags over netlink, or fall back to ioctl. */
-        if (!netdev_linux_update_via_netlink(netdev)) {
-            *old_flagsp = iff_to_nd_flags(netdev->ifi_flags);
-        } else {
-            error = update_flags(netdev, off, on, old_flagsp);
+        if (netdev_linux_update_via_netlink(netdev)) {
+            error = update_flags_local(netdev);
         }
+        *old_flagsp = iff_to_nd_flags(netdev->ifi_flags);
     }
 
 exit:
