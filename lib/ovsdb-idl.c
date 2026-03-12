@@ -852,6 +852,10 @@ ovsdb_idl_compose_monitor_request(const struct json *schema_json, void *idl_)
             json_object_put(monitor_requests, tc->name,
                             json_array_create_1(monitor_request));
         }
+
+        if (!table->in_server_schema) {
+            ovsdb_cs_clear_condition(idl->cs, table->class_->name);
+        }
     }
     ovsdb_cs_free_schema(schema);
 
