@@ -1511,6 +1511,10 @@ ovsdb_cs_send_monitor_request(struct ovsdb_cs *cs, struct ovsdb_cs_db *db,
     /* XXX handle failure */
     ovs_assert(mrs->type == JSON_OBJECT);
 
+    /* We need to resync the condition since the IDL cosumer can update monitor
+     * condition requests in compose_monitor_requests. */
+    ovsdb_cs_db_sync_condition(&cs->data);
+
     if (version > 1) {
         struct ovsdb_cs_db_table *table;
         HMAP_FOR_EACH (table, hmap_node, &db->tables) {

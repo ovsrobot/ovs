@@ -205,6 +205,15 @@ static void ovsdb_idl_add_to_indexes(const struct ovsdb_idl_row *);
 static void ovsdb_idl_remove_from_indexes(const struct ovsdb_idl_row *);
 static int ovsdb_idl_try_commit_loop_txn(struct ovsdb_idl_loop *loop,
                                          bool *may_need_wakeup);
+static void
+ovsdb_idl_create_condition_cache(struct ovsdb_idl *,
+                                 const struct ovsdb_idl_table_class *,
+                                 const struct ovsdb_idl_condition *);
+static void ovsdb_idl_destroy_condition_cache(struct ovsdb_idl_table *);
+static unsigned int
+ovsdb_idl_set_condition__(struct ovsdb_idl *,
+                          const struct ovsdb_idl_table_class *,
+                          const struct ovsdb_idl_condition *);
 
 static void add_tracked_change_for_references(struct ovsdb_idl_row *);
 
@@ -298,6 +307,7 @@ ovsdb_idl_create_unconnected(const struct ovsdb_idl_class *class,
             = table->change_seqno[OVSDB_IDL_CHANGE_DELETE] = 0;
         table->idl = idl;
         table->in_server_schema = false;
+        table->condition = NULL;
         shash_init(&table->schema_columns);
     }
 
@@ -372,6 +382,7 @@ ovsdb_idl_destroy(struct ovsdb_idl *idl)
 
             ovsdb_idl_schema_columns_clear(&table->schema_columns);
             shash_destroy(&table->schema_columns);
+            ovsdb_idl_destroy_condition_cache(table);
 
             hmap_destroy(&table->rows);
             free(table->modes);
@@ -852,6 +863,12 @@ ovsdb_idl_compose_monitor_request(const struct json *schema_json, void *idl_)
             json_object_put(monitor_requests, tc->name,
                             json_array_create_1(monitor_request));
         }
+
+        if (table->condition && table->in_server_schema) {
+            /* Update the monitor condition request according to the
+             * db schema. */
+            ovsdb_idl_set_condition__(idl, tc, table->condition);
+        }
     }
     ovsdb_cs_free_schema(schema);
 
@@ -1156,6 +1173,37 @@ ovsdb_idl_condition_add_clause__(struct ovsdb_idl_condition *condition,
     hmap_insert(&condition->clauses, &clause->hmap_node, hash);
 }
 
+static void
+ovsdb_idl_destroy_condition_cache(struct ovsdb_idl_table *table)
+{
+    if (table->condition) {
+        ovsdb_idl_condition_destroy(table->condition);
+        free(table->condition);
+        table->condition = NULL;
+    }
+}
+
+static void
+ovsdb_idl_create_condition_cache(struct ovsdb_idl *idl,
+                                 const struct ovsdb_idl_table_class *tc,
+                                 const struct ovsdb_idl_condition *condition)
+{
+    struct ovsdb_idl_table *table = shash_find_data(&idl->table_by_name,
+                                                    tc->name);
+    if (table) {
+        ovsdb_idl_destroy_condition_cache(table);
+        table->condition = xmalloc(sizeof *table->condition);
+        ovsdb_idl_condition_init(table->condition);
+
+        struct ovsdb_idl_clause *clause;
+        HMAP_FOR_EACH (clause, hmap_node, &condition->clauses) {
+            uint32_t hash = ovsdb_idl_clause_hash(clause);
+            ovsdb_idl_condition_add_clause__(table->condition, clause, hash);
+        }
+        table->condition->is_true = condition->is_true;
+    }
+}
+
 /* Adds a clause to the condition for replicating the table with class 'tc' in
  * 'idl'.
  *
@@ -1234,6 +1282,17 @@ ovsdb_idl_condition_to_json(const struct ovsdb_idl_condition *cnd)
     return json_array_create(clauses, n);
 }
 
+static unsigned int
+ovsdb_idl_set_condition__(struct ovsdb_idl *idl,
+                          const struct ovsdb_idl_table_class *tc,
+                          const struct ovsdb_idl_condition *condition)
+{
+    struct json *cond_json = ovsdb_idl_condition_to_json(condition);
+    unsigned int seqno = ovsdb_cs_set_condition(idl->cs, tc->name, cond_json);
+    json_destroy(cond_json);
+    return seqno;
+}
+
 /* Sets the replication condition for 'tc' in 'idl' to 'condition' and
  * arranges to send the new condition to the database server.
  *
@@ -1245,9 +1304,8 @@ ovsdb_idl_set_condition(struct ovsdb_idl *idl,
                         const struct ovsdb_idl_table_class *tc,
                         const struct ovsdb_idl_condition *condition)
 {
-    struct json *cond_json = ovsdb_idl_condition_to_json(condition);
-    unsigned int seqno = ovsdb_cs_set_condition(idl->cs, tc->name, cond_json);
-    json_destroy(cond_json);
+    unsigned int seqno = ovsdb_idl_set_condition__(idl, tc, condition);
+    ovsdb_idl_create_condition_cache(idl, tc, condition);
     return seqno;
 }
 
