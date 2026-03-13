@@ -6388,7 +6388,6 @@ static void
 ofproto_unixctl_fdb_stats_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                                const char *argv[], void *aux OVS_UNUSED)
 {
-    struct ds ds = DS_EMPTY_INITIALIZER;
     const struct ofproto_dpif *ofproto;
     ofproto = ofproto_dpif_lookup_by_name(argv[1]);
     if (!ofproto) {
@@ -6396,27 +6395,54 @@ ofproto_unixctl_fdb_stats_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
         return;
     }
 
-    ds_put_format(&ds, "Statistics for bridge \"%s\":\n", argv[1]);
     ovs_rwlock_rdlock(&ofproto->ml->rwlock);
+    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
+        struct json *json = json_object_create();
 
+        json_object_put_string(json, "bridge", argv[1]);
+        json_object_put(json, "current_entries",
+                        json_integer_create(
+                            hmap_count(&ofproto->ml->table)));
+        json_object_put(json, "max_entries",
+                        json_integer_create(ofproto->ml->max_entries));
+        json_object_put(json, "static_entries",
+                        json_integer_create(ofproto->ml->static_entries));
+        json_object_put(json, "total_learned",
+                        json_integer_create(ofproto->ml->total_learned));
+        json_object_put(json, "total_expired",
+                        json_integer_create(ofproto->ml->total_expired));
+        json_object_put(json, "total_evicted",
+                        json_integer_create(ofproto->ml->total_evicted));
+        json_object_put(json, "total_moved",
+                        json_integer_create(ofproto->ml->total_moved));
+
+        ovs_rwlock_unlock(&ofproto->ml->rwlock);
+        unixctl_command_reply_json(conn, json);
+        return;
+    }
+
+    struct ds ds = DS_EMPTY_INITIALIZER;
+
+    ds_put_format(&ds, "Statistics for bridge \"%s\":\n", argv[1]);
     ds_put_format(&ds, "  Current/maximum MAC entries in the table: %"
                   PRIuSIZE"/%"PRIuSIZE"\n",
-                  hmap_count(&ofproto->ml->table), ofproto->ml->max_entries);
+                  hmap_count(&ofproto->ml->table),
+                  ofproto->ml->max_entries);
     ds_put_format(&ds,
-                  "  Current static MAC entries in the table : %"PRIuSIZE"\n",
-                  ofproto->ml->static_entries);
+                  "  Current static MAC entries in the table : %"
+                  PRIuSIZE"\n", ofproto->ml->static_entries);
     ds_put_format(&ds,
-                  "  Total number of learned MAC entries     : %"PRIu64"\n",
-                  ofproto->ml->total_learned);
+                  "  Total number of learned MAC entries     : %"
+                  PRIu64"\n", ofproto->ml->total_learned);
     ds_put_format(&ds,
-                  "  Total number of expired MAC entries     : %"PRIu64"\n",
-                  ofproto->ml->total_expired);
+                  "  Total number of expired MAC entries     : %"
+                  PRIu64"\n", ofproto->ml->total_expired);
     ds_put_format(&ds,
-                  "  Total number of evicted MAC entries     : %"PRIu64"\n",
-                  ofproto->ml->total_evicted);
+                  "  Total number of evicted MAC entries     : %"
+                  PRIu64"\n", ofproto->ml->total_evicted);
     ds_put_format(&ds,
-                  "  Total number of port moved MAC entries  : %"PRIu64"\n",
-                  ofproto->ml->total_moved);
+                  "  Total number of port moved MAC entries  : %"
+                  PRIu64"\n", ofproto->ml->total_moved);
 
     ovs_rwlock_unlock(&ofproto->ml->rwlock);
     unixctl_command_reply(conn, ds_cstr(&ds));
