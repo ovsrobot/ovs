@@ -51,6 +51,16 @@ struct dpctl_params {
 
     /* 'usage' (if != NULL) gets called for the "help" command. */
     void (*usage)(void *aux);
+
+    /* Output format requested by the caller.  One of UNIXCTL_OUTPUT_FMT_*.
+     * Use int to avoid pulling in unixctl.h from this header. */
+    int output_format;
+
+    /* Opaque pointer to struct unixctl_conn *, used to send JSON replies
+     * directly from command handlers.  Set to NULL by a handler after it
+     * has already replied via unixctl_command_reply_json(), to prevent the
+     * caller from sending a second reply. */
+    void *conn;
 };
 
 int dpctl_run_command(int argc, const char *argv[],

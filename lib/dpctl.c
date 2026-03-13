@@ -49,6 +49,7 @@
 #include "smap.h"
 #include "sset.h"
 #include "timeval.h"
+#include "openvswitch/json.h"
 #include "unixctl.h"
 #include "util.h"
 #include "openvswitch/ofp-flow.h"
@@ -636,6 +637,180 @@ show_dpif_cache(struct dpif *dpif, struct dpctl_params *dpctl_p)
 }
 
 static void
+show_dpif_json(struct dpif *dpif, struct json *json_dps,
+               struct dpctl_params *dpctl_p)
+{
+    struct json *json_dp = json_object_create();
+    struct dpif_dp_stats stats;
+
+    json_object_put_string(json_dp, "name", dpif_name(dpif));
+
+    if (!dpif_get_dp_stats(dpif, &stats)) {
+        struct json *json_lookups = json_object_create();
+
+        json_object_put(json_lookups, "hit",
+                        json_integer_create(stats.n_hit));
+        json_object_put(json_lookups, "missed",
+                        json_integer_create(stats.n_missed));
+        json_object_put(json_lookups, "lost",
+                        json_integer_create(stats.n_lost));
+        json_object_put(json_dp, "lookups", json_lookups);
+        json_object_put(json_dp, "flows", json_integer_create(stats.n_flows));
+
+        if (stats.n_masks != UINT32_MAX) {
+            uint64_t n_pkts = stats.n_hit + stats.n_missed;
+            double avg = n_pkts ? (double) stats.n_mask_hit / n_pkts : 0.0;
+            struct json *json_masks = json_object_create();
+
+            json_object_put(json_masks, "hit",
+                            json_integer_create(stats.n_mask_hit));
+            json_object_put(json_masks, "total",
+                            json_integer_create(stats.n_masks));
+            json_object_put(json_masks, "hit_per_pkt",
+                            json_real_create(avg));
+            json_object_put(json_dp, "masks", json_masks);
+
+            if (stats.n_cache_hit != UINT64_MAX) {
+                double avg_hits = n_pkts
+                    ? (double) stats.n_cache_hit / n_pkts * 100 : 0.0;
+                struct json *json_cache = json_object_create();
+
+                json_object_put(json_cache, "hit",
+                                json_integer_create(stats.n_cache_hit));
+                json_object_put(json_cache, "hit_rate_pct",
+                                json_real_create(avg_hits));
+                json_object_put(json_dp, "cache", json_cache);
+            }
+        }
+    }
+
+    /* Caches */
+    uint32_t nr_caches;
+    if (!dpif_cache_get_supported_levels(dpif, &nr_caches) && nr_caches > 0) {
+        struct json *json_caches = json_array_create_empty();
+
+        for (int i = 0; i < nr_caches; i++) {
+            const char *name;
+            uint32_t size;
+
+            if (dpif_cache_get_name(dpif, i, &name) ||
+                dpif_cache_get_size(dpif, i, &size)) {
+                continue;
+            }
+            struct json *json_c = json_object_create();
+
+            json_object_put_string(json_c, "name", name);
+            json_object_put(json_c, "size", json_integer_create(size));
+            json_array_add(json_caches, json_c);
+        }
+        json_object_put(json_dp, "caches", json_caches);
+    }
+
+    /* Ports */
+    struct json *json_ports = json_array_create_empty();
+    struct dpif_port_dump dump;
+    struct dpif_port dpif_port;
+    odp_port_t *port_nos = NULL;
+    size_t allocated_port_nos = 0, n_port_nos = 0;
+
+    DPIF_PORT_FOR_EACH (&dpif_port, &dump, dpif) {
+        if (n_port_nos >= allocated_port_nos) {
+            port_nos = x2nrealloc(port_nos, &allocated_port_nos,
+                                  sizeof *port_nos);
+        }
+        port_nos[n_port_nos++] = dpif_port.port_no;
+    }
+
+    if (port_nos) {
+        qsort(port_nos, n_port_nos, sizeof *port_nos, compare_port_nos);
+    }
+
+    for (int i = 0; i < n_port_nos; i++) {
+        struct netdev *netdev;
+
+        if (dpif_port_query_by_number(dpif, port_nos[i], &dpif_port, true)) {
+            continue;
+        }
+
+        struct json *json_port = json_object_create();
+
+        json_object_put(json_port, "port_no",
+                        json_integer_create(odp_to_u32(dpif_port.port_no)));
+        json_object_put_string(json_port, "name", dpif_port.name);
+        json_object_put_string(json_port, "type", dpif_port.type);
+
+        if (strcmp(dpif_port.type, "system")) {
+            int error = netdev_open(dpif_port.name, dpif_port.type, &netdev);
+
+            if (!error) {
+                struct smap config;
+
+                smap_init(&config);
+                if (!netdev_get_config(netdev, &config) &&
+                    smap_count(&config) > 0) {
+                    json_object_put(json_port, "config",
+                                    smap_to_json(&config));
+                }
+                smap_destroy(&config);
+                netdev_close(netdev);
+            }
+        }
+
+        if (dpctl_p->print_statistics) {
+            struct netdev_stats s;
+            int error = netdev_open(dpif_port.name, dpif_port.type, &netdev);
+
+            if (!error) {
+                error = netdev_get_stats(netdev, &s);
+                netdev_close(netdev);
+                if (!error) {
+                    struct json *json_stats = json_object_create();
+
+                    json_object_put(json_stats, "rx_packets",
+                                    json_integer_create(s.rx_packets));
+                    json_object_put(json_stats, "rx_errors",
+                                    json_integer_create(s.rx_errors));
+                    json_object_put(json_stats, "rx_dropped",
+                                    json_integer_create(s.rx_dropped));
+                    json_object_put(json_stats, "rx_over_errors",
+                                    json_integer_create(s.rx_over_errors));
+                    json_object_put(json_stats, "rx_frame_errors",
+                                    json_integer_create(s.rx_frame_errors));
+                    json_object_put(json_stats, "tx_packets",
+                                    json_integer_create(s.tx_packets));
+                    json_object_put(json_stats, "tx_errors",
+                                    json_integer_create(s.tx_errors));
+                    json_object_put(json_stats, "tx_dropped",
+                                    json_integer_create(s.tx_dropped));
+                    json_object_put(json_stats, "tx_aborted_errors",
+                                    json_integer_create(s.tx_aborted_errors));
+                    json_object_put(json_stats, "tx_carrier_errors",
+                                    json_integer_create(s.tx_carrier_errors));
+                    json_object_put(json_stats, "collisions",
+                                    json_integer_create(s.collisions));
+                    json_object_put(json_stats, "rx_bytes",
+                                    json_integer_create(s.rx_bytes));
+                    json_object_put(json_stats, "tx_bytes",
+                                    json_integer_create(s.tx_bytes));
+                    json_object_put(json_stats, "upcall_packets",
+                                    json_integer_create(s.upcall_packets));
+                    json_object_put(json_stats, "upcall_errors",
+                                    json_integer_create(s.upcall_errors));
+                    json_object_put(json_port, "statistics", json_stats);
+                }
+            }
+        }
+
+        json_array_add(json_ports, json_port);
+        dpif_port_destroy(&dpif_port);
+    }
+
+    free(port_nos);
+    json_object_put(json_dp, "ports", json_ports);
+    json_array_add(json_dps, json_dp);
+}
+
+static void
 show_dpif(struct dpif *dpif, struct dpctl_params *dpctl_p)
 {
     struct dpif_port_dump dump;
@@ -833,6 +1008,69 @@ static int
 dpctl_show(int argc, const char *argv[], struct dpctl_params *dpctl_p)
 {
     int error, lasterror = 0;
+
+    if (dpctl_p->output_format == UNIXCTL_OUTPUT_FMT_JSON) {
+        struct json *json_dps = json_array_create_empty();
+
+        if (argc > 1) {
+            int i;
+            for (i = 1; i < argc; i++) {
+                const char *name = argv[i];
+                struct dpif *dpif;
+
+                error = parsed_dpif_open(name, false, &dpif);
+                if (!error) {
+                    show_dpif_json(dpif, json_dps, dpctl_p);
+                    dpif_close(dpif);
+                } else {
+                    dpctl_error(dpctl_p, error, "opening datapath %s failed",
+                                name);
+                    lasterror = error;
+                }
+            }
+        } else {
+            struct sset dpif_names = SSET_INITIALIZER(&dpif_names);
+            struct sset dpif_types = SSET_INITIALIZER(&dpif_types);
+            int openerror = 0, enumerror = 0;
+            bool at_least_one = false;
+            const char *type, *name;
+
+            dp_enumerate_types(&dpif_types);
+            SSET_FOR_EACH (type, &dpif_types) {
+                error = dp_enumerate_names(type, &dpif_names);
+                if (error) {
+                    enumerror = error;
+                }
+                SSET_FOR_EACH (name, &dpif_names) {
+                    struct dpif *dpif;
+
+                    at_least_one = true;
+                    error = dpif_open(name, type, &dpif);
+                    if (!error) {
+                        show_dpif_json(dpif, json_dps, dpctl_p);
+                        dpif_close(dpif);
+                    } else {
+                        openerror = error;
+                        dpctl_error(dpctl_p, error,
+                                    "opening datapath %s failed", name);
+                    }
+                }
+            }
+            sset_destroy(&dpif_names);
+            sset_destroy(&dpif_types);
+
+            if (openerror) {
+                lasterror = openerror;
+            } else if (!at_least_one) {
+                lasterror = enumerror;
+            }
+        }
+
+        unixctl_command_reply_json(dpctl_p->conn, json_dps);
+        dpctl_p->conn = NULL;
+        return lasterror;
+    }
+
     if (argc > 1) {
         int i;
         for (i = 1; i < argc; i++) {
@@ -3153,6 +3391,8 @@ dpctl_unixctl_handler(struct unixctl_conn *conn, int argc, const char *argv[],
         .is_appctl = true,
         .output = dpctl_unixctl_print,
         .aux = &ds,
+        .output_format = unixctl_command_get_output_format(conn),
+        .conn = conn,
     };
 
     /* Parse options (like getopt). Unfortunately it does
@@ -3220,10 +3460,14 @@ dpctl_unixctl_handler(struct unixctl_conn *conn, int argc, const char *argv[],
         error = handler(argc, argv, &dpctl_p) != 0;
     }
 
-    if (error) {
-        unixctl_command_reply_error(conn, ds_cstr(&ds));
-    } else {
-        unixctl_command_reply(conn, ds_cstr(&ds));
+    /* dpctl_p.conn is cleared to NULL by a handler that already replied
+     * via JSON.  Only send a text reply if the handler has not done so. */
+    if (dpctl_p.conn) {
+        if (error) {
+            unixctl_command_reply_error(conn, ds_cstr(&ds));
+        } else {
+            unixctl_command_reply(conn, ds_cstr(&ds));
+        }
     }
 
     ds_destroy(&ds);
