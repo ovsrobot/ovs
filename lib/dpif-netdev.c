@@ -65,6 +65,7 @@
 #include "odp-execute.h"
 #include "odp-util.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/json.h"
 #include "openvswitch/list.h"
 #include "openvswitch/match.h"
 #include "openvswitch/ofp-parse.h"
@@ -1382,6 +1383,9 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
                                       / INTERVAL_USEC_TO_SEC;
     bool show_header = true;
     uint64_t max_sleep;
+    bool json_output = false;
+    struct json *json_result = NULL;
+    struct json *json_pmds = NULL;
 
     ovs_mutex_lock(&dp_netdev_mutex);
 
@@ -1419,6 +1423,16 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
         }
     }
 
+    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
+        if (type == PMD_INFO_SLEEP_SHOW) {
+            json_output = true;
+            json_result = json_object_create();
+            json_object_put(json_result, "default_max_sleep_us",
+                            json_integer_create(dp->pmd_max_sleep_default));
+            json_pmds = json_array_create_empty();
+        }
+    }
+
     sorted_poll_thread_list(dp, &pmd_list, &n);
     for (size_t i = 0; i < n; i++) {
         struct dp_netdev_pmd_thread *pmd = pmd_list[i];
@@ -1448,21 +1462,44 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
         } else if (type == PMD_INFO_PERF_SHOW) {
             pmd_info_show_perf(&reply, pmd, (struct pmd_perf_params *)aux);
         } else if (type == PMD_INFO_SLEEP_SHOW) {
-            if (show_header) {
-                ds_put_format(&reply, "Default max sleep: %4"PRIu64" us\n",
-                              dp->pmd_max_sleep_default);
-                show_header = false;
+            if (json_output) {
+                if (pmd->core_id != NON_PMD_CORE_ID) {
+                    struct json *json_pmd = json_object_create();
+
+                    json_object_put(json_pmd, "numa_id",
+                                    json_integer_create(pmd->numa_id));
+                    json_object_put(json_pmd, "core_id",
+                                    json_integer_create(pmd->core_id));
+                    atomic_read_relaxed(&pmd->max_sleep, &max_sleep);
+                    json_object_put(json_pmd, "max_sleep_us",
+                                    json_integer_create(max_sleep));
+                    json_array_add(json_pmds, json_pmd);
+                }
+            } else {
+                if (show_header) {
+                    ds_put_format(&reply, "Default max sleep: %4"PRIu64" us\n",
+                                  dp->pmd_max_sleep_default);
+                    show_header = false;
+                }
+                atomic_read_relaxed(&pmd->max_sleep, &max_sleep);
+                pmd_info_show_sleep(&reply, pmd->core_id, pmd->numa_id,
+                                    max_sleep);
             }
-            atomic_read_relaxed(&pmd->max_sleep, &max_sleep);
-            pmd_info_show_sleep(&reply, pmd->core_id, pmd->numa_id,
-                                max_sleep);
         }
     }
     free(pmd_list);
 
+    if (json_output && type == PMD_INFO_SLEEP_SHOW) {
+        json_object_put(json_result, "pmds", json_pmds);
+    }
+
     ovs_mutex_unlock(&dp_netdev_mutex);
 
-    unixctl_command_reply(conn, ds_cstr(&reply));
+    if (json_result) {
+        unixctl_command_reply_json(conn, json_result);
+    } else {
+        unixctl_command_reply(conn, ds_cstr(&reply));
+    }
     ds_destroy(&reply);
 }
 
