@@ -26,6 +26,7 @@
 #include "dpif.h"
 #include "dpif-offload.h"
 #include "openvswitch/dynamic-string.h"
+#include "openvswitch/json.h"
 #include "fail-open.h"
 #include "guarded-list.h"
 #include "latch.h"
@@ -3164,49 +3165,103 @@ static void
 upcall_unixctl_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                     const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
 {
-    struct ds ds = DS_EMPTY_INITIALIZER;
-    uint64_t n_offloaded_flows;
     struct udpif *udpif;
 
-    LIST_FOR_EACH (udpif, list_node, &all_udpifs) {
-        unsigned int flow_limit;
-        bool ufid_enabled;
-        size_t i;
+    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
+        struct json *json_udpifs = json_array_create_empty();
 
-        atomic_read_relaxed(&udpif->flow_limit, &flow_limit);
-        ufid_enabled = udpif_use_ufid(udpif);
+        LIST_FOR_EACH (udpif, list_node, &all_udpifs) {
+            struct json *json_udpif = json_object_create();
+            struct json *json_revalidators = json_array_create_empty();
+            uint64_t n_offloaded_flows;
+            unsigned int flow_limit;
+            bool ufid_enabled;
+            size_t i;
 
-        ds_put_format(&ds, "%s:\n", dpif_name(udpif->dpif));
-        ds_put_format(&ds, "  flows         : (current %lu)"
-            " (avg %u) (max %u) (limit %u)\n", udpif_get_n_flows(udpif),
-            udpif->avg_n_flows, udpif->max_n_flows, flow_limit);
-        n_offloaded_flows = dpif_offload_flow_count(udpif->dpif);
-        if (n_offloaded_flows) {
-            ds_put_format(&ds, "  offloaded flows : %"PRIu64"\n",
-                          n_offloaded_flows);
-        }
-        ds_put_format(&ds, "  dump duration : %lldms\n", udpif->dump_duration);
-        ds_put_format(&ds, "  ufid enabled : ");
-        if (ufid_enabled) {
-            ds_put_format(&ds, "true\n");
-        } else {
-            ds_put_format(&ds, "false\n");
-        }
-        ds_put_char(&ds, '\n');
+            atomic_read_relaxed(&udpif->flow_limit, &flow_limit);
+            ufid_enabled = udpif_use_ufid(udpif);
+            n_offloaded_flows = dpif_offload_flow_count(udpif->dpif);
 
-        for (i = 0; i < udpif->n_revalidators; i++) {
-            struct revalidator *revalidator = &udpif->revalidators[i];
-            int j, elements = 0;
+            json_object_put_string(json_udpif, "name", dpif_name(udpif->dpif));
+            json_object_put(json_udpif, "flows_current",
+                            json_integer_create(udpif_get_n_flows(udpif)));
+            json_object_put(json_udpif, "flows_avg",
+                            json_integer_create(udpif->avg_n_flows));
+            json_object_put(json_udpif, "flows_max",
+                            json_integer_create(udpif->max_n_flows));
+            json_object_put(json_udpif, "flows_limit",
+                            json_integer_create(flow_limit));
+            json_object_put(json_udpif, "offloaded_flows",
+                            json_integer_create(n_offloaded_flows));
+            json_object_put(json_udpif, "dump_duration_ms",
+                            json_integer_create(udpif->dump_duration));
+            json_object_put(json_udpif, "ufid_enabled",
+                            json_boolean_create(ufid_enabled));
 
-            for (j = i; j < N_UMAPS; j += udpif->n_revalidators) {
-                elements += cmap_count(&udpif->ukeys[j].cmap);
+            for (i = 0; i < udpif->n_revalidators; i++) {
+                struct revalidator *revalidator = &udpif->revalidators[i];
+                struct json *json_rv = json_object_create();
+                int j, elements = 0;
+
+                for (j = i; j < N_UMAPS; j += udpif->n_revalidators) {
+                    elements += cmap_count(&udpif->ukeys[j].cmap);
+                }
+                json_object_put(json_rv, "id",
+                                json_integer_create(revalidator->id));
+                json_object_put(json_rv, "keys",
+                                json_integer_create(elements));
+                json_array_add(json_revalidators, json_rv);
             }
-            ds_put_format(&ds, "  %u: (keys %d)\n", revalidator->id, elements);
+            json_object_put(json_udpif, "revalidators", json_revalidators);
+            json_array_add(json_udpifs, json_udpif);
         }
-    }
+        unixctl_command_reply_json(conn, json_udpifs);
+    } else {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+        uint64_t n_offloaded_flows;
 
-    unixctl_command_reply(conn, ds_cstr(&ds));
-    ds_destroy(&ds);
+        LIST_FOR_EACH (udpif, list_node, &all_udpifs) {
+            unsigned int flow_limit;
+            bool ufid_enabled;
+            size_t i;
+
+            atomic_read_relaxed(&udpif->flow_limit, &flow_limit);
+            ufid_enabled = udpif_use_ufid(udpif);
+
+            ds_put_format(&ds, "%s:\n", dpif_name(udpif->dpif));
+            ds_put_format(&ds, "  flows         : (current %lu)"
+                " (avg %u) (max %u) (limit %u)\n", udpif_get_n_flows(udpif),
+                udpif->avg_n_flows, udpif->max_n_flows, flow_limit);
+            n_offloaded_flows = dpif_offload_flow_count(udpif->dpif);
+            if (n_offloaded_flows) {
+                ds_put_format(&ds, "  offloaded flows : %"PRIu64"\n",
+                              n_offloaded_flows);
+            }
+            ds_put_format(&ds, "  dump duration : %lldms\n",
+                          udpif->dump_duration);
+            ds_put_format(&ds, "  ufid enabled : ");
+            if (ufid_enabled) {
+                ds_put_format(&ds, "true\n");
+            } else {
+                ds_put_format(&ds, "false\n");
+            }
+            ds_put_char(&ds, '\n');
+
+            for (i = 0; i < udpif->n_revalidators; i++) {
+                struct revalidator *revalidator = &udpif->revalidators[i];
+                int j, elements = 0;
+
+                for (j = i; j < N_UMAPS; j += udpif->n_revalidators) {
+                    elements += cmap_count(&udpif->ukeys[j].cmap);
+                }
+                ds_put_format(&ds, "  %u: (keys %d)\n", revalidator->id,
+                              elements);
+            }
+        }
+
+        unixctl_command_reply(conn, ds_cstr(&ds));
+        ds_destroy(&ds);
+    }
 }
 
 /* Disable using the megaflows.

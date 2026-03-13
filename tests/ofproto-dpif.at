@@ -13617,6 +13617,11 @@ dnl Make sure the ukey exists.
 AT_CHECK([ovs-appctl upcall/show | grep '(keys' | awk '{print $3}' | \
             grep -q '1)'], [0])
 
+dnl Check upcall/show JSON output.
+AT_CHECK([ovs-appctl --format json upcall/show | dnl
+          grep '"name"' | grep '"flows_limit"' | dnl
+          grep '"ufid_enabled"' | grep '"revalidators"'], [0], [ignore])
+
 dnl Delete all datapath flows, and make sure they are gone.
 AT_CHECK([ovs-appctl dpctl/del-flows])
 AT_CHECK([ovs-appctl dpctl/dump-flows --names ], [0], [])
