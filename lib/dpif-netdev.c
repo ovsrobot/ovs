@@ -724,6 +724,91 @@ pmd_info_show_stats(struct ds *reply,
                   stats[PMD_CYCLES_ITER_BUSY], total_packets);
 }
 
+static struct json *
+pmd_info_show_stats_json(struct dp_netdev_pmd_thread *pmd)
+{
+    uint64_t stats[PMD_N_STATS];
+    uint64_t total_cycles, total_packets;
+    double passes_per_pkt = 0;
+    double lookups_per_hit = 0;
+    double packets_per_batch = 0;
+    const char *type_str;
+    struct json *json;
+
+    pmd_perf_read_counters(&pmd->perf_stats, stats);
+    total_cycles = stats[PMD_CYCLES_ITER_IDLE] + stats[PMD_CYCLES_ITER_BUSY];
+    total_packets = stats[PMD_STAT_RECV];
+
+    if (total_packets > 0) {
+        passes_per_pkt = (total_packets + stats[PMD_STAT_RECIRC])
+                            / (double) total_packets;
+    }
+    if (stats[PMD_STAT_MASKED_HIT] > 0) {
+        lookups_per_hit = stats[PMD_STAT_MASKED_LOOKUP]
+                            / (double) stats[PMD_STAT_MASKED_HIT];
+    }
+    if (stats[PMD_STAT_SENT_BATCHES] > 0) {
+        packets_per_batch = stats[PMD_STAT_SENT_PKTS]
+                            / (double) stats[PMD_STAT_SENT_BATCHES];
+    }
+
+    json = json_object_create();
+    type_str = (pmd->core_id == NON_PMD_CORE_ID) ? "main" : "pmd";
+    json_object_put_string(json, "type", type_str);
+    if (pmd->numa_id != OVS_NUMA_UNSPEC) {
+        json_object_put(json, "numa_id", json_integer_create(pmd->numa_id));
+    }
+    if (pmd->core_id != OVS_CORE_UNSPEC && pmd->core_id != NON_PMD_CORE_ID) {
+        json_object_put(json, "core_id", json_integer_create(pmd->core_id));
+    }
+    json_object_put(json, "packets_received",
+                    json_integer_create(total_packets));
+    json_object_put(json, "packet_recirculations",
+                    json_integer_create(stats[PMD_STAT_RECIRC]));
+    json_object_put(json, "avg_datapath_passes_per_packet",
+                    json_real_create(passes_per_pkt));
+    json_object_put(json, "phwol_hits",
+                    json_integer_create(stats[PMD_STAT_PHWOL_HIT]));
+    json_object_put(json, "mfex_opt_hits",
+                    json_integer_create(stats[PMD_STAT_MFEX_OPT_HIT]));
+    json_object_put(json, "simple_match_hits",
+                    json_integer_create(stats[PMD_STAT_SIMPLE_HIT]));
+    json_object_put(json, "emc_hits",
+                    json_integer_create(stats[PMD_STAT_EXACT_HIT]));
+    json_object_put(json, "smc_hits",
+                    json_integer_create(stats[PMD_STAT_SMC_HIT]));
+    json_object_put(json, "megaflow_hits",
+                    json_integer_create(stats[PMD_STAT_MASKED_HIT]));
+    json_object_put(json, "avg_subtable_lookups_per_megaflow_hit",
+                    json_real_create(lookups_per_hit));
+    json_object_put(json, "miss_with_success_upcall",
+                    json_integer_create(stats[PMD_STAT_MISS]));
+    json_object_put(json, "miss_with_failed_upcall",
+                    json_integer_create(stats[PMD_STAT_LOST]));
+    json_object_put(json, "avg_packets_per_output_batch",
+                    json_real_create(packets_per_batch));
+    json_object_put(json, "idle_cycles",
+                    json_integer_create(stats[PMD_CYCLES_ITER_IDLE]));
+    json_object_put(json, "idle_cycles_pct",
+                    json_real_create(total_cycles > 0
+                        ? stats[PMD_CYCLES_ITER_IDLE]
+                            / (double) total_cycles * 100 : 0.0));
+    json_object_put(json, "processing_cycles",
+                    json_integer_create(stats[PMD_CYCLES_ITER_BUSY]));
+    json_object_put(json, "processing_cycles_pct",
+                    json_real_create(total_cycles > 0
+                        ? stats[PMD_CYCLES_ITER_BUSY]
+                            / (double) total_cycles * 100 : 0.0));
+    json_object_put(json, "avg_cycles_per_packet",
+                    json_real_create((total_cycles > 0 && total_packets > 0)
+                        ? total_cycles / (double) total_packets : 0.0));
+    json_object_put(json, "avg_processing_cycles_per_packet",
+                    json_real_create((total_cycles > 0 && total_packets > 0)
+                        ? stats[PMD_CYCLES_ITER_BUSY]
+                            / (double) total_packets : 0.0));
+    return json;
+}
+
 static void
 pmd_info_show_perf(struct ds *reply,
                    struct dp_netdev_pmd_thread *pmd,
@@ -1424,7 +1509,10 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
     }
 
     if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
-        if (type == PMD_INFO_SLEEP_SHOW) {
+        if (type == PMD_INFO_SHOW_STATS) {
+            json_output = true;
+            json_result = json_array_create_empty();
+        } else if (type == PMD_INFO_SLEEP_SHOW) {
             json_output = true;
             json_result = json_object_create();
             json_object_put(json_result, "default_max_sleep_us",
@@ -1458,7 +1546,11 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
         } else if (type == PMD_INFO_CLEAR_STATS) {
             pmd_perf_stats_clear(&pmd->perf_stats);
         } else if (type == PMD_INFO_SHOW_STATS) {
-            pmd_info_show_stats(&reply, pmd);
+            if (json_output) {
+                json_array_add(json_result, pmd_info_show_stats_json(pmd));
+            } else {
+                pmd_info_show_stats(&reply, pmd);
+            }
         } else if (type == PMD_INFO_PERF_SHOW) {
             pmd_info_show_perf(&reply, pmd, (struct pmd_perf_params *)aux);
         } else if (type == PMD_INFO_SLEEP_SHOW) {

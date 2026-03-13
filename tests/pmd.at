@@ -490,6 +490,16 @@ pmd thread numa_id <cleared> core_id <cleared>:
   miss with failed upcall: 0
 ])
 
+dnl Check JSON output.
+AT_CHECK([ovs-appctl --format json dpif-netdev/pmd-stats-show | dnl
+          grep '"packets_received":20'], [0], [ignore])
+AT_CHECK([ovs-appctl --format json dpif-netdev/pmd-stats-show | dnl
+          grep '"emc_hits":19'], [0], [ignore])
+AT_CHECK([ovs-appctl --format json dpif-netdev/pmd-stats-show | dnl
+          grep '"miss_with_success_upcall":1'], [0], [ignore])
+AT_CHECK([ovs-appctl --format json dpif-netdev/pmd-stats-show | dnl
+          grep '"miss_with_failed_upcall":0'], [0], [ignore])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
