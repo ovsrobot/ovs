@@ -1196,7 +1196,8 @@ jsonrpc_session_recv(struct jsonrpc_session *s)
         }
 
         if (msg) {
-            if (msg->type == JSONRPC_REQUEST && !strcmp(msg->method, "echo")) {
+            if (msg->type == JSONRPC_REQUEST &&
+                nullable_string_is_equal(msg->method, "echo")) {
                 /* Echo request.  Send reply. */
                 struct jsonrpc_msg *reply;
 
@@ -1204,7 +1205,8 @@ jsonrpc_session_recv(struct jsonrpc_session *s)
                 jsonrpc_session_send(s, reply);
             } else if (msg->type == JSONRPC_REPLY
                        && msg->id && msg->id->type == JSON_STRING
-                       && !strcmp(json_string(msg->id), "echo")) {
+                       && nullable_string_is_equal(json_string(msg->id),
+                                                   "echo")) {
                 /* It's a reply to our echo request.  Suppress it. */
             } else {
                 return msg;
