@@ -199,7 +199,9 @@ dp_packet_gso__(struct dp_packet *p, struct dp_packet_batch **batches,
     if (dp_packet_batch_is_full(curr_batch)) {
         curr_batch++;
     }
-    dp_packet_batch_add(curr_batch, p);
+    if (!dp_packet_batch_add(curr_batch, p)) {
+        goto out;
+    }
 
     if (n_segs <= 1) {
         goto out;

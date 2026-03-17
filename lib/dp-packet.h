@@ -872,22 +872,24 @@ dp_packet_batch_init(struct dp_packet_batch *batch)
     batch->trunc = false;
 }
 
-static inline void
+static inline bool
 dp_packet_batch_add__(struct dp_packet_batch *batch,
                       struct dp_packet *packet, size_t limit)
 {
     if (batch->count < limit) {
         batch->packets[batch->count++] = packet;
+        return true;
     } else {
         dp_packet_delete(packet);
+        return false;
     }
 }
 
 /* When the batch is full, 'packet' will be dropped and freed. */
-static inline void
+static inline bool
 dp_packet_batch_add(struct dp_packet_batch *batch, struct dp_packet *packet)
 {
-    dp_packet_batch_add__(batch, packet, NETDEV_MAX_BURST);
+    return dp_packet_batch_add__(batch, packet, NETDEV_MAX_BURST);
 }
 
 static inline size_t
@@ -904,11 +906,11 @@ dp_packet_batch_refill_init(struct dp_packet_batch *batch)
     batch->count = 0;
 };
 
-static inline void
+static inline bool
 dp_packet_batch_refill(struct dp_packet_batch *batch,
                        struct dp_packet *packet, size_t idx)
 {
-    dp_packet_batch_add__(batch, packet, MIN(NETDEV_MAX_BURST, idx + 1));
+    return dp_packet_batch_add__(batch, packet, MIN(NETDEV_MAX_BURST, idx + 1));
 }
 
 static inline void
