@@ -1262,7 +1262,7 @@ json_from_stream(FILE *stream)
     struct json *json;
 
     p = json_parser_create(JSPF_TRAILER);
-    for (;;) {
+    while (!(feof(stream) || ferror(stream))) {
         size_t n;
 
         n = fread(buffer, 1, sizeof buffer, stream);
