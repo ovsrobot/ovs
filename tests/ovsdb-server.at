@@ -1937,7 +1937,8 @@ m4_define([OVSDB_CHECK_EXECUTION_RELAY],
              \"databases\": {
                  \"${schema_name}\": {
                      \"service-model\": \"relay\",
-                     \"source\": { \"unix:db$((i-1)).sock\": {} }
+                     \"source\": { \"unix:db$((i-1)).sock\": {} },
+                     \"transaction-history-limit\": 1234
                  }
              }
        }" > config${i}.json
@@ -3107,6 +3108,25 @@ TEST_CONFIG_FILE([relay with unrelated options], [
 WARN|syntax "{"dscp":42,"inactivity-probe":10000,"max-backoff":8000,"role":"My-RBAC-role"}":dnl
  syntax error: Parsing JSON-RPC options failed: Member 'role' is present but not allowed here.
 ])
+
+TEST_CONFIG_FILE([relay with transaction-history-limit], [
+{
+    "remotes": { "punix:db.sock": {} },
+    "databases": {
+        "RelaySchema": {
+            "service-model": "relay",
+            "source": {
+                "punix:db2.sock": {
+                    "inactivity-probe": 10000,
+                    "max-backoff": 8000,
+                    "dscp": 42
+                }
+            },
+            "transaction-history-limit": 1000
+        }
+    }
+}
+], [0])
 
 TEST_CONFIG_FILE([unknown config], [
 {

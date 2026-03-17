@@ -274,7 +274,7 @@ exit:
             /* The relay source doesn't support unique transaction ids,
              * disabling transaction history for relay. */
             ovsdb_txn_history_destroy(db);
-            ovsdb_txn_history_init(db, false);
+            ovsdb_txn_history_init(db, false, 0);
         } else {
             ovsdb_txn_set_txnid(last_id, txn);
         }
@@ -307,7 +307,7 @@ ovsdb_relay_clear(struct ovsdb *db)
 
     /* Clearing the transaction history, and re-enabling it. */
     ovsdb_txn_history_destroy(db);
-    ovsdb_txn_history_init(db, true);
+    ovsdb_txn_history_init(db, true, db->n_txn_history_max);
 
     return error;
 }

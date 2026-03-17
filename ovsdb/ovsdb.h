@@ -110,6 +110,7 @@ struct ovsdb {
     bool need_txn_history;     /* Need to maintain history of transactions. */
     unsigned int n_txn_history; /* Current number of history transactions. */
     unsigned int n_txn_history_atoms; /* Total number of atoms in history. */
+    unsigned int n_txn_history_max; /* The maximum history length. */
     struct ovs_list txn_history; /* Contains "struct ovsdb_txn_history_node. */
 
     size_t n_atoms;  /* Total number of ovsdb atoms in the database. */
