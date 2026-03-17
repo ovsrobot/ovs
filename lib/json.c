@@ -1258,11 +1258,11 @@ struct json *
 json_from_stream(FILE *stream)
 {
     struct json_parser *p;
+    char buffer[BUFSIZ];
     struct json *json;
 
     p = json_parser_create(JSPF_TRAILER);
     for (;;) {
-        char buffer[BUFSIZ];
         size_t n;
 
         n = fread(buffer, 1, sizeof buffer, stream);
