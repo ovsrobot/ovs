@@ -1421,7 +1421,11 @@ read_cert_file(const char *file_name, X509 ***certs, size_t *n_certs)
         /* Are there additional certificates in the file? */
         do {
             c = getc(file);
-        } while (isspace(c));
+            if (ferror(file)) {
+                c = EOF;
+                break;
+            }
+        } while (isspace(c) && !feof(file));
         if (c == EOF) {
             break;
         }
