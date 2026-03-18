@@ -586,6 +586,97 @@ is_tap_netdev(const struct netdev *netdev)
     return netdev_get_class(netdev) == &netdev_tap_class;
 }
 
+/* Cached nsid of the local namespace:
+ * NETNSID_LOCAL if no self-referential mapping has been found (yet).
+ * Set once by netdev_linux_query_self_nsid() when a local nsid mapping is
+ * found on a RTNLGRP_NSID notification or at startup. */
+static int netdev_linux_self_nsid = NETNSID_LOCAL;
+
+/* Queries the kernel for the nsid assigned to the local network namespace
+ * and updates netdev_linux_self_nsid if a mapping is found. */
+static void
+netdev_linux_query_self_nsid(void)
+{
+#ifdef HAVE_LINUX_NET_NAMESPACE_H
+    static const char ns_path[] = "/proc/self/ns/net";
+    int fd = open(ns_path, O_RDONLY);
+
+    if (fd >= 0) {
+        const int rta_offset = NLMSG_ALIGN(sizeof(struct rtgenmsg));
+        struct ofpbuf request;
+        struct ofpbuf *reply = NULL;
+        int error;
+
+        ofpbuf_init(&request, 0);
+        nl_msg_put_nlmsghdr(&request,
+                            rta_offset + NL_ATTR_SIZE(sizeof(uint32_t)),
+                            RTM_GETNSID, NLM_F_REQUEST);
+        ofpbuf_put_zeros(&request, rta_offset);
+        nl_msg_put_u32(&request, NETNSA_FD, fd);
+
+        error = nl_transact(NETLINK_ROUTE, &request, &reply);
+        if (!error && reply) {
+            const struct nlattr *a;
+
+            a = nl_attr_find(reply, NLMSG_HDRLEN + rta_offset, NETNSA_NSID);
+            if (a) {
+                netdev_linux_self_nsid = nl_attr_get_u32(a);
+                VLOG_DBG("local network namespace has nsid %d",
+                         netdev_linux_self_nsid);
+            }
+        }
+
+        ofpbuf_uninit(&request);
+        ofpbuf_delete(reply);
+        close(fd);
+    }
+#endif
+}
+
+/* Returns the nsid that the kernel assigns to the local network namespace,
+ * or NETNSID_LOCAL if no such mapping exists.
+ *
+ * NETLINK_LISTEN_ALL_NSID workaround: OVS enables this option on its RTNL
+ * notification socket so that it can receive events from remote namespaces.
+ * A side-effect of this option is that the kernel tags every broadcast
+ * (including locally-originated RTM events) with the sender nsid looked up
+ * in the receiver nsid table.
+ *
+ * Some container runtimes create a self-referential nsid mapping as a
+ * side-effect of cross-namespace link queries: the root namespace ends up
+ * with a real nsid that points back to itself.
+ * When that mapping exists, local events arrive with a set nsid instead of
+ * no cmsg (which OVS interprets as NETNSID_LOCAL=-1), causing the
+ * events to be silently rejected.
+ *
+ * This function discovers the self-nsid so that netdev_linux_update() can
+ * treat it as equivalent to NETNSID_LOCAL.
+ *
+ * If a self-referential mapping is created after OVS has started, the
+ * initial query returns NETNSID_LOCAL (no mapping found).  The notification
+ * socket is subscribed to RTNLGRP_NSID, so netdev_linux_run() will receive
+ * RTM_NEWNSID when the kernel creates the mapping and immediately re-query
+ * the self-nsid.
+ *
+ * Once created, a self-referential nsid mapping is permanent: the kernel
+ * only removes nsid entries when the peer namespace is destroyed.
+ *
+ * If NETLINK_LISTEN_ALL_NSID is ever deprecated and superseded by a
+ * mechanism that does not tag local events with a numeric nsid, this
+ * workaround (and the check in netdev_linux_update()) can be removed. */
+static int
+netdev_linux_get_self_nsid(void)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+
+    if (ovsthread_once_start(&once)) {
+        netdev_linux_query_self_nsid();
+        ovsthread_once_done(&once);
+    }
+
+    return netdev_linux_self_nsid;
+}
+
 static int
 netdev_linux_netnsid_update__(struct netdev_linux *netdev)
 {
@@ -630,13 +721,6 @@ netdev_linux_netnsid_update(struct netdev_linux *netdev)
 }
 
 static bool
-netdev_linux_netnsid_is_eq(struct netdev_linux *netdev, int nsid)
-{
-    netdev_linux_netnsid_update(netdev);
-    return netnsid_eq(netdev->netnsid, nsid);
-}
-
-static bool
 netdev_linux_netnsid_is_remote(struct netdev_linux *netdev)
 {
     netdev_linux_netnsid_update(netdev);
@@ -652,15 +736,19 @@ static void netdev_linux_changed(struct netdev_linux *netdev,
     OVS_REQUIRES(netdev->mutex);
 
 /* Returns a NETLINK_ROUTE socket listening for RTNLGRP_LINK,
- * RTNLGRP_IPV4_IFADDR and RTNLGRP_IPV6_IFADDR changes, or NULL
- * if no such socket could be created. */
+ * RTNLGRP_IPV4_IFADDR, RTNLGRP_IPV6_IFADDR, and RTNLGRP_NSID changes,
+ * or NULL if no such socket could be created. */
 static struct nl_sock *
 netdev_linux_notify_sock(void)
 {
     static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
     static struct nl_sock *sock;
     unsigned int mcgroups[] = {RTNLGRP_LINK, RTNLGRP_IPV4_IFADDR,
-                                RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV6_IFINFO};
+                                RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV6_IFINFO,
+#ifdef HAVE_LINUX_NET_NAMESPACE_H
+                                RTNLGRP_NSID,
+#endif
+                                };
 
     if (ovsthread_once_start(&once)) {
         int error;
@@ -790,6 +878,21 @@ netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
         error = nl_sock_recv(sock, &buf, &nsid, false);
         if (!error) {
             struct rtnetlink_change change;
+
+#ifdef HAVE_LINUX_NET_NAMESPACE_H
+            /* RTM_NEWNSID: a new namespace id mapping was created.
+             * Re-query the self-nsid in case the kernel just created
+             * a self-referential root-namespace mapping. */
+            {
+                const struct nlmsghdr *nlmsg = buf.data;
+
+                if (nlmsg->nlmsg_type == RTM_NEWNSID) {
+                    netdev_linux_query_self_nsid();
+                    ofpbuf_uninit(&buf);
+                    continue;
+                }
+            }
+#endif
 
             if (rtnetlink_parse(&buf, &change) && !change.irrelevant) {
                 struct netdev *netdev_ = NULL;
@@ -936,9 +1039,32 @@ netdev_linux_update(struct netdev_linux *dev, int nsid,
                     const struct rtnetlink_change *change)
     OVS_REQUIRES(dev->mutex)
 {
-    if (netdev_linux_netnsid_is_eq(dev, nsid)) {
-        netdev_linux_update__(dev, change);
+    netdev_linux_netnsid_update(dev);
+
+    if (netnsid_is_remote(dev->netnsid)) {
+        /* Remote device: only accept events with exactly matching nsid. */
+        if (!netnsid_eq(dev->netnsid, nsid)) {
+            return;
+        }
+    } else {
+        /* Local (or unresolved) device: only accept events that actually
+         * originated in the local namespace.
+         *
+         * NETLINK_LISTEN_ALL_NSID workaround: the kernel may tag local
+         * events with a real nsid instead of omitting the cmsg.  The
+         * self-nsid is queried once at startup and refreshed whenever
+         * an RTM_NEWNSID notification arrives.
+         *
+         * Any other nsid means the event came from a genuinely different
+         * namespace and must be rejected to avoid cross-namespace name
+         * collisions. */
+        if (!netnsid_is_local(nsid)
+            && nsid != netdev_linux_get_self_nsid()) {
+            return;
+        }
     }
+
+    netdev_linux_update__(dev, change);
 }
 
 static struct netdev *
