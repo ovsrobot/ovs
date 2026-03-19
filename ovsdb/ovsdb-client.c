@@ -2453,9 +2453,17 @@ do_wait(struct jsonrpc *rpc_unused OVS_UNUSED,
         ovs_fatal(0, "%s: unknown state", state);
     }
 
-    char *remote = argc > 2 ? xstrdup(argv[0]) : default_remote();
-    struct jsonrpc_session *js = jsonrpc_session_open(remote, true);
-    free(remote);
+    struct svec remotes = SVEC_EMPTY_INITIALIZER;
+    struct uuid cid = UUID_ZERO;
+
+    if (argc > 2){
+        ovsdb_session_parse_remote(argv[0], &remotes, &cid);
+    } else {
+        svec_add_nocopy(&remotes, default_remote());
+    }
+
+    struct jsonrpc_session *js = jsonrpc_session_open_multiple(&remotes, true);
+    svec_destroy(&remotes);
 
     unsigned int seqno = 0;
     struct json *sdca_id = NULL;
