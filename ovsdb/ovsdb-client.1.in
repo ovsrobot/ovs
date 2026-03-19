@@ -314,8 +314,8 @@ to check for databases that have not yet been added to the server, so
 that the \fBovsdb\-client\fR semantics of acting on a default database
 do not work.
 .IP
-This command acts on a particular database server, not on a cluster,
-so \fIserver\fR must name a single server, not a comma-delimited list
+This command acts on a particular database server, as well as on a cluster,
+so \fIserver\fR can name a single server, or a comma-delimited list
 of servers.
 .SS "Testing commands"
 These commands are mostly of interest for testing the correctness
