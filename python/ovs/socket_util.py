@@ -235,6 +235,17 @@ def _inet_parse_active(target, default_port):
         host_name = str(ipaddress.ip_address(host_name))
     except ValueError:
         host_name = dns_resolve.resolve(host_name)
+        if not host_name:
+            # Fallback to the system resolver (e.g. /etc/hosts, system DNS)
+            # when the unbound library is not available.
+            try:
+                result = socket.getaddrinfo(
+                    ":".join(address[0:-1]).lstrip('[').rstrip(']'),
+                    None, 0, socket.SOCK_STREAM)
+                if result:
+                    host_name = result[0][4][0]
+            except socket.gaierror:
+                pass
     if not host_name:
         raise ValueError("%s: bad peer name format" % target)
     return (host_name, port)
