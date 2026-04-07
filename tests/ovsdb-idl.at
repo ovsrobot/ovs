@@ -2722,6 +2722,9 @@ unix:socket2 remote has col id in table simple7, type: string
 --- remote unix:socket2 done ---
 ], [stderr])
 
+# Check we do not have any errors related to conditional monitoring.
+AT_CHECK([grep -q "received error, error={\"details\":\"no table named link2\",\"error\":\"syntax error\"}" stderr], [1])
+
 OVSDB_SERVER_SHUTDOWN
 AT_CLEANUP
 
