@@ -25,6 +25,23 @@ dummy@br0:
   flows: 0
   port 0: br0 (dummy-internal)
 ])
+dnl Check dpctl/show JSON output.
+AT_CHECK([ovs-appctl --format json --pretty dpctl/show dummy@br0], [0], [dnl
+{
+  "dummy@br0": {
+    "cache": null,
+    "flows": 0,
+    "lookups": {
+      "hit": 0,
+      "lost": 0,
+      "missed": 0},
+    "masks": null,
+    "ports": {
+      "br0": {
+        "port-number": 0,
+        "statistics": null,
+        "type": "dummy-internal"}}}}
+])
 AT_CHECK([ovs-appctl dpctl/add-if dummy@br0 vif1.0,type=dummy,port_no=5])
 AT_CHECK([ovs-appctl dpctl/show dummy@br0], [0], [dnl
 dummy@br0:

@@ -1,5 +1,9 @@
 Post-v3.7.0
 --------------------
+   - ovs-appctl:
+     * Added JSON output support (--format json) for fdb/stats-show,
+       upcall/show, dpif-netdev/pmd-sleep-show, dpif-netdev/pmd-stats-show,
+       and dpctl/show commands.
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.
