@@ -490,6 +490,79 @@ pmd thread numa_id <cleared> core_id <cleared>:
   miss with failed upcall: 0
 ])
 
+dnl Check JSON output.
+dnl Mask dynamic values: core id, cycle counts and percentages,
+dnl cycles-per-packet, processing-cycles-per-packet,
+dnl and packets-per-output-batch.
+AT_CHECK([ovs-appctl --format json --pretty dpif-netdev/pmd-stats-show | dnl
+          sed 's/"pmd-c[[0-9]][[0-9]]"/"pmd-c<cleared>"/g' | dnl
+          sed 's/"core": [[0-9]][[0-9]]*/"core": <cleared>/g' | dnl
+          sed 's/"count": [[0-9]][[0-9]]*/"count": <cleared>/g' | dnl
+          sed 's/"percentage": [[0-9.]][[0-9.]]*/"percentage": <cleared>/g' | dnl
+          sed 's/"cycles-per-packet": [[0-9.]][[0-9.]]*/"cycles-per-packet": <cleared>/g' | dnl
+          sed 's/"packets-per-output-batch": [[0-9.]][[0-9.]]*/"packets-per-output-batch": <cleared>/g' | dnl
+          sed 's/"processing-cycles-per-packet": [[0-9.]][[0-9.]]*/"processing-cycles-per-packet": <cleared>/g'], [0], [dnl
+{
+  "main": {
+    "averages": {
+      "cycles-per-packet": <cleared>,
+      "datapath-passes-per-packet": 0.0,
+      "packets-per-output-batch": <cleared>,
+      "processing-cycles-per-packet": <cleared>,
+      "subtable-lookups-per-megaflow-hit": 0.0},
+    "core": null,
+    "cycles": {
+      "idle": {
+        "count": <cleared>,
+        "percentage": <cleared>},
+      "processing": {
+        "count": <cleared>,
+        "percentage": <cleared>}},
+    "flow-cache-hits": {
+      "exact": 0,
+      "megaflow": 0,
+      "miniflow-extract": 0,
+      "partial-hardware-offload": 0,
+      "signature": 0,
+      "simple": 0},
+    "numa": null,
+    "packets": {
+      "received": 0,
+      "recirculated": 0},
+    "upcalls": {
+      "failure": 0,
+      "success": 0}},
+  "pmd-c<cleared>": {
+    "averages": {
+      "cycles-per-packet": <cleared>,
+      "datapath-passes-per-packet": 1.0,
+      "packets-per-output-batch": <cleared>,
+      "processing-cycles-per-packet": <cleared>,
+      "subtable-lookups-per-megaflow-hit": 0.0},
+    "core": <cleared>,
+    "cycles": {
+      "idle": {
+        "count": <cleared>,
+        "percentage": <cleared>},
+      "processing": {
+        "count": <cleared>,
+        "percentage": <cleared>}},
+    "flow-cache-hits": {
+      "exact": 19,
+      "megaflow": 0,
+      "miniflow-extract": 0,
+      "partial-hardware-offload": 0,
+      "signature": 0,
+      "simple": 0},
+    "numa": 0,
+    "packets": {
+      "received": 20,
+      "recirculated": 0},
+    "upcalls": {
+      "failure": 0,
+      "success": 1}}}
+])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
