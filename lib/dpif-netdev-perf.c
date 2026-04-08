@@ -233,7 +233,8 @@ pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
     uint64_t sleep_iter = stats[PMD_SLEEP_ITER];
     uint64_t tot_sleep_cycles = stats[PMD_CYCLES_SLEEP];
 
-    ds_put_format(str,
+    if (tot_iter) {
+        ds_put_format(str,
             "  Iterations:         %12"PRIu64"  (%.2f us/it)\n"
             "  - Used TSC cycles:  %12"PRIu64"  (%5.1f %% of total cycles)\n"
             "  - idle iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
@@ -252,9 +253,18 @@ pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
             sleep_iter, tot_iter ? 100.0 * sleep_iter / tot_iter : 0,
             tot_sleep_cycles * us_per_cycle,
             sleep_iter ? (tot_sleep_cycles * us_per_cycle) / sleep_iter : 0);
+    }
     if (rx_packets > 0) {
         ds_put_format(str,
-            "  Rx packets:         %12"PRIu64"  (%.0f Kpps, %.0f cycles/pkt)\n"
+            "  Rx packets:         %12"PRIu64"  (%.0f Kpps",
+            rx_packets, (rx_packets / duration) / 1000);
+        if (tot_iter) {
+            ds_put_format(str, ", %.0f cycles/pkt",
+                1.0 * stats[PMD_CYCLES_ITER_BUSY] / rx_packets);
+        }
+        ds_put_cstr(str, ")\n");
+
+        ds_put_format(str,
             "  Datapath passes:    %12"PRIu64"  (%.2f passes/pkt)\n"
             "  - PHWOL hits:       %12"PRIu64"  (%5.1f %%)\n"
             "  - MFEX Opt hits:    %12"PRIu64"  (%5.1f %%)\n"
@@ -262,11 +272,7 @@ pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
             "  - EMC hits:         %12"PRIu64"  (%5.1f %%)\n"
             "  - SMC hits:         %12"PRIu64"  (%5.1f %%)\n"
             "  - Megaflow hits:    %12"PRIu64"  (%5.1f %%, %.2f "
-                                                 "subtbl lookups/hit)\n"
-            "  - Upcalls:          %12"PRIu64"  (%5.1f %%, %.1f us/upcall)\n"
-            "  - Lost upcalls:     %12"PRIu64"  (%5.1f %%)\n",
-            rx_packets, (rx_packets / duration) / 1000,
-            1.0 * stats[PMD_CYCLES_ITER_BUSY] / rx_packets,
+                                                 "subtbl lookups/hit)\n",
             passes, 1.0 * passes / rx_packets,
             stats[PMD_STAT_PHWOL_HIT],
             100.0 * stats[PMD_STAT_PHWOL_HIT] / passes,
@@ -282,11 +288,20 @@ pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
             100.0 * stats[PMD_STAT_MASKED_HIT] / passes,
             stats[PMD_STAT_MASKED_HIT]
             ? 1.0 * stats[PMD_STAT_MASKED_LOOKUP] / stats[PMD_STAT_MASKED_HIT]
-            : 0,
-            upcalls, 100.0 * upcalls / passes,
-            upcalls ? (upcall_cycles * us_per_cycle) / upcalls : 0,
-            stats[PMD_STAT_LOST],
-            100.0 * stats[PMD_STAT_LOST] / passes);
+            : 0);
+
+        ds_put_format(str,
+            "  - Upcalls:          %12"PRIu64"  (%5.1f %%",
+            upcalls, 100.0 * upcalls / passes);
+        if (tot_iter) {
+            ds_put_format(str, ", %.1f us/upcall",
+                upcalls ? (upcall_cycles * us_per_cycle) / upcalls : 0);
+        }
+        ds_put_cstr(str, ")\n");
+
+        ds_put_format(str,
+            "  - Lost upcalls:     %12"PRIu64"  (%5.1f %%)\n",
+            stats[PMD_STAT_LOST], 100.0 * stats[PMD_STAT_LOST] / passes);
     } else {
         ds_put_format(str,
             "  Rx packets:         %12d\n", 0);
