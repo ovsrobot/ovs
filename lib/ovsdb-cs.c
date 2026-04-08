@@ -663,6 +663,18 @@ ovsdb_cs_wait(struct ovsdb_cs *cs)
 
 /* Network connection. */
 
+bool
+ovsdb_cs_is_remote_changed(struct ovsdb_cs *cs, const char *remote)
+{
+    if (cs &&
+        ((remote != NULL) != (cs->remote != NULL) ||
+         (remote && cs->remote && strcmp(remote, cs->remote)))) {
+        return true;
+    }
+
+    return false;
+}
+
 /* Changes the remote and creates a new session.  Keeps existing connection
  * if current remote is still valid.
  *
@@ -671,9 +683,7 @@ ovsdb_cs_wait(struct ovsdb_cs *cs)
 void
 ovsdb_cs_set_remote(struct ovsdb_cs *cs, const char *remote, bool retry)
 {
-    if (cs
-        && ((remote != NULL) != (cs->remote != NULL)
-            || (remote && cs->remote && strcmp(remote, cs->remote)))) {
+    if (ovsdb_cs_is_remote_changed(cs, remote)) {
         struct jsonrpc *rpc = NULL;
 
         /* Close the old session, if any. */
@@ -913,16 +923,39 @@ ovsdb_cs_db_get_table(struct ovsdb_cs_db *db, const char *table)
 }
 
 static void
+ovsdb_cs_db_destroy_table(struct ovsdb_cs_db_table *table,
+                          struct ovsdb_cs_db *db)
+{
+    json_destroy(table->ack_cond);
+    json_destroy(table->req_cond);
+    json_destroy(table->new_cond);
+    hmap_remove(&db->tables, &table->hmap_node);
+    free(table->name);
+    free(table);
+}
+
+/* Destroy a given ovsdb_cs_db_table according to the table name. */
+void
+ovsdb_cs_clear_condition(struct ovsdb_cs *cs, const char *table)
+{
+    uint32_t hash = hash_string(table, 0);
+    struct ovsdb_cs_db *db = &cs->data;
+
+    struct ovsdb_cs_db_table *t;
+    HMAP_FOR_EACH_WITH_HASH (t, hmap_node, hash, &db->tables) {
+        if (!strcmp(t->name, table)) {
+            ovsdb_cs_db_destroy_table(t, db);
+            return;
+        }
+    }
+}
+
+static void
 ovsdb_cs_db_destroy_tables(struct ovsdb_cs_db *db)
 {
     struct ovsdb_cs_db_table *table;
     HMAP_FOR_EACH_SAFE (table, hmap_node, &db->tables) {
-        json_destroy(table->ack_cond);
-        json_destroy(table->req_cond);
-        json_destroy(table->new_cond);
-        hmap_remove(&db->tables, &table->hmap_node);
-        free(table->name);
-        free(table);
+        ovsdb_cs_db_destroy_table(table, db);
     }
     hmap_destroy(&db->tables);
 }

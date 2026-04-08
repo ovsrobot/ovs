@@ -3596,6 +3596,12 @@ do_idl_table_column_check(struct ovs_cmdl_context *ctx)
         ovsdb_idl_set_remote(idl, ctx->argv[r], true);
         ovsdb_idl_force_reconnect(idl);
 
+        struct ovsdb_idl_condition cond_link2 =
+            OVSDB_IDL_CONDITION_INIT(&cond_link2);
+        idltest_link2_add_clause_i(&cond_link2, OVSDB_F_EQ, 1);
+
+        idltest_link2_set_condition(idl, &cond_link2);
+
         /* Wait for update. */
         for (;;) {
             ovsdb_idl_run(idl);
@@ -3660,6 +3666,8 @@ do_idl_table_column_check(struct ovs_cmdl_context *ctx)
                ctx->argv[r], has_col ? "has" : "doesn't have",
                type ? ", type: " : "", type ? type_s : "");
         free(type_s);
+
+        ovsdb_idl_condition_destroy(&cond_link2);
 
         printf("--- remote %s done ---\n", ctx->argv[r]);
     }
