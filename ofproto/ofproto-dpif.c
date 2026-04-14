@@ -6242,25 +6242,60 @@ done_unlock:
 }
 
 static void
-ofproto_unixctl_fdb_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                          const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+ofproto_unixctl_fdb_show(struct unixctl_conn *conn, int argc,
+                          const char *argv[], void *aux OVS_UNUSED)
 {
-    const struct ofproto_dpif *ofproto = ofproto_dpif_lookup_by_name(argv[1]);
+    bool multi = argc > 2;
 
-    if (!ofproto) {
-        unixctl_command_reply_error(conn, "no such bridge");
-        return;
+    /* Validate all bridge names up front. */
+    for (int i = 1; i < argc; i++) {
+        if (!ofproto_dpif_lookup_by_name(argv[i])) {
+            unixctl_command_reply_error(conn, "no such bridge");
+            return;
+        }
     }
 
     if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
-        struct json *fdb_entries;
+        struct json **bridge_entries = xmalloc((argc - 1)
+                                               * sizeof *bridge_entries);
 
-        ofproto_unixctl_fdb_show_json(ofproto, &fdb_entries);
-        unixctl_command_reply_json(conn, fdb_entries);
+        for (int i = 1; i < argc; i++) {
+            const struct ofproto_dpif *ofproto =
+                ofproto_dpif_lookup_by_name(argv[i]);
+            struct json *fdb_entries;
+
+            ofproto_unixctl_fdb_show_json(ofproto, &fdb_entries);
+            if (multi) {
+                struct json *obj = json_object_create();
+
+                json_object_put_string(obj, "bridge", argv[i]);
+                json_object_put(obj, "entries", fdb_entries);
+                bridge_entries[i - 1] = obj;
+            } else {
+                bridge_entries[i - 1] = fdb_entries;
+            }
+        }
+
+        if (multi) {
+            unixctl_command_reply_json(
+                conn, json_array_create(bridge_entries, argc - 1));
+        } else {
+            unixctl_command_reply_json(conn, bridge_entries[0]);
+            free(bridge_entries);
+        }
     } else {
         struct ds ds = DS_EMPTY_INITIALIZER;
 
-        ofproto_unixctl_fdb_show_text(ofproto, &ds);
+        for (int i = 1; i < argc; i++) {
+            const struct ofproto_dpif *ofproto =
+                ofproto_dpif_lookup_by_name(argv[i]);
+
+            if (multi) {
+                ds_put_format(&ds, "bridge %s\n", argv[i]);
+            }
+            ofproto_unixctl_fdb_show_text(ofproto, &ds);
+        }
+
         unixctl_command_reply(conn, ds_cstr(&ds));
         ds_destroy(&ds);
     }
@@ -7131,7 +7166,7 @@ ofproto_unixctl_init(void)
                              ofproto_unixctl_fdb_delete, NULL);
     unixctl_command_register("fdb/flush", "[bridge]", 0, 1,
                              ofproto_unixctl_fdb_flush, NULL);
-    unixctl_command_register("fdb/show", "bridge", 1, 1,
+    unixctl_command_register("fdb/show", "bridge [bridge2] ...", 1, INT_MAX,
                              ofproto_unixctl_fdb_show, NULL);
     unixctl_command_register("fdb/stats-clear", "[bridge]", 0, 1,
                              ofproto_unixctl_fdb_stats_clear, NULL);

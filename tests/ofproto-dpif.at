@@ -7639,6 +7639,38 @@ AT_CHECK_UNQUOTED([ovs-appctl fdb/show br1 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [d
     5     0  50:54:00:00:00:07    ?
 ])
 
+# Test fdb/show with multiple bridges.
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 br1 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
+ port  VLAN  MAC                Age
+    2     0  50:54:00:00:00:05    ?
+bridge br1
+ port  VLAN  MAC                Age
+    5     0  50:54:00:00:00:07    ?
+])
+
+dnl Check json output with multiple bridges.
+AT_CHECK([ovs-appctl --format json --pretty fdb/show br0 br1 \
+          | sed 's/"age": [[0-9]]*/"age": ?/g'], [0], [dnl
+[[
+  {
+    "bridge": "br0",
+    "entries": [
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:05",
+        "port": 2,
+        "vlan": 0}]},
+  {
+    "bridge": "br1",
+    "entries": [
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:07",
+        "port": 5,
+        "vlan": 0}]}]]
+])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
