@@ -2701,7 +2701,7 @@ dnl idltest2.ovsschema and outputs the presence of tables and columns.
 dnl And then it connectes to the server with the schema idltest.ovsschema
 dnl and does the same.
 AT_CHECK([test-ovsdb '-vPATTERN:console:test-ovsdb|%c|%m' -vjsonrpc -t10 dnl
-                 idl-table-column-check unix:socket unix:socket2], [0], [dnl
+                 idl-table-column-check unix:socket unix:socket2 unix:socket], [0], [dnl
 unix:socket remote has table simple
 unix:socket remote has table link1
 unix:socket remote doesn't have table link2
@@ -2720,7 +2720,24 @@ unix:socket2 remote has col l2 in table link1, type: set of up to 1 uuids
 unix:socket2 remote has col i in table link1, type: integer
 unix:socket2 remote has col id in table simple7, type: string
 --- remote unix:socket2 done ---
+unix:socket remote has table simple
+unix:socket remote has table link1
+unix:socket remote doesn't have table link2
+unix:socket remote doesn't have table simple5
+unix:socket remote doesn't have col irefmap in table simple5
+unix:socket remote doesn't have col l2 in table link1
+unix:socket remote has col i in table link1, type: integer
+unix:socket remote doesn't have col id in table simple7
+--- remote unix:socket done ---
 ], [stderr])
+
+# Check we do not have any errors related to conditional monitoring.
+AT_CHECK([grep -q "received error, error={\"details\":\"No column l2 in table link1.\"" stderr], [1])
+AT_CHECK([grep -q "received error, error={\"details\":\"no table named link2\"" stderr], [1])
+
+# Check the monitor_cond_since request has properly formatted conditions connecting to the idltest2 server.
+AT_CHECK([grep monitor_cond_since stderr | grep -qF '"l2","==",@<:@"uuid","00000000-0000-0000-0000-000000000000"@:>@'])
+AT_CHECK([grep monitor_cond_since stderr | grep -qF '"i","==",1'])
 
 OVSDB_SERVER_SHUTDOWN
 AT_CLEANUP

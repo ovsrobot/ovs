@@ -144,6 +144,7 @@ void ovsdb_cs_set_probe_interval(const struct ovsdb_cs *, int probe_interval);
 unsigned int ovsdb_cs_set_condition(struct ovsdb_cs *, const char *table,
                                     const struct json *condition);
 unsigned int ovsdb_cs_get_condition_seqno(const struct ovsdb_cs *);
+void ovsdb_cs_clear_condition(struct ovsdb_cs *, const char *table);
 
 /* Database change awareness. */
 void ovsdb_cs_set_db_change_aware(struct ovsdb_cs *, bool set_db_change_aware);

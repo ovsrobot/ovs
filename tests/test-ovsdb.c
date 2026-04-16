@@ -3583,6 +3583,18 @@ do_idl_table_column_check(struct ovs_cmdl_context *ctx)
     ovsdb_idl_omit(idl, &idltest_link1_col_i);
     ovsdb_idl_omit(idl, &idltest_simple7_col_id);
     ovsdb_idl_set_leader_only(idl, false);
+
+    struct ovsdb_idl_condition cond_link1 =
+        OVSDB_IDL_CONDITION_INIT(&cond_link1);
+    struct uuid uuid = UUID_ZERO;
+    idltest_link1_add_clause_l2(&cond_link1, OVSDB_F_EQ, &uuid);
+    idltest_link1_set_condition(idl, &cond_link1);
+
+    struct ovsdb_idl_condition cond_link2 =
+        OVSDB_IDL_CONDITION_INIT(&cond_link2);
+    idltest_link2_add_clause_i(&cond_link2, OVSDB_F_EQ, 1);
+    idltest_link2_set_condition(idl, &cond_link2);
+
     struct stream *stream;
 
     error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], &stream,
@@ -3592,7 +3604,7 @@ do_idl_table_column_check(struct ovs_cmdl_context *ctx)
     }
     rpc = jsonrpc_open(stream);
 
-    for (int r = 1; r <= 2; r++) {
+    for (int r = 1; r <= 3; r++) {
         ovsdb_idl_set_remote(idl, ctx->argv[r], true);
         ovsdb_idl_force_reconnect(idl);
 
@@ -3664,6 +3676,9 @@ do_idl_table_column_check(struct ovs_cmdl_context *ctx)
         printf("--- remote %s done ---\n", ctx->argv[r]);
     }
 
+    ovsdb_idl_condition_destroy(&cond_link1);
+    ovsdb_idl_condition_destroy(&cond_link2);
+
     jsonrpc_close(rpc);
     ovsdb_idl_destroy(idl);
 }
@@ -3706,7 +3721,7 @@ static struct ovs_cmdl_command all_commands[] = {
         do_idl_partial_update_map_column, OVS_RO },
     { "idl-partial-update-set-column", NULL, 1, INT_MAX,
         do_idl_partial_update_set_column, OVS_RO },
-    { "idl-table-column-check", NULL, 2, 2,
+    { "idl-table-column-check", NULL, 3, 3,
         do_idl_table_column_check, OVS_RO },
     { "help", NULL, 0, INT_MAX, do_help, OVS_RO },
     { NULL, NULL, 0, 0, NULL, OVS_RO },
