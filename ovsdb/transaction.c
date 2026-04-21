@@ -18,6 +18,7 @@
 #include "transaction.h"
 
 #include "bitmap.h"
+#include "coverage.h"
 #include "openvswitch/dynamic-string.h"
 #include "file.h"
 #include "hash.h"
@@ -37,6 +38,10 @@
 #include "util.h"
 
 VLOG_DEFINE_THIS_MODULE(transaction);
+
+COVERAGE_DEFINE(txn_history_add);
+
+#define TRANSACTION_HISTORY_LIMIT_DEFAULT 100
 
 struct ovsdb_txn {
     struct ovsdb *db;
@@ -1186,12 +1191,13 @@ ovsdb_txn_destroy_cloned(struct ovsdb_txn *txn)
 static void
 ovsdb_txn_add_to_history(struct ovsdb_txn *txn)
 {
-    if (txn->db->need_txn_history) {
+    if (txn->db->n_txn_history_max) {
         struct ovsdb_txn_history_node *node = xzalloc(sizeof *node);
         node->txn = ovsdb_txn_clone_for_history(txn);
         ovs_list_push_back(&txn->db->txn_history, &node->node);
         txn->db->n_txn_history++;
         txn->db->n_txn_history_atoms += txn->n_atoms;
+        COVERAGE_INC(txn_history_add);
     }
 }
 
@@ -1676,7 +1682,7 @@ for_each_txn_row(struct ovsdb_txn *txn,
 void
 ovsdb_txn_history_run(struct ovsdb *db)
 {
-    if (!db->need_txn_history) {
+    if (!db->n_txn_history_max) {
         return;
     }
     /* Remove old histories to limit the size of the history.  Removing until
@@ -1686,7 +1692,7 @@ ovsdb_txn_history_run(struct ovsdb *db)
      * Keeping at least one transaction to avoid sending UUID_ZERO as a last id
      * if all entries got removed due to the size limit. */
     while (db->n_txn_history > 1 &&
-           (db->n_txn_history > 100 ||
+           (db->n_txn_history > db->n_txn_history_max ||
             db->n_txn_history_atoms > db->n_atoms)) {
         struct ovsdb_txn_history_node *txn_h_node = CONTAINER_OF(
                 ovs_list_pop_front(&db->txn_history),
@@ -1700,11 +1706,17 @@ ovsdb_txn_history_run(struct ovsdb *db)
 }
 
 void
-ovsdb_txn_history_init(struct ovsdb *db, bool need_txn_history)
+ovsdb_txn_history_init(struct ovsdb *db, bool need_txn_history,
+                       unsigned int n_txn_history_max)
 {
-    db->need_txn_history = need_txn_history;
     db->n_txn_history = 0;
     db->n_txn_history_atoms = 0;
+    if (need_txn_history) {
+        db->n_txn_history_max = MAX(n_txn_history_max,
+                                    TRANSACTION_HISTORY_LIMIT_DEFAULT);
+    } else {
+        db->n_txn_history_max = 0;
+    }
     ovs_list_init(&db->txn_history);
 }
 
@@ -1712,7 +1724,7 @@ void
 ovsdb_txn_history_destroy(struct ovsdb *db)
 {
 
-    if (!db->need_txn_history) {
+    if (!db->n_txn_history_max) {
         return;
     }
 
@@ -1724,4 +1736,17 @@ ovsdb_txn_history_destroy(struct ovsdb *db)
     }
     db->n_txn_history = 0;
     db->n_txn_history_atoms = 0;
+}
+
+void
+ovsdb_txn_history_update(struct ovsdb *db, unsigned int n_txn_history_max)
+{
+    if (!db->n_txn_history_max) {
+        return;
+    }
+
+    db->n_txn_history_max = MAX(n_txn_history_max,
+                                TRANSACTION_HISTORY_LIMIT_DEFAULT);
+
+    ovsdb_txn_history_run(db);
 }

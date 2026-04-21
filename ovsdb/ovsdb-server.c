@@ -156,6 +156,10 @@ struct db_config {
         bool backup;  /* If true, the database is read-only and receives
                        * updates from the 'source'. */
     } ab;
+
+    /* Valid for SM_CLUSTERED or SM_RELAY. */
+    unsigned int n_txn_history_max; /* The maximum amount of history entries
+                                     * to keep. 0 means default. */
 };
 
 struct db {
@@ -462,6 +466,7 @@ db_config_clone(const struct db_config *c)
         conf->options = ovsdb_jsonrpc_options_clone(c->options);
     }
     conf->ab.sync_exclude = nullable_xstrdup(c->ab.sync_exclude);
+    conf->n_txn_history_max = c->n_txn_history_max;
 
     return conf;
 }
@@ -571,6 +576,11 @@ database_update_config(struct server_config *server_config,
         server_uuid = ovsdb_jsonrpc_server_get_uuid(server_config->jsonrpc);
         replication_set_db(db->db, conf->source, conf->ab.sync_exclude,
                            server_uuid, &conf->options->rpc);
+    }
+
+    if ((conf->model == SM_CLUSTERED || conf->model == SM_RELAY) &&
+        conf->n_txn_history_max) {
+        ovsdb_txn_history_update(db->db, conf->n_txn_history_max);
     }
 }
 
@@ -1180,7 +1190,8 @@ open_db(struct server_config *server_config,
     /* Enable txn history for clustered and relay modes.  It is not enabled for
      * other modes for now, since txn id is available for clustered and relay
      * modes only. */
-    ovsdb_txn_history_init(db->db, model == SM_RELAY || model == SM_CLUSTERED);
+    ovsdb_txn_history_init(db->db, model == SM_RELAY || model == SM_CLUSTERED,
+                           conf->n_txn_history_max);
 
     read_db(server_config, db);
 
@@ -2910,6 +2921,12 @@ db_config_to_json(const struct db_config *conf)
         }
         json_object_put(json, "backup", json_boolean_create(conf->ab.backup));
     }
+
+    if (conf->n_txn_history_max) {
+        json_object_put(json, "transaction-history-limit",
+                        json_integer_create(conf->n_txn_history_max));
+    }
+
     return json;
 }
 
@@ -3033,7 +3050,7 @@ remotes_from_json(struct shash *remotes, const struct json *json)
 static struct db_config *
 db_config_from_json(const char *name, const struct json *json)
 {
-    const struct json *model, *source, *sync_exclude, *backup;
+    const struct json *model, *source, *sync_exclude, *backup, *txn_limit;
     struct db_config *conf = xzalloc(sizeof *conf);
     struct ovsdb_parser parser;
     struct ovsdb_error *error;
@@ -3112,6 +3129,12 @@ db_config_from_json(const char *name, const struct json *json)
                     "JSON-RPC options is not a JSON object or null");
             }
         }
+    }
+
+    txn_limit = ovsdb_parser_member(&parser, "transaction-history-limit",
+                                    OP_INTEGER | OP_OPTIONAL);
+    if (txn_limit) {
+        conf->n_txn_history_max = json_integer(txn_limit);
     }
 
     error = ovsdb_parser_finish(&parser);

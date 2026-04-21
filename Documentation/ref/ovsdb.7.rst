@@ -624,6 +624,28 @@ above).
 
 Open vSwitch 2.16 introduced support for relay service model.
 
+Client Monitors
+===============
+
+Clients requesting monitors using ``"monitor"`` or ``"monitor_cond"`` will
+generally receive an initial dump of all of their relevant data when the
+montior is started. As changes are submitted to the ovsdb it will send updates
+to the clients. If a client where to reconnect to a ovsdb it would receive a
+full initial dump again.
+
+In case the client uses ``"monitor_cond_since"`` it can improve on this
+reconnect behaviour by providing the ovsdb server with the last known update
+ID. If the server still has this ID in its history it will respond only with
+the changes that accumulated since this ID. This feature is only available if
+the ovsdb server uses the **clustered** service model. It is also available on
+the **relay** service model if the relay source is a **clustered** service
+model.
+
+The transaction history used for this is limited to the same memory usage as
+the database itself. In addition it has a limit of 100 entries per default.
+This can be modified by using ``"transaction-history-limit": 1000`` in the
+configuration of the database.
+
 Database Replication
 ====================
 

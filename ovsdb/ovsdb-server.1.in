@@ -158,6 +158,10 @@ database otherwise.
 .IP "\fBexclude-tables\fR (JSON array of strings; active-backup only)"
 List of table names that should be excluded from replication in backup mode,
 e.g. \fB"exclude-tables": [ "Table_One", "Table_Two" ]\fR.
+.IP "\fBtransaction-history-limit\fR (integer)"
+Changes the transaction history length of the database. Only available for the
+service-models \fBclustered\fR and \fBrelay\fR if the relay source is
+\fBclustered\fR.
 .RE
 .RE
 .IP

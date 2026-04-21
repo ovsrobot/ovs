@@ -3,6 +3,9 @@ Post-v3.7.0
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.
+   - OVSDB:
+     * The transaction history length is now configurable using the config
+       `"transaction-history-limit": 1000`.
 
 
 v3.7.0 - 16 Feb 2026

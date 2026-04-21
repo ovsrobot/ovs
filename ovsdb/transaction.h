@@ -75,7 +75,10 @@ struct ovsdb_row *ovsdb_index_search(struct hmap *index,
 void ovsdb_txn_add_comment(struct ovsdb_txn *, const char *);
 const char *ovsdb_txn_get_comment(const struct ovsdb_txn *);
 void ovsdb_txn_history_run(struct ovsdb *);
-void ovsdb_txn_history_init(struct ovsdb *, bool need_txn_history);
+void ovsdb_txn_history_init(struct ovsdb *, bool need_txn_history,
+                            unsigned int n_txn_history_max);
 void ovsdb_txn_history_destroy(struct ovsdb *);
+void ovsdb_txn_history_update(struct ovsdb *db,
+                              unsigned int n_txn_history_max);
 
 #endif /* ovsdb/transaction.h */
