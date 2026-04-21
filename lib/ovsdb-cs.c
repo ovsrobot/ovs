@@ -20,6 +20,7 @@
 
 #include <errno.h>
 
+#include "coverage.h"
 #include "hash.h"
 #include "jsonrpc.h"
 #include "openvswitch/dynamic-string.h"
@@ -38,6 +39,10 @@
 #include "uuid.h"
 
 VLOG_DEFINE_THIS_MODULE(ovsdb_cs);
+
+COVERAGE_DEFINE(cs_update);
+COVERAGE_DEFINE(cs_update_with_clear);
+COVERAGE_DEFINE(cs_update_from_monitor);
 
 /* Connection state machine.
  *
@@ -1568,6 +1573,14 @@ ovsdb_cs_db_add_update(struct ovsdb_cs_db *db,
                        const struct json *table_updates, int version,
                        bool clear, bool monitor_reply)
 {
+    COVERAGE_INC(cs_update);
+    if (clear) {
+        COVERAGE_INC(cs_update_with_clear);
+    }
+    if (monitor_reply) {
+        COVERAGE_INC(cs_update_from_monitor);
+    }
+
     struct ovsdb_cs_event *event = ovsdb_cs_db_add_event(
         db, OVSDB_CS_EVENT_TYPE_UPDATE);
     event->update = (struct ovsdb_cs_update_event) {
