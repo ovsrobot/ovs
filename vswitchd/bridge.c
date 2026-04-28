@@ -532,7 +532,6 @@ bridge_init(const char *remote)
     stp_init();
     lldp_init();
     rstp_init();
-    odp_execute_init();
 
     ifaces_changed = seq_create();
     last_ifaces_changed = seq_read(ifaces_changed);
