@@ -30,6 +30,7 @@
  */
 
 #include <config.h>
+#include <stddef.h>
 #include "sha1.h"
 
 #ifdef HAVE_OPENSSL
@@ -80,7 +81,7 @@ sha1_init(struct sha1_ctx *sha_info)
  * inputLen: The length of the input buffer.
  */
 void
-sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
+sha1_update(struct sha1_ctx *ctx, const void *buffer_, size_t count)
 {
 #ifdef HAVE_OPENSSL
     if (!EVP_DigestUpdate(ctx->ctx, buffer_, count)) {
@@ -114,7 +115,7 @@ sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
 
 /* Computes the hash of 'n' bytes in 'data' into 'digest'. */
 void
-sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
+sha1_bytes(const void *data, size_t n, uint8_t digest[SHA1_DIGEST_SIZE])
 {
     struct sha1_ctx ctx;
 
