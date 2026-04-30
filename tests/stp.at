@@ -632,12 +632,15 @@ ovs-appctl time/warp 36000 3000
 
 # check fdb and mdb
 AT_CHECK([ovs-appctl fdb/show br0], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
 ])
 AT_CHECK([ovs-appctl fdb/show br1], [0], [dnl
+bridge br1
  port  VLAN  MAC                Age
 ])
 AT_CHECK([ovs-appctl fdb/show br2], [0], [dnl
+bridge br2
  port  VLAN  MAC                Age
 ])
 

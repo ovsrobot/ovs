@@ -7228,21 +7228,24 @@ br_flow="arp,in_port=3,vlan_tci=0x0000,dl_src=50:54:00:00:00:05,dl_dst=ff:ff:ff:
 # Test command: ofproto/trace odp_flow
 AT_CHECK([ovs-appctl ofproto/trace "$odp_flow"], [0], [stdout])
 # Check for no MAC learning entry
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
 ])
 
 # Test command: ofproto/trace br_name br_flow
 AT_CHECK([ovs-appctl ofproto/trace br0 "$br_flow"], [0], [stdout])
 # Check for no MAC learning entry
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
 ])
 
 # Test command: ofproto/trace odp_flow -generate
 AT_CHECK([ovs-appctl ofproto/trace "$odp_flow" -generate], [0], [stdout])
 # Check for the MAC learning entry
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     3     0  50:54:00:00:00:05    ?
 ])
@@ -7252,7 +7255,8 @@ AT_CHECK([ovs-appctl ofproto/trace ovs-dummy \
   "in_port(1),eth(src=50:54:00:00:00:06,dst=50:54:00:00:00:05)" \
   -generate], [0], [stdout])
 # Check for both MAC learning entries
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     3     0  50:54:00:00:00:05    ?
     1     0  50:54:00:00:00:06    ?
@@ -7263,7 +7267,8 @@ AT_CHECK([ovs-appctl ofproto/trace br0 \
   "in_port=2,dl_src=50:54:00:00:00:07,dl_dst=50:54:00:00:00:06" \
   -generate], [0], [stdout])
 # Check for both MAC learning entries.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     3     0  50:54:00:00:00:05    ?
     1     0  50:54:00:00:00:06    ?
@@ -7543,6 +7548,14 @@ add_of_ports br0 1 2 3
 
 arp='eth_type(0x0806),arp(sip=192.168.0.1,tip=192.168.0.2,op=1,sha=50:54:00:00:00:05,tha=00:00:00:00:00:00)'
 
+dnl Check json output for an empty FDB.
+AT_CHECK([ovs-appctl --format json --pretty fdb/show br0], [0], [dnl
+[[
+  {
+    "bridge": "br0",
+    "entries": []}]]
+])
+
 # Trace an ARP packet arriving on p3, to create a MAC learning entry.
 OFPROTO_TRACE(
   [ovs-dummy],
@@ -7551,7 +7564,8 @@ OFPROTO_TRACE(
   [1,2,100])
 
 # Check for the MAC learning entry.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     3     0  50:54:00:00:00:05    ?
 ])
@@ -7565,7 +7579,8 @@ OFPROTO_TRACE(
   [3])
 
 # Check for both MAC learning entries.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     3     0  50:54:00:00:00:05    ?
     1     0  50:54:00:00:00:06    ?
@@ -7576,15 +7591,18 @@ AT_CHECK([ovs-appctl --format json --pretty fdb/show br0 \
           | sed 's/"age": [[0-9]]*/"age": ?/g'], [0], [dnl
 [[
   {
-    "age": ?,
-    "mac": "50:54:00:00:00:05",
-    "port": 3,
-    "vlan": 0},
-  {
-    "age": ?,
-    "mac": "50:54:00:00:00:06",
-    "port": 1,
-    "vlan": 0}]]
+    "bridge": "br0",
+    "entries": [
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:05",
+        "port": 3,
+        "vlan": 0},
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:06",
+        "port": 1,
+        "vlan": 0}]}]]
 ])
 
 # Trace a packet arrival that updates the first learned MAC entry.
@@ -7595,7 +7613,8 @@ OFPROTO_TRACE(
   [1,3,100])
 
 # Check that the MAC learning entry was updated.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     1     0  50:54:00:00:00:06    ?
     2     0  50:54:00:00:00:05    ?
@@ -7621,7 +7640,8 @@ OFPROTO_TRACE(
   [4,101])
 
 # Check that the MAC learning entries were added.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br1 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br1 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br1
  port  VLAN  MAC                Age
     4     0  50:54:00:00:00:06    ?
     5     0  50:54:00:00:00:07    ?
@@ -7630,13 +7650,54 @@ AT_CHECK_UNQUOTED([ovs-appctl fdb/show br1 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [d
 # Delete port p1 and see that its MAC learning entry disappeared, and
 # that the MAC learning entry for the same MAC was also deleted from br1.
 AT_CHECK([ovs-vsctl del-port p1])
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
  port  VLAN  MAC                Age
     2     0  50:54:00:00:00:05    ?
 ])
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br1 | sed 's/[[0-9]]\{1,\}$/?/'], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br1 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br1
  port  VLAN  MAC                Age
     5     0  50:54:00:00:00:07    ?
+])
+
+# Test fdb/show with multiple bridges.
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 br1 | sed '/^ /s/[[0-9]]\{1,\}$/?/'], [0], [dnl
+bridge br0
+ port  VLAN  MAC                Age
+    2     0  50:54:00:00:00:05    ?
+bridge br1
+ port  VLAN  MAC                Age
+    5     0  50:54:00:00:00:07    ?
+])
+
+dnl Check json output with multiple bridges.
+AT_CHECK([ovs-appctl --format json --pretty fdb/show br0 br1 \
+          | sed 's/"age": [[0-9]]*/"age": ?/g'], [0], [dnl
+[[
+  {
+    "bridge": "br0",
+    "entries": [
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:05",
+        "port": 2,
+        "vlan": 0}]},
+  {
+    "bridge": "br1",
+    "entries": [
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:07",
+        "port": 5,
+        "vlan": 0}]}]]
+])
+
+# Test fdb/show with a non-existent bridge mixed in: must reply with an
+# error and emit no partial output.
+AT_CHECK([ovs-appctl fdb/show br0 nonexistent], [2], [],
+  [no such bridge
+ovs-appctl: ovs-vswitchd: server returned an error
 ])
 
 OVS_VSWITCHD_STOP
@@ -7662,7 +7723,7 @@ for i in 0 1 2 3 4 5 6 7 8 9; do
 done
 
 # Check for the MAC learning entries.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | sort],
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v '^bridge ' | sort],
   [0], [dnl
     3     0  50:54:00:00:00:00
     3     0  50:54:00:00:00:01
@@ -7685,7 +7746,7 @@ OFPROTO_TRACE(
   [1,2,100])
 
 # Check that the new one chased the oldest one out of the table.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/' | sort],
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/' | grep -v '^bridge ' | sort],
   [0], [dnl
     3     0  50:54:00:00:00:01    ?
     3     0  50:54:00:00:00:02    ?
@@ -7720,7 +7781,7 @@ for i in 0 1 2 3 4 5 6 7 8 9; do
 done
 
 # Check for the MAC learning entries.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | sort],
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v '^bridge ' | sort],
   [0], [dnl
     1     0  50:54:00:00:00:00
     1     0  50:54:00:00:00:01
@@ -7751,7 +7812,7 @@ done
 # (If someone changes lib/heap.c to do something different with equal-priority
 # nodes, then the output below could change, but it would still follow the
 # rules explained above.)
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | sort],
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v '^bridge ' | sort],
   [0], [dnl
     1     0  50:54:00:00:00:01
     2     0  50:54:00:00:00:03
@@ -8188,7 +8249,7 @@ AT_CHECK([ovs-appctl fdb/add br0 p1 0 50:54:00:00:01:01])
 AT_CHECK([ovs-appctl fdb/add br0 p2 0 50:54:00:00:02:02])
 
 dnl Check initial fdb.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v port | sort], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v -e port -e '^bridge ' | sort], [0], [dnl
     1     0  50:54:00:00:00:01
     1     0  50:54:00:00:01:01  static
     2     0  50:54:00:00:00:02
@@ -8200,25 +8261,28 @@ AT_CHECK([ovs-appctl --format json --pretty fdb/show br0 \
           | sed 's/"age": [[0-9]]*/"age": ?/g'], [0], [dnl
 [[
   {
-    "age": ?,
-    "mac": "50:54:00:00:00:01",
-    "port": 1,
-    "vlan": 0},
-  {
-    "age": ?,
-    "mac": "50:54:00:00:00:02",
-    "port": 2,
-    "vlan": 0},
-  {
-    "mac": "50:54:00:00:01:01",
-    "port": 1,
-    "static": true,
-    "vlan": 0},
-  {
-    "mac": "50:54:00:00:02:02",
-    "port": 2,
-    "static": true,
-    "vlan": 0}]]
+    "bridge": "br0",
+    "entries": [
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:01",
+        "port": 1,
+        "vlan": 0},
+      {
+        "age": ?,
+        "mac": "50:54:00:00:00:02",
+        "port": 2,
+        "vlan": 0},
+      {
+        "mac": "50:54:00:00:01:01",
+        "port": 1,
+        "static": true,
+        "vlan": 0},
+      {
+        "mac": "50:54:00:00:02:02",
+        "port": 2,
+        "static": true,
+        "vlan": 0}]}]]
 ])
 
 dnl Remove static mac entry.
@@ -8264,7 +8328,7 @@ Overriding already existing dynamic entry on 1
 ])
 
 dnl Check fdb.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v port | sort], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v -e port -e '^bridge ' | sort], [0], [dnl
     1     0  50:54:00:00:00:00  static
 ])
 
@@ -8274,7 +8338,7 @@ Overriding already existing static entry on 1
 ])
 
 dnl Check fdb.
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v port | sort], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v -e port -e '^bridge ' | sort], [0], [dnl
     2     0  50:54:00:00:00:00  static
 ])
 
@@ -8282,13 +8346,13 @@ dnl static-mac should not be converted to a dynamic one when a packet with same 
 dnl arrives on any port of the switch.
 dnl Packet arriving on p1.
 OFPROTO_TRACE([ovs-dummy], [in_port(1),eth(src=50:54:00:00:00:00)], [-generate], [100,2])
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v port | sort], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v -e port -e '^bridge ' | sort], [0], [dnl
     2     0  50:54:00:00:00:00  static
 ])
 
 dnl Packet arriving on p2.
 OFPROTO_TRACE([ovs-dummy], [in_port(2),eth(src=50:54:00:00:00:00)], [-generate], [100,1])
-AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v port | sort], [0], [dnl
+AT_CHECK_UNQUOTED([ovs-appctl fdb/show br0 | sed 's/ *[[0-9]]\{1,\}$//' | grep -v -e port -e '^bridge ' | sort], [0], [dnl
     2     0  50:54:00:00:00:00  static
 ])
 

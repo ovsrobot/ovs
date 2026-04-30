@@ -3,7 +3,13 @@ Post-v3.7.0
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.
-
+   - ovs-appctl:
+     * "fdb/show" now accepts multiple bridge names in a single call,
+       reducing the number of unixctl round-trips for clients that poll
+       FDB entries across many bridges.  The output format now always
+       prefixes a "bridge <name>" header line in text mode and wraps
+       each bridge's entries in {"bridge", "entries"} in JSON mode,
+       regardless of how many bridges were requested.
 
 v3.7.0 - 16 Feb 2026
 --------------------
