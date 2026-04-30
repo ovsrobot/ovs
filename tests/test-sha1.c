@@ -15,6 +15,7 @@
  */
 
 #include <config.h>
+#include <stddef.h>
 #undef NDEBUG
 #include "sha1.h"
 #include <assert.h>
@@ -34,9 +35,9 @@ struct test_vector {
 
 struct test_api {
     void (*sha1_init)(struct sha1_ctx *);
-    void (*sha1_update)(struct sha1_ctx *, const void *, uint32_t size);
+    void (*sha1_update)(struct sha1_ctx *, const void *, size_t size);
     void (*sha1_final)(struct sha1_ctx *, uint8_t digest[SHA1_DIGEST_SIZE]);
-    void (*sha1_bytes)(const void *, uint32_t size,
+    void (*sha1_bytes)(const void *, size_t size,
                        uint8_t digest[SHA1_DIGEST_SIZE]);
 };
 

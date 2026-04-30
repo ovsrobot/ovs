@@ -30,6 +30,7 @@
  */
 
 #include <config.h>
+#include <stddef.h>
 #include "sha1.h"
 
 #ifdef HAVE_OPENSSL
@@ -80,7 +81,7 @@ sha1_init(struct sha1_ctx *sha_info)
  * inputLen: The length of the input buffer.
  */
 void
-sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
+sha1_update(struct sha1_ctx *ctx, const void *buffer_, size_t count)
 {
 #ifdef HAVE_OPENSSL
     if (!EVP_DigestUpdate(ctx->ctx, buffer_, count)) {
@@ -114,7 +115,7 @@ sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
 
 /* Computes the hash of 'n' bytes in 'data' into 'digest'. */
 void
-sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
+sha1_bytes(const void *data, size_t n, uint8_t digest[SHA1_DIGEST_SIZE])
 {
     struct sha1_ctx ctx;
 
@@ -316,20 +317,22 @@ ovs_sha1_init(struct sha1_ctx *sha_info)
  * inputLen: The length of the input buffer.
  */
 void
-ovs_sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
+ovs_sha1_update(struct sha1_ctx *ctx, const void *buffer_, size_t count)
 {
     const uint8_t *buffer = buffer_;
     unsigned int i;
+    uint32_t lo_add = (uint32_t)((uint64_t)count << 3);
+    uint32_t hi_add = (uint32_t)((uint64_t)count >> 29);
 
-    if ((ctx->count_lo + (count << 3)) < ctx->count_lo) {
+    if (ctx->count_lo + lo_add < ctx->count_lo) {
         ctx->count_hi++;
     }
-    ctx->count_lo += count << 3;
-    ctx->count_hi += count >> 29;
+    ctx->count_lo += lo_add;
+    ctx->count_hi += hi_add;
     if (ctx->local) {
         i = SHA_BLOCK_SIZE - ctx->local;
         if (i > count) {
-            i = count;
+            i = (unsigned int)count;
         }
         memcpy(((uint8_t *) ctx->data) + ctx->local, buffer, i);
         count -= i;
@@ -350,7 +353,7 @@ ovs_sha1_update(struct sha1_ctx *ctx, const void *buffer_, uint32_t count)
         sha_transform(ctx);
     }
     memcpy(ctx->data, buffer, count);
-    ctx->local = count;
+    ctx->local = (int)count;
 }
 
 /*
@@ -393,7 +396,7 @@ ovs_sha1_final(struct sha1_ctx *ctx, uint8_t digest[SHA1_DIGEST_SIZE])
 
 /* Computes the hash of 'n' bytes in 'data' into 'digest'. */
 void
-ovs_sha1_bytes(const void *data, uint32_t n, uint8_t digest[SHA1_DIGEST_SIZE])
+ovs_sha1_bytes(const void *data, size_t n, uint8_t digest[SHA1_DIGEST_SIZE])
 {
     struct sha1_ctx ctx;
 

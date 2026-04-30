@@ -56,9 +56,9 @@ struct sha1_ctx {
 };
 
 void sha1_init(struct sha1_ctx *);
-void sha1_update(struct sha1_ctx *, const void *, uint32_t size);
+void sha1_update(struct sha1_ctx *, const void *, size_t size);
 void sha1_final(struct sha1_ctx *, uint8_t digest[SHA1_DIGEST_SIZE]);
-void sha1_bytes(const void *, uint32_t size, uint8_t digest[SHA1_DIGEST_SIZE]);
+void sha1_bytes(const void *, size_t size, uint8_t digest[SHA1_DIGEST_SIZE]);
 
 #define SHA1_FMT \
         "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x" \
@@ -77,9 +77,9 @@ bool sha1_from_hex(uint8_t digest[SHA1_DIGEST_SIZE], const char *hex);
 /* Generic implementation for the case where OpenSSL is not available.
  * This API should not be used directly.  Exposed for unit testing. */
 void ovs_sha1_init(struct sha1_ctx *);
-void ovs_sha1_update(struct sha1_ctx *, const void *, uint32_t size);
+void ovs_sha1_update(struct sha1_ctx *, const void *, size_t size);
 void ovs_sha1_final(struct sha1_ctx *, uint8_t digest[SHA1_DIGEST_SIZE]);
-void ovs_sha1_bytes(const void *, uint32_t size,
+void ovs_sha1_bytes(const void *, size_t size,
                     uint8_t digest[SHA1_DIGEST_SIZE]);
 
 #endif  /* sha1.h */
