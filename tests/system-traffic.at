@@ -3739,6 +3739,95 @@ AT_CHECK([ovs-appctl dpctl/dump-conntrack | grep "10\.1\.1\.1,"], [1])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+
+AT_SETUP([conntrack - verify ct_clear with clone])
+AT_SKIP_IF([test $HAVE_TCPDUMP = no])
+CHECK_CONNTRACK()
+OVS_TRAFFIC_VSWITCHD_START()
+
+dnl Validate that ct_clear works correctly with clone() in below cases:
+dnl
+dnl   1. ct_clear placed inside clone(ct_clear, ....) clears the
+dnl      conntrack state of the cloned packet only.  Subsequent OF rule
+dnl      lookups on the original packet must still see the original
+dnl      ct_state.
+dnl
+dnl   2. ct_clear placed outside the clone (on the original packet's
+dnl      path) must still happen, even when an inner ct_clear has already
+dnl      run inside the preceding clone.
+dnl
+dnl Scenario:
+dnl   3 ports on the same subnet; an inbound ICMP session (p0 -> p1) is
+dnl   committed to conntrack zone 1 and mirrored to a third port (p2).
+dnl   Inbound conns (both the request and the reply) are cloned to the
+dnl   mirror dest, with ct_clear applied inside the clone (cloned copy)
+dnl   and again outside the clone (original packet).
+dnl
+dnl Topology:
+dnl   p0 (of-port 1) - 192.168.1.1   client
+dnl   p1 (of-port 2) - 192.168.1.2   server (mirror source)
+dnl   p2 (of-port 3) - 192.168.1.3   mirror dest
+dnl
+dnl Pipeline:
+dnl   table=0  request (in_port=1)         ct(zone=1, table=1)  [lookup]
+dnl   table=0  reply   (in_port=2)         ct(zone=1, table=3)  [lookup]
+dnl   table=1  +trk                        ct(commit, zone=1, table=2)
+dnl   table=2  +trk -rpl, nw_dst=192.168.1.2  clone(output:3), output:2
+dnl   table=3  +trk +rpl, in_port=2        clone(ct_clear, output:3),
+dnl                                        ct_clear, resubmit(,4)
+dnl   table=4  -trk, nw_dst=192.168.1.1    output:1
+dnl   table=4  +trk, nw_dst=192.168.1.1    drop  (safety: ct_clear missed)
+ADD_NAMESPACES(at_ns0, at_ns1, at_ns2)
+
+ADD_VETH(p0, at_ns0, br0, "192.168.1.1/24")
+ADD_VETH(p1, at_ns1, br0, "192.168.1.2/24")
+ADD_VETH(p2, at_ns2, br0, "192.168.1.3/24")
+
+AT_CHECK([ovs-vsctl -- set interface ovs-p0 ofport_request=1 \
+                    -- set interface ovs-p1 ofport_request=2 \
+                    -- set interface ovs-p2 ofport_request=3])
+
+AT_DATA([flows.txt], [dnl
+priority=1,action=drop
+priority=10,arp,action=normal
+priority=100,in_port=1,icmp,ct_state=-trk,actions=ct(zone=1,table=1)
+priority=100,in_port=2,icmp,ct_state=-trk,actions=ct(zone=1,table=3)
+table=1,priority=100,icmp,ct_state=+trk,actions=ct(commit,zone=1,table=2)
+table=2,priority=100,icmp,ct_state=+trk-rpl,nw_dst=192.168.1.2,actions=clone(output:3),output:2
+table=3,priority=100,in_port=2,icmp,ct_state=+trk+rpl,actions=clone(ct_clear,output:3),ct_clear,resubmit(,4)
+table=4,priority=100,icmp,nw_dst=192.168.1.1,ct_state=+trk,actions=drop
+table=4,priority=99,icmp,nw_dst=192.168.1.1,ct_state=-trk,actions=output:1
+])
+
+AT_CHECK([ovs-ofctl --bundle add-flows br0 flows.txt])
+
+dnl Capture mirrored ICMP traffic on the mirror dest port (p2 inside at_ns2).
+NETNS_DAEMONIZE([at_ns2], [tcpdump -l -n -U -i p2 icmp > p2.pcap 2>p2.err], [tcpdump.pid])
+OVS_WAIT_UNTIL([grep "listening" p2.err])
+
+dnl Send 3 ICMP echo requests from the client (p0) to the server (p1).
+NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -W 2 192.168.1.2 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+dnl A single conntrack entry should exist in zone 1 for the icmp session.
+AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(192.168.1.2)], [0], [dnl
+icmp,orig=(src=192.168.1.1,dst=192.168.1.2,id=<cleared>,type=8,code=0),reply=(src=192.168.1.2,dst=192.168.1.1,id=<cleared>,type=0,code=0),zone=1
+])
+
+sleep 1
+AT_CHECK([kill -15 $(cat tcpdump.pid)])
+OVS_WAIT_WHILE([kill -0 $(cat tcpdump.pid)])
+
+dnl The mirror dest port should have received 6 ICMP packets in total.
+AT_CHECK([grep -c "ICMP" p2.pcap], [0], [dnl
+6
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+
 AT_SETUP([conntrack - IPv4 ping])
 CHECK_CONNTRACK()
 OVS_TRAFFIC_VSWITCHD_START()

@@ -6199,6 +6199,8 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
     retained_state = xretain_state_save(ctx);
 
     if (reversible_actions(actions, actions_len) || is_last_action) {
+        bool old_conntracked = ctx->conntracked;
+
         do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
         if (!ctx->freezing) {
             xlate_action_set(ctx);
@@ -6206,6 +6208,10 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
         if (ctx->freezing) {
             finish_freezing(ctx);
         }
+
+        /* The clone's conntrack execution should have no effect on the
+         * original packet. */
+        ctx->conntracked = old_conntracked;
         goto xlate_done;
     }
 
