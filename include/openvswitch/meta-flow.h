@@ -26,7 +26,7 @@
 #include "openvswitch/flow.h"
 #include "openvswitch/ofp-errors.h"
 #include "openvswitch/ofp-protocol.h"
-#include "openvswitch/packets.h"
+#include "openvswitch/net-proto.h"
 #include "openvswitch/util.h"
 
 #ifdef __cplusplus
