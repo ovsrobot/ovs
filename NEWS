@@ -1,5 +1,8 @@
 Post-v3.7.0
 --------------------
+   - Removed ovs-test, ovs-l3ping utilities and the ovstest Python module.
+     Standard tools like iperf are preferred for performance testing, and
+     OVS system tests cover basic connectivity use cases.
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.

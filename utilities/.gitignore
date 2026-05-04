@@ -14,8 +14,6 @@
 /ovs-dpctl-top
 /ovs-dpctl-top.8
 /ovs-kmod-ctl
-/ovs-l3ping
-/ovs-l3ping.8
 /ovs-lib
 /ovs-ofctl
 /ovs-ofctl.8
@@ -24,8 +22,6 @@
 /ovs-pki
 /ovs-pki-cgi
 /ovs-pki.8
-/ovs-test
-/ovs-test.8
 /ovs-tcpdump
 /ovs-tcpdump.8
 /ovs-tcpundump

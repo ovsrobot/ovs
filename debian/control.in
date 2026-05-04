@@ -210,15 +210,8 @@ Description: Open vSwitch switch implementations
 Package: openvswitch-test
 Architecture: all
 Depends:
- python3-twisted,
  ${misc:Depends},
  ${python3:Depends},
-Breaks:
- python3-openvswitch (<< 2.17~),
- openvswitch-common (<< 2.17~),
-Replaces:
- python3-openvswitch (<< 2.17~),
- openvswitch-common (<< 2.17~),
 Description: Open vSwitch test package
  Open vSwitch is a production quality, multilayer, software-based,
  Ethernet virtual switch. It is designed to enable massive network
