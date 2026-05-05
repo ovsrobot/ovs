@@ -1059,7 +1059,7 @@ def ovs_checkpatch_parse(text, filename, author=None, committer=None):
                 continue
 
             # Skip files which have /datapath in them, since they are
-            # linux or windows coding standards
+            # linux coding standards
             if current_file.startswith('datapath'):
                 continue
             if current_file.startswith('include/linux'):

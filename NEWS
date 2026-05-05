@@ -5,7 +5,8 @@ Post-v3.7.0
        timer can be configured with 'tnl/neigh/retrans_time'.
    - Windows:
      * The previously deprecated Windows kernel datapath implementation is
-       now fully removed.
+       now fully removed as well as support for running or building userspace
+       components of Open vSwitch on the Windows platform.
 
 
 v3.7.0 - 16 Feb 2026

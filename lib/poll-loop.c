@@ -77,20 +77,10 @@ find_poll_node(struct poll_loop *loop, int fd, HANDLE wevent)
     return NULL;
 }
 
-/* On Unix based systems:
- *
- *     Registers 'fd' as waiting for the specified 'events' (which should be
- *     POLLIN or POLLOUT or POLLIN | POLLOUT).  The following call to
- *     poll_block() will wake up when 'fd' becomes ready for one or more of the
- *     requested events. The 'fd's are given to poll() function later.
- *
- * On Windows system:
- *
- *     If 'fd' is specified, create a new 'wevent'. Association of 'fd' and
- *     'wevent' for 'events' happens in poll_block(). If 'wevent' is specified,
- *     it is assumed that it is unrelated to any sockets and poll_block()
- *     will wake up on any event on that 'wevent'. It is an error to pass
- *     both 'wevent' and 'fd'.
+/* Registers 'fd' as waiting for the specified 'events' (which should be
+ * POLLIN or POLLOUT or POLLIN | POLLOUT).  The following call to
+ * poll_block() will wake up when 'fd' becomes ready for one or more of the
+ * requested events. The 'fd's are given to poll() function later.
  *
  * The event registration is one-shot: only the following call to
  * poll_block() is affected.  The event will need to be re-registered after
@@ -120,11 +110,6 @@ poll_create_node(int fd, HANDLE wevent, short int events, const char *where)
                     hash_2words(fd, (uint32_t)wevent));
         node->pollfd.fd = fd;
         node->pollfd.events = events;
-#ifdef _WIN32
-        if (!wevent) {
-            wevent = CreateEvent(NULL, FALSE, FALSE, NULL);
-        }
-#endif
         node->wevent = wevent;
         node->where = where;
     }
@@ -133,8 +118,6 @@ poll_create_node(int fd, HANDLE wevent, short int events, const char *where)
 /* Registers 'fd' as waiting for the specified 'events' (which should be POLLIN
  * or POLLOUT or POLLIN | POLLOUT).  The following call to poll_block() will
  * wake up when 'fd' becomes ready for one or more of the requested events.
- *
- * On Windows, 'fd' must be a socket.
  *
  * The event registration is one-shot: only the following call to poll_block()
  * is affected.  The event will need to be re-registered after poll_block() is
@@ -148,24 +131,6 @@ poll_fd_wait_at(int fd, short int events, const char *where)
 {
     poll_create_node(fd, 0, events, where);
 }
-
-#ifdef _WIN32
-/* Registers for the next call to poll_block() to wake up when 'wevent' is
- * signaled.
- *
- * The event registration is one-shot: only the following call to poll_block()
- * is affected.  The event will need to be re-registered after poll_block() is
- * called if it is to persist.
- *
- * ('where' is used in debug logging.  Commonly one would use
- * poll_wevent_wait() to automatically provide the caller's source file and
- * line number for 'where'.) */
-void
-poll_wevent_wait_at(HANDLE wevent, const char *where)
-{
-    poll_create_node(0, wevent, 0, where);
-}
-#endif /* _WIN32 */
 
 /* Causes the following call to poll_block() to block for no more than 'msec'
  * milliseconds.  If 'msec' is nonpositive, the following call to poll_block()
@@ -302,12 +267,6 @@ free_poll_nodes(struct poll_loop *loop)
 
     HMAP_FOR_EACH_SAFE (node, hmap_node, &loop->poll_nodes) {
         hmap_remove(&loop->poll_nodes, &node->hmap_node);
-#ifdef _WIN32
-        if (node->wevent && node->pollfd.fd) {
-            WSAEventSelect(node->pollfd.fd, NULL, 0);
-            CloseHandle(node->wevent);
-        }
-#endif
         free(node);
     }
 }
@@ -337,28 +296,10 @@ poll_block(void)
     timewarp_run();
     pollfds = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *pollfds);
 
-#ifdef _WIN32
-    wevents = xmalloc(hmap_count(&loop->poll_nodes) * sizeof *wevents);
-#endif
-
     /* Populate with all the fds and events. */
     i = 0;
     HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
-        pollfds[i] = node->pollfd;
-#ifdef _WIN32
-        wevents[i] = node->wevent;
-        if (node->pollfd.fd && node->wevent) {
-            short int wsa_events = 0;
-            if (node->pollfd.events & POLLIN) {
-                wsa_events |= FD_READ | FD_ACCEPT | FD_CLOSE;
-            }
-            if (node->pollfd.events & POLLOUT) {
-                wsa_events |= FD_WRITE | FD_CONNECT | FD_CLOSE;
-            }
-            WSAEventSelect(node->pollfd.fd, node->wevent, wsa_events);
-        }
-#endif
-        i++;
+        pollfds[i++] = node->pollfd;
     }
 
     retval = time_poll(pollfds, hmap_count(&loop->poll_nodes), wevents,
