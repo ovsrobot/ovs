@@ -3,6 +3,10 @@ Post-v3.7.0
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.
+   - Python:
+     * Python tools now report a clear error when a host name is supplied
+       but the python unbound library is unavailable, instead of failing
+       with a misleading "bad peer name format" message.
 
 
 v3.7.0 - 16 Feb 2026

@@ -235,6 +235,10 @@ def _inet_parse_active(target, default_port):
         host_name = str(ipaddress.ip_address(host_name))
     except ValueError:
         host_name = dns_resolve.resolve(host_name)
+        if not host_name and not dns_resolve.is_enabled():
+            raise ValueError("%s: cannot resolve host name; the python "
+                             "unbound library is required for DNS support"
+                             % target)
     if not host_name:
         raise ValueError("%s: bad peer name format" % target)
     return (host_name, port)

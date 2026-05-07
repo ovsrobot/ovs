@@ -294,6 +294,18 @@ def resolve(name: str) -> typing.Optional[str]:
     return _global_resolver.resolve(name)  # type: ignore
 
 
+def is_enabled() -> bool:
+    """Return True if DNS resolution support is available.
+
+    Returns False if no global DNSResolver has been initialized, or if it was
+    initialized but DNS support is unavailable (for example, when the python
+    unbound library is missing or failed to initialize).  Useful for
+    distinguishing "DNS lookup failed" from "DNS lookup was never attempted
+    because support is disabled" after a None result from resolve().
+    """
+    return _global_resolver is not None and _global_resolver.dns_enabled
+
+
 def destroy():
     """Destroy the global DNSResolver
 

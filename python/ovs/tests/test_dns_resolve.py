@@ -95,6 +95,30 @@ def missing_unbound(monkeypatch, request):
 def test_missing_unbound(missing_unbound, resolver_factory):
     resolver = resolver_factory()  # Dont fail even w/o unbound
     assert resolver.dns_enabled == (not missing_unbound)
+    assert dns_resolve.is_enabled() == (not missing_unbound)
+
+
+def test_is_enabled_without_init(monkeypatch):
+    # Without a global resolver, is_enabled() must not auto-initialize and
+    # must return False so callers can distinguish "DNS unavailable" from
+    # "DNS lookup failed".
+    dns_resolve.destroy()
+    assert dns_resolve.is_enabled() is False
+
+
+def test_inet_parse_active_missing_unbound(missing_unbound, resolver_factory):
+    # IP literals work regardless of whether unbound is available.
+    host, port = socket_util.inet_parse_active("192.0.2.1:6640", 6640)
+    assert host == "192.0.2.1"
+    assert port == 6640
+
+    # When unbound is missing and the target is a host name, the user gets
+    # a clear error pointing at the missing dependency rather than a
+    # misleading "bad peer name format".
+    resolver_factory()
+    if missing_unbound:
+        with pytest.raises(ValueError, match="unbound library is required"):
+            socket_util.inet_parse_active("fake.notadomain:6640", 6640)
 
 
 def test_DNSRequest_defaults():
