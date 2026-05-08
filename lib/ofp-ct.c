@@ -30,7 +30,7 @@
 #include "openvswitch/ofp-errors.h"
 #include "openvswitch/ofp-prop.h"
 #include "openvswitch/ofp-util.h"
-#include "openvswitch/packets.h"
+#include "openvswitch/net-proto.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(ofp_ct);

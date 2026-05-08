@@ -18,7 +18,7 @@
 #define OPENVSWITCH_MATCH_H 1
 
 #include "openvswitch/flow.h"
-#include "openvswitch/packets.h"
+#include "openvswitch/net-proto.h"
 #include "openvswitch/tun-metadata.h"
 
 #ifdef __cplusplus

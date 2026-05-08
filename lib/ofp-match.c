@@ -23,7 +23,7 @@
 #include "openvswitch/ofp-errors.h"
 #include "openvswitch/ofp-msgs.h"
 #include "openvswitch/ofp-port.h"
-#include "openvswitch/packets.h"
+#include "openvswitch/net-proto.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(ofp_match);

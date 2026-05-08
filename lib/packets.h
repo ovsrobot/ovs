@@ -23,7 +23,7 @@
 #include <string.h>
 #include "compiler.h"
 #include "openvswitch/geneve.h"
-#include "openvswitch/packets.h"
+#include "openvswitch/net-proto.h"
 #include "openvswitch/types.h"
 #include "net-proto.h"
 #include "openvswitch/nsh.h"
