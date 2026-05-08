@@ -647,15 +647,35 @@ count_cpu_cores__(void)
 #endif
 #ifdef __linux__
     if (n_cores > 0) {
-        cpu_set_t *set = CPU_ALLOC(n_cores);
+        enum { CPU_ALLOC_INITIAL = 1024 };
+        enum { CPU_ALLOC_MAX = 1024 << 8 };
+        size_t n_alloc = MAX((size_t) n_cores, (size_t) CPU_ALLOC_INITIAL);
+        size_t max_n_alloc = MAX(n_alloc, (size_t) CPU_ALLOC_MAX);
 
-        if (set) {
-            size_t size = CPU_ALLOC_SIZE(n_cores);
+        /* sched_getaffinity() returns EINVAL when 'size' is smaller than the
+         * kernel affinity mask.  This can happen when the possible CPU range
+         * exceeds the online CPU count. */
+        for (;;) {
+            cpu_set_t *set = CPU_ALLOC(n_alloc);
+            size_t size = CPU_ALLOC_SIZE(n_alloc);
+
+            if (!set) {
+                break;
+            }
+            CPU_ZERO_S(size, set);
 
             if (!sched_getaffinity(0, size, set)) {
                 n_cores = CPU_COUNT_S(size, set);
+                CPU_FREE(set);
+                break;
             }
+
+            int error = errno;
             CPU_FREE(set);
+            if (error != EINVAL || n_alloc >= max_n_alloc) {
+                break;
+            }
+            n_alloc = MIN(n_alloc << 2, max_n_alloc);
         }
     }
 #endif
