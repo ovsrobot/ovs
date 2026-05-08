@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include "ct-dpif.h"
+#include "openvswitch/dynamic-string.h"
 #include "openvswitch/ofp-ct.h"
 #include "openvswitch/ofp-parse.h"
 #include "openvswitch/vlog.h"

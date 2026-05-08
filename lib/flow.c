@@ -36,7 +36,6 @@
 #include "openvswitch/match.h"
 #include "dp-packet.h"
 #include "openflow/openflow.h"
-#include "packets.h"
 #include "odp-util.h"
 #include "random.h"
 #include "unaligned.h"
@@ -44,6 +43,7 @@
 #include "openvswitch/nsh.h"
 #include "ovs-router.h"
 #include "lib/netdev-provider.h"
+#include "tun-metadata.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(flow);
@@ -3714,6 +3714,18 @@ flow_limit_vlans(int vlan_limit)
     } else {
         flow_vlan_limit = MIN(vlan_limit, FLOW_MAX_VLAN_HEADERS);
     }
+}
+
+struct in6_addr
+flow_tnl_dst(const struct flow_tnl *tnl)
+{
+    return tnl->ip_dst ? in6_addr_mapped_ipv4(tnl->ip_dst) : tnl->ipv6_dst;
+}
+
+struct in6_addr
+flow_tnl_src(const struct flow_tnl *tnl)
+{
+    return tnl->ip_src ? in6_addr_mapped_ipv4(tnl->ip_src) : tnl->ipv6_src;
 }
 
 struct netdev *
