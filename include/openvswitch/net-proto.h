@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-#ifndef OPENVSWITCH_PACKETS_H
-#define OPENVSWITCH_PACKETS_H 1
+#ifndef OPENVSWITCH_NET_PROTO_H
+#define OPENVSWITCH_NET_PROTO_H 1
 
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include "openvswitch/tun-metadata.h"
 
@@ -99,4 +100,4 @@ struct ovs_key_nsh {
 }
 #endif
 
-#endif /* packets.h */
+#endif /* net-proto.h */

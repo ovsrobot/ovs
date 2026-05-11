@@ -35,7 +35,7 @@ openvswitchinclude_HEADERS = \
 	include/openvswitch/ofp-switch.h \
 	include/openvswitch/ofp-table.h \
 	include/openvswitch/ofp-util.h \
-	include/openvswitch/packets.h \
+	include/openvswitch/net-proto.h \
 	include/openvswitch/poll-loop.h \
 	include/openvswitch/rconn.h \
 	include/openvswitch/shash.h \

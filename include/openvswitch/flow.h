@@ -17,7 +17,7 @@
 #define OPENVSWITCH_FLOW_H 1
 
 #include "openflow/nicira-ext.h"
-#include "openvswitch/packets.h"
+#include "openvswitch/net-proto.h"
 #include "openvswitch/util.h"
 
 #ifdef __cplusplus
