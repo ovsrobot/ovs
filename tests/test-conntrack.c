@@ -139,7 +139,7 @@ build_tcp_packet(struct dp_packet *pkt, uint16_t tcp_src, uint16_t tcp_dst,
     iph->ip_csum = csum(iph, IP_HEADER_LEN);
 
     /* Compute TCP checksum over pseudo-header + TCP segment. */
-    tcp_csum = packet_csum_pseudoheader(iph);
+    tcp_csum = ip_csum_pseudoheader(iph);
     tcph->tcp_csum = csum_finish(
         csum_continue(tcp_csum, tcph, TCP_HEADER_LEN + payload_len));
 
