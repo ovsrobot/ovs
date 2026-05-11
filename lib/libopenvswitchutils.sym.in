@@ -1,0 +1,4 @@
+libopenvswitchutils_@LT_CURRENT@ {
+global:
+        *;
+};
