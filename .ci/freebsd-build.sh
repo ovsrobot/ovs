@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds and tests Open vSwitch inside a FreeBSD QEMU VM.
 #
-# Steps mirror the original Cirrus CI configuration:
+# Build and test steps:
 #   configure -> ./boot.sh && ./configure CC=<compiler> ...
 #   build     -> gmake -j8
 #   check     -> gmake -j8 check TESTSUITEFLAGS=-j8 RECHECK=yes
