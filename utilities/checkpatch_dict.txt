@@ -186,6 +186,7 @@ nicira
 nics
 ns
 nsec
+nuageinit
 num
 numa
 odp
@@ -196,6 +197,7 @@ ofpbufs
 ofport
 ofproto
 onwards
+opencode
 openflow
 openssl
 openvswitch

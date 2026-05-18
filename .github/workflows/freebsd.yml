@@ -1,0 +1,160 @@
+name: FreeBSD Build and Test
+
+# Triggers match the existing build-and-test.yml for consistency.
+on: [push, pull_request]
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # build-freebsd-image
+  # ---------------------------------------------------------------------------
+  # Downloads the official FreeBSD BASIC-CLOUDINIT image, boots it with QEMU,
+  # lets nuageinit install all CI dependencies and configure SSH access, then
+  # compresses and caches the result.
+  #
+  # On a cache hit the job completes in under 1 minute.  The actual image
+  # preparation only runs when the cache key changes, i.e. when the FreeBSD
+  # version, the prepare/VM-utility scripts, or the upstream image itself
+  # changes.
+  #
+  # The cache key is re-derived independently in build-freebsd, so no job
+  # output is needed to pass the key between jobs.
+  # ---------------------------------------------------------------------------
+  build-freebsd-image:
+    name: freebsd ${{ matrix.freebsd_version }} image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        freebsd_version: ["14.4", "15.0"]
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v6
+
+    # The cache key covers three inputs:
+    #   - the FreeBSD version (one image per version)
+    #   - SHA-256 of the scripts that control what ends up in the image
+    #   - SHA-256 of the upstream image file from FreeBSD's CHECKSUM.SHA256
+    # Any change to the scripts or a FreeBSD image re-spin busts the cache.
+    - name: generate image cache key
+      id: gen_key
+      run: |
+        img_xz="FreeBSD-${{ matrix.freebsd_version }}-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+        base_url="https://download.freebsd.org/releases/VM-IMAGES/${{ matrix.freebsd_version }}-RELEASE/amd64/Latest"
+        wget -q "${base_url}/CHECKSUM.SHA256" -O freebsd-upstream-checksum.txt
+        image_sha=$(grep "(${img_xz})" freebsd-upstream-checksum.txt | awk '{print $NF}')
+        scripts_hash=$(cat .ci/freebsd-prepare-image.sh .ci/freebsd-vm.sh \
+                         | sha256sum | cut -d' ' -f1)
+        combined=$(printf '%s-%s' "${image_sha}" "${scripts_hash}" \
+                    | sha256sum | cut -d' ' -f1)
+        echo "key=freebsd-${{ matrix.freebsd_version }}-${combined}" \
+          >> "$GITHUB_OUTPUT"
+
+    # /dev/kvm is owned by group kvm (mode 0660) on GitHub-hosted runners.
+    # The runner user is not in that group, so we make it world-accessible.
+    # QEMU requires this for KVM acceleration.
+    - name: enable KVM access
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: restore image cache
+      id: image_cache
+      uses: actions/cache@v5
+      with:
+        path: freebsd-${{ matrix.freebsd_version }}.qcow2
+        key:  ${{ steps.gen_key.outputs.key }}
+
+    - name: prepare FreeBSD ${{ matrix.freebsd_version }} image
+      if: steps.image_cache.outputs.cache-hit != 'true'
+      run: ./.ci/freebsd-prepare-image.sh ${{ matrix.freebsd_version }}
+
+  # ---------------------------------------------------------------------------
+  # build-freebsd
+  # ---------------------------------------------------------------------------
+  # Restores the prepared VM image, boots it with QEMU using a COW overlay so
+  # the cached base is never modified, rsyncs the source tree into the VM, and
+  # runs configure -> gmake -j8 -> gmake check.
+  # ---------------------------------------------------------------------------
+  build-freebsd:
+    name: freebsd ${{ matrix.freebsd_version }} ${{ matrix.compiler }}
+    needs: build-freebsd-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - freebsd_version: "14.4"
+            compiler: gcc
+          - freebsd_version: "14.4"
+            compiler: clang
+          - freebsd_version: "15.0"
+            compiler: gcc
+          - freebsd_version: "15.0"
+            compiler: clang
+
+    env:
+      FREEBSD_VER: ${{ matrix.freebsd_version }}
+      COMPILER:    ${{ matrix.compiler }}
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v6
+
+    # Re-derive the same cache key used by build-freebsd-image.
+    - name: generate image cache key
+      id: gen_key
+      run: |
+        img_xz="FreeBSD-${{ matrix.freebsd_version }}-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+        base_url="https://download.freebsd.org/releases/VM-IMAGES/${{ matrix.freebsd_version }}-RELEASE/amd64/Latest"
+        wget -q "${base_url}/CHECKSUM.SHA256" -O freebsd-upstream-checksum.txt
+        image_sha=$(grep "(${img_xz})" freebsd-upstream-checksum.txt | awk '{print $NF}')
+        scripts_hash=$(cat .ci/freebsd-prepare-image.sh .ci/freebsd-vm.sh \
+                         | sha256sum | cut -d' ' -f1)
+        combined=$(printf '%s-%s' "${image_sha}" "${scripts_hash}" \
+                    | sha256sum | cut -d' ' -f1)
+        echo "key=freebsd-${{ matrix.freebsd_version }}-${combined}" \
+          >> "$GITHUB_OUTPUT"
+
+    - name: enable KVM access
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    # Restore the prepared image written by build-freebsd-image.  If the cache
+    # is absent (e.g. eviction) the build step will fail with a clear error
+    # message pointing to the missing image file.
+    - name: restore FreeBSD ${{ matrix.freebsd_version }} image
+      uses: actions/cache/restore@v5
+      with:
+        path: freebsd-${{ matrix.freebsd_version }}.qcow2
+        key:  ${{ steps.gen_key.outputs.key }}
+
+    - name: build and test
+      run: ./.ci/freebsd-build.sh
+
+    - name: collect logs on failure
+      if: failure() || cancelled()
+      run: |
+        mkdir -p logs
+        cp config.log              logs/ 2>/dev/null || true
+        cp tests/testsuite.log     logs/ 2>/dev/null || true
+        # testsuite.dir may contain socket files; tar handles them gracefully.
+        sudo tar -czf logs.tgz logs/ tests/testsuite.dir 2>/dev/null || \
+        tar -czf logs.tgz logs/
+
+    - name: upload logs on failure
+      if: failure() || cancelled()
+      uses: actions/upload-artifact@v7
+      with:
+        name: logs-freebsd-${{ matrix.freebsd_version }}-${{ matrix.compiler }}
+        path: logs.tgz
