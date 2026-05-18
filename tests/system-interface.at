@@ -231,3 +231,34 @@ AT_CHECK([grep 'name too long' stderr], [0], [ignore])
 
 OVS_TRAFFIC_VSWITCHD_STOP(["/could not open network device.*name too long/d"])
 AT_CLEANUP
+
+AT_SETUP([interface - patch port name exceeds IFNAMSIZ on vswitchd restart])
+
+OVS_TRAFFIC_VSWITCHD_START()
+
+dnl Kernel datapath only (see system-kmod-testsuite).  system-userspace-testsuite
+dnl also includes this file but uses netdev datapath — same pattern as "datapath ports gc".
+AT_SKIP_IF([! ovs-appctl dpctl/show 2>/dev/null | grep -q ovs-system])
+
+dnl Port names longer than IFNAMSIZ-1 (Linux).  Uses kernel (system) datapath — see
+dnl system-kmod-macros _ADD_BR / _OVS_VSWITCHD_START (no --disable-system).
+AT_CHECK([ovs-vsctl -- \
+          add-br br1 -- set bridge br1 fail-mode=secure \
+          -- add-port br0 long_patch_peer_one \
+          -- set interface long_patch_peer_one type=patch \
+          options:peer=long_patch_peer_two \
+          -- add-port br1 long_patch_peer_two \
+          -- set interface long_patch_peer_two type=patch \
+          options:peer=long_patch_peer_one])
+
+dnl Restart ovs-vswitchd with a fresh ovs-vswitchd.log
+OVS_APP_EXIT_AND_WAIT([ovs-vswitchd])
+mv ovs-vswitchd.log ovs-vswitchd_1.log
+AT_CHECK([ovs-vswitchd --detach --no-chdir --pidfile --log-file -vvconn -vofproto_dpif -vunixctl],
+         [0], [], [stderr])
+OVS_WAIT_UNTIL([ovs-appctl -t ovs-vswitchd version 2>/dev/null | grep -q 'Open vSwitch'])
+
+AT_CHECK([grep -E 'failed to query port.*Invalid argument' ovs-vswitchd.log], [1], [], [])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP

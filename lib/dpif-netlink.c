@@ -1263,6 +1263,10 @@ dpif_netlink_port_query_by_name(const struct dpif *dpif_, const char *devname,
 {
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
 
+    if (strlen(devname) >= IFNAMSIZ) {
+        return ENODEV;
+    }
+
     return dpif_netlink_port_query__(dpif, 0, devname, dpif_port);
 }
 
