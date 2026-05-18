@@ -1689,7 +1689,10 @@ xlate_lookup_ofproto_(const struct dpif_backer *backer,
              * the packet originated from OFPP_CONTROLLER passed
              * through a patch port.
              *
-             * OFPP_NONE can also indicate that a bond caused recirculation. */
+             * OFPP_NONE can also indicate that a bond caused recirculation,
+             * or that an OpenFlow action (e.g. load:0xffff->NXM_OF_IN_PORT[])
+             * cleared the OF in_port mid-pipeline before a freeze (as OVN
+             * does at logical-datapath crossings). */
             struct uuid uuid = recirc_id_node->state.ofproto_uuid;
             const struct xbridge *bridge = xbridge_lookup_by_uuid(xcfg, &uuid);
 
@@ -1698,6 +1701,37 @@ xlate_lookup_ofproto_(const struct dpif_backer *backer,
                     !get_ofp_port(bridge, in_port)) {
                     goto xport_lookup;
                 }
+
+                /* Even when the frozen state's OF in_port is OFPP_NONE or
+                 * OFPP_CONTROLLER, the megaflow under revalidation still has
+                 * a concrete datapath in_port in its key
+                 * (flow->in_port.odp_port).  If that ingress can no longer
+                 * be resolved -- e.g. the underlying port has been deleted,
+                 * or the tunnel removed -- then this megaflow is unreachable
+                 * (no future packet can match a non-existent ingress) and
+                 * must be evicted.  Mirror the xport_lookup logic below so
+                 * tunnel arrivals are handled the same way, and fall through
+                 * to xport_lookup when the ingress is gone so we return
+                 * NULL/ENODEV.
+                 *
+                 * ODPP_NONE means there is no datapath ingress at all
+                 * (legitimate for controller-originated packet-outs); skip
+                 * the check there. */
+                if (flow->in_port.odp_port != ODPP_NONE) {
+                    const struct ofport_dpif *ingress;
+                    bool tnl_receive;
+
+                    tnl_receive = !(flow->tunnel.flags & FLOW_TNL_F_EXPLICIT)
+                                  && tnl_port_should_receive(flow);
+                    ingress = tnl_receive
+                              ? tnl_port_receive(flow)
+                              : odp_port_to_ofport(backer,
+                                                   flow->in_port.odp_port);
+                    if (!ingress) {
+                        goto xport_lookup;
+                    }
+                }
+
                 if (errorp) {
                     *errorp = NULL;
                 }

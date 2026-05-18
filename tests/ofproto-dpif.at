@@ -9010,6 +9010,62 @@ packets:2, bytes:68, used:0.001s, actions:drop
 OVS_VSWITCHD_STOP(["/sending to collector failed/d"])
 AT_CLEANUP
 
+dnl Reproducer for stale recirculated megaflows that survive port deletion
+dnl when the OpenFlow pipeline clears in_port (load:0xffff->NXM_OF_IN_PORT[])
+dnl before triggering a freeze with ct(table=N).  This is the exact pattern
+dnl OVN uses at logical-datapath crossings, and the resulting frozen state
+dnl with metadata.in_port == OFPP_NONE makes xlate_lookup_ofproto_() bypass
+dnl any validation of the datapath in_port that the megaflow keys on, so the
+dnl megaflow is revalidated as UKEY_KEEP for max-idle even
+dnl though the underlying port is gone.
+AT_SETUP([ofproto-dpif - stale recirc megaflow after in_port deletion (OFPP_NONE frozen in_port)])
+AT_KEYWORDS([megaflow revalidator recirc])
+OVS_VSWITCHD_START
+add_of_ports br0 1 2 3
+
+dnl Pipeline mirrors OVN's logical-datapath-crossing pattern:
+dnl   table=0: receive on p3, clear OF in_port, then ct(table=1) which freezes
+dnl   table=1: post-recirc, output to p2
+AT_DATA([flows.txt], [dnl
+table=0,in_port=3,tcp actions=load:0xffff->NXM_OF_IN_PORT[[]],ct(zone=1,table=1)
+table=1,tcp,ct_state=+trk actions=output:2
+])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+dnl Send a packet to install both the recirc_id=0 and the recirc_id=0x1 ukeys.
+AT_CHECK([ovs-appctl netdev-dummy/receive p3 \
+  'in_port(3),eth(src=50:54:00:00:00:08,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=192.168.0.2,dst=192.168.0.1,proto=6,tos=0,ttl=64,frag=no),tcp(src=1234,dst=80)'])
+
+dnl Sanity: both the pre-CT (recirc_id=0,in_port=3) and the post-CT
+dnl (recirc_id=0x1,in_port=3) megaflows must be installed.  Use
+dnl OVS_WAIT_UNTIL so the test does not depend on revalidator exec speed.
+OVS_WAIT_UNTIL([test $(ovs-appctl dpctl/dump-flows | dnl
+  grep -c 'recirc_id(0),in_port(3)') -eq 1], [ovs-appctl dpctl/dump-flows])
+OVS_WAIT_UNTIL([test $(ovs-appctl dpctl/dump-flows | dnl
+  grep -c 'recirc_id(0x1),in_port(3)') -eq 1], [ovs-appctl dpctl/dump-flows])
+
+dnl Delete the ingress port.  This triggers REV_RECONFIGURE, after which
+dnl the revalidator must drop any datapath megaflows that key on the
+dnl now-deleted port.
+
+AT_CHECK([ovs-vsctl del-port br0 p3])
+
+dnl The recirc_id=0 flow is correctly deleted (no frozen state involved).
+OVS_WAIT_UNTIL([test $(ovs-appctl dpctl/dump-flows | dnl
+  grep -c 'recirc_id(0),in_port(3)') -eq 0], [ovs-appctl dpctl/dump-flows])
+
+dnl The recirc_id>0 megaflow MUST also be deleted: its datapath key is
+dnl in_port(3) which no longer exists.  Without the fix this wait times
+dnl out, because xlate_lookup_ofproto_() takes the frozen-in_port=OFPP_NONE
+dnl shortcut and returns SUCCESS without verifying the datapath in_port,
+dnl so revalidate_ukey__() decides UKEY_KEEP and the megaflow only goes
+dnl away when max-idle fires.
+OVS_WAIT_UNTIL([test $(ovs-appctl dpctl/dump-flows | dnl
+  grep -c 'recirc_id(0x1),in_port(3)') -eq 0], [ovs-appctl dpctl/dump-flows])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 dnl Bridge IPFIX statistics check
 AT_SETUP([ofproto-dpif - Bridge IPFIX statistics check])
 OVS_VSWITCHD_START
