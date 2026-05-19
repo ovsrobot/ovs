@@ -2480,6 +2480,7 @@ ctl_parse_commands(int argc, char *argv[], struct shash *local_options,
 
                 n_commands++;
             } else if (!shash_is_empty(local_options)) {
+                free(commands);
                 return xstrdup("missing command name (use --help for help)");
             }
             start = i + 1;
