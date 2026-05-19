@@ -6113,9 +6113,15 @@ xlate_sample_action(struct xlate_ctx *ctx,
  *
  * Openflow actions that do not emit datapath actions are trivially
  * reversible. Reversiblity of other actions depends on nature of
- * action and their translation.  */
+ * action and their translation.
+ *
+ * if conntracked is true, actions that indirectly run other OF actions
+ * (resubmit, goto_table, group, nested clone) are treated as non-reversible
+ * since they may reach a ct_clear/ct/nat that would mutate the original
+ * tracked packet. */
 static bool
-reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
+reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+                   bool conntracked)
 {
     const struct ofpact *a;
 
@@ -6123,7 +6129,6 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         switch (a->type) {
         case OFPACT_BUNDLE:
         case OFPACT_CLEAR_ACTIONS:
-        case OFPACT_CLONE:
         case OFPACT_CONJUNCTION:
         case OFPACT_CONTROLLER:
         case OFPACT_DEBUG_RECIRC:
@@ -6133,8 +6138,6 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_ENQUEUE:
         case OFPACT_EXIT:
         case OFPACT_FIN_TIMEOUT:
-        case OFPACT_GOTO_TABLE:
-        case OFPACT_GROUP:
         case OFPACT_LEARN:
         case OFPACT_MULTIPATH:
         case OFPACT_NOTE:
@@ -6145,7 +6148,6 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_PUSH_MPLS:
         case OFPACT_PUSH_VLAN:
         case OFPACT_REG_MOVE:
-        case OFPACT_RESUBMIT:
         case OFPACT_SAMPLE:
         case OFPACT_SET_ETH_DST:
         case OFPACT_SET_ETH_SRC:
@@ -6174,6 +6176,15 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_DELETE_FIELD:
             break;
 
+        case OFPACT_CLONE:
+        case OFPACT_GOTO_TABLE:
+        case OFPACT_GROUP:
+        case OFPACT_RESUBMIT:
+            if (conntracked) {
+                return false;
+            }
+            break;
+
         case OFPACT_CT:
         case OFPACT_CT_CLEAR:
         case OFPACT_METER:
@@ -6198,7 +6209,8 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
 
     retained_state = xretain_state_save(ctx);
 
-    if (reversible_actions(actions, actions_len) || is_last_action) {
+    if (reversible_actions(actions, actions_len, ctx->conntracked)
+        || is_last_action) {
         do_xlate_actions(actions, actions_len, ctx, is_last_action, false);
         if (!ctx->freezing) {
             xlate_action_set(ctx);

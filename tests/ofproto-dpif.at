@@ -9322,6 +9322,27 @@ Datapath actions: ct,recirc(X)
 Datapath actions: clone(ct_clear,2),ct_clear,3
 ])
 
+dnl On a tracked packet, a resubmit/goto_table/group/nested-clone inside
+dnl clone() may reach a ct_clear in another table.  Such an inner ct_clear
+dnl must be emitted inside a datapath clone() wrapper so it cannot mutate
+dnl the original packet, and the outer ct_clear must still take effect.
+AT_DATA([flows.txt], [dnl
+table=0,in_port=1,ip,actions=ct(table=1)
+table=1,ct_state=+trk,ip,actions=clone(resubmit(,10)),ct_clear,resubmit(,20)
+table=10,ip,actions=ct_clear,output:2
+table=20,ct_state=+trk,ip,actions=drop
+table=20,priority=10,ip,actions=output:3
+])
+AT_CHECK([ovs-ofctl del-flows br0])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt], [0], [ignore])
+
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.10.10.2,dst=10.10.10.1,proto=1,tos=0,ttl=64,frag=no),icmp(type=8,code=0)'], [0], [stdout])
+
+AT_CHECK([grep Datapath stdout | sed 's/recirc(.*)/recirc(X)/'], [0], [dnl
+Datapath actions: ct,recirc(X)
+Datapath actions: clone(ct_clear,2),ct_clear,3
+])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
