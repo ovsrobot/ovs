@@ -157,6 +157,8 @@ detect_ftp_ctl_type(const struct conn_lookup_ctx *ctx,
 
 static void
 expectation_clean(struct conntrack *ct, const struct conn_key *parent_key);
+static void
+expectation_flush(struct conntrack *ct) OVS_REQUIRES(ct->resources_lock);
 
 static struct ct_l4_proto *l4_protos[UINT8_MAX + 1];
 
@@ -647,6 +649,7 @@ conntrack_destroy(struct conntrack *ct)
 
     ovs_mutex_lock(&ct->ct_lock);
 
+    conntrack_flush(ct, NULL);
     for (unsigned i = 0; i < ARRAY_SIZE(ct->conns); i++) {
         cmap_destroy(&ct->conns[i]);
     }
@@ -657,6 +660,7 @@ conntrack_destroy(struct conntrack *ct)
     ovs_mutex_destroy(&ct->ct_lock);
 
     ovs_mutex_lock(&ct->resources_lock);
+    expectation_flush(ct);
     cmap_destroy(&ct->alg_expectations);
     hindex_destroy(&ct->alg_expectation_refs);
     ovs_mutex_unlock(&ct->resources_lock);
@@ -3167,6 +3171,18 @@ expectation_ref_create(struct hindex *alg_expectation_refs,
                                        &alg_exp_node->key, basis)) {
         hindex_insert(alg_expectation_refs, &alg_exp_node->node_ref,
                       conn_key_hash(&alg_exp_node->parent_key, basis));
+    }
+}
+
+static void
+expectation_flush(struct conntrack *ct)
+{
+    struct alg_exp_node *node;
+    HINDEX_FOR_EACH_SAFE (node, node_ref, &ct->alg_expectation_refs) {
+        expectation_remove(&ct->alg_expectations, &node->key,
+                           ct->hash_basis);
+        hindex_remove(&ct->alg_expectation_refs, &node->node_ref);
+        ovsrcu_postpone(free, node);
     }
 }
 
