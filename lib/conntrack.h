@@ -106,10 +106,7 @@ void conntrack_clear(struct dp_packet *packet);
 struct conntrack_dump {
     struct conntrack *ct;
     unsigned bucket;
-    union {
-        struct hmap_position hmap_pos;
-        struct cmap_cursor cursor;
-    };
+    struct cmap_cursor cursor;
     bool filter_zone;
     uint16_t zone;
     uint16_t current_zone;
