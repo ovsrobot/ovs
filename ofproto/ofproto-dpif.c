@@ -2812,12 +2812,21 @@ set_rstp(struct ofproto *ofproto_, const struct ofproto_rstp_settings *s)
         rstp_set_bridge_transmit_hold_count(ofproto->rstp,
                                             s->transmit_hold_count);
     } else {
+        struct ofbundle *bundle;
         struct ofport *ofport;
+
         HMAP_FOR_EACH (ofport, hmap_node, &ofproto->up.ports) {
             set_rstp_port(ofport, NULL);
         }
         rstp_unref(ofproto->rstp);
         ofproto->rstp = NULL;
+
+        /* During processing above, RSTP state machine may have incorrectly
+         * recalculated the floodable state, due to a transition.  Recalculate
+         * the bundle floodable flag now that RSTP states are quiet. */
+        HMAP_FOR_EACH (bundle, hmap_node, &ofproto->bundles) {
+            bundle_update(bundle);
+        }
     }
 }
 
@@ -2964,6 +2973,13 @@ set_stp(struct ofproto *ofproto_, const struct ofproto_stp_settings *s)
 
         stp_unref(ofproto->stp);
         ofproto->stp = NULL;
+
+        /* During processing above, STP state machine may have incorrectly
+         * recalculated the floodable state, due to a transition.  Recalculate
+         * the bundle floodable flag now that STP states are quiet. */
+        HMAP_FOR_EACH (bundle, hmap_node, &ofproto->bundles) {
+            bundle_update(bundle);
+        }
     }
 
     return 0;
