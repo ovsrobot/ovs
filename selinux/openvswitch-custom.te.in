@@ -39,6 +39,8 @@ require {
         type svirt_tmpfs_t;
         type vfio_device_t;
         type zero_device_t;
+        type container_file_t;
+        type container_t;
 @end_dpdk@
 
         class capability { dac_override audit_write net_broadcast net_raw };
@@ -108,6 +110,9 @@ allow openvswitch_t svirt_tmpfs_t:sock_file { read write append getattr open };
 allow openvswitch_t svirt_t:unix_stream_socket { connectto read write getattr sendto recvfrom setopt };
 allow openvswitch_t vfio_device_t:chr_file { read write open ioctl getattr };
 allow openvswitch_t zero_device_t:chr_file { read open getattr map };
+allow openvswitch_t container_file_t:dir { search };
+allow openvswitch_t container_file_t:sock_file { read write append getattr open };
+allow openvswitch_t container_t:unix_stream_socket { connectto read write getattr sendto recvfrom setopt };
 @end_dpdk@
 
 #============= Transition allows =============
