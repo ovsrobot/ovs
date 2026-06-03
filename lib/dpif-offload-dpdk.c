@@ -786,10 +786,7 @@ static bool
 dpdk_can_offload(struct dpif_offload *offload OVS_UNUSED,
                  struct netdev *netdev)
 {
-    if (netdev_vport_is_vport_class(netdev->netdev_class)
-        && strcmp(netdev_get_dpif_type(netdev), "netdev")) {
-        VLOG_DBG("%s: vport doesn't belong to the netdev datapath, skipping",
-                 netdev_get_name(netdev));
+    if (netdev_vport_is_vport_class(netdev->netdev_class)) {
         return false;
     }
 
@@ -830,17 +827,6 @@ dpdk_flow_count_by_thread(struct dpdk_offload *offload, unsigned int tid)
     }
 
     return total;
-}
-
-static int
-dpdk_offload_hw_post_process(const struct dpif_offload *offload_,
-                             struct netdev *netdev, unsigned pmd_id,
-                             struct dp_packet *packet, void **flow_reference)
-{
-    struct dpdk_offload *offload = dpdk_offload_cast(offload_);
-
-    return dpdk_netdev_hw_miss_packet_recover(offload, netdev, pmd_id, packet,
-                                              flow_reference);
 }
 
 static int
@@ -1043,7 +1029,6 @@ struct dpif_offload_class dpif_offload_dpdk_class = {
     .port_del = dpdk_offload_port_del,
     .flow_count = dpdk_flow_count,
     .get_netdev = dpdk_offload_get_netdev__,
-    .netdev_hw_post_process = dpdk_offload_hw_post_process,
     .netdev_flow_put = dpdk_flow_put,
     .netdev_flow_del = dpdk_flow_del,
     .netdev_flow_stats = dpdk_flow_stats,

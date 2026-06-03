@@ -44,9 +44,6 @@ int dpdk_netdev_flow_flush(struct dpdk_offload *, struct netdev *);
 uint64_t dpdk_netdev_flow_count(struct netdev *,
                                 unsigned int offload_thread_count);
 uint64_t dpdk_netdev_flow_count_by_thread(struct netdev *, unsigned int tid);
-int dpdk_netdev_hw_miss_packet_recover(struct dpdk_offload *, struct netdev *,
-                                       unsigned pmd_id, struct dp_packet *,
-                                       void **flow_reference);
 int dpdk_netdev_flow_put(struct dpdk_offload *, unsigned pmd_id,
                          void *flow_reference, struct netdev *, struct match *,
                          struct nlattr *actions, size_t actions_len,
