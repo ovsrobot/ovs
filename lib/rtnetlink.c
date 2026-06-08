@@ -91,6 +91,7 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
 
     change->irrelevant = false;
     change->nsid = NETNSID_UNSET;
+    change->stats_present = RTNL_LINK_NO_STATS;
 
     if (rtnetlink_type_is_rtnlgrp_link(nlmsg->nlmsg_type)) {
         /* Policy for RTNLGRP_LINK messages.
@@ -104,6 +105,8 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
             [IFLA_ADDRESS] = { .type = NL_A_UNSPEC, .optional = true },
             [IFLA_LINKINFO] = { .type = NL_A_NESTED, .optional = true },
             [IFLA_WIRELESS] = { .type = NL_A_UNSPEC, .optional = true },
+            [IFLA_STATS] = { .type = NL_A_UNSPEC, .optional = true },
+            [IFLA_STATS64] = { .type = NL_A_UNSPEC, .optional = true },
         };
 
         struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -158,6 +161,19 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
             } else {
                 change->primary = NULL;
                 change->sub = NULL;
+            }
+
+            if (change->stats64 && attrs[IFLA_STATS64] &&
+                nl_attr_get_size(attrs[IFLA_STATS64]) >=
+                                 sizeof *change->stats64) {
+                memcpy(change->stats64, nl_attr_get(attrs[IFLA_STATS64]),
+                       sizeof *change->stats64);
+                change->stats_present = RTNL_LINK_STATS64;
+            } else if (change->stats && attrs[IFLA_STATS] &&
+                nl_attr_get_size(attrs[IFLA_STATS]) >= sizeof *change->stats) {
+                memcpy(change->stats, nl_attr_get(attrs[IFLA_STATS]),
+                       sizeof *change->stats);
+                change->stats_present = RTNL_LINK_STATS;
             }
         }
     } else if (rtnetlink_type_is_rtnlgrp_addr(nlmsg->nlmsg_type)) {
