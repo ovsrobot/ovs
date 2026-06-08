@@ -265,6 +265,7 @@ enum {
     VALID_DRVINFO           = 1 << 6,
     VALID_FEATURES          = 1 << 7,
     VALID_NUMA_ID           = 1 << 8,
+    VALID_FLAGS             = 1 << 9,
 };
 
 /* Linux 4.4 introduced the ability to skip the internal stats gathering
@@ -833,7 +834,7 @@ netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
 
                 ovs_mutex_lock(&netdev->mutex);
                 netdev_linux_update_via_ioctl(netdev);
-                netdev_linux_changed(netdev, 0);
+                netdev_linux_changed(netdev, VALID_FLAGS);
                 ovs_mutex_unlock(&netdev->mutex);
 
                 netdev_close(netdev_);
@@ -908,6 +909,7 @@ netdev_linux_update__(struct netdev_linux *dev,
 
             dev->ifindex = change->if_index;
             dev->cache_valid |= VALID_IFINDEX;
+            dev->cache_valid |= VALID_FLAGS;
             dev->get_ifindex_error = 0;
             dev->present = true;
         } else {
@@ -3881,7 +3883,10 @@ netdev_linux_update_via_ioctl(struct netdev_linux *netdev)
     int error;
 
     error = get_flags(&netdev->up, &ifi_flags);
-    netdev_linux_set_flags(netdev, ifi_flags);
+    if (!error) {
+        netdev_linux_set_flags(netdev, ifi_flags);
+        netdev->cache_valid |= VALID_FLAGS;
+    }
     return error;
 }
 
@@ -3902,7 +3907,8 @@ netdev_linux_update_flags(struct netdev *netdev_, enum netdev_flags off,
         error = modify_flags(netdev, off, on, old_flagsp);
     } else {
         /* Try reading flags over netlink, or fall back to ioctl. */
-        if (netdev_linux_update_via_netlink(netdev)) {
+        if (!(netdev->cache_valid & VALID_FLAGS) &&
+            netdev_linux_update_via_netlink(netdev)) {
             error = netdev_linux_update_via_ioctl(netdev);
         }
         *old_flagsp = iff_to_nd_flags(netdev->ifi_flags);
@@ -6969,6 +6975,8 @@ netdev_linux_update_via_netlink(struct netdev_linux *netdev)
             netdev->ifi_flags = change->ifi_flags;
             changed = true;
         }
+        netdev->cache_valid |= VALID_FLAGS;
+
         if (change->mtu && change->mtu != netdev->mtu) {
             netdev->mtu = change->mtu;
             netdev->cache_valid |= VALID_MTU;
