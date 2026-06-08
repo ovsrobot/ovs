@@ -16,6 +16,7 @@
 
 #include <config.h>
 #include "if-notifier.h"
+#include "netnsid.h"
 #include "rtnetlink.h"
 #include "util.h"
 
@@ -30,7 +31,7 @@ if_notifier_cb(const struct rtnetlink_change *change, void *aux)
 {
     struct if_notifier *notifier;
 
-    if (change && change->irrelevant) {
+    if (change && (change->irrelevant || change->nsid != NETNSID_LOCAL)) {
         return;
     }
 

@@ -24,6 +24,7 @@
 
 #include "netlink.h"
 #include "netlink-notifier.h"
+#include "netnsid.h"
 #include "openvswitch/ofpbuf.h"
 #include "packets.h"
 
@@ -89,6 +90,7 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
     bool parsed = false;
 
     change->irrelevant = false;
+    change->nsid = NETNSID_UNSET;
 
     if (rtnetlink_type_is_rtnlgrp_link(nlmsg->nlmsg_type)) {
         /* Policy for RTNLGRP_LINK messages.
@@ -190,9 +192,14 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
 
 /* Return RTNLGRP_LINK on success, 0 on parse error. */
 static int
-rtnetlink_parse_cb(struct ofpbuf *buf, void *change)
+rtnetlink_parse_cb(struct ofpbuf *buf, int nsid, void *change)
 {
-    return rtnetlink_parse(buf, change) ? RTNLGRP_LINK : 0;
+    bool ret = rtnetlink_parse(buf, change);
+    if (ret) {
+        ((struct rtnetlink_change *) change)->nsid = nsid;
+        return RTNLGRP_LINK;
+    }
+    return 0;
 }
 
 /* Registers 'cb' to be called with auxiliary data 'aux' with network device
@@ -210,7 +217,8 @@ struct nln_notifier *
 rtnetlink_notifier_create(rtnetlink_notify_func *cb, void *aux)
 {
     if (!nln) {
-        nln = nln_create(NETLINK_ROUTE, rtnetlink_parse_cb, &rtn_change);
+        nln = nln_create(NETLINK_ROUTE, false, rtnetlink_parse_cb,
+                         &rtn_change);
     }
 
     return nln_notifier_create(nln, RTNLGRP_LINK, (nln_notify_func *) cb, aux);

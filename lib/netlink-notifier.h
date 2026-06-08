@@ -37,11 +37,13 @@ typedef void nln_notify_func(const void *change, void *aux);
 
 /* Function called to parse incoming nln notifications.  The 'buf' message
  * should be parsed into 'change' as specified in nln_create().
+ * 'nsid` is the network namespace id from which the netlink event came from.
  * Returns the multicast_group the change belongs to, or 0 for a parse error.
  */
-typedef int nln_parse_func(struct ofpbuf *buf, void *change);
+typedef int nln_parse_func(struct ofpbuf *buf, int nsid, void *change);
 
-struct nln *nln_create(int protocol, nln_parse_func *, void *change);
+struct nln *nln_create(int protocol, bool all_netns, nln_parse_func *,
+                       void *change);
 void nln_destroy(struct nln *);
 struct nln_notifier *nln_notifier_create(struct nln *, int multicast_group,
                                          nln_notify_func *, void *aux);
