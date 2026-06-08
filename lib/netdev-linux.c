@@ -564,8 +564,12 @@ static int netdev_linux_do_ethtool(const char *name, struct ethtool_cmd *,
                                    int cmd, const char *cmd_name);
 static int get_flags(const struct netdev *, unsigned int *flags);
 static int set_flags(const char *, unsigned int flags);
-static int update_flags(struct netdev_linux *netdev, enum netdev_flags off,
+static int netdev_linux_update_via_ioctl(struct netdev_linux *);
+static int modify_flags(struct netdev_linux *netdev, enum netdev_flags off,
                         enum netdev_flags on, enum netdev_flags *old_flagsp)
+    OVS_REQUIRES(netdev->mutex);
+static void netdev_linux_set_flags(struct netdev_linux *netdev,
+                                  unsigned int ifi_flags)
     OVS_REQUIRES(netdev->mutex);
 static int get_ifindex(const struct netdev *, int *ifindexp);
 static int do_set_addr(struct netdev *netdev,
@@ -643,7 +647,7 @@ static void netdev_linux_update(struct netdev_linux *netdev, int,
                                 const struct rtnetlink_change *)
     OVS_REQUIRES(netdev->mutex);
 static void netdev_linux_changed(struct netdev_linux *netdev,
-                                 unsigned int ifi_flags, unsigned int mask)
+                                 unsigned int mask)
     OVS_REQUIRES(netdev->mutex);
 
 /* Returns a NETLINK_ROUTE socket listening for RTNLGRP_LINK,
@@ -826,11 +830,10 @@ netdev_linux_run(const struct netdev_class *netdev_class OVS_UNUSED)
             SHASH_FOR_EACH (node, &device_shash) {
                 struct netdev *netdev_ = node->data;
                 struct netdev_linux *netdev = netdev_linux_cast(netdev_);
-                unsigned int flags;
 
                 ovs_mutex_lock(&netdev->mutex);
-                get_flags(netdev_, &flags);
-                netdev_linux_changed(netdev, flags, 0);
+                netdev_linux_update_via_ioctl(netdev);
+                netdev_linux_changed(netdev, 0);
                 ovs_mutex_unlock(&netdev->mutex);
 
                 netdev_close(netdev_);
@@ -860,16 +863,10 @@ netdev_linux_wait(const struct netdev_class *netdev_class OVS_UNUSED)
 }
 
 static void
-netdev_linux_changed(struct netdev_linux *dev,
-                     unsigned int ifi_flags, unsigned int mask)
+netdev_linux_changed(struct netdev_linux *dev, unsigned int mask)
     OVS_REQUIRES(dev->mutex)
 {
     netdev_change_seq_changed(&dev->up);
-
-    if ((dev->ifi_flags ^ ifi_flags) & IFF_RUNNING) {
-        dev->carrier_resets++;
-    }
-    dev->ifi_flags = ifi_flags;
 
     dev->cache_valid &= mask;
     if (!(mask & VALID_IN)) {
@@ -885,7 +882,8 @@ netdev_linux_update__(struct netdev_linux *dev,
     if (rtnetlink_type_is_rtnlgrp_link(change->nlmsg_type)) {
         if (change->nlmsg_type == RTM_NEWLINK) {
             /* Keep drv-info, ip addresses, and NUMA id. */
-            netdev_linux_changed(dev, change->ifi_flags,
+            netdev_linux_set_flags(dev, change->ifi_flags);
+            netdev_linux_changed(dev,
                                  VALID_DRVINFO | VALID_IN | VALID_NUMA_ID);
 
             /* Update netdev from rtnl-change msg. */
@@ -914,13 +912,14 @@ netdev_linux_update__(struct netdev_linux *dev,
             dev->present = true;
         } else {
             /* FIXME */
-            netdev_linux_changed(dev, change->ifi_flags, 0);
+            netdev_linux_set_flags(dev, change->ifi_flags);
+            netdev_linux_changed(dev, 0);
             dev->present = false;
             netnsid_unset(&dev->netnsid);
         }
     } else if (rtnetlink_type_is_rtnlgrp_addr(change->nlmsg_type)) {
         /* Invalidates in4, in6. */
-        netdev_linux_changed(dev, dev->ifi_flags, ~VALID_IN);
+        netdev_linux_changed(dev, ~VALID_IN);
     } else {
         OVS_NOT_REACHED();
     }
@@ -991,7 +990,7 @@ netdev_linux_construct(struct netdev *netdev_)
         netdev_linux_set_ol(netdev_);
     }
 
-    error = get_flags(&netdev->up, &netdev->ifi_flags);
+    error = netdev_linux_update_via_ioctl(netdev);
     if (error == ENODEV) {
         if (netdev->up.netdev_class != &netdev_internal_class) {
             /* The device does not exist, so don't allow it to be opened. */
@@ -1038,7 +1037,7 @@ netdev_linux_construct_tap(struct netdev *netdev_)
     }
 
     /* Create tap device. */
-    get_flags(&netdev->up, &netdev->ifi_flags);
+    netdev_linux_update_via_ioctl(netdev);
 
     if (ovsthread_once_start(&once)) {
         if (ioctl(netdev->tap_fd, TUNGETFEATURES, &up) == -1) {
@@ -1907,7 +1906,7 @@ netdev_linux_set_etheraddr(struct netdev *netdev_, const struct eth_addr mac)
 
     /* Tap devices must be brought down before setting the address. */
     if (is_tap_netdev(netdev_)) {
-        update_flags(netdev, NETDEV_UP, 0, &old_flags);
+        modify_flags(netdev, NETDEV_UP, 0, &old_flags);
     }
     error = set_etheraddr(netdev_get_name(netdev_), mac);
     if (!error || error == ENODEV) {
@@ -1919,7 +1918,7 @@ netdev_linux_set_etheraddr(struct netdev *netdev_, const struct eth_addr mac)
     }
 
     if (is_tap_netdev(netdev_) && old_flags & NETDEV_UP) {
-        update_flags(netdev, 0, NETDEV_UP, &old_flags);
+        modify_flags(netdev, 0, NETDEV_UP, &old_flags);
     }
 
 exit:
@@ -2195,7 +2194,7 @@ netdev_linux_miimon_run(void)
             netdev_linux_get_miimon(dev->up.name, &miimon);
             if (miimon != dev->miimon) {
                 dev->miimon = miimon;
-                netdev_linux_changed(dev, dev->ifi_flags, 0);
+                netdev_linux_changed(dev, 0);
             }
 
             timer_set_duration(&dev->miimon_timer, dev->miimon_interval);
@@ -3846,7 +3845,7 @@ iff_to_nd_flags(unsigned int iff)
 }
 
 static int
-update_flags(struct netdev_linux *netdev, enum netdev_flags off,
+modify_flags(struct netdev_linux *netdev, enum netdev_flags off,
              enum netdev_flags on, enum netdev_flags *old_flagsp)
     OVS_REQUIRES(netdev->mutex)
 {
@@ -3858,9 +3857,31 @@ update_flags(struct netdev_linux *netdev, enum netdev_flags off,
     new_flags = (old_flags & ~nd_to_iff_flags(off)) | nd_to_iff_flags(on);
     if (new_flags != old_flags) {
         error = set_flags(netdev_get_name(&netdev->up), new_flags);
-        get_flags(&netdev->up, &netdev->ifi_flags);
+        netdev_linux_update_via_ioctl(netdev);
     }
 
+    return error;
+}
+
+static void
+netdev_linux_set_flags(struct netdev_linux *netdev, unsigned int ifi_flags)
+    OVS_REQUIRES(netdev->mutex)
+{
+    if ((netdev->ifi_flags ^ ifi_flags) & IFF_RUNNING) {
+        netdev->carrier_resets++;
+    }
+    netdev->ifi_flags = ifi_flags;
+}
+
+static int
+netdev_linux_update_via_ioctl(struct netdev_linux *netdev)
+    OVS_REQUIRES(netdev->mutex)
+{
+    unsigned int ifi_flags;
+    int error;
+
+    error = get_flags(&netdev->up, &ifi_flags);
+    netdev_linux_set_flags(netdev, ifi_flags);
     return error;
 }
 
@@ -3878,14 +3899,13 @@ netdev_linux_update_flags(struct netdev *netdev_, enum netdev_flags off,
             error = EOPNOTSUPP;
             goto exit;
         }
-        error = update_flags(netdev, off, on, old_flagsp);
+        error = modify_flags(netdev, off, on, old_flagsp);
     } else {
         /* Try reading flags over netlink, or fall back to ioctl. */
-        if (!netdev_linux_update_via_netlink(netdev)) {
-            *old_flagsp = iff_to_nd_flags(netdev->ifi_flags);
-        } else {
-            error = update_flags(netdev, off, on, old_flagsp);
+        if (netdev_linux_update_via_netlink(netdev)) {
+            error = netdev_linux_update_via_ioctl(netdev);
         }
+        *old_flagsp = iff_to_nd_flags(netdev->ifi_flags);
     }
 
 exit:
