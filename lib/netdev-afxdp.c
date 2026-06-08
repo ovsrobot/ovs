@@ -1254,7 +1254,7 @@ netdev_afxdp_get_stats(const struct netdev *netdev,
 
     ovs_mutex_lock(&dev->mutex);
 
-    error = get_stats_via_netlink(netdev, &dev_stats);
+    error = get_stats_via_netlink(dev, &dev_stats);
     if (error) {
         VLOG_WARN_RL(&rl, "%s: Error getting AF_XDP statistics.",
                      netdev_get_name(netdev));
