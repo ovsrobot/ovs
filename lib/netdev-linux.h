@@ -25,6 +25,7 @@
  * Linux-specific code. */
 
 struct netdev;
+struct rtnetlink_change;
 
 int netdev_linux_ethtool_set_flag(struct netdev *netdev, uint32_t flag,
                                   const char *flag_name, bool enable);

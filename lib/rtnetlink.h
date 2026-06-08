@@ -76,4 +76,5 @@ void rtnetlink_notifier_destroy(struct nln_notifier *);
 void rtnetlink_run(void);
 void rtnetlink_wait(void);
 void rtnetlink_report_link(void);
+int rtnetlink_parse_cb(struct ofpbuf *buf, int nsid, void *change);
 #endif /* rtnetlink.h */
