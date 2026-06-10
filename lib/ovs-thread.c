@@ -632,14 +632,31 @@ count_cpu_cores__(void)
     n_cores = sysconf(_SC_NPROCESSORS_ONLN);
 #ifdef __linux__
     if (n_cores > 0) {
-        cpu_set_t *set = CPU_ALLOC(n_cores);
+        long int n_conf = sysconf(_SC_NPROCESSORS_CONF);
+        size_t n_alloc = MAX(n_cores, n_conf);
+        size_t max_n_alloc = MAX(n_alloc, 1 << 18);
+        int error = EINVAL;
 
-        if (set) {
-            size_t size = CPU_ALLOC_SIZE(n_cores);
+        /* sched_getaffinity() returns EINVAL when 'size' is smaller than the
+         * kernel affinity mask.  This can happen when the possible CPU range
+         * exceeds the CPU count reported by sysconf(). */
+        while (error == EINVAL && n_alloc <= max_n_alloc) {
+            size_t size = CPU_ALLOC_SIZE(n_alloc);
+            cpu_set_t *set = CPU_ALLOC(n_alloc);
 
+            if (!set) {
+                break;
+            }
+
+            CPU_ZERO_S(size, set);
             if (!sched_getaffinity(0, size, set)) {
                 n_cores = CPU_COUNT_S(size, set);
+                CPU_FREE(set);
+                break;
             }
+
+            error = errno;
+            n_alloc *= 2;
             CPU_FREE(set);
         }
     }
