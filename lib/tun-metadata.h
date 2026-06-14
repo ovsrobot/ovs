@@ -22,8 +22,13 @@
 #include "openvswitch/dynamic-string.h"
 #include "netlink.h"
 #include "openvswitch/ofpbuf.h"
+#include "openvswitch/ofp-errors.h"
 #include "openflow/openflow.h"
 #include "openvswitch/tun-metadata.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct flow_tnl;
 struct match;
@@ -76,5 +81,9 @@ int tun_metadata_to_geneve_header(const struct flow_tnl *flow,
 void tun_metadata_to_nx_match(struct ofpbuf *b, enum ofp_version oxm,
                               const struct match *);
 void tun_metadata_match_format(struct ds *, const struct match *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* tun-metadata.h */
