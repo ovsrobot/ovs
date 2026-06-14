@@ -34,6 +34,10 @@
 #include "util.h"
 #include "timeval.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct dp_packet;
 struct conn;
 struct ds;
@@ -367,7 +371,8 @@ void add_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse,
  *
  */
 #define ETH_ADDR_FMT                                                    \
-    "%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8
+    "%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ":"                           \
+    "%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8
 #define ETH_ADDR_ARGS(EA) ETH_ADDR_BYTES_ARGS((EA).ea)
 #define ETH_ADDR_BYTES_ARGS(EAB) \
          (EAB)[0], (EAB)[1], (EAB)[2], (EAB)[3], (EAB)[4], (EAB)[5]
@@ -381,8 +386,8 @@ void add_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse,
  *
  */
 #define ETH_ADDR64_FMT \
-    "%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8":" \
-    "%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8
+    "%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ":" \
+    "%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8
 #define ETH_ADDR64_ARGS(EA) ETH_ADDR64_BYTES_ARGS((EA).ea64)
 #define ETH_ADDR64_BYTES_ARGS(EAB) \
          (EAB)[0], (EAB)[1], (EAB)[2], (EAB)[3], \
@@ -400,7 +405,8 @@ void add_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse,
  *     ...
  * }
  */
-#define ETH_ADDR_SCAN_FMT "%"SCNx8":%"SCNx8":%"SCNx8":%"SCNx8":%"SCNx8":%"SCNx8
+#define ETH_ADDR_SCAN_FMT "%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":" \
+                          "%" SCNx8 ":%" SCNx8
 #define ETH_ADDR_SCAN_ARGS(EA) \
     &(EA).ea[0], &(EA).ea[1], &(EA).ea[2], &(EA).ea[3], &(EA).ea[4], &(EA).ea[5]
 
@@ -625,7 +631,7 @@ mpls_lse_to_bos(ovs_be32 mpls_lse)
     return (mpls_lse & htonl(MPLS_BOS_MASK)) != 0;
 }
 
-#define IP_FMT "%"PRIu32".%"PRIu32".%"PRIu32".%"PRIu32
+#define IP_FMT "%" PRIu32 ".%" PRIu32 ".%" PRIu32 ".%" PRIu32
 #define IP_ARGS(ip)                             \
     ntohl(ip) >> 24,                            \
     (ntohl(ip) >> 16) & 0xff,                   \
@@ -642,15 +648,16 @@ mpls_lse_to_bos(ovs_be32 mpls_lse)
  *     ...
  * }
  */
-#define IP_SCAN_FMT "%"SCNu8".%"SCNu8".%"SCNu8".%"SCNu8
+#define IP_SCAN_FMT "%" SCNu8 ".%" SCNu8 ".%" SCNu8 ".%" SCNu8
 #define IP_SCAN_ARGS(ip)                                    \
         ((void) (ovs_be32) *(ip), &((uint8_t *) ip)[0]),    \
         &((uint8_t *) ip)[1],                               \
         &((uint8_t *) ip)[2],                               \
         &((uint8_t *) ip)[3]
 
-#define IP_PORT_SCAN_FMT "%"SCNu8".%"SCNu8".%"SCNu8".%"SCNu8":%"SCNu16
-#define IP_PORT_SCAN_ARGS(ip, port)                                    \
+#define IP_PORT_SCAN_FMT "%" SCNu8 ".%" SCNu8 ".%" SCNu8 ".%" SCNu8 \
+                        ":%" SCNu16
+#define IP_PORT_SCAN_ARGS(ip, port)                         \
         ((void) (ovs_be32) *(ip), &((uint8_t *) ip)[0]),    \
         &((uint8_t *) ip)[1],                               \
         &((uint8_t *) ip)[2],                               \
@@ -1728,5 +1735,9 @@ BUILD_ASSERT_DECL(DNS_HEADER_LEN == sizeof(struct dns_header));
 
 #define DNS_CLASS_IN            0x01
 #define DNS_DEFAULT_RR_TTL      3600
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* packets.h */
