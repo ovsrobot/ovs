@@ -13879,6 +13879,10 @@ AT_SETUP([ofproto-dpif - Cleanup missing datapath flows])
 OVS_VSWITCHD_START
 add_of_ports br0 1 2
 
+dnl Set to 1 revalidator thread early for deterministic output.
+AT_CHECK([ovs-vsctl set open_vswitch . other_config:n-revalidator-threads=1])
+OVS_WAIT_UNTIL([ovs-appctl upcall/show | grep -c '(keys' | grep -q '^1$'])
+
 m4_define([ICMP_PKT], [m4_join([,],
     [eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800)],
     [ipv4(src=10.10.10.2,dst=10.10.10.1,proto=1,tos=1,ttl=128,frag=no)],
@@ -13898,6 +13902,31 @@ recirc_id(0),in_port(p1),packet_type(ns=0,id=0),eth(src=50:54:00:00:00:05,dst=50
 dnl Make sure the ukey exists.
 AT_CHECK([ovs-appctl upcall/show | grep '(keys' | awk '{print $3}' | \
             grep -q '1)'], [0])
+
+dnl Check upcall/show JSON output has the expected structure.
+AT_CHECK([ovs-appctl --format json --pretty upcall/show | dnl
+          sed 's/"dummy@[[^"]]*"/"<datapath>"/g' | dnl
+          sed 's/"dump-duration-ms": [[0-9]][[0-9]]*/"dump-duration-ms": <cleared>/g' | dnl
+          sed 's/"average": [[0-9]][[0-9]]*/"average": <cleared>/g' | dnl
+          sed 's/"current": [[0-9]][[0-9]]*/"current": <cleared>/g' | dnl
+          sed 's/"limit": [[0-9]][[0-9]]*/"limit": <cleared>/g' | dnl
+          sed 's/"maximum": [[0-9]][[0-9]]*/"maximum": <cleared>/g' | dnl
+          sed 's/"keys": [[0-9]][[0-9]]*/"keys": <cleared>/g' | dnl
+          sed 's/"[[0-9]][[0-9]]*": {/"<revalidator>": {/g'], [0], [dnl
+{
+  "<datapath>": {
+    "dump-duration-ms": <cleared>,
+    "flows": {
+      "average": <cleared>,
+      "current": <cleared>,
+      "limit": <cleared>,
+      "maximum": <cleared>,
+      "offloaded": 0},
+    "revalidators": {
+      "<revalidator>": {
+        "keys": <cleared>}},
+    "ufid-enabled": true}}
+])
 
 dnl Delete all datapath flows, and make sure they are gone.
 AT_CHECK([ovs-appctl dpctl/del-flows])
