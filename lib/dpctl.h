@@ -19,6 +19,9 @@
 #include <stdbool.h>
 
 #include "compiler.h"
+#include "unixctl.h"
+
+struct json;
 
 struct dpctl_params {
     /* True if it is called by ovs-appctl command. */
@@ -51,6 +54,14 @@ struct dpctl_params {
 
     /* 'usage' (if != NULL) gets called for the "help" command. */
     void (*usage)(void *aux);
+
+    /* Output format requested by the caller. */
+    enum unixctl_output_fmt output_format;
+
+    /* JSON object for accumulating structured output.  Command handlers
+     * set this to a non-NULL value when producing JSON output; the caller
+     * uses it to decide whether to send a JSON or text reply. */
+    struct json *json;
 };
 
 int dpctl_run_command(int argc, const char *argv[],
