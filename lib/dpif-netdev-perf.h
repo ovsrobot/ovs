@@ -29,6 +29,7 @@
 #include <rte_cycles.h>
 #endif
 
+#include "openvswitch/json.h"
 #include "openvswitch/vlog.h"
 #include "ovs-atomic.h"
 #include "timeval.h"
@@ -423,6 +424,10 @@ struct pmd_perf_params {
 
 void pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
                                    double duration, bool format_iterations);
+void pmd_perf_format_overall_stats_json(struct json *json,
+                                        struct pmd_perf_stats *s,
+                                        double duration,
+                                        bool show_iterations);
 void pmd_perf_format_histograms(struct ds *str, struct pmd_perf_stats *s);
 void pmd_perf_format_iteration_history(struct ds *str,
                                        struct pmd_perf_stats *s,

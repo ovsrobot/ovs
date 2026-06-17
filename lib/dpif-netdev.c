@@ -641,6 +641,32 @@ format_pmd_thread(struct ds *reply, struct dp_netdev_pmd_thread *pmd)
     ds_put_cstr(reply, ":\n");
 }
 
+static struct json *
+pmd_info_show_perf_json(struct dp_netdev_pmd_thread *pmd)
+{
+    long long now = time_msec();
+    double duration = (now - pmd->perf_stats.start_ms) / 1000.0;
+    bool show_iterations = (pmd->core_id != NON_PMD_CORE_ID);
+
+    struct json *json = json_object_create();
+    json_object_put(json, "core",
+                    (pmd->core_id != OVS_CORE_UNSPEC
+                     && pmd->core_id != NON_PMD_CORE_ID)
+                    ? json_integer_create(pmd->core_id)
+                    : json_null_create());
+    json_object_put(json, "numa",
+                    pmd->numa_id != OVS_NUMA_UNSPEC
+                    ? json_integer_create(pmd->numa_id)
+                    : json_null_create());
+    json_object_put(json, "measurement-duration-s",
+                    json_real_create(duration));
+
+    pmd_perf_format_overall_stats_json(json, &pmd->perf_stats,
+                                       duration, show_iterations);
+
+    return json;
+}
+
 static void
 pmd_info_show_perf(struct ds *reply,
                    struct dp_netdev_pmd_thread *pmd,
@@ -942,6 +968,7 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
                                       / INTERVAL_USEC_TO_SEC;
     bool show_header = true;
     uint64_t max_sleep;
+    struct json *json_result = NULL;
 
     ovs_mutex_lock(&dp_netdev_mutex);
 
@@ -981,15 +1008,17 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
 
     sorted_poll_thread_list(dp, &pmd_list, &n);
 
-    if (type == PMD_INFO_SLEEP_SHOW
-        && unixctl_command_get_output_format(conn)
-               == UNIXCTL_OUTPUT_FMT_JSON) {
-        struct json *json_result = pmd_info_sleep_show_json(dp, pmd_list, n);
-        free(pmd_list);
-        ovs_mutex_unlock(&dp_netdev_mutex);
-        unixctl_command_reply_json(conn, json_result);
-        ds_destroy(&reply);
-        return;
+    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
+        if (type == PMD_INFO_PERF_SHOW) {
+            json_result = json_object_create();
+        } else if (type == PMD_INFO_SLEEP_SHOW) {
+            json_result = pmd_info_sleep_show_json(dp, pmd_list, n);
+            free(pmd_list);
+            ovs_mutex_unlock(&dp_netdev_mutex);
+            unixctl_command_reply_json(conn, json_result);
+            ds_destroy(&reply);
+            return;
+        }
     }
 
     for (size_t i = 0; i < n; i++) {
@@ -1016,7 +1045,17 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
         } else if (type == PMD_INFO_CLEAR_STATS) {
             pmd_perf_stats_clear(&pmd->perf_stats);
         } else if (type == PMD_INFO_PERF_SHOW) {
-            pmd_info_show_perf(&reply, pmd, (struct pmd_perf_params *)aux);
+            if (json_result) {
+                bool is_main = pmd->core_id == NON_PMD_CORE_ID;
+                char *key = is_main
+                    ? xstrdup("main")
+                    : xasprintf("pmd-c%02u", pmd->core_id);
+                json_object_put_nocopy(json_result, key,
+                                       pmd_info_show_perf_json(pmd));
+            } else {
+                pmd_info_show_perf(&reply, pmd,
+                                   (struct pmd_perf_params *) aux);
+            }
         } else if (type == PMD_INFO_SLEEP_SHOW) {
             if (show_header) {
                 ds_put_format(&reply, "Default max sleep: %4"PRIu64" us\n",
@@ -1032,7 +1071,11 @@ dpif_netdev_pmd_info(struct unixctl_conn *conn, int argc, const char *argv[],
 
     ovs_mutex_unlock(&dp_netdev_mutex);
 
-    unixctl_command_reply(conn, ds_cstr(&reply));
+    if (json_result) {
+        unixctl_command_reply_json(conn, json_result);
+    } else {
+        unixctl_command_reply(conn, ds_cstr(&reply));
+    }
     ds_destroy(&reply);
 }
 

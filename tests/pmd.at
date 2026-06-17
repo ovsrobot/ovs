@@ -484,6 +484,84 @@ pmd thread numa_id <cleared> core_id <cleared>:
   Tx batches:                   20  (1.00 pkts/batch)
 ])
 
+dnl Check JSON output.
+dnl Mask dynamic values: core id, measurement duration, all iteration fields,
+dnl kpps, cycles-per-packet, and us-per-upcall.
+AT_CHECK([ovs-appctl --format json --pretty dpif-netdev/pmd-perf-show | dnl
+          sed 's/"pmd-c[[0-9]][[0-9]]"/"pmd-c<cleared>"/g' | dnl
+          sed 's/"core": [[0-9]][[0-9]]*/"core": <cleared>/g' | dnl
+          sed 's/"measurement-duration-s": [[0-9.]][[0-9.]]*/"measurement-duration-s": <cleared>/g' | dnl
+          sed 's/"kpps": [[0-9.]][[0-9.]]*/"kpps": <cleared>/g' | dnl
+          sed 's/"cycles-per-packet": [[0-9.]][[0-9.]]*/"cycles-per-packet": <cleared>/g' | dnl
+          sed 's/"us-per-upcall": [[0-9.]][[0-9.]]*/"us-per-upcall": <cleared>/g' | dnl
+          sed '/"iterations": {/,/}/{ s/: [[0-9.e+-]][[0-9.e+-]]*/: <cleared>/g; }'], [0], [dnl
+{
+  "main": {
+    "core": null,
+    "datapath-passes": {
+      "count": 0,
+      "emc-hits": 0,
+      "lost-upcalls": 0,
+      "megaflow-hits": 0,
+      "passes-per-packet": 0,
+      "phwol-hits": 0,
+      "simple-match-hits": 0,
+      "smc-hits": 0,
+      "subtable-lookups-per-megaflow-hit": 0,
+      "upcalls": 0,
+      "us-per-upcall": null},
+    "iterations": null,
+    "measurement-duration-s": <cleared>,
+    "numa": null,
+    "rx-packets": {
+      "count": 0,
+      "cycles-per-packet": null,
+      "kpps": <cleared>},
+    "tx-packets": {
+      "batches": 0,
+      "count": 0,
+      "kpps": <cleared>,
+      "packets-per-batch": 0}},
+  "pmd-c<cleared>": {
+    "core": <cleared>,
+    "datapath-passes": {
+      "count": 20,
+      "emc-hits": 19,
+      "lost-upcalls": 0,
+      "megaflow-hits": 0,
+      "passes-per-packet": 1,
+      "phwol-hits": 0,
+      "simple-match-hits": 0,
+      "smc-hits": 0,
+      "subtable-lookups-per-megaflow-hit": 0,
+      "upcalls": 1,
+      "us-per-upcall": <cleared>},
+    "iterations": {
+      "busy": <cleared>,
+      "busy-pct": <cleared>,
+      "idle": <cleared>,
+      "idle-pct": <cleared>,
+      "sleep": <cleared>,
+      "sleep-pct": <cleared>,
+      "sleep-time-us": <cleared>,
+      "sleep-us-per-iteration": <cleared>,
+      "total": <cleared>,
+      "us-per-iteration": <cleared>,
+      "used-tsc-cycles": <cleared>,
+      "used-tsc-pct": <cleared>},
+    "measurement-duration-s": <cleared>,
+    "numa": 0,
+    "rx-packets": {
+      "count": 20,
+      "cycles-per-packet": <cleared>,
+      "kpps": <cleared>},
+    "tx-packets": {
+      "batches": 20,
+      "count": 20,
+      "kpps": <cleared>,
+      "packets-per-batch": 1}}}
+])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
