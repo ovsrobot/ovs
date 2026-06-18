@@ -131,7 +131,7 @@ static inline bool
 extract_l3_ipv6(struct conn_key *key, const void *data, size_t size,
                 const char **new_data);
 static struct alg_exp_node *
-expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,
+expectation_lookup(struct cmap *alg_expectations, const struct conn_key *key,
                    uint32_t basis, bool src_ip_wc);
 
 static int
@@ -154,6 +154,8 @@ detect_ftp_ctl_type(const struct conn_lookup_ctx *ctx,
 
 static void
 expectation_clean(struct conntrack *ct, const struct conn_key *parent_key);
+static void
+expectation_flush(struct conntrack *ct) OVS_REQUIRES(ct->resources_lock);
 
 static struct ct_l4_proto *l4_protos[UINT8_MAX + 1];
 
@@ -254,11 +256,11 @@ conntrack_init(void)
      */
     ct->hash_basis = random_uint32();
 
-    ovs_rwlock_init(&ct->resources_lock);
-    ovs_rwlock_wrlock(&ct->resources_lock);
-    hmap_init(&ct->alg_expectations);
+    ovs_mutex_init(&ct->resources_lock);
+    ovs_mutex_lock(&ct->resources_lock);
+    cmap_init(&ct->alg_expectations);
     hindex_init(&ct->alg_expectation_refs);
-    ovs_rwlock_unlock(&ct->resources_lock);
+    ovs_mutex_unlock(&ct->resources_lock);
 
     ovs_mutex_init_adaptive(&ct->ct_lock);
     ovs_mutex_lock(&ct->ct_lock);
@@ -641,8 +643,9 @@ conntrack_destroy(struct conntrack *ct)
         ovsrcu_postpone(free, tp);
     }
 
-    ovs_mutex_lock(&ct->ct_lock);
+    conntrack_flush(ct, NULL);
 
+    ovs_mutex_lock(&ct->ct_lock);
     for (unsigned i = 0; i < ARRAY_SIZE(ct->conns); i++) {
         cmap_destroy(&ct->conns[i]);
     }
@@ -652,15 +655,12 @@ conntrack_destroy(struct conntrack *ct)
     ovs_mutex_unlock(&ct->ct_lock);
     ovs_mutex_destroy(&ct->ct_lock);
 
-    ovs_rwlock_wrlock(&ct->resources_lock);
-    struct alg_exp_node *alg_exp_node;
-    HMAP_FOR_EACH_POP (alg_exp_node, node, &ct->alg_expectations) {
-        free(alg_exp_node);
-    }
-    hmap_destroy(&ct->alg_expectations);
+    ovs_mutex_lock(&ct->resources_lock);
+    expectation_flush(ct);
+    cmap_destroy(&ct->alg_expectations);
     hindex_destroy(&ct->alg_expectation_refs);
-    ovs_rwlock_unlock(&ct->resources_lock);
-    ovs_rwlock_destroy(&ct->resources_lock);
+    ovs_mutex_unlock(&ct->resources_lock);
+    ovs_mutex_destroy(&ct->resources_lock);
 
     ipf_destroy(ct->ipf);
     free(ct);
@@ -1473,7 +1473,6 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
 
     if (OVS_UNLIKELY(create_new_conn)) {
 
-        ovs_rwlock_rdlock(&ct->resources_lock);
         alg_exp = expectation_lookup(&ct->alg_expectations, &ctx->key,
                                      ct->hash_basis,
                                      alg_src_ip_wc(ct_alg_ctl));
@@ -1481,7 +1480,6 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
             memcpy(&alg_exp_entry, alg_exp, sizeof alg_exp_entry);
             alg_exp = &alg_exp_entry;
         }
-        ovs_rwlock_unlock(&ct->resources_lock);
 
         conn = conn_maybe_not_found(ct, pkt, ctx, commit, now, nat_action_info,
                                     helper, alg_exp, ct_alg_ctl, tp_id);
@@ -2979,6 +2977,7 @@ conntrack_exp_dump_start(struct conntrack *ct, struct conntrack_dump *dump,
     }
 
     dump->ct = ct;
+    dump->cursor = cmap_cursor_start(&dump->ct->alg_expectations);
 
     return 0;
 }
@@ -2986,31 +2985,16 @@ conntrack_exp_dump_start(struct conntrack *ct, struct conntrack_dump *dump,
 int
 conntrack_exp_dump_next(struct conntrack_dump *dump, struct ct_dpif_exp *entry)
 {
-    struct conntrack *ct = dump->ct;
     struct alg_exp_node *enode;
-    int ret = EOF;
 
-    ovs_rwlock_rdlock(&ct->resources_lock);
-
-    for (;;) {
-        struct hmap_node *node = hmap_at_position(&ct->alg_expectations,
-                                                  &dump->hmap_pos);
-        if (!node) {
-            break;
-        }
-
-        enode = CONTAINER_OF(node, struct alg_exp_node, node);
-
+    CMAP_CURSOR_FOR_EACH_CONTINUE (enode, node, &dump->cursor) {
         if (!dump->filter_zone || enode->key.zone == dump->zone) {
-            ret = 0;
             exp_node_to_ct_dpif_exp(enode, entry);
-            break;
+            return 0;
         }
     }
 
-    ovs_rwlock_unlock(&ct->resources_lock);
-
-    return ret;
+    return EOF;
 }
 
 int
@@ -3108,9 +3092,8 @@ conntrack_get_tcp_seq_chk(struct conntrack *ct)
     return enabled;
 }
 
-/* This function must be called with the ct->resources read lock taken. */
 static struct alg_exp_node *
-expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,
+expectation_lookup(struct cmap *alg_expectations, const struct conn_key *key,
                    uint32_t basis, bool src_ip_wc)
 {
     struct conn_key check_key;
@@ -3123,7 +3106,7 @@ expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,
 
     struct alg_exp_node *alg_exp_node;
 
-    HMAP_FOR_EACH_WITH_HASH (alg_exp_node, node,
+    CMAP_FOR_EACH_WITH_HASH (alg_exp_node, node,
                              conn_key_hash(&check_key, basis),
                              alg_expectations) {
         if (!conn_key_cmp(&alg_exp_node->key, &check_key)) {
@@ -3133,17 +3116,18 @@ expectation_lookup(struct hmap *alg_expectations, const struct conn_key *key,
     return NULL;
 }
 
-/* This function must be called with the ct->resources write lock taken. */
+/* This function must be called with the ct->resources_lock taken. */
 static void
-expectation_remove(struct hmap *alg_expectations,
+expectation_remove(struct cmap *alg_expectations,
                    const struct conn_key *key, uint32_t basis)
 {
     struct alg_exp_node *alg_exp_node;
 
-    HMAP_FOR_EACH_WITH_HASH (alg_exp_node, node, conn_key_hash(key, basis),
+    uint32_t hash = conn_key_hash(key, basis);
+    CMAP_FOR_EACH_WITH_HASH (alg_exp_node, node, hash,
                              alg_expectations) {
         if (!conn_key_cmp(&alg_exp_node->key, key)) {
-            hmap_remove(alg_expectations, &alg_exp_node->node);
+            cmap_remove(alg_expectations, &alg_exp_node->node, hash);
             break;
         }
     }
@@ -3184,9 +3168,21 @@ expectation_ref_create(struct hindex *alg_expectation_refs,
 }
 
 static void
+expectation_flush(struct conntrack *ct)
+{
+    struct alg_exp_node *node;
+    HINDEX_FOR_EACH_SAFE (node, node_ref, &ct->alg_expectation_refs) {
+        expectation_remove(&ct->alg_expectations, &node->key,
+                           ct->hash_basis);
+        hindex_remove(&ct->alg_expectation_refs, &node->node_ref);
+        ovsrcu_postpone(free, node);
+    }
+}
+
+static void
 expectation_clean(struct conntrack *ct, const struct conn_key *parent_key)
 {
-    ovs_rwlock_wrlock(&ct->resources_lock);
+    ovs_mutex_lock(&ct->resources_lock);
 
     struct alg_exp_node *node;
     HINDEX_FOR_EACH_WITH_HASH_SAFE (node, node_ref,
@@ -3196,11 +3192,11 @@ expectation_clean(struct conntrack *ct, const struct conn_key *parent_key)
             expectation_remove(&ct->alg_expectations, &node->key,
                                ct->hash_basis);
             hindex_remove(&ct->alg_expectation_refs, &node->node_ref);
-            free(node);
+            ovsrcu_postpone(free, node);
         }
     }
 
-    ovs_rwlock_unlock(&ct->resources_lock);
+    ovs_mutex_unlock(&ct->resources_lock);
 }
 
 static void
@@ -3260,21 +3256,21 @@ expectation_create(struct conntrack *ct, ovs_be16 dst_port,
     /* Take the write lock here because it is almost 100%
      * likely that the lookup will fail and
      * expectation_create() will be called below. */
-    ovs_rwlock_wrlock(&ct->resources_lock);
+    ovs_mutex_lock(&ct->resources_lock);
     struct alg_exp_node *alg_exp = expectation_lookup(
         &ct->alg_expectations, &alg_exp_node->key, ct->hash_basis, src_ip_wc);
     if (alg_exp) {
-        free(alg_exp_node);
-        ovs_rwlock_unlock(&ct->resources_lock);
+        ovsrcu_postpone(free, alg_exp_node);
+        ovs_mutex_unlock(&ct->resources_lock);
         return;
     }
 
     alg_exp_node->alg_nat_repl_addr = alg_nat_repl_addr;
-    hmap_insert(&ct->alg_expectations, &alg_exp_node->node,
+    cmap_insert(&ct->alg_expectations, &alg_exp_node->node,
                 conn_key_hash(&alg_exp_node->key, ct->hash_basis));
     expectation_ref_create(&ct->alg_expectation_refs, alg_exp_node,
                            ct->hash_basis);
-    ovs_rwlock_unlock(&ct->resources_lock);
+    ovs_mutex_unlock(&ct->resources_lock);
 }
 
 static void
