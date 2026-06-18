@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "conntrack.h"
+#include "cmap.h"
 #include "conntrack-private.h"
 #include "conntrack-tp.h"
 #include "coverage.h"
@@ -1525,10 +1526,9 @@ ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
     struct conntrack_zone *cz;
     unsigned int conn_count = 0;
     struct conn *conn;
-    struct cmap_node *node;
     long long expiration;
 
-#define CONN_BUF_SIZE 100
+    #define CONN_BUF_SIZE 100
     struct conn *conn_buf[CONN_BUF_SIZE];
     unsigned int n_conn_buf = 0;
 
@@ -1541,9 +1541,12 @@ ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
         *current_position = xzalloc(sizeof(**current_position));
     }
 
-    while ((node = cmap_next_position(&cz->conns, *current_position))) {
-        keyn = OBJECT_CONTAINING(node, keyn, cm_node);
+    struct cmap_cursor cursor = cmap_position_to_cursor(&cz->conns,
+                                                        *current_position);
+
+    CMAP_CURSOR_FOR_EACH_CONTINUE (keyn, cm_node, &cursor) {
         if (conn_count > limit) {
+            cmap_cursor_to_position(&cursor, *current_position);
             return conn_count;
         }
 
