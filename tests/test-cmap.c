@@ -55,7 +55,7 @@ static void
 check_cmap(struct cmap *cmap, const int values[], size_t n,
            hash_func *hash)
 {
-    int *sort_values, *cmap_values, *cmap_values2;
+    int *sort_values, *cmap_values, *cmap_values2, *cmap_values3;
     const struct element *e;
     size_t i, batch_size;
 
@@ -66,6 +66,7 @@ check_cmap(struct cmap *cmap, const int values[], size_t n,
     sort_values = xmalloc(sizeof *sort_values * n);
     cmap_values = xmalloc(sizeof *sort_values * n);
     cmap_values2 = xmalloc(sizeof *sort_values * n);
+    cmap_values3 = xmalloc(sizeof *sort_values * n);
 
     /* Here we test cursor iteration */
     i = 0;
@@ -86,16 +87,54 @@ check_cmap(struct cmap *cmap, const int values[], size_t n,
     }
     assert(i == n);
 
+    /* Here we test switching between cursors and positions.
+     * We switch on every odd iteration.
+     * It is a little strange since the cursor always points to the current
+     * element being iterated over while the position points to the next
+     * element. */
+    bool use_position = true;
+    pos = (struct cmap_position){0, 0, 0 };
+    struct cmap_cursor cur;
+    for (i = 0; i < n; i++) {
+        if (i % 2 == 1) {
+            if (use_position) {
+                cur = cmap_position_to_cursor(cmap, &pos);
+            } else {
+                cmap_cursor_to_position(&cur, &pos);
+            }
+            use_position = !use_position;
+        }
+
+        if (use_position) {
+            node = cmap_next_position(cmap, &pos);
+        } else {
+            /* Because of the strangeness above we do not need to advance if
+             * we just switched back from a position. */
+            if (i % 2 == 0) {
+                cmap_cursor_advance(&cur);
+            }
+            node = cur.node;
+        }
+
+        e = OBJECT_CONTAINING(node, e, node);
+        ovs_assert(i < n);
+        cmap_values3[i] = e->value;
+    }
+    ovs_assert(i == n);
+
     memcpy(sort_values, values, sizeof *sort_values * n);
     qsort(sort_values, n, sizeof *sort_values, compare_ints);
     qsort(cmap_values, n, sizeof *cmap_values, compare_ints);
     qsort(cmap_values2, n, sizeof *cmap_values2, compare_ints);
+    qsort(cmap_values3, n, sizeof *cmap_values3, compare_ints);
 
     for (i = 0; i < n; i++) {
-        assert(sort_values[i] == cmap_values[i]);
-        assert(sort_values[i] == cmap_values2[i]);
+        ovs_assert(sort_values[i] == cmap_values[i]);
+        ovs_assert(sort_values[i] == cmap_values2[i]);
+        ovs_assert(sort_values[i] == cmap_values3[i]);
     }
 
+    free(cmap_values3);
     free(cmap_values2);
     free(cmap_values);
     free(sort_values);

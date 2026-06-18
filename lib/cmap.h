@@ -294,4 +294,14 @@ cmap_remove(struct cmap *cmap, struct cmap_node *node, uint32_t hash)
     return cmap_replace(cmap, node, NULL, hash);
 }
 
+/* Convert a cmap position to a cursor. */
+struct cmap_cursor
+cmap_position_to_cursor(const struct cmap *,
+                        const struct cmap_position *);
+
+/* Convert a cmap cursor to a position. */
+void
+cmap_cursor_to_position(const struct cmap_cursor *,
+                        struct cmap_position *);
+
 #endif /* cmap.h */

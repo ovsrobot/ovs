@@ -1068,3 +1068,65 @@ cmap_next_position(const struct cmap *cmap,
     pos->bucket = pos->entry = pos->offset = 0;
     return NULL;
 }
+
+struct cmap_cursor
+cmap_position_to_cursor(const struct cmap *cmap,
+                        const struct cmap_position *pos)
+{
+    struct cmap_cursor cursor;
+
+    cursor.impl = cmap_get_impl(cmap);
+    cursor.bucket_idx = pos->bucket;
+    cursor.entry_idx = pos->entry;
+    cursor.node = NULL;
+
+    if (cursor.bucket_idx <= cursor.impl->mask && cursor.entry_idx < CMAP_K) {
+        const struct cmap_node *node = cmap_node_next(
+                &cursor.impl->buckets[cursor.bucket_idx].
+                    nodes[cursor.entry_idx++]);
+
+        unsigned int i;
+        for (i = 0; node; i++, node = cmap_node_next(node)) {
+            if (i == pos->offset) {
+                cursor.node = CONST_CAST(struct cmap_node *, node);
+                break;
+            }
+        }
+
+    }
+
+    if (!cursor.node) {
+        cmap_cursor_advance(&cursor);
+    }
+
+    return cursor;
+}
+
+void
+cmap_cursor_to_position(const struct cmap_cursor *cursor,
+                        struct cmap_position *pos)
+{
+    pos->bucket = cursor->bucket_idx;
+    pos->offset = 0;
+
+    /* This can only happen if the previous cmap_cursor_advance call
+     * determined that we are at the end of the cmap. Our only required
+     * behaviour here is to guarante that after converting
+     * cursor->position->cursor we are still at then end of the cmap.
+     * Since the bucket_idx will already be larger than the mask we can
+     * just set the entry to some arbitrary value. */
+    if (cursor->entry_idx == 0) {
+        pos->entry = 0;
+        return;
+    }
+
+    pos->entry = cursor->entry_idx - 1;
+    const struct cmap_node *node = cmap_node_next(
+            &cursor->impl->buckets[pos->bucket].
+            nodes[pos->entry]);
+    while (node && node != cursor->node) {
+        pos->offset++;
+        node = cmap_node_next(node);
+    }
+    pos->offset++;
+}
