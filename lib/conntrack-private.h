@@ -134,19 +134,12 @@ struct conn {
                             * True as soon as a thread has started freeing
                             * its memory. */
 
-    /* Inserted once by a PMD, then managed by the 'ct_clean' thread. */
-    struct rculist node;
-
     /* Mutable data. */
     struct ovs_mutex lock; /* Guards all mutable fields. */
     ovs_u128 label;
     atomic_llong expiration;
     uint32_t mark;
     int seq_skew;
-
-    /* Immutable data. */
-    int32_t admit_zone; /* The zone for managing zone limit counts. */
-    uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
 
     /* Mutable data. */
     bool seq_skew_dir; /* TCP sequence skew direction due to NATTing of FTP
@@ -198,32 +191,33 @@ enum ct_ephemeral_range {
 #define FOR_EACH_PORT_IN_RANGE(curr, min, max) \
     FOR_EACH_PORT_IN_RANGE__(curr, min, max, OVS_JOIN(idx, __COUNTER__))
 
-#define ZONE_LIMIT_CONN_DEFAULT -1
+#define CONN_LIMIT_NONE -1
+#define CONN_LIMIT_USE_DEFAULT -2
 
-struct conntrack_zone_limit {
+struct conntrack_zone {
     int32_t zone;
-    atomic_int64_t limit;
-    atomic_count count;
-    uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
+
+    struct ovs_mutex zone_lock; /* Protects the following fields. */
+    struct cmap conns;
+
+    /* Limits */
+    atomic_int64_t limit; /* Currently active limit. */
+    atomic_int64_t requested_limit; /* User requested limit. May be
+                                     * ZONE_LIMIT_CONN_DEFAULT if it should use
+                                     * the default limit. */
+    atomic_count count; /* Number of connections currently tracked. */
 };
 
 struct conntrack {
     struct ovs_mutex ct_lock; /* Protects the following fields. */
-    struct cmap conns[UINT16_MAX + 1];
-    struct rculist exp_lists[N_EXP_LISTS];
-    struct cmap zone_limits;
+    struct conntrack_zone zones[UINT16_MAX + 1];
     struct cmap timeout_policies;
-    uint32_t zone_limit_seq OVS_GUARDED; /* Used to disambiguate zone limit
-                                          * counts. */
     atomic_uint32_t default_zone_limit;
 
     uint32_t hash_basis; /* Salt for hashing a connection key. */
     pthread_t clean_thread; /* Periodically cleans up connection tracker. */
     struct latch clean_thread_exit; /* To destroy the 'clean_thread'. */
-    unsigned int next_list; /* Next list where the newly created connection
-                             * gets inserted. */
-    unsigned int next_sweep; /* List from which the gc thread will resume
-                              * the sweeping. */
+    unsigned int next_clean_zone; /* Next zone where the clean should run. */
 
     /* Counting connections. */
     atomic_count n_conn; /* Number of connections currently tracked. */
