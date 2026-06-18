@@ -215,9 +215,13 @@ struct conntrack {
     atomic_uint32_t default_zone_limit;
 
     uint32_t hash_basis; /* Salt for hashing a connection key. */
+
+    /* Background cleanup thread. */
     pthread_t clean_thread; /* Periodically cleans up connection tracker. */
     struct latch clean_thread_exit; /* To destroy the 'clean_thread'. */
-    unsigned int next_clean_zone; /* Next zone where the clean should run. */
+    uint16_t current_clean_zone; /* Current zone where the clean should run. */
+    /* The position in the cmap of the current zone. */
+    struct cmap_position *current_clean_position;
 
     /* Counting connections. */
     atomic_count n_conn; /* Number of connections currently tracked. */
@@ -239,8 +243,9 @@ struct conntrack {
 
 /* Lock acquisition order:
  *    1. 'conn->lock'
- *    2. 'ct_lock'
- *    3. 'resources_lock'
+ *    2. 'zone_lock'
+ *    3. 'ct_lock'
+ *    4. 'resources_lock'
  */
 
 extern struct ct_l4_proto ct_proto_tcp;
