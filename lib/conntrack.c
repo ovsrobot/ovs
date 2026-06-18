@@ -1022,114 +1022,101 @@ ct_verify_helper(const char *helper, enum ct_alg_ctl_type ct_alg_ctl)
 }
 
 static struct conn *
-conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
-               struct conn_lookup_ctx *ctx, bool commit, long long now,
-               const struct nat_action_info_t *nat_action_info,
-               const char *helper, const struct alg_exp_node *alg_exp,
-               enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
+conn_insert(struct conntrack *ct, struct dp_packet *pkt,
+            struct conn_lookup_ctx *ctx, long long now,
+            const struct nat_action_info_t *nat_action_info,
+            const char *helper, const struct alg_exp_node *alg_exp,
+            enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
     OVS_REQUIRES(ct->ct_lock)
 {
     struct conn *nc = NULL;
 
-    if (!valid_new(pkt, &ctx->key)) {
-        pkt->md.ct_state = CS_INVALID;
+    int64_t czl_limit;
+    struct conn_key_node *fwd_key_node, *rev_key_node;
+    struct zone_limit *zl = zone_limit_lookup_or_default(ct,
+                                                         ctx->key.zone);
+    if (zl) {
+        czl_limit = zone_limit_get_limit(ct, &zl->czl);
+        if (czl_limit >= 0 &&
+            atomic_count_get(&zl->czl.count) >= czl_limit) {
+            COVERAGE_INC(conntrack_zone_full);
+            return nc;
+        }
+    }
+
+    unsigned int n_conn_limit;
+    atomic_read_relaxed(&ct->n_conn_limit, &n_conn_limit);
+    if (atomic_count_get(&ct->n_conn) >= n_conn_limit) {
+        COVERAGE_INC(conntrack_full);
         return nc;
     }
 
-    pkt->md.ct_state = CS_NEW;
+    nc = new_conn(ct, pkt, &ctx->key, now, tp_id);
+    fwd_key_node = &nc->key_node[CT_DIR_FWD];
+    rev_key_node = &nc->key_node[CT_DIR_REV];
+    memcpy(&fwd_key_node->key, &ctx->key, sizeof fwd_key_node->key);
+    memcpy(&rev_key_node->key, &fwd_key_node->key,
+           sizeof rev_key_node->key);
+    conn_key_reverse(&rev_key_node->key);
+
+    if (ct_verify_helper(helper, ct_alg_ctl)) {
+        nc->alg = nullable_xstrdup(helper);
+    }
 
     if (alg_exp) {
-        pkt->md.ct_state |= CS_RELATED;
+        nc->alg_related = true;
+        nc->mark = alg_exp->parent_mark;
+        nc->label = alg_exp->parent_label;
+        nc->parent_key = alg_exp->parent_key;
     }
 
-    if (commit) {
-        int64_t czl_limit;
-        struct conn_key_node *fwd_key_node, *rev_key_node;
-        struct zone_limit *zl = zone_limit_lookup_or_default(ct,
-                                                             ctx->key.zone);
-        if (zl) {
-            czl_limit = zone_limit_get_limit(ct, &zl->czl);
-            if (czl_limit >= 0 &&
-                atomic_count_get(&zl->czl.count) >= czl_limit) {
-                COVERAGE_INC(conntrack_zone_full);
-                return nc;
-            }
-        }
+    ovs_mutex_init_adaptive(&nc->lock);
+    atomic_flag_clear(&nc->reclaimed);
+    fwd_key_node->dir = CT_DIR_FWD;
+    rev_key_node->dir = CT_DIR_REV;
 
-        unsigned int n_conn_limit;
-        atomic_read_relaxed(&ct->n_conn_limit, &n_conn_limit);
-        if (atomic_count_get(&ct->n_conn) >= n_conn_limit) {
-            COVERAGE_INC(conntrack_full);
-            return nc;
-        }
+    if (zl) {
+        nc->admit_zone = zl->czl.zone;
+        nc->zone_limit_seq = zl->czl.zone_limit_seq;
+    } else {
+        nc->admit_zone = INVALID_ZONE;
+    }
 
-        nc = new_conn(ct, pkt, &ctx->key, now, tp_id);
-        fwd_key_node = &nc->key_node[CT_DIR_FWD];
-        rev_key_node = &nc->key_node[CT_DIR_REV];
-        memcpy(&fwd_key_node->key, &ctx->key, sizeof fwd_key_node->key);
-        memcpy(&rev_key_node->key, &fwd_key_node->key,
-               sizeof rev_key_node->key);
-        conn_key_reverse(&rev_key_node->key);
-
-        if (ct_verify_helper(helper, ct_alg_ctl)) {
-            nc->alg = nullable_xstrdup(helper);
-        }
+    if (nat_action_info) {
+        nc->nat_action = nat_action_info->nat_action;
 
         if (alg_exp) {
-            nc->alg_related = true;
-            nc->mark = alg_exp->parent_mark;
-            nc->label = alg_exp->parent_label;
-            nc->parent_key = alg_exp->parent_key;
-        }
-
-        ovs_mutex_init_adaptive(&nc->lock);
-        atomic_flag_clear(&nc->reclaimed);
-        fwd_key_node->dir = CT_DIR_FWD;
-        rev_key_node->dir = CT_DIR_REV;
-
-        if (zl) {
-            nc->admit_zone = zl->czl.zone;
-            nc->zone_limit_seq = zl->czl.zone_limit_seq;
-        } else {
-            nc->admit_zone = INVALID_ZONE;
-        }
-
-        if (nat_action_info) {
-            nc->nat_action = nat_action_info->nat_action;
-
-            if (alg_exp) {
-                if (alg_exp->nat_rpl_dst) {
-                    rev_key_node->key.dst.addr = alg_exp->alg_nat_repl_addr;
-                    nc->nat_action = NAT_ACTION_SRC;
-                } else {
-                    rev_key_node->key.src.addr = alg_exp->alg_nat_repl_addr;
-                    nc->nat_action = NAT_ACTION_DST;
-                }
+            if (alg_exp->nat_rpl_dst) {
+                rev_key_node->key.dst.addr = alg_exp->alg_nat_repl_addr;
+                nc->nat_action = NAT_ACTION_SRC;
             } else {
-                bool nat_res = nat_get_unique_tuple(ct, nc, nat_action_info);
-                if (!nat_res) {
-                    goto nat_res_exhaustion;
-                }
+                rev_key_node->key.src.addr = alg_exp->alg_nat_repl_addr;
+                nc->nat_action = NAT_ACTION_DST;
             }
-
-            nat_packet(pkt, nc, false, ctx->icmp_related);
-            uint32_t rev_hash = conn_key_hash(&rev_key_node->key,
-                                              ct->hash_basis);
-            cmap_insert(&ct->conns[ctx->key.zone],
-                        &rev_key_node->cm_node, rev_hash);
+        } else {
+            bool nat_res = nat_get_unique_tuple(ct, nc, nat_action_info);
+            if (!nat_res) {
+                goto nat_res_exhaustion;
+            }
         }
 
+        nat_packet(pkt, nc, false, ctx->icmp_related);
+        uint32_t rev_hash = conn_key_hash(&rev_key_node->key,
+                                          ct->hash_basis);
         cmap_insert(&ct->conns[ctx->key.zone],
-                    &fwd_key_node->cm_node, ctx->hash);
-        conn_expire_push_front(ct, nc);
-        atomic_count_inc(&ct->n_conn);
-
-        if (zl) {
-            atomic_count_inc(&zl->czl.count);
-        }
-
-        ctx->conn = nc; /* For completeness. */
+                    &rev_key_node->cm_node, rev_hash);
     }
+
+    cmap_insert(&ct->conns[ctx->key.zone],
+                &fwd_key_node->cm_node, ctx->hash);
+    conn_expire_push_front(ct, nc);
+    atomic_count_inc(&ct->n_conn);
+
+    if (zl) {
+        atomic_count_inc(&zl->czl.count);
+    }
+
+    ctx->conn = nc; /* For completeness. */
 
     return nc;
 
@@ -1144,6 +1131,62 @@ nat_res_exhaustion:
     VLOG_WARN_RL(&rl, "Unable to NAT due to tuple space exhaustion - "
                  "if DoS attack, use firewalling and/or zone partitioning.");
     return NULL;
+}
+
+static bool
+pkt_set_new_ct_state(struct dp_packet *pkt, struct conn_lookup_ctx *ctx,
+                     const struct alg_exp_node *alg_exp)
+{
+    if (!valid_new(pkt, &ctx->key)) {
+        pkt->md.ct_state = CS_INVALID;
+        return false;
+    }
+
+    pkt->md.ct_state = CS_NEW;
+
+    if (alg_exp) {
+        pkt->md.ct_state |= CS_RELATED;
+    }
+
+    return true;
+}
+
+static struct conn *
+conn_maybe_not_found(struct conntrack *ct, struct dp_packet *pkt,
+                     struct conn_lookup_ctx *ctx, bool commit, long long now,
+                     const struct nat_action_info_t *nat_action_info,
+                     const char *helper, const struct alg_exp_node *alg_exp,
+                     enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
+{
+    struct conn *nc = NULL;
+
+    /* Note that we only insert a connection if commit=true. In this
+     * case we must ensure that the connection is not already part of
+     * ct->conns. This means the lock needs to be held across the lookup and
+     * insert.
+     * Since we do not need this sequencing if we do not insert we can skip the
+     * lock completely.
+     * We do not use multiple small if's as this confused clangs locking
+     * analysis. */
+    if (commit) {
+        ovs_mutex_lock(&ct->ct_lock);
+        bool found = conn_lookup(ct, &ctx->key, now, NULL, NULL);
+        if (!found) {
+            if (!pkt_set_new_ct_state(pkt, ctx, alg_exp)) {
+                ovs_mutex_unlock(&ct->ct_lock);
+                return nc;
+            }
+            nc = conn_insert(ct, pkt, ctx, now, nat_action_info,
+                             helper, alg_exp, ct_alg_ctl, tp_id);
+        }
+        ovs_mutex_unlock(&ct->ct_lock);
+    } else {
+        bool found = conn_lookup(ct, &ctx->key, now, NULL, NULL);
+        if (!found) {
+            pkt_set_new_ct_state(pkt, ctx, alg_exp);
+        }
+    }
+    return nc;
 }
 
 static bool
@@ -1440,12 +1483,8 @@ process_one(struct conntrack *ct, struct dp_packet *pkt,
         }
         ovs_rwlock_unlock(&ct->resources_lock);
 
-        ovs_mutex_lock(&ct->ct_lock);
-        if (!conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
-            conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
-                                  helper, alg_exp, ct_alg_ctl, tp_id);
-        }
-        ovs_mutex_unlock(&ct->ct_lock);
+        conn = conn_maybe_not_found(ct, pkt, ctx, commit, now, nat_action_info,
+                                    helper, alg_exp, ct_alg_ctl, tp_id);
     }
 
     write_ct_md(pkt, zone, conn, &ctx->key, alg_exp);
