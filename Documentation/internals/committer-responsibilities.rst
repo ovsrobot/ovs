@@ -125,7 +125,7 @@ in your ``.git`` directory and make sure to mark it as executable with
                   n=$(expr $n + 1)
                   git log -1 $sha
                   echo
-                  checkpatch.py -1 $sha
+                  git format-patch -1 --stdout $sha | checkpatch.py
               done <<EOF
   $(git --no-pager log --pretty=%H $local_sha1...$remote_sha1)
   EOF
