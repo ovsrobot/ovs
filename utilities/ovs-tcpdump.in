@@ -125,7 +125,10 @@ def username():
     return pwd.getpwuid(os.getuid())[0]
 
 
-def usage():
+def usage(tcpdump_prog='tcpdump'):
+    tcpd_help = _doexec(*([tcpdump_prog, '--help']))
+    tcpd_help.wait()
+
     print("""\
 %(prog)s: Open vSwitch tcpdump helper.
 usage: %(prog)s -i interface [TCPDUMP OPTIONS]
@@ -143,7 +146,11 @@ The following options are available:
                               Default 'miINTERFACE'
    --span                     If specified, mirror all ports (optional)
    --filter                   Set an OpenFlow formatted preselection filter
-""" % {'prog': sys.argv[0]})
+
+The following are the '%(tcpdump_prog)s' options:
+%(tcpdump_help)s
+""" % {'prog': sys.argv[0], 'tcpdump_prog': tcpdump_prog,
+       'tcpdump_help': tcpd_help.stdout.read().decode('utf-8')})
     sys.exit(0)
 
 
@@ -453,13 +460,15 @@ def main():
     mirror_select_all = False
     dump_cmd = 'tcpdump'
     mirror_filter = None
+    print_usage = False
 
     for cur, nxt in argv_tuples(sys.argv[1:]):
         if skip_next:
             skip_next = False
             continue
         if cur in ['-h', '--help']:
-            usage()
+            print_usage = True
+            continue
         elif cur in ['-V', '--version']:
             print("ovs-tcpdump (Open vSwitch) @VERSION@@VERSION_SUFFIX@")
             sys.exit(0)
@@ -488,12 +497,15 @@ def main():
             continue
         tcpdargs.append(cur)
 
-    if interface is None:
-        print("Error: must at least specify an interface with '-i' option")
-        sys.exit(1)
-
     if not py_which(dump_cmd):
         print("Error: unable to execute '%s' (check PATH)" % dump_cmd)
+        sys.exit(1)
+
+    if print_usage:
+        usage(dump_cmd)
+
+    if interface is None:
+        print("Error: must at least specify an interface with '-i' option")
         sys.exit(1)
 
     if '-l' not in tcpdargs:
