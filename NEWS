@@ -6,6 +6,8 @@ Post-v3.7.0
      preferred for performance testing.
    - Removed ovstest Python module.  It was only used by the now
      removed ovs-test and ovs-l3ping utilities.
+   - Removed ovs-vlan-test.  It was designed to check for VLAN bugs in
+     old Linux kernels that have long been fixed.
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.
