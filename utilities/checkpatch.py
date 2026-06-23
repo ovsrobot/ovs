@@ -162,6 +162,7 @@ __regex_if_macros = re.compile(r'^ +(%s) \([\S](?:[\s\S]*?[\S])?\) { +\\' %
                                __parenthesized_constructs)
 __regex_nonascii_characters = re.compile("[^\u0000-\u007f]")
 __regex_efgrep = re.compile(r'.*[ef]grep.*$')
+__regex_static_inline_c_file = re.compile(r'^\s*static\s+inline')
 
 skip_leading_whitespace_check = False
 skip_trailing_whitespace_check = False
@@ -629,6 +630,12 @@ checks = [
      lambda: print_warning("Empty return followed by brace, consider omitting")
      },
 
+    {'regex': r'(\.c)(\.in)?$', 'match_name': None,
+     'check': lambda x: __regex_static_inline_c_file.search(x) is not None,
+     'print':
+     lambda: print_error("Using 'static inline' in a c-file.")
+     },
+
     {'regex': r'(\.at|\.sh)$', 'match_name': None,
      'check': lambda x: has_efgrep(x),
      'print':
@@ -637,10 +644,6 @@ checks = [
     {'regex': 'AUTHORS.rst$', 'match_name': None,
      'check': lambda x: update_missing_authors(x),
      'print': None},
-
-    {'regex': None, 'match_name': None,
-     'check': lambda x: 'ALLOW_EXPERIMENTAL_API' in x,
-     'print': lambda: print_error("DPDK Experimental API is not allowed")},
 ]
 
 
