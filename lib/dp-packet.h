@@ -911,6 +911,12 @@ dp_packet_batch_size(const struct dp_packet_batch *batch)
     return batch->count;
 }
 
+static inline size_t
+dp_packet_batch_capacity(const struct dp_packet_batch *batch)
+{
+    return batch->capacity;
+}
+
 /* Clear 'batch' for refill. */
 static inline void
 dp_packet_batch_refill_init(struct dp_packet_batch *batch)
