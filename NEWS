@@ -19,6 +19,12 @@ Post-v3.7.0
      * AVX512-optimized action handling.
      * AVX512-optimized packet parsing (miniflow extraction).
      * AVX512-optimized DPIF input processing.
+   - Linux:
+     * For veth interfaces, the interface index of the peer veth device is
+       now reported as 'peer_ifindex' in the Interface status column.  This
+       allows applications to programmatically discover veth pairs without
+       additional system calls.  See the 'status' column in the 'Interface'
+       table in ovs-vswitchd.conf.db(5) for details.
    - Windows:
      * The previously deprecated Windows kernel datapath implementation is
        now fully removed as well as support for running or building userspace
