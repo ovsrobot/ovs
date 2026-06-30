@@ -691,14 +691,6 @@ ip_format_masked(ovs_be32 ip, ovs_be32 mask, struct ds *s)
     }
 }
 
-/* Parses string 's', which must be an IP address.  Stores the IP address into
- * '*ip'.  Returns true if successful, otherwise false. */
-bool
-ip_parse(const char *s, ovs_be32 *ip)
-{
-    return inet_pton(AF_INET, s, ip) == 1;
-}
-
 /* Parses string 's', which must be an IP address with a port number
  * with ":" as a separator (e.g.: 192.168.1.2:80).
  * Stores the IP address into '*ip' and port number to '*port'.
@@ -799,14 +791,6 @@ ip_parse_cidr(const char *s, ovs_be32 *ip, unsigned int *plen)
         return xasprintf("%s: invalid IP address", s);
     }
     return error;
-}
-
-/* Parses string 's', which must be an IPv6 address.  Stores the IPv6 address
- * into '*ip'.  Returns true if successful, otherwise false. */
-bool
-ipv6_parse(const char *s, struct in6_addr *ip)
-{
-    return inet_pton(AF_INET6, s, ip) == 1;
 }
 
 /* Parses string 's', which must be an IPv6 address with an optional netmask or
@@ -949,21 +933,6 @@ ipv6_format_masked(const struct in6_addr *addr, const struct in6_addr *mask,
             ds_put_char(s, '/');
             ipv6_format_addr(mask, s);
         }
-    }
-}
-
-/* Stores the string representation of the IPv6 address 'addr' into the
- * character array 'addr_str', which must be at least INET6_ADDRSTRLEN
- * bytes long. If addr is IPv4-mapped, store an IPv4 dotted-decimal string. */
-const char *
-ipv6_string_mapped(char *addr_str, const struct in6_addr *addr)
-{
-    ovs_be32 ip;
-    ip = in6_addr_get_mapped_ipv4(addr);
-    if (ip) {
-        return inet_ntop(AF_INET, &ip, addr_str, INET6_ADDRSTRLEN);
-    } else {
-        return inet_ntop(AF_INET6, addr, addr_str, INET6_ADDRSTRLEN);
     }
 }
 
