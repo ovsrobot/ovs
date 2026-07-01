@@ -149,6 +149,7 @@ AC_CONFIG_FILES([
     ofproto/libofproto.sym
     lib/libsflow.sym
     lib/libopenvswitch.sym
+    lib/libopenvswitchutils.sym
     vtep/libvtep.sym])
 
 OVS_ENABLE_OPTION([-Wall])
@@ -204,6 +205,7 @@ AC_SUBST([OVS_LDFLAGS])
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES(tests/atlocal)
 AC_CONFIG_FILES(lib/libopenvswitch.pc)
+AC_CONFIG_FILES(lib/libopenvswitchutils.pc)
 AC_CONFIG_FILES(lib/libsflow.pc)
 AC_CONFIG_FILES(ofproto/libofproto.pc)
 AC_CONFIG_FILES(ovsdb/libovsdb.pc)

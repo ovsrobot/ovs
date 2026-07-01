@@ -7,5 +7,5 @@ Name: libopenvswitch
 Description: Open vSwitch library
 Version: @VERSION@
 Libs: -L${libdir} -lopenvswitch
-Libs.private: @LIBS@ @SSL_LIBS@ @CAPNG_LDADD@
+Requires.private: libopenvswitchutils
 Cflags: -I${includedir}

@@ -19,6 +19,8 @@
 
 #include <inttypes.h>
 #include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdint.h>
 #include <string.h>
 #include "compiler.h"
@@ -677,7 +679,13 @@ ip_is_local_multicast(ovs_be32 ip)
 }
 int ip_count_cidr_bits(ovs_be32 netmask);
 void ip_format_masked(ovs_be32 ip, ovs_be32 mask, struct ds *);
-bool ip_parse(const char *s, ovs_be32 *ip);
+/* Parses string 's', which must be an IP address.  Stores the IP address into
+ * '*ip'.  Returns true if successful, otherwise false. */
+static inline bool
+ip_parse(const char *s, ovs_be32 *ip)
+{
+    return inet_pton(AF_INET, s, ip) == 1;
+}
 char *ip_parse_port(const char *s, ovs_be32 *ip, ovs_be16 *port)
     OVS_WARN_UNUSED_RESULT;
 char *ip_parse_masked(const char *s, ovs_be32 *ip, ovs_be32 *mask)
@@ -1604,7 +1612,20 @@ void ipv6_format_addr_bracket(const struct in6_addr *addr, struct ds *,
 void ipv6_format_mapped(const struct in6_addr *addr, struct ds *);
 void ipv6_format_masked(const struct in6_addr *addr,
                         const struct in6_addr *mask, struct ds *);
-const char * ipv6_string_mapped(char *addr_str, const struct in6_addr *addr);
+/* Stores the string representation of the IPv6 address 'addr' into the
+ * character array 'addr_str', which must be at least INET6_ADDRSTRLEN
+ * bytes long. If addr is IPv4-mapped, store an IPv4 dotted-decimal string. */
+static inline const char *
+ipv6_string_mapped(char *addr_str, const struct in6_addr *addr)
+{
+    ovs_be32 ip;
+    ip = in6_addr_get_mapped_ipv4(addr);
+    if (ip) {
+        return inet_ntop(AF_INET, &ip, addr_str, INET6_ADDRSTRLEN);
+    } else {
+        return inet_ntop(AF_INET6, addr, addr_str, INET6_ADDRSTRLEN);
+    }
+}
 struct in6_addr ipv6_addr_bitand(const struct in6_addr *src,
                                  const struct in6_addr *mask);
 struct in6_addr ipv6_addr_bitxor(const struct in6_addr *a,
@@ -1616,7 +1637,13 @@ bool ipv6_is_cidr(const struct in6_addr *netmask);
 bool ipv6_addr_equals_masked(const struct in6_addr *a,
                              const struct in6_addr *b, int plen);
 
-bool ipv6_parse(const char *s, struct in6_addr *ip);
+/* Parses string 's', which must be an IPv6 address.  Stores the IPv6 address
+ * into '*ip'.  Returns true if successful, otherwise false. */
+static inline bool
+ipv6_parse(const char *s, struct in6_addr *ip)
+{
+    return inet_pton(AF_INET6, s, ip) == 1;
+}
 char *ipv6_parse_masked(const char *s, struct in6_addr *ipv6,
                         struct in6_addr *mask);
 char *ipv6_parse_cidr(const char *s, struct in6_addr *ip, unsigned int *plen)
