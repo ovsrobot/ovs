@@ -730,6 +730,49 @@ close_dpif_backer(struct dpif_backer *backer, bool del)
     free(backer);
 }
 
+/* Delete datapaths for types not used by any bridge in the database and not
+ * actively managed by ovs-vswitchd.  This removes orphan kernel datapath state
+ * while preserving datapaths for types still configured (e.g. kernel restart
+ * with flow-restore-wait). */
+void
+ofproto_delete_unused_datapaths(const struct sset *types_in_use)
+{
+    struct sset all_types;
+    const char *type;
+
+    sset_init(&all_types);
+    dp_enumerate_types(&all_types);
+
+    SSET_FOR_EACH (type, &all_types) {
+        struct sset names;
+        const char *name;
+
+        if (sset_contains(types_in_use, type)
+            || shash_find(&all_dpif_backers, type)) {
+            continue;
+        }
+
+        sset_init(&names);
+        if (!dp_enumerate_names(type, &names)) {
+            SSET_FOR_EACH (name, &names) {
+                int error;
+
+                error = del(type, name);
+                if (error) {
+                    VLOG_WARN("failed to delete unused datapath %s@%s: %s",
+                              type, name, ovs_strerror(error));
+                } else {
+                    VLOG_INFO("deleted unused datapath %s@%s", type, name);
+                }
+            }
+        }
+
+        sset_destroy(&names);
+    }
+
+    sset_destroy(&all_types);
+}
+
 static void check_support(struct dpif_backer *backer);
 static void copy_support(struct dpif_backer_support *dst,
                          struct dpif_backer_support *src);

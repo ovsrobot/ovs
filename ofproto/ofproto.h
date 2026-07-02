@@ -280,6 +280,7 @@ int ofproto_create(const char *datapath, const char *datapath_type,
     OVS_EXCLUDED(ofproto_mutex);
 void ofproto_destroy(struct ofproto *, bool del);
 int ofproto_delete(const char *name, const char *type);
+void ofproto_delete_unused_datapaths(const struct sset *types_in_use);
 
 int ofproto_run(struct ofproto *);
 void ofproto_wait(struct ofproto *);

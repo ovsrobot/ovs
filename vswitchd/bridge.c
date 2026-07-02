@@ -263,6 +263,8 @@ static uint64_t last_ifaces_changed;
 #define BRIDGE_CONTROLLER_PACKET_QUEUE_MAX_SIZE 512
 
 static void add_del_bridges(const struct ovsrec_open_vswitch *);
+static void collect_datapath_types(const struct ovsrec_open_vswitch *,
+                                   struct sset *);
 static void bridge_run__(void);
 static void bridge_create(const struct ovsrec_bridge *);
 static void bridge_destroy(struct bridge *, bool del);
@@ -862,6 +864,7 @@ datapath_reconfigure(const struct ovsrec_open_vswitch *cfg)
 static void
 bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
 {
+    static bool unused_datapaths_deleted = false;
     struct sockaddr_in *managers;
     struct bridge *br;
     int sflow_bridge_number;
@@ -1002,6 +1005,16 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
         bridge_configure_aa(br);
     }
     free(managers);
+
+    if (!unused_datapaths_deleted) {
+        struct sset datapath_types;
+
+        sset_init(&datapath_types);
+        collect_datapath_types(ovs_cfg, &datapath_types);
+        ofproto_delete_unused_datapaths(&datapath_types);
+        sset_destroy(&datapath_types);
+        unused_datapaths_deleted = true;
+    }
 
     /* The ofproto-dpif provider does some final reconfiguration in its
      * ->type_run() function.  We have to call it before notifying the database
@@ -2102,6 +2115,17 @@ static bool
 port_is_bond_fake_iface(const struct port *port)
 {
     return port->cfg->bond_fake_iface && !ovs_list_is_short(&port->ifaces);
+}
+
+static void
+collect_datapath_types(const struct ovsrec_open_vswitch *cfg,
+                       struct sset *types)
+{
+    for (size_t i = 0; i < cfg->n_bridges; i++) {
+        const struct ovsrec_bridge *br_cfg = cfg->bridges[i];
+
+        sset_add(types, ofproto_normalize_type(br_cfg->datapath_type));
+    }
 }
 
 static void
