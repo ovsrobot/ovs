@@ -47,6 +47,61 @@ Notice = collections.namedtuple('Notice', ('event', 'row', 'updates'))
 Notice.__new__.__defaults__ = (None,)  # default updates=None
 
 
+class ReconciledNotices:
+    """Lazy view over pending notices, reconciling reconnect events.
+
+    All notifications pass through this view before reaching
+    bulk_notify() or notify().  When notify_on_clear is False (the
+    default), each UUID has a single notice and the view passes it
+    through unchanged.  When notify_on_clear is True, __clear()
+    generates DELETE notices for all pre-existing rows before
+    __parse_update() generates INSERT notices for the new snapshot.
+    The view reconciles DELETE+INSERT pairs per UUID:
+
+    - Same data: suppressed (row survived unchanged)
+    - Different data: emitted as UPDATE with only changed columns
+    - DELETE only: emitted (row was truly deleted)
+    - INSERT only: emitted (genuinely new row)
+
+    Iteration yields Notice objects.  __getitem__(uuid) returns the
+    reconciled Notice for a specific UUID.
+    """
+
+    def __init__(self, notices):
+        self._raw = notices
+
+    def __getitem__(self, row_uuid):
+        return self._reconcile(row_uuid, self._raw[row_uuid])
+
+    def __iter__(self):
+        for row_uuid in self._raw:
+            notice = self._reconcile(row_uuid, self._raw[row_uuid])
+            if notice is not None:
+                yield notice
+
+    @staticmethod
+    def _reconcile(row_uuid, events):
+        if len(events) == 1:
+            return events[0]
+        if (
+            len(events) == 2 and
+            events[0].event == ROW_DELETE and
+            events[1].event == ROW_CREATE
+        ):
+            old_row = events[0].row
+            new_row = events[1].row
+            old_data = {}
+            for col in old_row._table.columns:
+                if col in old_row._data and col in new_row._data:
+                    if old_row._data[col] != new_row._data[col]:
+                        old_data[col] = old_row._data[col]
+            if old_data:
+                return Notice(ROW_UPDATE, new_row,
+                              Row(None, old_row._table, row_uuid, old_data))
+            return None
+        assert False, "unexpected number of events for row %s" % row_uuid
+
+
 class ColumnDefaultDict(dict):
     """A column dictionary with on-demand generated default values
 
@@ -238,7 +293,7 @@ class Idl(object):
         Monitor.monitor_cond_since: IDL_S_DATA_MONITOR_COND_SINCE_REQUESTED}
 
     def __init__(self, remote, schema_helper, probe_interval=None,
-                 leader_only=True):
+                 leader_only=True, notify_on_clear=False):
         """Creates and returns a connection to the database named 'db_name' on
         'remote', which should be in a form acceptable to
         ovs.jsonrpc.session.open().  The connection will maintain an in-memory
@@ -268,6 +323,20 @@ class Idl(object):
         If "probe_interval" is zero it disables the connection keepalive
         feature. If non-zero the value will be forced to at least 1000
         milliseconds. If None it will just use the default value in OVS.
+
+        If 'notify_on_clear' is True, the IDL generates ROW_DELETE
+        notifications for existing rows when the local database replica
+        is cleared (e.g. on initial connection or when a
+        monitor_cond_since reply indicates the server could not provide
+        incremental updates).  These DELETE notices are reconciled with
+        the subsequent INSERT notices from the new snapshot before
+        delivery via bulk_notify(): rows that survived unchanged are
+        suppressed, rows with changed data are delivered as ROW_UPDATE
+        with only the changed columns, truly deleted rows are delivered
+        as ROW_DELETE, and genuinely new rows are delivered as
+        ROW_CREATE.  When False (the default), all rows from the new
+        snapshot are delivered as ROW_CREATE, with no notification for
+        rows that no longer exist.
         """
 
         assert isinstance(schema_helper, SchemaHelper)
@@ -314,6 +383,8 @@ class Idl(object):
 
         self.cond_changed = False
         self.cond_seqno = 0
+        self.notify_on_clear = notify_on_clear
+        self._pending_notices = collections.defaultdict(list)
 
     def _parse_remotes(self, remote):
         # If remote is -
@@ -494,15 +565,22 @@ class Idl(object):
                         # If 'found' is false, clear table rows for new dump
                         if not msg.result[0]:
                             self.__clear()
-                        self.__parse_update(msg.result[2], OVSDB_UPDATE3)
+                            self.__parse_update(msg.result[2],
+                                                OVSDB_UPDATE3,
+                                                initial=True)
+                        else:
+                            self.__parse_update(msg.result[2],
+                                                OVSDB_UPDATE3)
                         self.last_id = msg.result[1]
                     elif self.state == self.IDL_S_DATA_MONITOR_COND_REQUESTED:
                         self.__clear()
-                        self.__parse_update(msg.result, OVSDB_UPDATE2)
+                        self.__parse_update(msg.result, OVSDB_UPDATE2,
+                                            initial=True)
                     else:
                         assert self.state == self.IDL_S_DATA_MONITOR_REQUESTED
                         self.__clear()
-                        self.__parse_update(msg.result, OVSDB_UPDATE)
+                        self.__parse_update(msg.result, OVSDB_UPDATE,
+                                            initial=True)
                     self.state = self.IDL_S_MONITORING
 
                 except error.Error as e:
@@ -782,6 +860,10 @@ class Idl(object):
         :type updates:  Row
         """
 
+    def bulk_notify(self, notices, initial=False):
+        for notice in notices:
+            self.notify(*notice)
+
     def cooperative_yield(self):
         """Hook for cooperatively yielding to eventlet/gevent/asyncio/etc.
 
@@ -797,6 +879,10 @@ class Idl(object):
         for table in self.tables.values():
             if table.rows:
                 changed = True
+                if self.notify_on_clear:
+                    for row_uuid, row in table.rows.items():
+                        self._pending_notices[row_uuid].append(
+                            Notice(ROW_DELETE, row))
                 table.rows.clear()
 
         self.cond_seqno = 0
@@ -919,22 +1005,24 @@ class Idl(object):
         self._server_monitor_request_id = msg.id
         self.send_request(msg)
 
-    def __parse_update(self, update, version, tables=None):
+    def __parse_update(self, update, version, tables=None, initial=False):
         try:
             if not tables:
-                self.__do_parse_update(update, version, self.tables)
+                self.__do_parse_update(update, version, self.tables,
+                                      initial=initial)
             else:
-                self.__do_parse_update(update, version, tables)
+                self.__do_parse_update(update, version, tables,
+                                      initial=initial)
         except error.Error as e:
             vlog.err("%s: error parsing update: %s"
                      % (self._session.get_name(), e))
 
-    def __do_parse_update(self, table_updates, version, tables):
+    def __do_parse_update(self, table_updates, version, tables,
+                          initial=False):
         if not isinstance(table_updates, dict):
             raise error.Error("<table-updates> is not an object",
                               table_updates)
 
-        notices = []
         for table_name, table_update in table_updates.items():
             table = tables.get(table_name)
             if not table:
@@ -964,7 +1052,7 @@ class Idl(object):
                 if version in (OVSDB_UPDATE2, OVSDB_UPDATE3):
                     changes = self.__process_update2(table, uuid, row_update)
                     if changes and tables is not self.server_tables:
-                        notices.append(changes)
+                        self._pending_notices[uuid].append(changes)
                         self.change_seqno += 1
                     continue
 
@@ -979,10 +1067,11 @@ class Idl(object):
 
                 changes = self.__process_update(table, uuid, old, new)
                 if changes and tables is not self.server_tables:
-                    notices.append(changes)
+                    self._pending_notices[uuid].append(changes)
                     self.change_seqno += 1
-        for notice in notices:
-            self.notify(*notice)
+        self.bulk_notify(ReconciledNotices(self._pending_notices),
+                         initial=initial)
+        self._pending_notices.clear()
 
     def __process_update2(self, table, uuid, row_update):
         """Returns Notice if a column changed, False otherwise."""
