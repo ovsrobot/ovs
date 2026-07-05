@@ -29,7 +29,12 @@ done
 
 insert_mods () {
     # Try loading openvswitch kernel module.
-    action "Inserting openvswitch module" modprobe openvswitch
+    modinfo openvswitch > /dev/null 2>&1
+    if test $? = 0; then
+        action "Inserting openvswitch module" modprobe openvswitch
+    else
+        log_warning_msg "No openvswitch module, running in userspace mode only"
+    fi
 }
 
 insert_kmods_if_required() {

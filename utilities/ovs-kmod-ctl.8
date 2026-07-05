@@ -43,9 +43,14 @@ Each of \fBovs\-kmod\-ctl\fR's commands is described separately below.
 .
 .PP
 The \fBinsert\fR command loads the Open vSwitch kernel modules, if
-needed.  If this fails, and the Linux bridge module is loaded but no
-bridges exist, it tries to unload the bridge module and tries loading
-the Open vSwitch kernel module again.
+needed.  If the \fBopenvswitch\fR kernel module is not installed on
+the system, the command continues without it, allowing Open vSwitch
+to operate in userspace\-only mode.
+.PP
+If \fBmodprobe\fR\|(8) fails for an installed module, and the Linux
+bridge module is loaded but no bridges exist, the command tries to
+unload the bridge module and retries loading the Open vSwitch kernel
+module.
 .
 .SH "The ``remove'' command"
 .
@@ -58,8 +63,9 @@ modules.
 .
 \fBovs\-kmod\-ctl\fR exits with status 0 on success and nonzero on
 failure.  The \fBinsert\fR command is considered to succeed if kernel
-modules are already loaded; the \fBremove\fR command is considered to
-succeed if none of the kernel modules are loaded.
+modules are already loaded or if the \fBopenvswitch\fR module is not
+installed (userspace\-only mode); the \fBremove\fR command is considered
+to succeed if none of the kernel modules are loaded.
 .
 .SH "ENVIRONMENT"
 .
