@@ -43,6 +43,12 @@ insert_kmods_if_required() {
     # If openvswitch is already loaded then we're done.
     test -e /sys/module/openvswitch && return 0
 
+    # If openvswitch module is not available then we're done.
+    if ! modinfo openvswitch > /dev/null 2>&1; then
+        log_warning_msg "openvswitch module isn't available"
+        return 0
+    fi
+
     # Load openvswitch.  If that's successful then we're done.
     insert_mods && return 0
 
