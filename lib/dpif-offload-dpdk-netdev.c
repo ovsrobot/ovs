@@ -3026,9 +3026,6 @@ dpdk_netdev_hw_miss_packet_recover(struct dpdk_offload *offload,
     ret = netdev_dpdk_rte_flow_get_restore_info(netdev, packet,
                                                 &rte_restore_info, NULL);
     if (ret) {
-        if (ret == -EOPNOTSUPP) {
-            return -ret;
-        }
         /* This function is called for every packet, and in most cases there
          * will be no restore info from the HW, thus error is expected.
          */
