@@ -770,9 +770,14 @@ def do_idl(schema_file, remote, *commands):
         ovs.stream.Stream.ssl_set_ca_cert_file(commands[2])
         commands = commands[3:]
 
+    notify_on_clear = False
     if commands and commands[0] == "track-notify":
         commands = commands[1:]
         track_notify = True
+    elif commands and commands[0] == "track-notify-on-clear":
+        commands = commands[1:]
+        track_notify = True
+        notify_on_clear = True
 
     if commands and commands[0].startswith("?"):
         readonly = {}
@@ -788,7 +793,8 @@ def do_idl(schema_file, remote, *commands):
         commands = commands[1:]
     else:
         schema_helper.register_all()
-    idl = ovs.db.idl.Idl(remote, schema_helper, leader_only=False)
+    idl = ovs.db.idl.Idl(remote, schema_helper, leader_only=False,
+                          notify_on_clear=notify_on_clear)
     if "simple3" in idl.tables:
         idl.index_create("simple3", "simple3_by_name")
     if "indexed" in idl.tables:
