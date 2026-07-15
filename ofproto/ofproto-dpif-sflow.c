@@ -482,7 +482,7 @@ sflow_choose_agent_address(const char *agent_device,
 
             struct in6_addr gw, src = in6addr_any;
             char name[IFNAMSIZ];
-            if (ovs_router_lookup(0, &target_ip, name, &src, &gw)) {
+            if (ovs_router_lookup(0, &target_ip, NULL, name, &src, &gw)) {
                 ip = src;
                 goto success;
             }
