@@ -116,8 +116,6 @@ enum ct_timeout {
     N_CT_TM
 };
 
-#define N_EXP_LISTS 100
-
 struct conn_key_node {
     enum key_dir dir;
     struct conn_key key;
@@ -133,9 +131,6 @@ struct conn {
     atomic_flag reclaimed; /* False during the lifetime of the connection,
                             * True as soon as a thread has started freeing
                             * its memory. */
-
-    /* Inserted once by a PMD, then managed by the 'ct_clean' thread. */
-    struct rculist node;
 
     /* Mutable data. */
     struct ovs_mutex lock; /* Guards all mutable fields. */
@@ -212,17 +207,13 @@ struct conntrack_zone {
 struct conntrack {
     struct ovs_mutex ct_lock; /* Protects the following fields. */
     struct conntrack_zone zones[UINT16_MAX + 1];
-    struct rculist exp_lists[N_EXP_LISTS];
     struct cmap timeout_policies;
     atomic_int64_t default_zone_limit;
 
     uint32_t hash_basis; /* Salt for hashing a connection key. */
     pthread_t clean_thread; /* Periodically cleans up connection tracker. */
     struct latch clean_thread_exit; /* To destroy the 'clean_thread'. */
-    unsigned int next_list; /* Next list where the newly created connection
-                             * gets inserted. */
-    unsigned int next_sweep; /* List from which the gc thread will resume
-                              * the sweeping. */
+    unsigned int next_clean_zone; /* Next zone where the clean should run. */
 
     /* Counting connections. */
     atomic_count n_conn; /* Number of connections currently tracked. */
