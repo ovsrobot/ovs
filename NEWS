@@ -1,5 +1,8 @@
 Post-v4.0.0
 --------------------
+   - Userspace datapath:
+     * Improved multi-thread multi-zone scalability of the userspace
+       connection tracking.
 
 
 v4.0.0 - xx xxx xxxx
