@@ -75,7 +75,7 @@ BUILD_ASSERT_DECL(MEMBER_SIZEOF(struct conn_key, nw_proto) == sizeof(uint8_t));
  * connection. */
 struct alg_exp_node {
     /* Node in alg_expectations. */
-    struct hmap_node node;
+    struct cmap_node node;
     /* Node in alg_expectation_refs. */
     struct hindex_node node_ref;
     /* Key of data connection to be created. */
@@ -231,9 +231,10 @@ struct conntrack {
 
     /* Expectations for application level gateways (created by control
      * connections to help create data connections, e.g. for FTP). */
-    struct ovs_rwlock resources_lock; /* Protects fields below. */
-    struct hmap alg_expectations OVS_GUARDED; /* Holds struct
-                                               * alg_exp_nodes. */
+    struct ovs_mutex resources_lock; /* Protects fields below. */
+    struct cmap alg_expectations; /* Holds struct alg_exp_nodes.
+                                   * resources_lock must be held for mutating
+                                   * operations. */
     struct hindex alg_expectation_refs OVS_GUARDED; /* For lookup from
                                                      * control context.  */
 
