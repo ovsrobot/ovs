@@ -207,9 +207,13 @@ struct conntrack_zone_limit {
     uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
 };
 
+struct conntrack_zone {
+    struct cmap conns;
+};
+
 struct conntrack {
     struct ovs_mutex ct_lock; /* Protects the following fields. */
-    struct cmap conns[UINT16_MAX + 1];
+    struct conntrack_zone zones[UINT16_MAX + 1];
     struct rculist exp_lists[N_EXP_LISTS];
     struct cmap zone_limits;
     struct cmap timeout_policies;
