@@ -54,6 +54,9 @@ COVERAGE_DEFINE(conntrack_l4csum_checked);
 COVERAGE_DEFINE(conntrack_l4csum_err);
 COVERAGE_DEFINE(conntrack_lookup_natted_miss);
 COVERAGE_DEFINE(conntrack_zone_full);
+COVERAGE_DEFINE(conntrack_remove);
+COVERAGE_DEFINE(conntrack_insert);
+COVERAGE_DEFINE(conntrack_maybe_not_found);
 
 struct conn_lookup_ctx {
     struct conn_key key;
@@ -590,6 +593,7 @@ conn_clean(struct conntrack *ct, struct conn *conn)
         return;
     }
 
+    COVERAGE_INC(conntrack_remove);
     ovs_mutex_lock(&ct->ct_lock);
     conn_clean__(ct, conn);
     ovs_mutex_unlock(&ct->ct_lock);
@@ -1027,10 +1031,12 @@ conn_insert(struct conntrack *ct, struct dp_packet *pkt,
             enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
     OVS_REQUIRES(ct->ct_lock)
 {
-    struct conn *nc = NULL;
-
-    int64_t czl_limit;
     struct conn_key_node *fwd_key_node, *rev_key_node;
+    struct conn *nc = NULL;
+    int64_t czl_limit;
+
+    COVERAGE_INC(conntrack_insert);
+
     struct zone_limit *zl = zone_limit_lookup_or_default(ct,
                                                          ctx->key.zone);
     if (zl) {
@@ -1158,6 +1164,8 @@ conn_maybe_not_found(struct conntrack *ct, struct dp_packet *pkt,
                      enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
 {
     struct conn *nc = NULL;
+
+    COVERAGE_INC(conntrack_maybe_not_found);
 
     /* Note that we only insert a connection if commit=true. In this
      * case we must ensure that the connection is not already part of
