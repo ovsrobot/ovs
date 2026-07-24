@@ -468,15 +468,7 @@ parse_gre_header(struct dp_packet *packet,
 
     options = (ovs_16aligned_be32 *)(greh + 1);
     if (greh->flags & htons(GRE_CSUM)) {
-        ovs_be16 pkt_csum;
-
-        pkt_csum = csum(greh, dp_packet_size(packet) -
-                              ((const unsigned char *)greh -
-                               (const unsigned char *)dp_packet_eth(packet)));
-        if (pkt_csum) {
-            return -EINVAL;
-        }
-        tnl->flags |= FLOW_TNL_F_CSUM;
+        VLOG_WARN_RL(&err_rl, "GRE tunnel checksum not validated.");
         options++;
     }
 
@@ -552,11 +544,6 @@ netdev_gre_push_header(const struct netdev *netdev,
     greh = netdev_tnl_push_ip_header(packet, data->header, data->header_len,
                                      &ip_tot_size, 0);
 
-    if (greh->flags & htons(GRE_CSUM)) {
-        ovs_be16 *csum_opt = (ovs_be16 *) (greh + 1);
-        *csum_opt = csum(greh, ip_tot_size);
-    }
-
     if (greh->flags & htons(GRE_SEQ)) {
         if (!dp_packet_get_tso_segsz(packet)) {
             /* Last 4 bytes are GRE seqno. */
@@ -601,12 +588,6 @@ netdev_gre_build_header(const struct netdev *netdev,
     greh->flags = 0;
 
     options = (ovs_16aligned_be32 *) (greh + 1);
-    if (params->flow->tunnel.flags & FLOW_TNL_F_CSUM) {
-        greh->flags |= htons(GRE_CSUM);
-        put_16aligned_be32(options, 0);
-        options++;
-    }
-
     tnl_cfg = netdev_get_tunnel_config(netdev);
 
     if (tnl_cfg->out_key_present) {

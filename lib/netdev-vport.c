@@ -618,8 +618,7 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
     struct smap_node *node;
     int err;
 
-    has_csum = strstr(type, "gre") || strstr(type, "geneve") ||
-               strstr(type, "vxlan");
+    has_csum = strstr(type, "geneve") || strstr(type, "vxlan");
     has_seq = strstr(type, "gre");
     memset(&tnl_cfg, 0, sizeof tnl_cfg);
 
@@ -844,8 +843,7 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
      * checksum but the default configuration isn't correlated with IP version
      * like UDP tunnels are.  Likewise, tunnels with no checksum at all must be
      * in this state. */
-    if (tnl_cfg.csum == NETDEV_TNL_CSUM_DEFAULT &&
-        (!has_csum || strstr(type, "gre"))) {
+    if (tnl_cfg.csum == NETDEV_TNL_CSUM_DEFAULT && !has_csum) {
         tnl_cfg.csum = NETDEV_TNL_DEFAULT_NO_CSUM;
     }
 

@@ -1,5 +1,8 @@
 Post-v4.0.0
 --------------------
+   - Tunneling:
+     * Completely removed all support for the GRE header checksum field.
+       This feature was never implemented correctly and should never be used.
 
 
 v4.0.0 - xx xxx xxxx

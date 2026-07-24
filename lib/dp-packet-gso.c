@@ -165,18 +165,6 @@ dp_packet_gso_update_segment(struct dp_packet *seg, unsigned int seg_no,
                              & ~(TCP_PSH | TCP_FIN);
         tcp_hdr->tcp_ctl = TCP_CTL(tcp_flags, tcp_offset);
     }
-
-    if (gre_tnl) {
-        struct gre_base_hdr *ghdr;
-
-        ghdr = dp_packet_l4(seg);
-
-        if (ghdr->flags & htons(GRE_CSUM)) {
-            ovs_be16 *csum_opt = (ovs_be16 *) (ghdr + 1);
-            *csum_opt = 0;
-            *csum_opt = csum(ghdr, dp_packet_l4_size(seg));
-        }
-    }
 }
 
 static void

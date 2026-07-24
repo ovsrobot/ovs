@@ -3207,19 +3207,18 @@
         </column>
       </group>
 
-      <group title="Tunnel Options: gre, ip6gre, geneve, bareudp and vxlan">
+      <group title="Tunnel Options: geneve, bareudp and vxlan">
         <p>
-          <code>gre</code>, <code>ip6gre</code>, <code>geneve</code>,
-          <code>bareudp</code> and <code>vxlan</code> interfaces support these
-          options.
+          <code>geneve</code>, <code>bareudp</code> and <code>vxlan</code>
+          interfaces support these options.
         </p>
 
         <column name="options" key="csum" type='{"type": "boolean"}'>
           <p>
-            Optional.  Compute encapsulation header (either GRE or UDP)
+            Optional.  Compute encapsulation header (UDP tunnels only)
             checksums on outgoing packets.  When unset (the default value),
             checksum computing for outgoing packets is enabled for UDP IPv6
-            tunnels, and disabled for GRE and IPv4 UDP tunnels.  When set to
+            tunnels, and disabled for IPv4 UDP tunnels.  When set to
             <code>false</code>, no checksums will be computed for outgoing
             tunnel encapsulation headers.  When <code>true</code>, checksums
             will be computed for all outgoing tunnel encapsulation headers.
@@ -3231,9 +3230,7 @@
           <p>
             When using the Linux kernel datapath, computation of checksums
             for <code>geneve</code> and <code>vxlan</code> requires Linux
-            kernel version 4.0 or higher.  <code>gre</code> and
-            <code>ip6gre</code> support checksums for all versions of
-            Open vSwitch that support GRE.
+            kernel version 4.0 or higher.
           </p>
 
         </column>

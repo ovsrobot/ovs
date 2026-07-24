@@ -954,9 +954,12 @@ sflow_read_tnl_push_action(const struct nlattr *attr,
         const void *l4 = ip + 1;
         const struct gre_base_hdr *greh = (const struct gre_base_hdr *) l4;
         ovs_16aligned_be32 *options = (ovs_16aligned_be32 *)(greh + 1);
+
         if (greh->flags & htons(GRE_CSUM)) {
+            VLOG_WARN_RL(&rl, "gre tunnel checksums not supported");
             options++;
         }
+
         if (greh->flags & htons(GRE_KEY)) {
             uint64_t tun_id = ntohl(get_16aligned_be32(options));
             sflow_actions->tunnel.tun_id = htonll(tun_id);
