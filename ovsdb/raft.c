@@ -3458,6 +3458,14 @@ raft_handle_append_request(struct raft *raft,
     }
     raft_reset_election_timer(raft);
 
+    /* Reject prev_log_index values that would cause first_entry_index
+     * (prev_log_index + 1) to wrap around to 0. */
+    if (rq->prev_log_index == UINT64_MAX) {
+        raft_send_append_reply(raft, rq, RAFT_APPEND_INCONSISTENCY,
+                               "prev_log_index overflow");
+        return;
+    }
+
     /* First check for the common case, where the AppendEntries request is
      * entirely for indexes covered by 'log_start' ... 'log_end - 1', something
      * like this:
