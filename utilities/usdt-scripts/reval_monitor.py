@@ -402,8 +402,8 @@ def get_ovs_definitions(objects, pahole="pahole", pid=None):
         return dbg_file
 
     def get_from_shared_library(debug_file):
-        ovs_libs = ['libofproto', 'libopenvswitch', 'libovsdb', 'libsflow',
-                    'libvtep']
+        ovs_libs = ['libofproto', 'libopenvswitch', 'libopenvswitchutils',
+                    'libovsdb', 'libsflow', 'libvtep']
         error, ldd_result = run_program(['ldd', debug_file])
 
         if error:

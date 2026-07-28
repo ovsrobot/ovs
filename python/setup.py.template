@@ -69,7 +69,7 @@ class try_build_ext(build_ext):
 if os.environ.get('enable_shared', '') == 'no':
     libraries = []
 else:
-    libraries = ['openvswitch']
+    libraries = ['openvswitchutils']
 
 extra_cflags = os.environ.get('extra_cflags', '').split()
 extra_libs = os.environ.get('extra_libs', '').split()

@@ -383,6 +383,7 @@ def get_ovs_definitions(objects, pahole="pahole", pid=None):
         ovs_libs = [
             "libofproto",
             "libopenvswitch",
+            "libopenvswitchutils",
             "libovsdb",
             "libsflow",
             "libvtep",

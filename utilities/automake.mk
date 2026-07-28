@@ -111,7 +111,7 @@ man_MANS += \
 	utilities/ovs-vsctl.8
 
 utilities_ovs_appctl_SOURCES = utilities/ovs-appctl.c
-utilities_ovs_appctl_LDADD = lib/libopenvswitch.la
+utilities_ovs_appctl_LDADD = lib/libopenvswitchutils.la
 
 utilities_ovs_testcontroller_SOURCES = utilities/ovs-testcontroller.c
 utilities_ovs_testcontroller_LDADD = lib/libopenvswitch.la $(SSL_LIBS)

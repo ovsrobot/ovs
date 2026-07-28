@@ -4,6 +4,12 @@ Post-v4.0.0
 
 v4.0.0 - xx xxx xxxx
 --------------------
+   - The libopenvswitch library has been split into libopenvswitch (datapath,
+     OpenFlow, netdev) and libopenvswitchutils (utilities, containers, I/O,
+     OVSDB client).  Programs that do not need the datapath functionality
+     (e.g. ovsdb-server, ovsdb-client) now link only libopenvswitchutils.
+     Address parsing and formatting functions have been moved from packets.[ch]
+     to netaddr.[ch] in the utils library.
    - Userspace datapath:
      * ARP/ND lookups for native tunnel are now rate limited. The holdout
        timer can be configured with 'tnl/neigh/retrans_time'.
