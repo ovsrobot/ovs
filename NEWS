@@ -1,5 +1,12 @@
 Post-v4.0.0
 --------------------
+   - Userspace datapath:
+     * Conntrack offloading framework: hardware vendors can now register a
+       ct_offload_class to receive connection lifecycle events (conn_add,
+       conn_established, conn_update, conn_del) and maintain hardware CT
+       state in sync with OVS's software conntrack table.  See
+       Documentation/topics/userspace-conntrack-offloading.rst for the
+       integration guide.
 
 
 v4.0.0 - xx xxx xxxx
