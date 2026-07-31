@@ -27,8 +27,6 @@
 Userspace Datapath - TSO
 ========================
 
-**Note:** This feature is considered experimental.
-
 TCP Segmentation Offload (TSO) enables a network stack to delegate segmentation
 of an oversized TCP segment to the underlying physical NIC. Offload of frame
 segmentation achieves computational savings in the core, freeing up CPU cycles
