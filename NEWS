@@ -1,5 +1,7 @@
 Post-v4.0.0
 --------------------
+   - Userspace datapath:
+     * Removed experimental tag from the userspace TSO implementation.
 
 
 v4.0.0 - xx xxx xxxx
