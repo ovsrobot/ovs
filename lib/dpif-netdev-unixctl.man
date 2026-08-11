@@ -151,6 +151,15 @@ any packets.  "busy iterations" refers to PMD iterations that included
 processing of at least one packet.  The reported used TSC cycles include the
 cost for polling, processing and transmitting said packets.
 
+JSON output is an object keyed by thread name ("main" or "pmd-c\fIXX\fR"),
+whose values hold the same statistics.  The histograms, selected by
+\fB-nh\fR, are reported under "histograms", each metric as an object with
+a "walls" array of upper bin bounds and a "bins" array of sample counts,
+one longer than "walls" because the last bin collects everything above the
+last wall.  The iteration and millisecond histories, selected by \fB-it\fR
+and \fB-ms\fR, are reported as arrays under "iteration-history" and
+"millisecond-history", most recent sample first.
+
 To reset the counters and start a new measurement use
 \fBdpif-netdev/pmd-stats-clear\fR.
 .
