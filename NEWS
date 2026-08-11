@@ -7,6 +7,7 @@ Post-v4.0.0
        'dpif-netdev/pmd-sleep-show'.
      * Added JSON output support (--format json) for
        'dpif-netdev/pmd-perf-show'.
+     * Added JSON output support (--format json) for 'dpctl/show'.
 
 
 v4.0.0 - xx xxx xxxx
