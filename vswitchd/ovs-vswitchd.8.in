@@ -191,6 +191,9 @@ Clear \fIbridge\fR MAC address learning table statistics, or all
 statistics if no \fIbridge\fR is given.
 .IP "\fBfdb/stats-show\fR \fIbridge\fR"
 Show MAC address learning table statistics for the specified \fIbridge\fR.
+JSON output is an object keyed by bridge name, whose value holds an
+"entries" object with the current, maximum and static entry counts and an
+"events" object with the evicted, expired, learned and moved counters.
 .IP "\fBmdb/flush\fR [\fIbridge\fR]"
 Flushes \fIbridge\fR multicast snooping table, or all snooping tables
 if no \fIbridge\fR is given.
