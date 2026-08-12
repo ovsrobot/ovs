@@ -1,5 +1,7 @@
 Post-v4.0.0
 --------------------
+   - ovs-appctl:
+     * Added JSON output support (--format json) for 'fdb/stats-show'.
 
 
 v4.0.0 - xx xxx xxxx
