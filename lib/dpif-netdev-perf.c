@@ -206,9 +206,146 @@ pmd_perf_stats_init(struct pmd_perf_stats *s)
     s->log_reason = NULL;
 }
 
+static const struct json *
+pmd_perf_json_get(const struct json *json, const char *name)
+{
+    return json ? shash_find_data(json_object(json), name) : NULL;
+}
+
+static uint64_t
+pmd_perf_json_get_int(const struct json *json, const char *name)
+{
+    const struct json *value = pmd_perf_json_get(json, name);
+
+    return value ? json_integer(value) : 0;
+}
+
+static double
+pmd_perf_json_get_real(const struct json *json, const char *name)
+{
+    const struct json *value = pmd_perf_json_get(json, name);
+
+    return value ? json_real(value) : 0;
+}
+
 void
 pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
                               double duration, bool format_iterations)
+{
+    uint64_t exact, lost, megaflow, passes, phwol, simple, smc, upcalls;
+    const struct json *averages, *hits, *iter, *packets, *upcalls_json;
+    uint64_t rx_packets, tx_batches, tx_packets;
+    struct json *json = json_object_create();
+
+    pmd_perf_format_overall_stats_json(json, s, duration, format_iterations);
+
+    packets = pmd_perf_json_get(json, "packets");
+    if (!packets) {
+        /* No statistics have been collected. */
+        json_destroy(json);
+        return;
+    }
+
+    averages = pmd_perf_json_get(json, "averages");
+    hits = pmd_perf_json_get(json, "flow-cache-hits");
+    upcalls_json = pmd_perf_json_get(json, "upcalls");
+    iter = pmd_perf_json_get(json, "iterations");
+
+    rx_packets = pmd_perf_json_get_int(packets, "received");
+    tx_packets = pmd_perf_json_get_int(packets, "transmitted");
+    tx_batches = pmd_perf_json_get_int(packets, "tx-batches");
+    passes = rx_packets + pmd_perf_json_get_int(packets, "recirculated");
+    phwol = pmd_perf_json_get_int(hits, "partial-hardware-offload");
+    simple = pmd_perf_json_get_int(hits, "simple");
+    exact = pmd_perf_json_get_int(hits, "exact");
+    smc = pmd_perf_json_get_int(hits, "signature");
+    megaflow = pmd_perf_json_get_int(hits, "megaflow");
+    upcalls = pmd_perf_json_get_int(upcalls_json, "success");
+    lost = pmd_perf_json_get_int(upcalls_json, "failure");
+
+    if (iter) {
+        ds_put_format(str,
+            "  Iterations:         %12"PRIu64"  (%.2f us/it)\n"
+            "  - Used TSC cycles:  %12"PRIu64"  (%5.1f %% of total cycles)\n"
+            "  - idle iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
+            "  - busy iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
+            "  - sleep iterations: %12"PRIu64"  (%5.1f %% of iterations)\n"
+            "  Sleep time (us):    %12.0f  (%3.0f us/iteration avg.)\n",
+            pmd_perf_json_get_int(iter, "total"),
+            pmd_perf_json_get_real(iter, "us-per-iteration"),
+            pmd_perf_json_get_int(iter, "used-tsc-cycles"),
+            pmd_perf_json_get_real(iter, "used-tsc-percentage"),
+            pmd_perf_json_get_int(iter, "idle"),
+            pmd_perf_json_get_real(iter, "idle-percentage"),
+            pmd_perf_json_get_int(iter, "busy"),
+            pmd_perf_json_get_real(iter, "busy-percentage"),
+            pmd_perf_json_get_int(iter, "sleep"),
+            pmd_perf_json_get_real(iter, "sleep-percentage"),
+            pmd_perf_json_get_real(iter, "sleep-time-us"),
+            pmd_perf_json_get_real(iter, "sleep-us-per-iteration"));
+    }
+    if (rx_packets > 0) {
+        ds_put_format(str,
+            "  Rx packets:         %12"PRIu64"  (%.0f Kpps",
+            rx_packets, pmd_perf_json_get_real(averages, "rx-kpps"));
+        if (pmd_perf_json_get(averages, "cycles-per-packet")) {
+            ds_put_format(str, ", %.0f cycles/pkt",
+                pmd_perf_json_get_real(averages, "cycles-per-packet"));
+        }
+        ds_put_cstr(str, ")\n");
+
+        ds_put_format(str,
+            "  Datapath passes:    %12"PRIu64"  (%.2f passes/pkt)\n"
+            "  - PHWOL hits:       %12"PRIu64"  (%5.1f %%)\n"
+            "  - Simple Match hits:%12"PRIu64"  (%5.1f %%)\n"
+            "  - EMC hits:         %12"PRIu64"  (%5.1f %%)\n"
+            "  - SMC hits:         %12"PRIu64"  (%5.1f %%)\n"
+            "  - Megaflow hits:    %12"PRIu64"  (%5.1f %%, %.2f "
+                                                 "subtbl lookups/hit)\n",
+            passes,
+            pmd_perf_json_get_real(averages, "datapath-passes-per-packet"),
+            phwol, 100.0 * phwol / passes,
+            simple, 100.0 * simple / passes,
+            exact, 100.0 * exact / passes,
+            smc, 100.0 * smc / passes,
+            megaflow, 100.0 * megaflow / passes,
+            pmd_perf_json_get_real(averages,
+                                 "subtable-lookups-per-megaflow-hit"));
+
+        ds_put_format(str,
+            "  - Upcalls:          %12"PRIu64"  (%5.1f %%",
+            upcalls, 100.0 * upcalls / passes);
+        if (pmd_perf_json_get(averages, "us-per-upcall")) {
+            ds_put_format(str, ", %.1f us/upcall",
+                pmd_perf_json_get_real(averages, "us-per-upcall"));
+        }
+        ds_put_cstr(str, ")\n");
+
+        ds_put_format(str,
+            "  - Lost upcalls:     %12"PRIu64"  (%5.1f %%)\n",
+            lost, 100.0 * lost / passes);
+    } else {
+        ds_put_format(str,
+            "  Rx packets:         %12d\n", 0);
+    }
+    if (tx_packets > 0) {
+        ds_put_format(str,
+            "  Tx packets:         %12"PRIu64"  (%.0f Kpps)\n"
+            "  Tx batches:         %12"PRIu64"  (%.2f pkts/batch)\n",
+            tx_packets, pmd_perf_json_get_real(averages, "tx-kpps"),
+            tx_batches,
+            pmd_perf_json_get_real(averages, "packets-per-tx-batch"));
+    } else {
+        ds_put_format(str,
+            "  Tx packets:         %12d\n\n", 0);
+    }
+
+    json_destroy(json);
+}
+
+void
+pmd_perf_format_overall_stats_json(struct json *json, struct pmd_perf_stats *s,
+                                   double duration, bool show_iterations)
 {
     uint64_t stats[PMD_N_STATS];
     double us_per_cycle = 1000000.0 / tsc_hz;
@@ -232,86 +369,133 @@ pmd_perf_format_overall_stats(struct ds *str, struct pmd_perf_stats *s,
     uint64_t busy_iter = tot_iter >= idle_iter ? tot_iter - idle_iter : 0;
     uint64_t sleep_iter = stats[PMD_SLEEP_ITER];
     uint64_t tot_sleep_cycles = stats[PMD_CYCLES_SLEEP];
+    struct json *packets = json_object_create();
 
-    if (format_iterations) {
-        ds_put_format(str,
-            "  Iterations:         %12"PRIu64"  (%.2f us/it)\n"
-            "  - Used TSC cycles:  %12"PRIu64"  (%5.1f %% of total cycles)\n"
-            "  - idle iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
-            "  - busy iterations:  %12"PRIu64"  (%5.1f %% of used cycles)\n"
-            "  - sleep iterations: %12"PRIu64"  (%5.1f %% of iterations)\n"
-            "  Sleep time (us):    %12.0f  (%3.0f us/iteration avg.)\n",
-            tot_iter,
-            tot_iter
-                ? (tot_cycles + tot_sleep_cycles) * us_per_cycle / tot_iter
-                : 0,
-            tot_cycles, 100.0 * (tot_cycles / duration) / tsc_hz,
-            idle_iter,
-            tot_cycles ? 100.0 * stats[PMD_CYCLES_ITER_IDLE] / tot_cycles : 0,
-            busy_iter,
-            tot_cycles ? 100.0 * stats[PMD_CYCLES_ITER_BUSY] / tot_cycles : 0,
-            sleep_iter, tot_iter ? 100.0 * sleep_iter / tot_iter : 0,
-            tot_sleep_cycles * us_per_cycle,
-            sleep_iter ? (tot_sleep_cycles * us_per_cycle) / sleep_iter : 0);
+    if (show_iterations) {
+        struct json *processing = json_object_create();
+        struct json *cycles = json_object_create();
+        struct json *idle = json_object_create();
+        struct json *iter = json_object_create();
+
+        json_object_put(iter, "total", json_integer_create(tot_iter));
+        json_object_put(iter, "us-per-iteration",
+                        json_real_create(
+                            tot_iter
+                            ? (tot_cycles + tot_sleep_cycles)
+                              * us_per_cycle / tot_iter
+                            : 0));
+        json_object_put(iter, "used-tsc-cycles",
+                        json_integer_create(tot_cycles));
+        json_object_put(iter, "used-tsc-percentage",
+                        json_real_create(
+                            100.0 * (tot_cycles / duration) / tsc_hz));
+        json_object_put(iter, "idle", json_integer_create(idle_iter));
+        json_object_put(iter, "idle-percentage",
+                        json_real_create(
+                            tot_cycles
+                            ? 100.0 * stats[PMD_CYCLES_ITER_IDLE] / tot_cycles
+                            : 0));
+        json_object_put(iter, "busy", json_integer_create(busy_iter));
+        json_object_put(iter, "busy-percentage",
+                        json_real_create(
+                            tot_cycles
+                            ? 100.0 * stats[PMD_CYCLES_ITER_BUSY] / tot_cycles
+                            : 0));
+        json_object_put(iter, "sleep", json_integer_create(sleep_iter));
+        json_object_put(iter, "sleep-percentage",
+                        json_real_create(
+                            tot_iter ? 100.0 * sleep_iter / tot_iter : 0));
+        json_object_put(iter, "sleep-time-us",
+                        json_real_create(tot_sleep_cycles * us_per_cycle));
+        json_object_put(iter, "sleep-us-per-iteration",
+                        json_real_create(
+                            sleep_iter
+                            ? (tot_sleep_cycles * us_per_cycle) / sleep_iter
+                            : 0));
+        json_object_put(json, "iterations", iter);
+
+        json_object_put(idle, "count",
+                        json_integer_create(stats[PMD_CYCLES_ITER_IDLE]));
+        json_object_put(idle, "percentage",
+                        json_real_create(
+                            tot_cycles
+                            ? 100.0 * stats[PMD_CYCLES_ITER_IDLE] / tot_cycles
+                            : 0));
+        json_object_put(cycles, "idle", idle);
+        json_object_put(processing, "count",
+                        json_integer_create(stats[PMD_CYCLES_ITER_BUSY]));
+        json_object_put(processing, "percentage",
+                        json_real_create(
+                            tot_cycles
+                            ? 100.0 * stats[PMD_CYCLES_ITER_BUSY] / tot_cycles
+                            : 0));
+        json_object_put(cycles, "processing", processing);
+        json_object_put(json, "cycles", cycles);
     }
-    if (rx_packets > 0) {
-        ds_put_format(str,
-            "  Rx packets:         %12"PRIu64"  (%.0f Kpps",
-            rx_packets, (rx_packets / duration) / 1000);
-        if (tot_iter) {
-            ds_put_format(str, ", %.0f cycles/pkt",
-                1.0 * stats[PMD_CYCLES_ITER_BUSY] / rx_packets);
-        }
-        ds_put_cstr(str, ")\n");
 
-        ds_put_format(str,
-            "  Datapath passes:    %12"PRIu64"  (%.2f passes/pkt)\n"
-            "  - PHWOL hits:       %12"PRIu64"  (%5.1f %%)\n"
-            "  - Simple Match hits:%12"PRIu64"  (%5.1f %%)\n"
-            "  - EMC hits:         %12"PRIu64"  (%5.1f %%)\n"
-            "  - SMC hits:         %12"PRIu64"  (%5.1f %%)\n"
-            "  - Megaflow hits:    %12"PRIu64"  (%5.1f %%, %.2f "
-                                                 "subtbl lookups/hit)\n",
-            passes, 1.0 * passes / rx_packets,
-            stats[PMD_STAT_PHWOL_HIT],
-            100.0 * stats[PMD_STAT_PHWOL_HIT] / passes,
-            stats[PMD_STAT_SIMPLE_HIT],
-            100.0 * stats[PMD_STAT_SIMPLE_HIT] / passes,
-            stats[PMD_STAT_EXACT_HIT],
-            100.0 * stats[PMD_STAT_EXACT_HIT] / passes,
-            stats[PMD_STAT_SMC_HIT],
-            100.0 * stats[PMD_STAT_SMC_HIT] / passes,
-            stats[PMD_STAT_MASKED_HIT],
-            100.0 * stats[PMD_STAT_MASKED_HIT] / passes,
-            stats[PMD_STAT_MASKED_HIT]
-            ? 1.0 * stats[PMD_STAT_MASKED_LOOKUP] / stats[PMD_STAT_MASKED_HIT]
-            : 0);
+    json_object_put(packets, "received", json_integer_create(rx_packets));
+    json_object_put(packets, "recirculated",
+                    json_integer_create(stats[PMD_STAT_RECIRC]));
+    json_object_put(packets, "transmitted", json_integer_create(tx_packets));
+    json_object_put(packets, "tx-batches", json_integer_create(tx_batches));
+    json_object_put(json, "packets", packets);
 
-        ds_put_format(str,
-            "  - Upcalls:          %12"PRIu64"  (%5.1f %%",
-            upcalls, 100.0 * upcalls / passes);
-        if (tot_iter) {
-            ds_put_format(str, ", %.1f us/upcall",
-                upcalls ? (upcall_cycles * us_per_cycle) / upcalls : 0);
-        }
-        ds_put_cstr(str, ")\n");
+    if (rx_packets) {
+        struct json *upcalls_json = json_object_create();
+        struct json *hits = json_object_create();
 
-        ds_put_format(str,
-            "  - Lost upcalls:     %12"PRIu64"  (%5.1f %%)\n",
-            stats[PMD_STAT_LOST], 100.0 * stats[PMD_STAT_LOST] / passes);
-    } else {
-        ds_put_format(str,
-            "  Rx packets:         %12d\n", 0);
+        json_object_put(hits, "partial-hardware-offload",
+                        json_integer_create(stats[PMD_STAT_PHWOL_HIT]));
+        json_object_put(hits, "simple",
+                        json_integer_create(stats[PMD_STAT_SIMPLE_HIT]));
+        json_object_put(hits, "exact",
+                        json_integer_create(stats[PMD_STAT_EXACT_HIT]));
+        json_object_put(hits, "signature",
+                        json_integer_create(stats[PMD_STAT_SMC_HIT]));
+        json_object_put(hits, "megaflow",
+                        json_integer_create(stats[PMD_STAT_MASKED_HIT]));
+        json_object_put(json, "flow-cache-hits", hits);
+
+        json_object_put(upcalls_json, "success",
+                        json_integer_create(upcalls));
+        json_object_put(upcalls_json, "failure",
+                        json_integer_create(stats[PMD_STAT_LOST]));
+        json_object_put(json, "upcalls", upcalls_json);
     }
-    if (tx_packets > 0) {
-        ds_put_format(str,
-            "  Tx packets:         %12"PRIu64"  (%.0f Kpps)\n"
-            "  Tx batches:         %12"PRIu64"  (%.2f pkts/batch)\n",
-            tx_packets, (tx_packets / duration) / 1000,
-            tx_batches, 1.0 * tx_packets / tx_batches);
-    } else {
-        ds_put_format(str,
-            "  Tx packets:         %12d\n\n", 0);
+
+    if (rx_packets || tx_packets) {
+        struct json *averages = json_object_create();
+
+        if (rx_packets) {
+            json_object_put(averages, "datapath-passes-per-packet",
+                            json_real_create(1.0 * passes / rx_packets));
+            json_object_put(averages, "subtable-lookups-per-megaflow-hit",
+                            json_real_create(
+                                stats[PMD_STAT_MASKED_HIT]
+                                ? 1.0 * stats[PMD_STAT_MASKED_LOOKUP]
+                                  / stats[PMD_STAT_MASKED_HIT]
+                                : 0));
+            json_object_put(averages, "rx-kpps",
+                            json_real_create((rx_packets / duration) / 1000));
+            if (tot_iter) {
+                json_object_put(averages, "cycles-per-packet",
+                                json_real_create(
+                                    1.0 * stats[PMD_CYCLES_ITER_BUSY]
+                                    / rx_packets));
+                json_object_put(averages, "us-per-upcall",
+                                json_real_create(
+                                    upcalls
+                                    ? (upcall_cycles * us_per_cycle) / upcalls
+                                    : 0));
+            }
+        }
+        if (tx_packets) {
+            json_object_put(averages, "packets-per-tx-batch",
+                            json_real_create(1.0 * tx_packets / tx_batches));
+            json_object_put(averages, "tx-kpps",
+                            json_real_create((tx_packets / duration) / 1000));
+        }
+        json_object_put(json, "averages", averages);
     }
 }
 
@@ -375,6 +559,164 @@ pmd_perf_format_histograms(struct ds *str, struct pmd_perf_stats *s)
                       ? 1.0 * s->totals.upcalls / s->totals.iterations : 0,
                   s->totals.upcalls
                       ? s->totals.upcall_cycles / s->totals.upcalls : 0);
+}
+
+static struct json *
+histogram_to_json(const struct histogram *hist)
+{
+    struct json *walls = json_array_create_empty();
+    struct json *bins = json_array_create_empty();
+    struct json *json = json_object_create();
+    int i;
+
+    /* The last bin has no wall, it collects everything above the last
+     * wall. */
+    for (i = 0; i < NUM_BINS - 1; i++) {
+        json_array_add(walls, json_integer_create(hist->wall[i]));
+    }
+    for (i = 0; i < NUM_BINS; i++) {
+        json_array_add(bins, json_integer_create(hist->bin[i]));
+    }
+    json_object_put(json, "walls", walls);
+    json_object_put(json, "bins", bins);
+
+    return json;
+}
+
+void
+pmd_perf_format_histograms_json(struct json *json, struct pmd_perf_stats *s)
+{
+    struct json *histograms = json_object_create();
+    struct json *averages = json_object_create();
+
+    json_object_put(histograms, "cycles-per-iteration",
+                    histogram_to_json(&s->cycles));
+    json_object_put(histograms, "packets-per-iteration",
+                    histogram_to_json(&s->pkts));
+    json_object_put(histograms, "cycles-per-packet",
+                    histogram_to_json(&s->cycles_per_pkt));
+    json_object_put(histograms, "packets-per-batch",
+                    histogram_to_json(&s->pkts_per_batch));
+    json_object_put(histograms, "max-vhost-qlen",
+                    histogram_to_json(&s->max_vhost_qfill));
+    json_object_put(histograms, "upcalls-per-iteration",
+                    histogram_to_json(&s->upcalls));
+    json_object_put(histograms, "cycles-per-upcall",
+                    histogram_to_json(&s->cycles_per_upcall));
+
+    json_object_put(averages, "cycles-per-iteration",
+                    json_integer_create(s->totals.iterations
+                        ? s->totals.cycles / s->totals.iterations : 0));
+    json_object_put(averages, "packets-per-iteration",
+                    json_real_create(s->totals.iterations
+                        ? 1.0 * s->totals.pkts / s->totals.iterations : 0));
+    json_object_put(averages, "cycles-per-packet",
+                    json_integer_create(s->totals.pkts
+                        ? s->totals.busy_cycles / s->totals.pkts : 0));
+    json_object_put(averages, "packets-per-batch",
+                    json_real_create(s->totals.batches
+                        ? 1.0 * s->totals.pkts / s->totals.batches : 0));
+    json_object_put(averages, "max-vhost-qlen",
+                    json_real_create(s->totals.iterations
+                        ? 1.0 * s->totals.max_vhost_qfill
+                              / s->totals.iterations
+                        : 0));
+    json_object_put(averages, "upcalls-per-iteration",
+                    json_real_create(s->totals.iterations
+                        ? 1.0 * s->totals.upcalls / s->totals.iterations : 0));
+    json_object_put(averages, "cycles-per-upcall",
+                    json_integer_create(s->totals.upcalls
+                        ? s->totals.upcall_cycles / s->totals.upcalls : 0));
+
+    json_object_put(histograms, "averages", averages);
+    json_object_put(json, "histograms", histograms);
+}
+
+void
+pmd_perf_format_iteration_history_json(struct json *json,
+                                       struct pmd_perf_stats *s, int n_iter)
+{
+    struct iter_stats *is;
+    struct json *history;
+    size_t index;
+    int i;
+
+    if (n_iter == 0) {
+        return;
+    }
+
+    history = json_array_create_empty();
+    for (i = 1; i <= n_iter; i++) {
+        struct json *sample = json_object_create();
+
+        index = history_sub(s->iterations.idx, i);
+        is = &s->iterations.sample[index];
+
+        json_object_put(sample, "iteration",
+                        json_integer_create(is->timestamp));
+        json_object_put(sample, "cycles", json_integer_create(is->cycles));
+        json_object_put(sample, "packets", json_integer_create(is->pkts));
+        json_object_put(sample, "cycles-per-packet",
+                        json_integer_create(is->pkts
+                            ? is->cycles / is->pkts : 0));
+        json_object_put(sample, "packets-per-batch",
+                        json_integer_create(is->batches
+                            ? is->pkts / is->batches : 0));
+        json_object_put(sample, "max-vhost-qlen",
+                        json_integer_create(is->max_vhost_qfill));
+        json_object_put(sample, "upcalls", json_integer_create(is->upcalls));
+        json_object_put(sample, "cycles-per-upcall",
+                        json_integer_create(is->upcalls
+                            ? is->upcall_cycles / is->upcalls : 0));
+        json_array_add(history, sample);
+    }
+    json_object_put(json, "iteration-history", history);
+}
+
+void
+pmd_perf_format_ms_history_json(struct json *json, struct pmd_perf_stats *s,
+                                int n_ms)
+{
+    struct iter_stats *is;
+    struct json *history;
+    size_t index;
+    int i;
+
+    if (n_ms == 0) {
+        return;
+    }
+
+    history = json_array_create_empty();
+    for (i = 1; i <= n_ms; i++) {
+        struct json *sample = json_object_create();
+
+        index = history_sub(s->milliseconds.idx, i);
+        is = &s->milliseconds.sample[index];
+
+        json_object_put(sample, "millisecond",
+                        json_integer_create(is->timestamp));
+        json_object_put(sample, "iterations",
+                        json_integer_create(is->iterations));
+        json_object_put(sample, "cycles-per-iteration",
+                        json_integer_create(is->iterations
+                            ? is->cycles / is->iterations : 0));
+        json_object_put(sample, "kpps", json_integer_create(is->pkts));
+        json_object_put(sample, "cycles-per-packet",
+                        json_integer_create(is->pkts
+                            ? is->busy_cycles / is->pkts : 0));
+        json_object_put(sample, "packets-per-batch",
+                        json_integer_create(is->batches
+                            ? is->pkts / is->batches : 0));
+        json_object_put(sample, "max-vhost-qlen",
+                        json_integer_create(is->iterations
+                            ? is->max_vhost_qfill / is->iterations : 0));
+        json_object_put(sample, "upcalls", json_integer_create(is->upcalls));
+        json_object_put(sample, "cycles-per-upcall",
+                        json_integer_create(is->upcalls
+                            ? is->upcall_cycles / is->upcalls : 0));
+        json_array_add(history, sample);
+    }
+    json_object_put(json, "millisecond-history", history);
 }
 
 void
