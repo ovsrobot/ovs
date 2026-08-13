@@ -2188,16 +2188,18 @@ raft_run(struct raft *raft)
         if (raft->role == RAFT_LEADER) {
             raft_send_heartbeats(raft);
         }
-        /* Check if any commands timeout. Timeout is set to twice the time of
-         * election base time so that commands can complete properly during
-         * leader election. E.g. a leader crashed and current node with pending
-         * commands becomes new leader: the pending commands can still complete
+        /* Check if any commands timeout. Timeout is set to twice the
+         * election base time plus the election random range so that
+         * commands can complete properly during leader election.
+         * E.g. a leader crashed and current node with pending commands
+         * becomes new leader: the pending commands can still complete
          * if the crashed leader has replicated the transactions to majority of
          * followers before it crashed. */
         struct raft_command *cmd;
         HMAP_FOR_EACH_SAFE (cmd, hmap_node, &raft->commands) {
             if (cmd->timestamp
-                && now - cmd->timestamp > raft->election_timer * 2) {
+                && now - cmd->timestamp > (raft->election_timer * 2
+                                           + ELECTION_RANGE_MSEC)) {
                 if (cmd->index && raft->role != RAFT_LEADER) {
                     /* This server lost leadership and command didn't complete
                      * in time.  Likely, it wasn't replicated to the majority
