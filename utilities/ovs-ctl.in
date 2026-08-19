@@ -115,8 +115,8 @@ check_core_config () {
 }
 
 del_transient_ports () {
-    for port in `ovs-vsctl --bare -- --columns=name find port other_config:transient=true`; do
-        ovs_vsctl -- del-port "$port"
+    for port in `ovs-vsctl --no-wait --bare -- --columns=name find port other_config:transient=true`; do
+        ovs_vsctl --no-wait -- del-port "$port"
     done
 }
 
