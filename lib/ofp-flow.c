@@ -2016,3 +2016,58 @@ exit:
     }
     return error;
 }
+
+/* Parses a specification of a flow from 's' into 'match'.  's' must take the
+ * form FIELD=VALUE[,FIELD=VALUE]... where each FIELD is the name of an
+ * mf_field.  Unlike parse_ofp_exact_flow(), each VALUE may include a mask
+ * (e.g. "nw_src=10.0.0.0/24"), so a field can be partially wildcarded.
+ * Fields must be specified in a natural order for satisfying prerequisites.
+ * If the map 'port_map' is specified, converts port names into port numbers.
+ *
+ * Returns NULL on success, otherwise a malloc()'d string that explains the
+ * problem. */
+char *
+parse_ofp_flow_match(struct match *match, const struct tun_table *tun_table,
+                     const char *s, const struct ofputil_port_map *port_map)
+{
+    enum ofputil_protocol usable_protocols = OFPUTIL_P_ANY;
+    char *pos, *key, *value_s;
+    char *error = NULL;
+    char *copy;
+
+    match_init_catchall(match);
+    match->flow.tunnel.metadata.tab = tun_table;
+
+    pos = copy = xstrdup(s);
+    while (ofputil_parse_key_value(&pos, &key, &value_s)) {
+        const struct ofp_protocol *p;
+        if (ofp_parse_protocol(key, &p)) {
+            match_set_dl_type(match, htons(p->dl_type));
+            if (p->nw_proto) {
+                match_set_nw_proto(match, p->nw_proto);
+            }
+            match_set_default_packet_type(match);
+        } else {
+            const struct mf_field *mf = mf_from_name(key);
+
+            if (!mf) {
+                error = xasprintf("%s: unknown field %s", s, key);
+                goto exit;
+            }
+
+            error = ofp_parse_field(mf, value_s, port_map, match,
+                                    &usable_protocols);
+            if (error) {
+                goto exit;
+            }
+        }
+    }
+
+exit:
+    free(copy);
+
+    if (error) {
+        match_init_catchall(match);
+    }
+    return error;
+}

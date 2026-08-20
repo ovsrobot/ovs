@@ -331,13 +331,11 @@ mirror_set(struct mbridge *mbridge, const struct ofproto *ofproto,
 
         if (ms->filter && strlen(ms->filter)) {
             struct ofputil_port_map map = OFPUTIL_PORT_MAP_INITIALIZER(&map);
-            struct flow_wildcards wc;
-            struct flow flow;
+            struct match match;
             char *err;
 
             ofproto_append_ports_to_map(&map, ofproto->ports);
-            err = parse_ofp_exact_flow(&flow, &wc,
-                                       ofproto_get_tun_tab(ofproto),
+            err = parse_ofp_flow_match(&match, ofproto_get_tun_tab(ofproto),
                                        ms->filter, &map);
             ofputil_port_map_destroy(&map);
             if (err) {
@@ -352,14 +350,15 @@ mirror_set(struct mbridge *mbridge, const struct ofproto *ofproto,
              * behavior, and it would be overly complex to detect all possible
              * issues.  So instead we attempt to extract the in_port and error
              * if successful. */
-            if (wc.masks.in_port.ofp_port) {
+            if (match.wc.masks.in_port.ofp_port) {
                 VLOG_WARN("filter is invalid due to in_port field.");
                 mirror_destroy(mbridge, mirror->aux);
                 return EINVAL;
             }
 
             mirror->filter_str = xstrdup(ms->filter);
-            ovsrcu_set(&mirror->filter_mask, filtermask_create(&flow, &wc));
+            ovsrcu_set(&mirror->filter_mask,
+                       filtermask_create(&match.flow, &match.wc));
         }
     }
 

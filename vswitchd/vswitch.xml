@@ -5319,9 +5319,11 @@ ovs-vsctl add-port br0 p1 -- \
           When set, only packets that match <ref column="filter"/> are
           selected for mirroring.  Packets that do not match are ignored
           by thie mirror.  The <ref column="filter"/> syntax is described
-          in <code>ovs-fields</code>(7).  However, the <code>in_port</code>
-          field is not supported; <ref column="select_src_port"/> should be
-          used to limit the mirror to a source port.
+          in <code>ovs-fields</code>(7).  A field may be given with a mask,
+          e.g. <code>ip,nw_src=10.0.0.0/24</code>.
+          However, the <code>in_port</code> field is not supported;
+          <ref column="select_src_port"/> should be used to limit the
+          mirror to a source port.
         </p>
         <p>
           This filter is applied after <ref column="select_all"/>, <ref
