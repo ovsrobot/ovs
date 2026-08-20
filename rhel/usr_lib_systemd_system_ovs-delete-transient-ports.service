@@ -1,6 +1,6 @@
 [Unit]
 Description=Open vSwitch Delete Transient Ports
-After=ovsdb-server.socket
+After=ovsdb-server.service
 Before=ovs-vswitchd.service
 
 [Service]
