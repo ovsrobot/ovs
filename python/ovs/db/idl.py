@@ -2269,11 +2269,14 @@ class Transaction(object):
                             soft_errors = True
                         elif error == "not owner":
                             lock_errors = True
-                        elif error == "aborted":
-                            pass
-                        else:
+                        elif error == "not allowed":
                             hard_errors = True
                             self.__set_error_json(op)
+                        elif error != "aborted":
+                            hard_errors = True
+                            self.__set_error_json(op)
+                            # XXX rate-limit
+                            vlog.warn("transaction error: %s" % self._error)
                 else:
                     hard_errors = True
                     self.__set_error_json(op)
