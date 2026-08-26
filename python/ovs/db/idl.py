@@ -2239,10 +2239,19 @@ class Transaction(object):
 
     def _process_reply(self, msg):
         if msg.type == ovs.jsonrpc.Message.T_ERROR:
-            self._status = Transaction.ERROR
+            if msg.error == "canceled":
+                # ovsdb-server uses this error message to indicate that the
+                # transaction was canceled because the database in question was
+                # removed, converted, etc.
+                self._status = Transaction.TRY_AGAIN
+            else:
+                self._status = Transaction.ERROR
+                self.__set_error_json(msg.error)
         elif not isinstance(msg.result, (list, tuple)):
             # XXX rate-limit
             vlog.warn('reply to "transact" is not JSON array')
+            self._status = Transaction.ERROR
+            self.__set_error_json(msg.result)
         else:
             hard_errors = False
             soft_errors = False
