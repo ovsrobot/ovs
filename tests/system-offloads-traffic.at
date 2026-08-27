@@ -463,7 +463,7 @@ NS_CHECK_EXEC([at_ns1], [ping -q -c 10 -i 0.1 -W 2 -s 1024 10.1.1.2 | FORMAT_PIN
 ], [], [ovs-appctl dpctl/dump-flows; ovs-ofctl dump-flows br0])
 
 AT_CHECK([ovs-appctl dpctl/dump-flows | grep "eth_type(0x0800)" | DUMP_CLEAN_SORTED | sed 's/bytes:11348/bytes:11614/'], [0], [dnl
-in_port(2),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0.001s, actions:check_pkt_len(size=200,gt(3),le(3))
+in_port(2),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0.001s, actions:output
 in_port(3),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0.001s, actions:output
 ])
 
@@ -629,7 +629,7 @@ sleep 1
 NS_CHECK_EXEC([at_ns1], [ping -q -c 10 -i 0.1 -W 2 -s 64 10.1.1.2 | FORMAT_PING], [0], [dnl
 10 packets transmitted, 10 received, 0% packet loss, time 0ms
 ], [], [ovs-appctl dpctl/dump-flows; ovs-ofctl dump-flows br0])
-OVS_CHECK_ACTIONS([check_pkt_len(size=200,gt(1),le(1)),3])
+OVS_CHECK_ACTIONS([1,3])
 
 
 AT_CHECK([ovs-appctl revalidator/wait], [0])
@@ -680,7 +680,7 @@ sleep 1
 NS_CHECK_EXEC([at_ns1], [ping -q -c 10 -i 0.1 -W 2 -s 64 10.1.1.2 | FORMAT_PING], [0], [dnl
 10 packets transmitted, 10 received, 0% packet loss, time 0ms
 ], [], [ovs-appctl dpctl/dump-flows; ovs-ofctl dump-flows br0])
-OVS_CHECK_ACTIONS([check_pkt_len(size=200,gt(drop),le(drop)),3])
+OVS_CHECK_ACTIONS([3])
 
 
 AT_CHECK([ovs-appctl revalidator/wait], [0])

@@ -13568,7 +13568,7 @@ table=0,in_port=1 actions=check_pkt_larger(200)->NXM_NX_REG0[[0]]
 AT_CHECK([ovs-ofctl --protocols=OpenFlow10 add-flows br0 flows.txt])
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.10.10.2,dst=10.10.10.1,proto=1,tos=1,ttl=128,frag=no),icmp(type=8,code=0)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0], [dnl
-Datapath actions: check_pkt_len(size=200,gt(drop),le(drop))
+Datapath actions: drop
 ])
 
 ovs-ofctl del-flows br0
@@ -13614,7 +13614,7 @@ ovs-ofctl dump-flows br0
 
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.10.10.2,dst=10.10.10.1,proto=1,tos=1,ttl=128,frag=no),icmp(type=8,code=0)'], [0], [stdout])
 AT_CHECK([tail -1 stdout], [0], [dnl
-Datapath actions: check_pkt_len(size=200,gt(set(ipv4(src=192.168.3.3)),check_pkt_len(size=200,gt(3),le(3))),le(set(ipv4(src=192.168.3.4)),check_pkt_len(size=200,gt(4),le(4))))
+Datapath actions: check_pkt_len(size=200,gt(set(ipv4(src=192.168.3.3)),3),le(set(ipv4(src=192.168.3.4)),4))
 ])
 
 ovs-ofctl del-flows br0
@@ -13655,7 +13655,7 @@ AT_CHECK([ovs-ofctl --protocols=OpenFlow10 add-flows br0 flows.txt])
 AT_CHECK([ovs-appctl ofproto/trace ovs-dummy 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x0800),ipv4(src=10.10.10.2,dst=10.10.10.1,proto=1,tos=1,ttl=128,frag=no),icmp(type=8,code=0)'], [0], [stdout])
 AT_CHECK([cat stdout | grep Datapath -B1], [0], [dnl
 Megaflow: recirc_id=0,eth,ip,in_port=1,nw_frag=no
-Datapath actions: check_pkt_len(size=200,gt(3),le(3)),2,4
+Datapath actions: 3,2,4
 ])
 
 OVS_VSWITCHD_STOP
