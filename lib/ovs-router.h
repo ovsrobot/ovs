@@ -34,7 +34,7 @@ enum {
 };
 
 bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip_dst,
-                       char output_netdev[],
+                       const struct in6_addr *src_in, char output_netdev[],
                        struct in6_addr *src, struct in6_addr *gw);
 void ovs_router_init(void);
 bool ovs_router_is_referenced(uint32_t table);
