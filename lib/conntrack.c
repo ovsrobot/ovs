@@ -22,6 +22,10 @@
 #include <netinet/icmp6.h>
 #include <string.h>
 
+#ifdef HAVE_OPENSSL
+#include <openssl/rand.h>
+#endif
+
 #include "conntrack.h"
 #include "conntrack-private.h"
 #include "conntrack-tp.h"
@@ -30,6 +34,7 @@
 #include "csum.h"
 #include "ct-dpif.h"
 #include "dp-packet.h"
+#include "entropy.h"
 #include "flow.h"
 #include "netdev.h"
 #include "odp-netlink.h"
@@ -46,6 +51,45 @@
 #include "unaligned.h"
 
 VLOG_DEFINE_THIS_MODULE(conntrack);
+
+/* Counts calls to nat_random_uint32() that could not obtain any
+ * cryptographic randomness at all (neither OpenSSL nor the system
+ * entropy pool).  Each occurrence corresponds to one failed NAT tuple
+ * allocation attempt. */
+COVERAGE_DEFINE(conntrack_entropy_failed);
+
+/* NAT tuple selection (both the address/port hash basis and the
+ * fully-random port paths) must not be predictable from an observed
+ * random_uint32() output, so it draws from a cryptographic source here
+ * instead of the general-purpose xorshift32 PRNG in random.c.
+ *
+ * When compiled against OpenSSL 1.1.0+, this uses OpenSSL's PRNG.  If
+ * that is unavailable, or RAND_status() reports that it is not properly
+ * seeded (see the same check in lib/stream-ssl.c), it falls back to the
+ * system entropy pool.  If neither source can provide randomness, this
+ * returns false rather than falling back to the non-cryptographic PRNG:
+ * callers must fail the NAT tuple allocation (and, transitively, the
+ * connection attempt) instead of silently downgrading its quality. */
+static bool
+nat_random_uint32(uint32_t *r)
+{
+#ifdef HAVE_OPENSSL
+    if (RAND_bytes((uint8_t *) r, sizeof *r) == 1 && RAND_status()) {
+        return true;
+    }
+
+    static struct vlog_rate_limit rl1 = VLOG_RATE_LIMIT_INIT(1, 5);
+    VLOG_WARN_RL(&rl1, "RAND_bytes unreliable, falling back to system "
+                 "entropy pool for NAT tuple selection");
+#endif
+
+    if (!get_entropy(r, sizeof *r)) {
+        return true;
+    }
+
+    COVERAGE_INC(conntrack_entropy_failed);
+    return false;
+}
 
 COVERAGE_DEFINE(conntrack_full);
 COVERAGE_DEFINE(conntrack_l3csum_checked);
@@ -251,8 +295,16 @@ conntrack_init(void)
 
     /* This value can be used during init (e.g. timeout_policy_init()),
      * set it first to ensure it is available.
-     */
-    ct->hash_basis = random_uint32();
+     *
+     * It is also the basis that nat_range_hash() mixes into every NAT
+     * address and (non-random) NAT port choice, so it must come from
+     * nat_random_uint32() rather than the predictable general-purpose
+     * PRNG--otherwise all NAT tuples derived from it are only as
+     * unpredictable as that single 32-bit xorshift output. */
+    if (!nat_random_uint32(&ct->hash_basis)) {
+        VLOG_FATAL("conntrack: unable to obtain cryptographic randomness "
+                   "to initialize the NAT hash basis");
+    }
 
     ovs_rwlock_init(&ct->resources_lock);
     ovs_rwlock_wrlock(&ct->resources_lock);
@@ -2556,8 +2608,19 @@ another_round:
     }
 
     if (attempts < range && attempts >= 16) {
+        uint32_t r;
+
+        if (!nat_random_uint32(&r)) {
+            /* CPRNG wasn't available, return false in this case.  It is
+             * possible that the entropy pool is only temporarily unaviable,
+             * but bailing on this connection attempt should be okay since
+             * since we don't want to waste cpu cycles for an event that may
+             * take a while. */
+            return false;
+        }
+
         attempts /= 2;
-        curr = min + (random_uint32() % range);
+        curr = min + (r % range);
         goto another_round;
     }
 
@@ -2613,7 +2676,12 @@ nat_get_unique_tuple(struct conntrack *ct, struct conn *conn,
     hash = nat_range_hash(fwd_key, basis, nat_info);
 
     if (nat_info->nat_flags & NAT_RANGE_RANDOM) {
-        port_off = random_uint32();
+        if (!nat_random_uint32(&port_off)) {
+            /* The entropy failure here will reflect that we're resource
+             * exhausted.  It is a bit confusing because we're out of
+             * entropy rather than out of actual NAT range. */
+            return false;
+        }
     } else if (basis) {
         port_off = hash;
     } else {
