@@ -500,9 +500,10 @@ reconnect_connect_failed(struct reconnect *fsm, long long int now, int error)
  * the probe interval timer, so that the connection is known not to be idle.
  *
  * 'queued_bytes' is data queued for the peer that could not be sent.  While
- * it is nonzero the FSM stops asking to be woken up to attempt a receive:
- * the caller evidently cannot get data to this peer, so no receive it makes
- * can settle anything, and waking to try only burns CPU. */
+ * it is nonzero the probe interval is allowed to expire on its own schedule
+ * rather than asking for a fast wake-up to attempt a receive: the caller
+ * evidently cannot get data to this peer, so no receive it makes can settle
+ * anything, and the ordinary probe and timeout should run their course. */
 void
 reconnect_activity(struct reconnect *fsm, long long int now,
                    size_t queued_bytes)
@@ -566,13 +567,10 @@ reconnect_deadline__(const struct reconnect *fsm, long long int now)
 
     case S_ACTIVE:
         if (fsm->probe_interval) {
-            if (fsm->queued_bytes) {
-                return LLONG_MAX;
-            }
-
             long long int base = MAX(fsm->last_activity, fsm->state_entered);
             long long int expiration = base + fsm->probe_interval;
-            if (now < expiration || fsm->last_receive_attempt >= expiration) {
+            if (now < expiration || fsm->last_receive_attempt >= expiration
+                || fsm->queued_bytes) {
                 /* We still have time before the expiration or the time has
                  * already passed and there was no activity.  In the first case
                  * we need to wait for the expiration, in the second - we're
@@ -591,7 +589,8 @@ reconnect_deadline__(const struct reconnect *fsm, long long int now)
     case S_IDLE:
         if (fsm->probe_interval) {
             long long int expiration = fsm->state_entered + fsm->probe_interval;
-            if (now < expiration || fsm->last_receive_attempt >= expiration) {
+            if (now < expiration || fsm->last_receive_attempt >= expiration
+                || fsm->queued_bytes) {
                 return expiration;
             } else {
                 return now + 1;
@@ -663,9 +662,17 @@ reconnect_run(struct reconnect *fsm, long long int now)
             return RECONNECT_PROBE;
 
         case S_IDLE:
-            VLOG_ERR("%s: no response to inactivity probe after %.3g "
-                     "seconds, disconnecting",
-                     fsm->name, (now - fsm->state_entered) / 1000.0);
+            if (fsm->queued_bytes) {
+                VLOG_ERR("%s: no response to inactivity probe after %.3g "
+                         "seconds, with %"PRIuSIZE" bytes still queued for "
+                         "the peer, disconnecting", fsm->name,
+                         (now - fsm->state_entered) / 1000.0,
+                         fsm->queued_bytes);
+            } else {
+                VLOG_ERR("%s: no response to inactivity probe after %.3g "
+                         "seconds, disconnecting",
+                         fsm->name, (now - fsm->state_entered) / 1000.0);
+            }
             return RECONNECT_DISCONNECT;
 
         case S_RECONNECT:

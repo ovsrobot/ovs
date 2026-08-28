@@ -94,14 +94,12 @@ class Reconnect(object):
         @staticmethod
         def deadline(fsm, now):
             if fsm.probe_interval:
-                if fsm.queued_bytes:
-                    return None
-
                 base = max(fsm.last_activity, fsm.state_entered)
                 expiration = base + fsm.probe_interval
                 if (now < expiration or
                     fsm.last_receive_attempt is None or
-                    fsm.last_receive_attempt >= expiration):
+                    fsm.last_receive_attempt >= expiration or
+                    fsm.queued_bytes):
                     # We still have time before the expiration or the time has
                     # already passed and there was no activity.  In the first
                     # case we need to wait for the expiration, in the second -
@@ -133,7 +131,8 @@ class Reconnect(object):
                 expiration = fsm.state_entered + fsm.probe_interval
                 if (now < expiration or
                     fsm.last_receive_attempt is None or
-                    fsm.last_receive_attempt >= expiration):
+                    fsm.last_receive_attempt >= expiration or
+                    fsm.queued_bytes):
                     return expiration
                 else:
                     return now + 1
@@ -141,9 +140,16 @@ class Reconnect(object):
 
         @staticmethod
         def run(fsm, now):
-            vlog.err("%s: no response to inactivity probe after %.3g "
-                     "seconds, disconnecting"
-                     % (fsm.name, (now - fsm.state_entered) / 1000.0))
+            if fsm.queued_bytes:
+                vlog.err("%s: no response to inactivity probe after %.3g "
+                         "seconds, with %d bytes still queued for the peer, "
+                         "disconnecting"
+                         % (fsm.name, (now - fsm.state_entered) / 1000.0,
+                            fsm.queued_bytes))
+            else:
+                vlog.err("%s: no response to inactivity probe after %.3g "
+                         "seconds, disconnecting"
+                         % (fsm.name, (now - fsm.state_entered) / 1000.0))
             return DISCONNECT
 
     class Reconnect(object):
@@ -496,10 +502,11 @@ class Reconnect(object):
         not to be idle.
 
         'queued_bytes' is data queued for the peer that could not be sent.
-        While it is nonzero the FSM stops asking to be woken up to attempt a
-        receive: the caller evidently cannot get data to this peer, so no
-        receive it makes can settle anything, and waking to try only burns
-        CPU."""
+        While it is nonzero the probe interval is allowed to expire on its own
+        schedule rather than asking for a fast wake-up to attempt a receive:
+        the caller evidently cannot get data to this peer, so no receive it
+        makes can settle anything, and the ordinary probe and timeout should
+        run their course."""
         self.queued_bytes = queued_bytes
         if self.state != Reconnect.Active:
             self._transition(now, Reconnect.Active)
