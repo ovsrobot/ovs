@@ -1363,3 +1363,147 @@ run
 listening
   in LISTENING for 0 ms (0 ms backoff)
 ])
+
+######################################################################
+RECONNECT_CHECK([no wake-up while data is queued],
+  [enable
+
+# Connection succeeds.
+run
+connected
+
+# Data is queued for the peer that we could not send.
+activity 1000
+
+# Long past the probe interval the FSM asks for no wake-up at all, and
+# nothing happens: the connection is neither probed nor disconnected.
+advance 60000
+timeout
+run
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+
+# Connection succeeds.
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# Data is queued for the peer that we could not send.
+activity 1000
+
+# Long past the probe interval the FSM asks for no wake-up at all, and
+# nothing happens: the connection is neither probed nor disconnected.
+advance 60000
+
+### t=61000 ###
+  in ACTIVE for 60000 ms (0 ms backoff)
+timeout
+  no timeout
+run
+])
+
+######################################################################
+RECONNECT_CHECK([draining the queue restores probing],
+  [enable
+run
+connected
+
+# Queued: no wake-up, no probe.
+activity 1000
+advance 10000
+run
+
+# The queue drains, so the ordinary probe interval applies again.
+activity 0
+receive-attempted LLONG_MAX
+timeout
+run
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# Queued: no wake-up, no probe.
+activity 1000
+advance 10000
+
+### t=11000 ###
+  in ACTIVE for 10000 ms (0 ms backoff)
+run
+
+# The queue drains, so the ordinary probe interval applies again.
+activity 0
+  created 1000, last activity 11000, last connected 1000
+receive-attempted LLONG_MAX
+timeout
+  advance 5000 ms
+
+### t=16000 ###
+  in ACTIVE for 15000 ms (0 ms backoff)
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+])
+
+######################################################################
+RECONNECT_CHECK([disconnect forgets queued data],
+  [enable
+run
+connected
+activity 1000
+
+# Disconnecting forgets the queued data.
+disconnected
+run
+connected
+
+# So the ordinary probe interval applies again.
+timeout
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+activity 1000
+
+# Disconnecting forgets the queued data.
+disconnected
+  in BACKOFF for 0 ms (1000 ms backoff)
+  1 successful connections out of 1 attempts, seqno 2
+  disconnected
+  disconnected at 1000 ms (0 ms ago)
+run
+connected
+  in ACTIVE for 0 ms (1000 ms backoff)
+  2 successful connections out of 2 attempts, seqno 3
+  connected
+
+# So the ordinary probe interval applies again.
+timeout
+  advance 5000 ms
+
+### t=6000 ###
+  in ACTIVE for 5000 ms (1000 ms backoff)
+])

@@ -62,6 +62,7 @@ struct reconnect {
     long long int last_connected;
     long long int last_disconnected;
     long long int last_receive_attempt;
+    size_t queued_bytes;
     unsigned int max_tries;
     unsigned int backoff_free_tries;
 
@@ -112,6 +113,7 @@ reconnect_create(long long int now)
     fsm->last_connected = LLONG_MAX;
     fsm->last_disconnected = LLONG_MAX;
     fsm->last_receive_attempt = now;
+    fsm->queued_bytes = 0;
     fsm->max_tries = UINT_MAX;
     fsm->creation_time = now;
 
@@ -340,6 +342,7 @@ reconnect_force_reconnect(struct reconnect *fsm, long long int now)
 void
 reconnect_disconnected(struct reconnect *fsm, long long int now, int error)
 {
+    fsm->queued_bytes = 0;
     if (!(fsm->state & (S_BACKOFF | S_VOID))) {
         /* Report what happened. */
         if (fsm->state & (S_ACTIVE | S_IDLE)) {
@@ -494,10 +497,17 @@ reconnect_connect_failed(struct reconnect *fsm, long long int now, int error)
 }
 
 /* Tell 'fsm' that some activity has occurred on the connection.  This resets
- * the probe interval timer, so that the connection is known not to be idle. */
+ * the probe interval timer, so that the connection is known not to be idle.
+ *
+ * 'queued_bytes' is data queued for the peer that could not be sent.  While
+ * it is nonzero the FSM stops asking to be woken up to attempt a receive:
+ * the caller evidently cannot get data to this peer, so no receive it makes
+ * can settle anything, and waking to try only burns CPU. */
 void
-reconnect_activity(struct reconnect *fsm, long long int now)
+reconnect_activity(struct reconnect *fsm, long long int now,
+                   size_t queued_bytes)
 {
+    fsm->queued_bytes = queued_bytes;
     if (fsm->state == S_IDLE) {
         reconnect_transition__(fsm, now, S_ACTIVE);
     }
@@ -556,6 +566,10 @@ reconnect_deadline__(const struct reconnect *fsm, long long int now)
 
     case S_ACTIVE:
         if (fsm->probe_interval) {
+            if (fsm->queued_bytes) {
+                return LLONG_MAX;
+            }
+
             long long int base = MAX(fsm->last_activity, fsm->state_entered);
             long long int expiration = base + fsm->probe_interval;
             if (now < expiration || fsm->last_receive_attempt >= expiration) {

@@ -94,6 +94,9 @@ class Reconnect(object):
         @staticmethod
         def deadline(fsm, now):
             if fsm.probe_interval:
+                if fsm.queued_bytes:
+                    return None
+
                 base = max(fsm.last_activity, fsm.state_entered)
                 expiration = base + fsm.probe_interval
                 if (now < expiration or
@@ -140,7 +143,7 @@ class Reconnect(object):
         def run(fsm, now):
             vlog.err("%s: no response to inactivity probe after %.3g "
                      "seconds, disconnecting"
-                      % (fsm.name, (now - fsm.state_entered) / 1000.0))
+                     % (fsm.name, (now - fsm.state_entered) / 1000.0))
             return DISCONNECT
 
     class Reconnect(object):
@@ -174,6 +177,7 @@ class Reconnect(object):
         self.last_connected = None
         self.last_disconnected = None
         self.last_receive_attempt = now
+        self.queued_bytes = 0
         self.max_tries = None
         self.backoff_free_tries = 0
 
@@ -347,6 +351,7 @@ class Reconnect(object):
         error.
 
         The FSM will back off, then reconnect."""
+        self.queued_bytes = 0
         if self.state not in (Reconnect.Backoff, Reconnect.Void):
             # Report what happened
             if self.state in (Reconnect.Active, Reconnect.Idle):
@@ -485,10 +490,17 @@ class Reconnect(object):
         self.connecting(now)
         self.disconnected(now, error)
 
-    def activity(self, now):
-        """Tell this FSM that some activity occurred on the connection.  This
-        resets the probe interval timer, so that the connection is known not to
-        be idle."""
+    def activity(self, now, queued_bytes):
+        """Tell this FSM that some activity has occurred on the connection.
+        This resets the probe interval timer, so that the connection is known
+        not to be idle.
+
+        'queued_bytes' is data queued for the peer that could not be sent.
+        While it is nonzero the FSM stops asking to be woken up to attempt a
+        receive: the caller evidently cannot get data to this peer, so no
+        receive it makes can settle anything, and waking to try only burns
+        CPU."""
+        self.queued_bytes = queued_bytes
         if self.state != Reconnect.Active:
             self._transition(now, Reconnect.Active)
         self.last_activity = now

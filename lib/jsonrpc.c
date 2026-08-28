@@ -1062,7 +1062,8 @@ jsonrpc_session_run(struct jsonrpc_session *s)
              * which means that we can push a lot of data into a connection
              * that has stalled and won't ever recover.
              */
-            reconnect_activity(s->reconnect, time_msec());
+            reconnect_activity(s->reconnect, time_msec(),
+                               jsonrpc_get_backlog(s->rpc));
         }
 
         error = jsonrpc_get_status(s->rpc);
@@ -1192,7 +1193,8 @@ jsonrpc_session_recv(struct jsonrpc_session *s)
              * Previously we only counted receiving a full message as activity,
              * but with large messages or a slow connection that policy could
              * time out the session mid-message. */
-            reconnect_activity(s->reconnect, now);
+            reconnect_activity(s->reconnect, now,
+                               jsonrpc_get_backlog(s->rpc));
         }
 
         if (msg) {

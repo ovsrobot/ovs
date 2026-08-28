@@ -502,7 +502,8 @@ class Session(object):
                 # activity, because there's a lot of queuing downstream from
                 # us, which means that we can push a lot of data into a
                 # connection that has stalled and won't ever recover.
-                self.reconnect.activity(ovs.timeval.msec())
+                self.reconnect.activity(ovs.timeval.msec(),
+                                        self.rpc.get_backlog())
 
             error = self.rpc.get_status()
             if error != 0:
@@ -573,7 +574,7 @@ class Session(object):
                 # Previously we only counted receiving a full message as
                 # activity, but with large messages or a slow connection that
                 # policy could time out the session mid-message.
-                self.reconnect.activity(now)
+                self.reconnect.activity(now, self.rpc.get_backlog())
 
             if not error:
                 if msg.type == Message.T_REQUEST and msg.method == "echo":

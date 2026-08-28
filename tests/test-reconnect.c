@@ -147,9 +147,17 @@ do_connected(struct ovs_cmdl_context *ctx OVS_UNUSED)
 }
 
 static void
-do_activity(struct ovs_cmdl_context *ctx OVS_UNUSED)
+do_set_probe_interval(struct ovs_cmdl_context *ctx)
 {
-    reconnect_activity(reconnect, now);
+    reconnect_set_probe_interval(reconnect, atoi(ctx->argv[1]));
+}
+
+static void
+do_activity(struct ovs_cmdl_context *ctx)
+{
+    size_t queued_bytes = ctx->argc > 1 ? atoi(ctx->argv[1]) : 0;
+
+    reconnect_activity(reconnect, now, queued_bytes);
 }
 
 static void
@@ -297,7 +305,8 @@ static const struct ovs_cmdl_command all_commands[] = {
     { "connecting", NULL, 0, 0, do_connecting, OVS_RO },
     { "connect-failed", NULL, 0, 1, do_connect_failed, OVS_RO },
     { "connected", NULL, 0, 0, do_connected, OVS_RO },
-    { "activity", NULL, 0, 0, do_activity, OVS_RO },
+    { "activity", NULL, 0, 1, do_activity, OVS_RO },
+    { "set-probe-interval", NULL, 1, 1, do_set_probe_interval, OVS_RO },
     { "run", NULL, 0, 1, do_run, OVS_RO },
     { "advance", NULL, 1, 1, do_advance, OVS_RO },
     { "timeout", NULL, 0, 0, do_timeout, OVS_RO },

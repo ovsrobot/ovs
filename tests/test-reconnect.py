@@ -61,8 +61,12 @@ def do_connected(_):
     r.connected(now)
 
 
-def do_activity(_):
-    r.activity(now)
+def do_set_probe_interval(arg):
+    r.set_probe_interval(int(arg))
+
+
+def do_activity(arg):
+    r.activity(now, int(arg) if arg is not None else 0)
 
 
 def do_run(arg):
@@ -181,6 +185,7 @@ def main():
         "connect-failed": do_connect_failed,
         "connected": do_connected,
         "activity": do_activity,
+        "set-probe-interval": do_set_probe_interval,
         "run": do_run,
         "advance": do_advance,
         "timeout": do_timeout,
