@@ -208,6 +208,7 @@ struct conntrack_zone_limit {
 };
 
 struct conntrack_zone {
+    struct ovs_mutex zone_lock; /* Protects the following fields. */
     struct cmap conns;
 };
 

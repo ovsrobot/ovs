@@ -261,6 +261,7 @@ struct conntrack *
 conntrack_init(void)
 {
     static struct ovsthread_once setup_l4_once = OVSTHREAD_ONCE_INITIALIZER;
+    struct conntrack_zone *cz;
     struct conntrack *ct = xzalloc(sizeof *ct);
 
     /* This value can be used during init (e.g. timeout_policy_init()),
@@ -277,7 +278,9 @@ conntrack_init(void)
     ovs_mutex_init_adaptive(&ct->ct_lock);
     ovs_mutex_lock(&ct->ct_lock);
     for (unsigned i = 0; i < ARRAY_SIZE(ct->zones); i++) {
-        cmap_init(&ct->zones[i].conns);
+        cz = zone_lookup(ct, i);
+        ovs_mutex_init_adaptive(&cz->zone_lock);
+        cmap_init(&cz->conns);
     }
     for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
         rculist_init(&ct->exp_lists[i]);
@@ -584,6 +587,7 @@ conn_clean__(struct conntrack *ct, struct conn *conn)
     cz = zone_lookup(ct, fwd_zone);
 
     hash = conn_key_hash(&conn->key_node[CT_DIR_FWD].key, ct->hash_basis);
+    ovs_mutex_lock(&cz->zone_lock);
     cmap_remove(&cz->conns,
                 &conn->key_node[CT_DIR_FWD].cm_node, hash);
 
@@ -596,6 +600,7 @@ conn_clean__(struct conntrack *ct, struct conn *conn)
     }
 
     rculist_remove(&conn->node);
+    ovs_mutex_unlock(&cz->zone_lock);
 }
 
 /* Also removes the associated nat 'conn' from the lookup
@@ -634,6 +639,7 @@ conn_force_expire(struct conn *conn)
 void
 conntrack_destroy(struct conntrack *ct)
 {
+    struct conntrack_zone *cz;
     struct conn *conn;
 
     latch_set(&ct->clean_thread_exit);
@@ -664,7 +670,11 @@ conntrack_destroy(struct conntrack *ct)
 
     ovs_mutex_lock(&ct->ct_lock);
     for (unsigned i = 0; i < ARRAY_SIZE(ct->zones); i++) {
-        cmap_destroy(&ct->zones[i].conns);
+        cz = zone_lookup(ct, i);
+        ovs_mutex_lock(&cz->zone_lock);
+        cmap_destroy(&cz->conns);
+        ovs_mutex_unlock(&cz->zone_lock);
+        ovs_mutex_destroy(&cz->zone_lock);
     }
     cmap_destroy(&ct->zone_limits);
     cmap_destroy(&ct->timeout_policies);
@@ -1054,7 +1064,7 @@ conn_insert(struct conntrack *ct, struct conntrack_zone *cz,
             const struct nat_action_info_t *nat_action_info,
             const char *helper, const struct alg_exp_node *alg_exp,
             enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
-    OVS_REQUIRES(ct->ct_lock)
+    OVS_REQUIRES(ct->ct_lock, cz->zone_lock)
 {
     struct conn_key_node *fwd_key_node, *rev_key_node;
     struct conn *nc = NULL;
@@ -1203,15 +1213,18 @@ conn_maybe_not_found(struct conntrack *ct, struct dp_packet *pkt,
      * analysis. */
     if (commit) {
         ovs_mutex_lock(&ct->ct_lock);
+        ovs_mutex_lock(&cz->zone_lock);
         bool found = conn_lookup_zone(ct, cz, &ctx->key, now, NULL, NULL);
         if (!found) {
             if (!pkt_validate_and_set_new_ct_state(pkt, ctx, alg_exp)) {
+                ovs_mutex_unlock(&cz->zone_lock);
                 ovs_mutex_unlock(&ct->ct_lock);
                 return nc;
             }
             nc = conn_insert(ct, cz, pkt, ctx, now, nat_action_info,
                              helper, alg_exp, ct_alg_ctl, tp_id);
         }
+        ovs_mutex_unlock(&cz->zone_lock);
         ovs_mutex_unlock(&ct->ct_lock);
     } else {
         bool found = conn_lookup_zone(ct, cz, &ctx->key, now, NULL, NULL);
