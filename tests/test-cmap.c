@@ -55,7 +55,7 @@ static void
 check_cmap(struct cmap *cmap, const int values[], size_t n,
            hash_func *hash)
 {
-    int *sort_values, *cmap_values, *cmap_values2;
+    int *sort_values, *cmap_values, *cmap_values2, *cmap_values3;
     const struct element *e;
     size_t i, batch_size;
 
@@ -66,6 +66,7 @@ check_cmap(struct cmap *cmap, const int values[], size_t n,
     sort_values = xmalloc(sizeof *sort_values * n);
     cmap_values = xmalloc(sizeof *sort_values * n);
     cmap_values2 = xmalloc(sizeof *sort_values * n);
+    cmap_values3 = xmalloc(sizeof *sort_values * n);
 
     /* Here we test cursor iteration */
     i = 0;
@@ -86,16 +87,54 @@ check_cmap(struct cmap *cmap, const int values[], size_t n,
     }
     assert(i == n);
 
+    /* Here we test switching between cursors and positions.
+     * We switch on every odd iteration.
+     * It is a little strange since the cursor always points to the current
+     * element being iterated over while the position points to the next
+     * element. */
+    bool use_position = true;
+    pos = (struct cmap_position){0, 0, 0 };
+    struct cmap_cursor cur;
+    for (i = 0; i < n; i++) {
+        if (i % 2 == 1) {
+            if (use_position) {
+                cur = cmap_position_to_cursor(cmap, &pos);
+            } else {
+                cmap_cursor_to_position(&cur, &pos);
+            }
+            use_position = !use_position;
+        }
+
+        if (use_position) {
+            node = cmap_next_position(cmap, &pos);
+        } else {
+            /* Because of the strangeness above we do not need to advance if
+             * we just switched back from a position. */
+            if (i % 2 == 0) {
+                cmap_cursor_advance(&cur);
+            }
+            node = cur.node;
+        }
+
+        e = OBJECT_CONTAINING(node, e, node);
+        ovs_assert(i < n);
+        cmap_values3[i] = e->value;
+    }
+    ovs_assert(i == n);
+
     memcpy(sort_values, values, sizeof *sort_values * n);
     qsort(sort_values, n, sizeof *sort_values, compare_ints);
     qsort(cmap_values, n, sizeof *cmap_values, compare_ints);
     qsort(cmap_values2, n, sizeof *cmap_values2, compare_ints);
+    qsort(cmap_values3, n, sizeof *cmap_values3, compare_ints);
 
     for (i = 0; i < n; i++) {
-        assert(sort_values[i] == cmap_values[i]);
-        assert(sort_values[i] == cmap_values2[i]);
+        ovs_assert(sort_values[i] == cmap_values[i]);
+        ovs_assert(sort_values[i] == cmap_values2[i]);
+        ovs_assert(sort_values[i] == cmap_values3[i]);
     }
 
+    free(cmap_values3);
     free(cmap_values2);
     free(cmap_values);
     free(sort_values);
@@ -234,6 +273,75 @@ test_cmap_insert_replace_delete(hash_func *hash)
     cmap_destroy(&cmap);
 }
 
+/* Tests edgecases of the switching between cursors and positions. */
+static void
+test_cmap_cursor_position_switch(hash_func *hash OVS_UNUSED)
+{
+    enum { N_ELEMS = 1000 };
+
+    struct cmap cmap = CMAP_INITIALIZER;
+    struct element elements[N_ELEMS];
+    struct cmap_position position, position2;
+    struct cmap_cursor cursor;
+    struct element *elem;
+    size_t i;
+
+    for (i = 0; i < N_ELEMS; i++) {
+        elements[i].value = i;
+    }
+
+    /* Case 1: Switching between cursor and position on an empty cmap. */
+    cursor = cmap_cursor_start(&cmap);
+    cmap_cursor_to_position(&cursor, &position);
+    ovs_assert(cmap_next_position(&cmap, &position) == NULL);
+    cursor = cmap_position_to_cursor(&cmap, &position);
+    ovs_assert(cursor.node == NULL);
+
+    /* Case 2: Switching when we are at the end of the cmap should leave us at
+     * the end. */
+    cmap_insert(&cmap, &elements[0].node, hash(0));
+    cursor = cmap_cursor_start(&cmap);
+    ovs_assert(cursor.node);
+    cmap_cursor_advance(&cursor);
+    ovs_assert(cursor.node == NULL);
+    cmap_cursor_to_position(&cursor, &position);
+    ovs_assert(cmap_next_position(&cmap, &position) == NULL);
+
+    position = (struct cmap_position){0, 0, 0};
+    cmap_next_position(&cmap, &position);
+    cursor = cmap_position_to_cursor(&cmap, &position);
+    ovs_assert(cursor.node == NULL);
+
+    /* Case 3: Converting twice to a position also works. */
+    cmap_insert(&cmap, &elements[1].node, hash(1));
+    cursor = cmap_cursor_start(&cmap);
+    cmap_cursor_to_position(&cursor, &position);
+    cmap_cursor_to_position(&cursor, &position2);
+    ovs_assert(cmap_next_position(&cmap, &position) != NULL);
+    ovs_assert(cmap_next_position(&cmap, &position) == NULL);
+    ovs_assert(cmap_next_position(&cmap, &position2) != NULL);
+    ovs_assert(cmap_next_position(&cmap, &position2) == NULL);
+
+    /* Case 4: Position at the end needs to stay at the end after removal. */
+    cursor = cmap_cursor_start(&cmap);
+    cmap_cursor_advance(&cursor);
+    /* Points now to the last element. */
+    cmap_cursor_to_position(&cursor, &position);
+    elem = OBJECT_CONTAINING(cursor.node, elem, node);
+    cmap_cursor_advance(&cursor);
+    /* Points now to the end of the cmap. */
+    cmap_cursor_to_position(&cursor, &position2);
+    cmap_remove(&cmap, &elem->node, hash(elem->value));
+    /* This might or might not now produce a useful element. We may just not
+     * crash. */
+    cmap_next_position(&cmap, &position);
+    /* This needs to be NULL, since we where at the end of the list
+     * previously. */
+    ovs_assert(cmap_next_position(&cmap, &position2) == NULL);
+
+    cmap_destroy(&cmap);
+}
+
 static void
 run_test(void (*function)(hash_func *))
 {
@@ -256,6 +364,7 @@ run_tests(struct ovs_cmdl_context *ctx)
     n = ctx->argc >= 2 ? atoi(ctx->argv[1]) : 100;
     for (i = 0; i < n; i++) {
         run_test(test_cmap_insert_replace_delete);
+        run_test(test_cmap_cursor_position_switch);
     }
     printf("\n");
 }

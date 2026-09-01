@@ -294,4 +294,34 @@ cmap_remove(struct cmap *cmap, struct cmap_node *node, uint32_t hash)
     return cmap_replace(cmap, node, NULL, hash);
 }
 
+/* Convert a cmap position to a cursor.
+ * After calling this '.node' of the retured cursor will point to the element
+ * at the position of 'cmap_position'.
+ *
+ * Note that if you previously called cmap_next_position it will already have
+ * moved its position to the element after the one it returned.
+ * This means that if cmap_next_position returned element 1 of the cmap then
+ * the cmap_cursor created by cmap_position_to_cursor will return element 2 of
+ * the cmap and not element 1.
+ *
+ * If this is used in combination with cmap_position_to_cursor to store and
+ * retrive a cursor across RCU cycles the cursor might skip elements or visit
+ * them multiple times. This only happens if the cmap is modified
+ * concurrently. */
+struct cmap_cursor
+cmap_position_to_cursor(const struct cmap *,
+                        const struct cmap_position *);
+
+/* Convert a cmap cursor to a position.
+ * After calling this you will need to call cmap_next_position to actually get
+ * a cmap_node. This cmap_node will be the one after the one pointed to by the
+ * cursor.
+ *
+ * So if previously 'cursor.node' was element 1 of the cmap then calling
+ * cmap_cursor_to_position and then cmap_next_position will return element 2
+ * of the cmap. */
+void
+cmap_cursor_to_position(const struct cmap_cursor *,
+                        struct cmap_position *);
+
 #endif /* cmap.h */
