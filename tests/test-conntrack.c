@@ -21,11 +21,13 @@
 #include "fatal-signal.h"
 #include "flow.h"
 #include "netdev.h"
+#include "openvswitch/util.h"
 #include "ovs-thread.h"
 #include "ovstest.h"
 #include "pcap-file.h"
 #include "timeval.h"
 #include "stopwatch.h"
+#include "util.h"
 
 #define STOPWATCH_CT_EXECUTE_COMMIT "ct-execute-commit"
 #define STOPWATCH_CT_EXECUTE_NO_COMMIT "ct-execute-no-commit"
@@ -177,6 +179,15 @@ destroy_packets(struct dp_packet_batch *pkt_batch)
 struct thread_aux {
     pthread_t thread;
     unsigned tid;
+    bool first;
+    uint64_t sleep_counter;
+    uint64_t conn_lookup_errors;
+
+    /* Test configuration */
+    unsigned long long n_iterations;
+    unsigned long long n_data_pkts;
+    unsigned long long n_conns;
+    unsigned long long n_zones;
 };
 
 static struct conntrack *ct;
@@ -194,6 +205,7 @@ ct_thread_main(void *aux_)
     size_t i;
     long long now = time_msec();
 
+    ovs_assert(batch_size > 0);
     pkt_batch = prepare_packets(batch_size, change_conn, aux->tid, &dl_type);
     ovs_barrier_block(&barrier);
     for (i = 0; i < n_pkts; i += batch_size) {
@@ -253,6 +265,279 @@ test_benchmark(struct ovs_cmdl_context *ctx)
 
     for (i = 0; i < n_threads; i++) {
         xpthread_join(threads[i].thread, NULL);
+    }
+
+    conntrack_destroy(ct);
+    ovs_barrier_destroy(&barrier);
+    free(threads);
+}
+
+static struct dp_packet_batch ***
+gen_tcp_connections(size_t n_packets_per_conn, unsigned long n_conns,
+                    unsigned tid)
+{
+    struct eth_addr eth_src, eth_dst;
+    uint16_t sport, dport;
+    ovs_be32 ip_src, ip_dst;
+    struct dp_packet *pkt;
+    size_t i, j;
+
+    /* Some generic stuff we use for all conns */
+    struct eth_addr glob_eth_src = ETH_ADDR_C(00, 01, 02, 03, 04, 05);
+    struct eth_addr glob_eth_dst = ETH_ADDR_C(00, 06, 07, 08, 09, 0a);
+    ovs_be32 glob_ip_dst = inet_addr("192.168.0.1");
+    uint16_t glob_sport = 12345;
+    uint16_t glob_dport = 80;
+
+    struct dp_packet_batch ***pkt_batches_per_pkt = xzalloc(
+        n_packets_per_conn * sizeof(*pkt_batches_per_pkt));
+    for (i = 0; i < n_packets_per_conn; i++) {
+        struct dp_packet_batch **pkt_batches = xzalloc(
+            n_conns * sizeof(*pkt_batches));
+        pkt_batches_per_pkt[i] = pkt_batches;
+
+        for (j = 0; j < n_conns; j++) {
+            /* We just define 10.X.Y.Y for source ips.
+             * X is the thread id and YY is the connection id.
+             * With more than 255 threads this would overflow and lead to
+             * overlapping IPs between tests. */
+            ovs_assert(tid <= 255);
+            ovs_be32 glob_ip_src = htonl(
+                    0x0A000000 | ((tid & 0xFF) << 16) | (j & 0xFFFF));
+            bool forward = true;
+            uint16_t tcp_flags = TCP_ACK;
+
+            if (i == 0) {
+                tcp_flags = TCP_SYN;
+            } else if (i == 1) {
+                tcp_flags |= TCP_SYN;
+                forward = false;
+            } else if (i == 2) {
+                /* This is a forward ACK. the existing states are fine. But the
+                 * else branch at the end must not touch this packet. */
+            } else if (i == n_packets_per_conn - 3) {
+                tcp_flags |= TCP_FIN;
+            } else if (i == n_packets_per_conn - 2) {
+                tcp_flags |= TCP_FIN;
+                forward = false;
+            } else if (i == n_packets_per_conn - 1) {
+                /* This is the last ACK of the connection. We must not match it
+                 * afterwards. */
+            } else if (i % 2 == 1) {
+                /* Data. */
+                tcp_flags |= TCP_PSH;
+            } else {
+                /* ACK for Data. */
+                forward = false;
+            }
+
+            if (forward) {
+                eth_src = glob_eth_src;
+                eth_dst = glob_eth_dst;
+                ip_src = glob_ip_src;
+                ip_dst = glob_ip_dst;
+                sport = glob_sport;
+                dport = glob_dport;
+            } else {
+                eth_src = glob_eth_dst;
+                eth_dst = glob_eth_src;
+                ip_src = glob_ip_dst;
+                ip_dst = glob_ip_src;
+                sport = glob_dport;
+                dport = glob_sport;
+            }
+
+            pkt = build_eth_ip_packet(NULL, eth_src, eth_dst,
+                                      ip_src, ip_dst,
+                                      IPPROTO_TCP, 0);
+            build_tcp_packet(pkt, sport, dport, tcp_flags, NULL, 0);
+            pkt_batches[j] = xzalloc(sizeof(struct dp_packet_batch));
+            dp_packet_batch_init_packet(pkt_batches[j], pkt);
+        }
+    }
+    return pkt_batches_per_pkt;
+}
+
+static void *
+ct_thread_tcp_main(void *aux_)
+{
+    struct thread_aux *aux = aux_;
+    size_t i, j;
+
+    /* Prepare packets to run complete tcp connections.
+     * n_data_pkts defines how many normal packets come as part of the
+     * connection.
+     * So we need to generate:
+     * src->dst: SYN
+     * dst->src: SYN+ACK
+     * src->dst: ACK
+     * for each n_data_pkts:
+     *   src->dst: Data
+     *   dst->src: ACK
+     * src->dst: FIN+ACK
+     * dst->src: FIN+ACK
+     * src->dst: ACK
+     *
+     * So we need 'n_data_pkts * 2 + 6' packets for each connection.*/
+    size_t n_packets_per_conn = aux->n_data_pkts * 2 + 6;
+    struct dp_packet_batch ***pkt_batches_per_pkt = gen_tcp_connections(
+            n_packets_per_conn, aux->n_conns, aux->tid);
+
+    ovs_barrier_block(&barrier);
+
+    /* Each thread has a zone_offset, so that not all threads try to access
+     * the same zone at the same time and thereby move in lockstep. That would
+     * be unrealistic in real cases. We therefore distribute them as much as
+     * possible over all zones.
+     * The thread id will generally be only different by 1 between different
+     * threads as they are started directly afterwards. So we need to equally
+     * distribute it. */
+    uint16_t zone_offset = aux->tid * aux->n_zones / n_threads;
+
+    for (i = 0; i < n_packets_per_conn * aux->n_iterations; i++) {
+        size_t packet_offset = i % n_packets_per_conn;
+        if (packet_offset == 0 && aux->first) {
+            printf("Iteration: %"PRIuSIZE"/%llu\n",
+                i / n_packets_per_conn, aux->n_iterations);
+        }
+
+        struct dp_packet_batch **pkt_batches = pkt_batches_per_pkt[
+            i % n_packets_per_conn];
+        for (j = 0; j < aux->n_conns; j++) {
+            long long now = time_msec();
+            uint16_t zone = (j + zone_offset) % aux->n_zones;
+            /* We set mark here to some value since it allows us to detect if
+             * conntrack actually inserted the connection or not.
+             * If e.g. the conntrack table is full then mark will not be set.
+             * We can not use CT_TRACKED, since it is also set on a full
+             * table. */
+            uint32_t mark[2] = {aux->tid + 1, 0xFFFF};
+
+            pkt_metadata_init(&pkt_batches[j]->packets[0]->md, 0);
+            bool commit = packet_offset == 0;
+            conntrack_execute(ct, pkt_batches[j], htons(ETH_TYPE_IP),
+                              false, commit, zone, mark, NULL,
+                              NULL, NULL, now, 0);
+
+            uint8_t ct_state = pkt_batches[j]->packets[0]->md.ct_state;
+
+            if (packet_offset == 0) {
+                /* Check if something prevented a new connection to be added to
+                 * conntrack we should detect it here. This can generally
+                 * happen if the ct_sweep is too slow for all the connections
+                 * we generate. In this case we will just sleep a little and
+                 * then try again. */
+                if (pkt_batches[j]->packets[0]->md.ct_mark == 0) {
+                    xnanosleep(1000 * 1000);
+                    aux->sleep_counter++;
+                    j--;
+                    // Each sleep is 1ms, if we slept for a total of 100s we
+                    // assume something is broken and we will never get out of
+                    // this anymore.
+                    ovs_assert(aux->sleep_counter < (100 * 1000));
+                    continue;
+                }
+                ovs_assert(ct_state & CS_NEW);
+            }
+
+            if (packet_offset != 0 && (ct_state & CS_ESTABLISHED) == 0) {
+                aux->conn_lookup_errors++;
+                continue;
+            }
+
+            ovs_assert((ct_state & CS_INVALID) == 0);
+            ovs_assert(pkt_batches[j]->packets[0]->md.ct_mark != 0);
+
+        }
+        ovsrcu_quiesce();
+    }
+
+    ovs_barrier_block(&barrier);
+
+    for (i = 0; i < n_packets_per_conn; i++) {
+        for (j = 0; j < aux->n_conns; j++) {
+            destroy_packets(pkt_batches_per_pkt[i][j]);
+        }
+        free(pkt_batches_per_pkt[i]);
+    }
+    free(pkt_batches_per_pkt);
+
+    return NULL;
+}
+
+static void
+test_benchmark_tcp(struct ovs_cmdl_context *ctx)
+{
+    unsigned long long n_conns, n_zones, n_data_pkts, n_iterations;
+    struct thread_aux *threads;
+    uint64_t sleep_counter = 0;
+    uint64_t lookup_errors = 0;
+    long long start;
+    unsigned i;
+
+    fatal_signal_init();
+
+    /* Parse arguments */
+    n_threads = strtoul(ctx->argv[1], NULL, 0);
+    if (!n_threads) {
+        ovs_fatal(0, "n_threads must be at least one");
+    }
+    if (!str_to_ullong(ctx->argv[2], 0, &n_conns) ||
+        !str_to_ullong(ctx->argv[3], 0, &n_zones) ||
+        !str_to_ullong(ctx->argv[4], 0, &n_data_pkts) ||
+        !str_to_ullong(ctx->argv[5], 0, &n_iterations)) {
+        ovs_fatal(0, "unable to parse parameters");
+    }
+
+    if (n_conns == 0 || n_zones == 0) {
+        ovs_fatal(0, "n_conns and n_zones must be at least 1");
+    }
+    if (n_conns > UINT16_MAX) {
+        ovs_fatal(0, "n_conns may be at most %u", UINT16_MAX);
+    }
+
+    threads = xcalloc(n_threads, sizeof *threads);
+    ovs_barrier_init(&barrier, n_threads + 1);
+    ct = conntrack_init();
+    conntrack_set_sweep_interval(ct, 10);
+    conntrack_set_tcp_seq_chk(ct, false);
+
+    /* Create threads */
+    start = time_msec();
+    for (i = 0; i < n_threads; i++) {
+        threads[i].first = i == 0;
+        threads[i].tid = i;
+        threads[i].sleep_counter = 0;
+        threads[i].conn_lookup_errors = 0;
+
+        threads[i].n_conns = n_conns;
+        threads[i].n_zones = n_zones;
+        threads[i].n_data_pkts = n_data_pkts;
+        threads[i].n_iterations = n_iterations;
+
+        threads[i].thread = ovs_thread_create("ct_thread", ct_thread_tcp_main,
+                                              &threads[i]);
+    }
+    /* Starts the work inside the threads */
+    ovs_barrier_block(&barrier);
+    printf("initial packet generation time: %lld ms\n", time_msec() - start);
+    start = time_msec();
+
+    /* Wait for the threads to finish the work */
+    ovs_barrier_block(&barrier);
+    printf("conntrack:  %5lld ms\n", time_msec() - start);
+
+    for (i = 0; i < n_threads; i++) {
+        xpthread_join(threads[i].thread, NULL);
+        sleep_counter += threads[i].sleep_counter;
+        lookup_errors += threads[i].conn_lookup_errors;
+    }
+
+    printf("total sleep to wait for conntrack space "
+           "(sum over all threads): %" PRIu64 " ms\n", sleep_counter);
+    if (lookup_errors) {
+        printf("total conntrack lookup errors. Probably the connection expired"
+               " because of a timeout policy: %" PRIu64 "\n", lookup_errors);
     }
 
     conntrack_destroy(ct);
@@ -601,6 +886,12 @@ static const struct ovs_cmdl_command commands[] = {
      * is rewritten to the SNAT target rather than causing a crash. */
     {"ftp-alg-large-payload", "", 0, 0,
         test_ftp_alg_large_payload, OVS_RO},
+    /* Starts 'n_threads' threads. Each thread will open 'n_conns' tcp
+     * connections across 'n_zones' separate conntrack zones. Each conn will
+     * send 'n_data_pkts' data packets within each connection.
+     * Each conn will run through conntrack 'iterations' times. */
+    {"benchmark-tcp", "n_threads n_conns n_zones n_data_pkts iterations", 5, 5,
+    test_benchmark_tcp, OVS_RO},
 
     {NULL, NULL, 0, 0, NULL, OVS_RO},
 };
