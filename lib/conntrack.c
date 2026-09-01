@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "conntrack.h"
+#include "cmap.h"
 #include "conntrack-private.h"
 #include "conntrack-tp.h"
 #include "coverage.h"
@@ -1506,8 +1507,8 @@ ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
     struct conn_key_node *keyn;
     struct conntrack_zone *cz;
     unsigned int conn_handled = 0;
+    struct cmap_cursor cursor;
     struct conn *conn;
-    struct cmap_node *node;
     long long expiration;
 
     cz = zone_lookup(ct, zone);
@@ -1516,13 +1517,24 @@ ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
         return true;
     }
 
-    if (!*current_position) {
-        *current_position = xzalloc(sizeof(**current_position));
+    if (*current_position) {
+        /* Note that cmap_position_to_cursor and CMAP_CURSOR_FOR_EACH_CONTINUE
+         * both advance the cmap cursor by one. This means that we will skip
+         * the first item of a zone when we resume cleaning. A single
+         * connection might be skipped in one clean run, but will then
+         * generally be handled in the next run. */
+        cursor = cmap_position_to_cursor(&cz->conns, *current_position);
+        free(*current_position);
+        *current_position = NULL;
+    } else {
+        cursor = cmap_cursor_start(&cz->conns);
     }
 
-    while ((node = cmap_next_position(&cz->conns, *current_position))) {
-        keyn = OBJECT_CONTAINING(node, keyn, cm_node);
+
+    CMAP_CURSOR_FOR_EACH_CONTINUE (keyn, cm_node, &cursor) {
         if (conn_handled > limit) {
+            *current_position = xzalloc(sizeof(**current_position));
+            cmap_cursor_to_position(&cursor, *current_position);
             *conn_count = conn_handled;
             return false;
         }
@@ -1541,8 +1553,6 @@ ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
         conn_handled++;
     }
 
-    free(*current_position);
-    *current_position = NULL;
     *conn_count = conn_handled;
     return true;
 }
