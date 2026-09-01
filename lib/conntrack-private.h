@@ -144,10 +144,6 @@ struct conn {
     uint32_t mark;
     int seq_skew;
 
-    /* Immutable data. */
-    int32_t admit_zone; /* The zone for managing zone limit counts. */
-    uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
-
     /* Mutable data. */
     bool seq_skew_dir; /* TCP sequence skew direction due to NATTing of FTP
                         * control messages; true if reply direction. */
@@ -198,29 +194,27 @@ enum ct_ephemeral_range {
 #define FOR_EACH_PORT_IN_RANGE(curr, min, max) \
     FOR_EACH_PORT_IN_RANGE__(curr, min, max, OVS_JOIN(idx, __COUNTER__))
 
-#define ZONE_LIMIT_CONN_DEFAULT -1
-
-struct conntrack_zone_limit {
-    int32_t zone;
-    atomic_int64_t limit;
-    atomic_count count;
-    uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
-};
+#define CONN_LIMIT_NONE -1LL
+#define CONN_LIMIT_USE_DEFAULT -2LL
 
 struct conntrack_zone {
     struct ovs_mutex zone_lock; /* Protects the following fields. */
     struct cmap conns;
+
+    /* Limits */
+    atomic_int64_t limit; /* Currently active limit. */
+    atomic_int64_t requested_limit; /* User requested limit. May be
+                                     * ZONE_LIMIT_CONN_DEFAULT if it should use
+                                     * the default limit. */
+    atomic_count count; /* Number of connections currently tracked. */
 };
 
 struct conntrack {
     struct ovs_mutex ct_lock; /* Protects the following fields. */
     struct conntrack_zone zones[UINT16_MAX + 1];
     struct rculist exp_lists[N_EXP_LISTS];
-    struct cmap zone_limits;
     struct cmap timeout_policies;
-    uint32_t zone_limit_seq OVS_GUARDED; /* Used to disambiguate zone limit
-                                          * counts. */
-    atomic_uint32_t default_zone_limit;
+    atomic_int64_t default_zone_limit;
 
     uint32_t hash_basis; /* Salt for hashing a connection key. */
     pthread_t clean_thread; /* Periodically cleans up connection tracker. */

@@ -89,11 +89,6 @@ enum ct_alg_ctl_type {
     CT_ALG_CTL_SIP,
 };
 
-struct zone_limit {
-    struct cmap_node node;
-    struct conntrack_zone_limit czl;
-};
-
 static bool conn_key_extract(struct conntrack *, struct dp_packet *,
                              ovs_be16 dl_type, struct conn_lookup_ctx *,
                              uint16_t zone);
@@ -281,12 +276,12 @@ conntrack_init(void)
         cz = zone_lookup(ct, i);
         ovs_mutex_init_adaptive(&cz->zone_lock);
         cmap_init(&cz->conns);
+        cz->limit = CONN_LIMIT_NONE;
+        cz->requested_limit = CONN_LIMIT_USE_DEFAULT;
     }
     for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
         rculist_init(&ct->exp_lists[i]);
     }
-    cmap_init(&ct->zone_limits);
-    ct->zone_limit_seq = 0;
     timeout_policy_init(ct);
     ovs_mutex_unlock(&ct->ct_lock);
 
@@ -294,7 +289,7 @@ conntrack_init(void)
     atomic_init(&ct->n_conn_limit, DEFAULT_N_CONN_LIMIT);
     atomic_init(&ct->tcp_seq_chk, true);
     atomic_init(&ct->sweep_ms, 20000);
-    atomic_init(&ct->default_zone_limit, 0);
+    atomic_init(&ct->default_zone_limit, CONN_LIMIT_NONE);
     latch_init(&ct->clean_thread_exit);
     ct->clean_thread = ovs_thread_create("ct_clean", clean_thread_main, ct);
     ct->ipf = ipf_init();
@@ -314,114 +309,19 @@ conntrack_init(void)
     return ct;
 }
 
-static uint32_t
-zone_key_hash(int32_t zone, uint32_t basis)
-{
-    size_t hash = hash_int((OVS_FORCE uint32_t) zone, basis);
-    return hash;
-}
-
 static int64_t
-zone_limit_get_limit__(struct conntrack_zone_limit *czl)
+zone_read_limit(struct conntrack_zone *cz)
 {
     int64_t limit;
-    atomic_read_relaxed(&czl->limit, &limit);
+    atomic_read_relaxed(&cz->limit, &limit);
 
     return limit;
 }
 
-static int64_t
-zone_limit_get_limit(struct conntrack *ct, struct conntrack_zone_limit *czl)
-{
-    int64_t limit = zone_limit_get_limit__(czl);
-
-    if (limit == ZONE_LIMIT_CONN_DEFAULT) {
-        atomic_read_relaxed(&ct->default_zone_limit, &limit);
-        limit = limit ? limit : -1;
-    }
-
-    return limit;
-}
-
-static struct zone_limit *
-zone_limit_lookup_protected(struct conntrack *ct, int32_t zone)
-    OVS_REQUIRES(ct->ct_lock)
-{
-    uint32_t hash = zone_key_hash(zone, ct->hash_basis);
-    struct zone_limit *zl;
-    CMAP_FOR_EACH_WITH_HASH_PROTECTED (zl, node, hash, &ct->zone_limits) {
-        if (zl->czl.zone == zone) {
-            return zl;
-        }
-    }
-    return NULL;
-}
-
-static struct zone_limit *
-zone_limit_lookup(struct conntrack *ct, int32_t zone)
-{
-    uint32_t hash = zone_key_hash(zone, ct->hash_basis);
-    struct zone_limit *zl;
-    CMAP_FOR_EACH_WITH_HASH (zl, node, hash, &ct->zone_limits) {
-        if (zl->czl.zone == zone) {
-            return zl;
-        }
-    }
-    return NULL;
-}
-
-static struct zone_limit *
-zone_limit_create__(struct conntrack *ct, int32_t zone, int64_t limit)
-    OVS_REQUIRES(ct->ct_lock)
-{
-    struct zone_limit *zl = NULL;
-
-    if (zone > DEFAULT_ZONE && zone <= MAX_ZONE) {
-        zl = xmalloc(sizeof *zl);
-        atomic_init(&zl->czl.limit, limit);
-        atomic_count_init(&zl->czl.count, 0);
-        zl->czl.zone = zone;
-        zl->czl.zone_limit_seq = ct->zone_limit_seq++;
-        uint32_t hash = zone_key_hash(zone, ct->hash_basis);
-        cmap_insert(&ct->zone_limits, &zl->node, hash);
-    }
-
-    return zl;
-}
-
-static struct zone_limit *
-zone_limit_create(struct conntrack *ct, int32_t zone, int64_t limit)
-    OVS_REQUIRES(ct->ct_lock)
-{
-    struct zone_limit *zl = zone_limit_lookup_protected(ct, zone);
-
-    if (zl) {
-        return zl;
-    }
-
-    return zone_limit_create__(ct, zone, limit);
-}
-
-/* Lazily creates a new entry in the zone_limits cmap if default limit
- * is set and there's no entry for the zone. */
-static struct zone_limit *
-zone_limit_lookup_or_default(struct conntrack *ct, int32_t zone)
-    OVS_REQUIRES(ct->ct_lock)
-{
-    struct zone_limit *zl = zone_limit_lookup_protected(ct, zone);
-
-    if (!zl) {
-        uint32_t limit;
-        atomic_read_relaxed(&ct->default_zone_limit, &limit);
-
-        if (limit) {
-            zl = zone_limit_create__(ct, zone, ZONE_LIMIT_CONN_DEFAULT);
-        }
-    }
-
-    return zl;
-}
-
+/* Returns the conntrack_zone_info for the requested zone.
+ * Note: to be compatible with the kernel implementation we return empty
+ * entries if the default limit is to be used.
+ * This can be improved upon later. */
 struct conntrack_zone_info
 zone_limit_get(struct conntrack *ct, int32_t zone)
 {
@@ -430,82 +330,67 @@ zone_limit_get(struct conntrack *ct, int32_t zone)
         .limit = 0,
         .count = 0,
     };
-    struct zone_limit *zl = zone_limit_lookup(ct, zone);
-    if (zl) {
-        int64_t czl_limit = zone_limit_get_limit__(&zl->czl);
-        if (czl_limit > ZONE_LIMIT_CONN_DEFAULT) {
-            czl.zone = zl->czl.zone;
-            czl.limit = czl_limit;
-        } else {
-            atomic_read_relaxed(&ct->default_zone_limit, &czl.limit);
-        }
+    int64_t limit = 0;
 
-        czl.count = atomic_count_get(&zl->czl.count);
+    if (zone == DEFAULT_ZONE) {
+         atomic_read_relaxed(&ct->default_zone_limit, &limit);
     } else {
-        atomic_read_relaxed(&ct->default_zone_limit, &czl.limit);
+        struct conntrack_zone *cz = zone_lookup(ct, zone);
+        uint64_t req_limit;
+        atomic_read_relaxed(&cz->requested_limit, &req_limit);
+        if (req_limit != CONN_LIMIT_USE_DEFAULT) {
+            czl.zone = zone;
+            limit = zone_read_limit(cz);
+            czl.count = atomic_count_get(&cz->count);
+        }
+    }
+
+    if (limit > 0) {
+        czl.limit = limit;
     }
 
     return czl;
 }
 
-static void
-zone_limit_clean__(struct conntrack *ct, struct zone_limit *zl)
-    OVS_REQUIRES(ct->ct_lock)
+static bool
+zone_limit_reset(struct conntrack *ct, struct conntrack_zone *cz)
 {
-    uint32_t hash = zone_key_hash(zl->czl.zone, ct->hash_basis);
-    cmap_remove(&ct->zone_limits, &zl->node, hash);
-    ovsrcu_postpone(free, zl);
-}
-
-static void
-zone_limit_clean(struct conntrack *ct, struct zone_limit *zl)
-    OVS_REQUIRES(ct->ct_lock)
-{
-    uint32_t limit;
+    int64_t limit;
+    atomic_read_relaxed(&cz->requested_limit, &limit);
+    if (limit == CONN_LIMIT_USE_DEFAULT) {
+        return false;
+    }
 
     atomic_read_relaxed(&ct->default_zone_limit, &limit);
-    /* Do not remove the entry if the default limit is enabled, but
-     * simply move the limit to default. */
-    if (limit) {
-        atomic_store_relaxed(&zl->czl.limit, ZONE_LIMIT_CONN_DEFAULT);
-    } else {
-        zone_limit_clean__(ct, zl);
-    }
+    atomic_store_relaxed(&cz->limit, limit);
+    atomic_store_relaxed(&cz->requested_limit, CONN_LIMIT_USE_DEFAULT);
+    return true;
 }
 
 static void
-zone_limit_clean_default(struct conntrack *ct)
-    OVS_REQUIRES(ct->ct_lock)
+zone_limit_update_default(struct conntrack *ct, int64_t limit)
 {
-    struct zone_limit *zl;
-    int64_t czl_limit;
+    int64_t cz_req_limit;
 
-    atomic_store_relaxed(&ct->default_zone_limit, 0);
+    atomic_store_relaxed(&ct->default_zone_limit, limit);
 
-    CMAP_FOR_EACH (zl, node, &ct->zone_limits) {
-        atomic_read_relaxed(&zl->czl.limit, &czl_limit);
-        if (zone_limit_get_limit__(&zl->czl) == ZONE_LIMIT_CONN_DEFAULT) {
-            zone_limit_clean__(ct, zl);
+    for (unsigned i = 0; i < ARRAY_SIZE(ct->zones); i++) {
+        atomic_read_relaxed(&ct->zones[i].requested_limit, &cz_req_limit);
+        if (cz_req_limit == CONN_LIMIT_USE_DEFAULT) {
+            atomic_store_relaxed(&ct->zones[i].limit, limit);
         }
     }
 }
 
 static bool
 zone_limit_delete__(struct conntrack *ct, int32_t zone)
-    OVS_REQUIRES(ct->ct_lock)
 {
-    struct zone_limit *zl = NULL;
-
     if (zone == DEFAULT_ZONE) {
-        zone_limit_clean_default(ct);
+        zone_limit_update_default(ct, CONN_LIMIT_NONE);
+        return false;
     } else {
-        zl = zone_limit_lookup_protected(ct, zone);
-        if (zl) {
-            zone_limit_clean(ct, zl);
-        }
+        return zone_limit_reset(ct, zone_lookup(ct, zone));
     }
-
-    return zl != NULL;
 }
 
 int
@@ -513,9 +398,7 @@ zone_limit_delete(struct conntrack *ct, int32_t zone)
 {
     bool deleted;
 
-    ovs_mutex_lock(&ct->ct_lock);
     deleted = zone_limit_delete__(ct, zone);
-    ovs_mutex_unlock(&ct->ct_lock);
 
     if (zone != DEFAULT_ZONE) {
         VLOG_INFO(deleted
@@ -527,46 +410,33 @@ zone_limit_delete(struct conntrack *ct, int32_t zone)
     return 0;
 }
 
-static void
-zone_limit_update_default(struct conntrack *ct, int32_t zone, uint32_t limit)
-{
-    /* limit zero means delete default. */
-    if (limit == 0) {
-        ovs_mutex_lock(&ct->ct_lock);
-        zone_limit_delete__(ct, zone);
-        ovs_mutex_unlock(&ct->ct_lock);
-    } else {
-        atomic_store_relaxed(&ct->default_zone_limit, limit);
-    }
-}
-
 int
 zone_limit_update(struct conntrack *ct, int32_t zone, uint32_t limit)
 {
-    struct zone_limit *zl;
+    struct conntrack_zone *cz;
     int err = 0;
+    int64_t conn_limit = limit;
+
+    if (conn_limit == 0) {
+        conn_limit = CONN_LIMIT_NONE;
+    }
 
     if (zone == DEFAULT_ZONE) {
-        zone_limit_update_default(ct, zone, limit);
-        VLOG_INFO("Set default zone limit to %u", limit);
+        zone_limit_update_default(ct, conn_limit);
+        VLOG_INFO("Set default zone limit to %"PRId64, conn_limit);
         return err;
     }
 
-    zl = zone_limit_lookup(ct, zone);
-    if (zl) {
-        atomic_store_relaxed(&zl->czl.limit, limit);
-        VLOG_INFO("Changed zone limit of %u for zone %d", limit, zone);
+    cz = zone_lookup(ct, zone);
+    if (cz) {
+        atomic_store_relaxed(&cz->limit, conn_limit);
+        atomic_store_relaxed(&cz->requested_limit, conn_limit);
+        VLOG_INFO("Set zone limit of %"PRId64" for zone %d", conn_limit, zone);
     } else {
-        ovs_mutex_lock(&ct->ct_lock);
-        err = zone_limit_create(ct, zone, limit) == NULL;
-        ovs_mutex_unlock(&ct->ct_lock);
-        if (!err) {
-            VLOG_INFO("Created zone limit of %u for zone %d", limit, zone);
-        } else {
-            VLOG_WARN("Request to create zone limit for invalid zone %d",
-                      zone);
-        }
-    }
+        VLOG_WARN("Request to create zone limit for invalid zone %d",
+                  zone);
+        err = 1;
+     }
 
     return err;
 }
@@ -590,6 +460,7 @@ conn_clean__(struct conntrack *ct, struct conn *conn)
     ovs_mutex_lock(&cz->zone_lock);
     cmap_remove(&cz->conns,
                 &conn->key_node[CT_DIR_FWD].cm_node, hash);
+    atomic_count_dec(&cz->count);
 
     if (conn->nat_action) {
         ovs_assert(fwd_zone == conn->key_node[CT_DIR_REV].key.zone);
@@ -617,11 +488,6 @@ conn_clean(struct conntrack *ct, struct conn *conn)
     ovs_mutex_lock(&ct->ct_lock);
     conn_clean__(ct, conn);
     ovs_mutex_unlock(&ct->ct_lock);
-
-    struct zone_limit *zl = zone_limit_lookup(ct, conn->admit_zone);
-    if (zl && zl->czl.zone_limit_seq == conn->zone_limit_seq) {
-        atomic_count_dec(&zl->czl.count);
-    }
 
     ovsrcu_postpone(delete_conn, conn);
     atomic_count_dec(&ct->n_conn);
@@ -652,14 +518,6 @@ conntrack_destroy(struct conntrack *ct)
         }
     }
 
-    struct zone_limit *zl;
-    CMAP_FOR_EACH (zl, node, &ct->zone_limits) {
-        uint32_t hash = zone_key_hash(zl->czl.zone, ct->hash_basis);
-
-        cmap_remove(&ct->zone_limits, &zl->node, hash);
-        ovsrcu_postpone(free, zl);
-    }
-
     struct timeout_policy *tp;
     CMAP_FOR_EACH (tp, node, &ct->timeout_policies) {
         uint32_t hash = hash_int(tp->policy.id, ct->hash_basis);
@@ -676,7 +534,6 @@ conntrack_destroy(struct conntrack *ct)
         ovs_mutex_unlock(&cz->zone_lock);
         ovs_mutex_destroy(&cz->zone_lock);
     }
-    cmap_destroy(&ct->zone_limits);
     cmap_destroy(&ct->timeout_policies);
 
     ovs_mutex_unlock(&ct->ct_lock);
@@ -1072,15 +929,11 @@ conn_insert(struct conntrack *ct, struct conntrack_zone *cz,
 
     COVERAGE_INC(conntrack_insert);
 
-    struct zone_limit *zl = zone_limit_lookup_or_default(ct,
-                                                         ctx->key.zone);
-    if (zl) {
-        czl_limit = zone_limit_get_limit(ct, &zl->czl);
-        if (czl_limit >= 0 &&
-            atomic_count_get(&zl->czl.count) >= czl_limit) {
-            COVERAGE_INC(conntrack_zone_full);
-            return nc;
-        }
+    czl_limit = zone_read_limit(cz);
+    if (czl_limit != CONN_LIMIT_NONE &&
+        atomic_count_get(&cz->count) >= czl_limit) {
+        COVERAGE_INC(conntrack_zone_full);
+        return nc;
     }
 
     unsigned int n_conn_limit;
@@ -1114,13 +967,6 @@ conn_insert(struct conntrack *ct, struct conntrack_zone *cz,
     fwd_key_node->dir = CT_DIR_FWD;
     rev_key_node->dir = CT_DIR_REV;
 
-    if (zl) {
-        nc->admit_zone = zl->czl.zone;
-        nc->zone_limit_seq = zl->czl.zone_limit_seq;
-    } else {
-        nc->admit_zone = INVALID_ZONE;
-    }
-
     if (nat_action_info) {
         nc->nat_action = nat_action_info->nat_action;
 
@@ -1150,10 +996,7 @@ conn_insert(struct conntrack *ct, struct conntrack_zone *cz,
                 &fwd_key_node->cm_node, ctx->hash);
     conn_expire_push_front(ct, nc);
     atomic_count_inc(&ct->n_conn);
-
-    if (zl) {
-        atomic_count_inc(&zl->czl.count);
-    }
+    atomic_count_inc(&cz->count);
 
     ctx->conn = nc; /* For completeness. */
 
