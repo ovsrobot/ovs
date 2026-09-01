@@ -57,6 +57,7 @@ COVERAGE_DEFINE(conntrack_zone_full);
 COVERAGE_DEFINE(conntrack_remove);
 COVERAGE_DEFINE(conntrack_insert);
 COVERAGE_DEFINE(conntrack_maybe_not_found);
+COVERAGE_DEFINE(conntrack_clean_fast_wakeup);
 
 struct conn_lookup_ctx {
     struct conn_key key;
@@ -1534,7 +1535,8 @@ ct_sweep_buf(struct conntrack *ct, uint16_t zone,
 
 static bool
 ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
-              size_t *cleaned_count, size_t *conn_count, size_t limit,
+              size_t *cleaned_count, size_t *conn_count,
+              long long *min_expiration, size_t limit,
               struct cmap_position **current_position)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
@@ -1586,6 +1588,8 @@ ct_sweep_zone(struct conntrack *ct, uint16_t zone, long long now,
         if (now >= expiration) {
             conn_buf[n_conn_buf++] = conn;
             (*cleaned_count)++;
+        } else {
+            *min_expiration = MIN(*min_expiration, expiration);
         }
 
         if (n_conn_buf == CONN_SWEEP_BUF_SIZE) {
@@ -1608,6 +1612,7 @@ static long long
 conntrack_clean(struct conntrack *ct, long long now)
 {
     long long next_wakeup = now + conntrack_get_sweep_interval(ct);
+    long long min_expiration = LLONG_MAX;
     unsigned int n_conn_limit, i;
     size_t clean_end, count = 0;
     size_t total_cleaned = 0;
@@ -1621,7 +1626,8 @@ conntrack_clean(struct conntrack *ct, long long now)
         size_t cleaned = 0;
 
         zone_finished = ct_sweep_zone(ct, ct->current_clean_zone, now, &cleaned,
-                                      &zone_count, clean_end - count,
+                                      &zone_count, &min_expiration,
+                                      clean_end - count,
                                       &ct->current_clean_position);
         total_cleaned += cleaned;
 
@@ -1641,6 +1647,17 @@ conntrack_clean(struct conntrack *ct, long long now)
              " entries in %lld msec", total_cleaned, count,
              time_msec() - now);
 
+    /* If we did clean more than 10% of our connection limit we assume that
+     * if we would continue we would also find a lot of connections to clean.
+     * In this case we want to rather continue immediately to ensure we get
+     * the connections removed in a high load situation. */
+    if (total_cleaned > (clean_end / 10)) {
+        COVERAGE_INC(conntrack_clean_fast_wakeup);
+        next_wakeup = 0;
+    } else {
+        next_wakeup = MIN(next_wakeup, min_expiration);
+    }
+
     return next_wakeup;
 }
 
@@ -1648,7 +1665,6 @@ conntrack_clean(struct conntrack *ct, long long now)
  *
  * We must call conntrack_clean() periodically.  conntrack_clean() return
  * value gives an hint on when the next cleanup must be done. */
-#define CT_CLEAN_MIN_INTERVAL_MS 200
 
 static void *
 clean_thread_main(void *f_)
@@ -1662,7 +1678,7 @@ clean_thread_main(void *f_)
         next_wake = conntrack_clean(ct, now);
 
         if (next_wake < now) {
-            poll_timer_wait_until(now + CT_CLEAN_MIN_INTERVAL_MS);
+            poll_immediate_wake();
         } else {
             poll_timer_wait_until(next_wake);
         }

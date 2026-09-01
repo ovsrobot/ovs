@@ -1,5 +1,13 @@
 Post-v4.0.0
 --------------------
+   - Userspace datapath:
+     * The conntrack cleanup thread will now continue cleaning if more than 10%
+       of all checked entries have been deleted in the past iteration. This
+       will ensure that old entries are removed faster in high churn
+       situations. The coverage counter conntrack_clean_fast_wakeup has been
+       added for such events.
+     * Improved multi-thread multi-zone scalability of the userspace
+       connection tracking.
 
 
 v4.0.0 - 17 Aug 2026
