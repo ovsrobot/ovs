@@ -62,6 +62,7 @@ struct reconnect {
     long long int last_connected;
     long long int last_disconnected;
     long long int last_receive_attempt;
+    size_t queued_bytes;
     unsigned int max_tries;
     unsigned int backoff_free_tries;
 
@@ -112,6 +113,7 @@ reconnect_create(long long int now)
     fsm->last_connected = LLONG_MAX;
     fsm->last_disconnected = LLONG_MAX;
     fsm->last_receive_attempt = now;
+    fsm->queued_bytes = 0;
     fsm->max_tries = UINT_MAX;
     fsm->creation_time = now;
 
@@ -340,6 +342,7 @@ reconnect_force_reconnect(struct reconnect *fsm, long long int now)
 void
 reconnect_disconnected(struct reconnect *fsm, long long int now, int error)
 {
+    fsm->queued_bytes = 0;
     if (!(fsm->state & (S_BACKOFF | S_VOID))) {
         /* Report what happened. */
         if (fsm->state & (S_ACTIVE | S_IDLE)) {
@@ -504,6 +507,16 @@ reconnect_activity(struct reconnect *fsm, long long int now)
     fsm->last_activity = now;
 }
 
+/* Tell 'fsm' how much data is currently queued for the peer and has not been
+ * sent.  While it is nonzero the FSM does not ask to be woken up to attempt a
+ * receive: the caller evidently cannot get data to this peer, so no receive it
+ * makes can settle anything. */
+void
+reconnect_set_queued_bytes(struct reconnect *fsm, size_t queued_bytes)
+{
+    fsm->queued_bytes = queued_bytes;
+}
+
 /* Tell 'fsm' that some attempt to receive data on the connection was made at
  * 'now'.  The FSM only allows probe interval timer to expire when some attempt
  * to receive data on the connection was received after the time when it should
@@ -564,7 +577,7 @@ reconnect_deadline__(const struct reconnect *fsm, long long int now)
                  * we need to wait for the expiration, in the second - we're
                  * already past the deadline. */
                 return expiration;
-            } else {
+            } else if (!fsm->queued_bytes) {
                 /* Time has already passed, but we didn't attempt to receive
                  * anything.  We need to wake up and try to receive even if
                  * nothing is pending, so we can update the expiration time or
@@ -579,7 +592,7 @@ reconnect_deadline__(const struct reconnect *fsm, long long int now)
             long long int expiration = fsm->state_entered + fsm->probe_interval;
             if (now < expiration || fsm->last_receive_attempt >= expiration) {
                 return expiration;
-            } else {
+            } else if (!fsm->queued_bytes) {
                 return now + 1;
             }
         }

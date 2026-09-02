@@ -1048,12 +1048,15 @@ jsonrpc_session_run(struct jsonrpc_session *s)
     }
 
     if (s->rpc) {
-        size_t backlog;
+        size_t backlog_before;
+        size_t backlog_after;
         int error;
 
-        backlog = jsonrpc_get_backlog(s->rpc);
+        backlog_before = jsonrpc_get_backlog(s->rpc);
         jsonrpc_run(s->rpc);
-        if (jsonrpc_get_backlog(s->rpc) < backlog) {
+        backlog_after = jsonrpc_get_backlog(s->rpc);
+        reconnect_set_queued_bytes(s->reconnect, backlog_after);
+        if (backlog_after < backlog_before) {
             /* Data previously caught in a queue was successfully sent (or
              * there's an error, which we'll catch below.)
              *

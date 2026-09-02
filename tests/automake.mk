@@ -534,6 +534,7 @@ CHECK_PYFILES = \
 	tests/appctl.py \
 	tests/flowgen.py \
 	tests/ovsdb-monitor-sort.py \
+	tests/ovsdb-stall-client.py \
 	tests/system-dpdk-find-device.py \
 	tests/test-daemon.py \
 	tests/test-dpparse.py \

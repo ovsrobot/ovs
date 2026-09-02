@@ -104,7 +104,7 @@ class Reconnect(object):
                     # case we need to wait for the expiration, in the second -
                     # we're already past the deadline. */
                     return expiration
-                else:
+                elif not fsm.queued_bytes:
                     # Time has already passed, but we didn't attempt to receive
                     # anything.  We need to wake up and try to receive even if
                     # nothing is pending, so we can update the expiration time
@@ -132,7 +132,7 @@ class Reconnect(object):
                     fsm.last_receive_attempt is None or
                     fsm.last_receive_attempt >= expiration):
                     return expiration
-                else:
+                elif not fsm.queued_bytes:
                     return now + 1
             return None
 
@@ -174,6 +174,7 @@ class Reconnect(object):
         self.last_connected = None
         self.last_disconnected = None
         self.last_receive_attempt = now
+        self.queued_bytes = 0
         self.max_tries = None
         self.backoff_free_tries = 0
 
@@ -347,6 +348,7 @@ class Reconnect(object):
         error.
 
         The FSM will back off, then reconnect."""
+        self.queued_bytes = 0
         if self.state not in (Reconnect.Backoff, Reconnect.Void):
             # Report what happened
             if self.state in (Reconnect.Active, Reconnect.Idle):
@@ -492,6 +494,13 @@ class Reconnect(object):
         if self.state != Reconnect.Active:
             self._transition(now, Reconnect.Active)
         self.last_activity = now
+
+    def set_queued_bytes(self, queued_bytes):
+        """Tell this FSM how much data is currently queued for the peer and
+        has not been sent.  While it is nonzero the FSM does not ask to be
+        woken up to attempt a receive: the caller evidently cannot get data to
+        this peer, so no receive it makes can settle anything."""
+        self.queued_bytes = queued_bytes
 
     def receive_attempted(self, now):
         """Tell 'fsm' that some attempt to receive data on the connection was

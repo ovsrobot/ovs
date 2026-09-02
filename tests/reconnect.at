@@ -1363,3 +1363,346 @@ run
 listening
   in LISTENING for 0 ms (0 ms backoff)
 ])
+
+######################################################################
+dnl The guard belongs on the 1 ms retry alone.  That retry is reached only once
+dnl the interval has lapsed *and* no receive was attempted.  ovsdb-server gates
+dnl its receive on any backlog at all -- "if (!jsonrpc_session_get_backlog())"
+dnl -- so a wedged session of its own never attempts one, never leaves that
+dnl retry, and is neither probed nor dropped: the echo is not even queued for
+dnl it.  Every other jsonrpc_session user calls jsonrpc_session_recv()
+dnl unconditionally, so for those the deadline is still reached with a queue
+dnl standing.  Guarding the whole probe-deadline branch instead would withhold
+dnl the probe and the disconnect from them -- a raft leader would hold a
+dnl follower that stopped taking data for ever -- and no ovsdb-server check
+dnl would notice.
+RECONNECT_CHECK([receive attempts still reach the probe with data queued],
+  [enable
+run
+connected
+
+# A caller that does not gate its receive on the backlog: raft, replication,
+# ovsdb-client and the IDL all call jsonrpc_session_recv() unconditionally,
+# so the receive attempt keeps landing while the queue stands.
+queued-bytes 182346528
+advance 5000
+receive-attempted now
+run
+
+# The probe is queued behind the backlog, so the peer never sees it and
+# cannot answer.  The disconnect runs off the timer rather than off the
+# answer, so the session is still dropped at the ordinary deadline, which
+# is what a peer that has stopped taking data gets today.
+advance 5000
+receive-attempted now
+run
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# A caller that does not gate its receive on the backlog: raft, replication,
+# ovsdb-client and the IDL all call jsonrpc_session_recv() unconditionally,
+# so the receive attempt keeps landing while the queue stands.
+queued-bytes 182346528
+advance 5000
+
+### t=6000 ###
+  in ACTIVE for 5000 ms (0 ms backoff)
+receive-attempted now
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+
+# The probe is queued behind the backlog, so the peer never sees it and
+# cannot answer.  The disconnect runs off the timer rather than off the
+# answer, so the session is still dropped at the ordinary deadline, which
+# is what a peer that has stopped taking data gets today.
+advance 5000
+
+### t=11000 ###
+  in IDLE for 5000 ms (0 ms backoff)
+receive-attempted now
+run
+  should disconnect
+])
+######################################################################
+RECONNECT_CHECK([no wake-up while data is queued],
+  [enable
+
+# Connection succeeds.
+run
+connected
+
+# Data is queued for the peer that we could not send.
+activity 1000
+
+# Long past the probe interval the FSM asks for no wake-up at all, and
+# nothing happens: the connection is neither probed nor disconnected.
+advance 60000
+timeout
+run
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+
+# Connection succeeds.
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# Data is queued for the peer that we could not send.
+activity 1000
+
+# Long past the probe interval the FSM asks for no wake-up at all, and
+# nothing happens: the connection is neither probed nor disconnected.
+advance 60000
+
+### t=61000 ###
+  in ACTIVE for 60000 ms (0 ms backoff)
+timeout
+  no timeout
+run
+])
+
+######################################################################
+RECONNECT_CHECK([draining the queue restores probing],
+  [enable
+run
+connected
+
+# Queued: no wake-up, no probe.
+activity 1000
+advance 10000
+run
+
+# The queue drains, so the ordinary probe interval applies again.
+activity 0
+receive-attempted LLONG_MAX
+timeout
+run
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# Queued: no wake-up, no probe.
+activity 1000
+advance 10000
+
+### t=11000 ###
+  in ACTIVE for 10000 ms (0 ms backoff)
+run
+
+# The queue drains, so the ordinary probe interval applies again.
+activity 0
+  created 1000, last activity 11000, last connected 1000
+receive-attempted LLONG_MAX
+timeout
+  advance 5000 ms
+
+### t=16000 ###
+  in ACTIVE for 15000 ms (0 ms backoff)
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+])
+
+######################################################################
+RECONNECT_CHECK([disconnect forgets queued data],
+  [enable
+run
+connected
+activity 1000
+
+# Disconnecting forgets the queued data.
+disconnected
+run
+connected
+
+# So the ordinary probe interval applies again, and the millisecond retry
+# past it is reached -- which a queue left over from the old connection
+# would suppress.
+timeout
+timeout
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+activity 1000
+
+# Disconnecting forgets the queued data.
+disconnected
+  in BACKOFF for 0 ms (1000 ms backoff)
+  1 successful connections out of 1 attempts, seqno 2
+  disconnected
+  disconnected at 1000 ms (0 ms ago)
+run
+connected
+  in ACTIVE for 0 ms (1000 ms backoff)
+  2 successful connections out of 2 attempts, seqno 3
+  connected
+
+# So the ordinary probe interval applies again, and the millisecond retry
+# past it is reached -- which a queue left over from the old connection
+# would suppress.
+timeout
+  advance 5000 ms
+
+### t=6000 ###
+  in ACTIVE for 5000 ms (1000 ms backoff)
+timeout
+  advance 1 ms
+
+### t=6001 ###
+  in ACTIVE for 5001 ms (1000 ms backoff)
+])
+
+dnl A peer that stops reading leaves the queue standing, so there is no
+dnl activity left to report and the length has to be reported on its own.
+dnl Remove the 'queued-bytes' line from the input below and the second
+dnl timeout returns "advance 1 ms": the wake-up this suppresses.
+RECONNECT_CHECK([no wake-up when data is queued after the last activity],
+  [enable
+
+# Connection succeeds.
+run
+connected
+
+# The queue drained just before the peer stalled, so the last activity the
+# caller had to report carried an empty queue.
+activity 0
+
+# The peer stops reading.  There is no further activity to report; the length
+# of the standing queue is all the caller can still publish, and it must keep
+# publishing it.
+queued-bytes 182346528
+
+# The FSM still sleeps to the probe deadline: that is an ordinary wake-up,
+# not the 1 ms retry.  Only once the deadline has lapsed with no receive
+# attempted -- the retry's own case -- does it ask for no wake-up at all,
+# because nothing a receive could do would settle anything while the caller
+# cannot get data to this peer.
+timeout
+timeout
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+
+# Connection succeeds.
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# The queue drained just before the peer stalled, so the last activity the
+# caller had to report carried an empty queue.
+activity 0
+
+# The peer stops reading.  There is no further activity to report; the length
+# of the standing queue is all the caller can still publish, and it must keep
+# publishing it.
+queued-bytes 182346528
+
+# The FSM still sleeps to the probe deadline: that is an ordinary wake-up,
+# not the 1 ms retry.  Only once the deadline has lapsed with no receive
+# attempted -- the retry's own case -- does it ask for no wake-up at all,
+# because nothing a receive could do would settle anything while the caller
+# cannot get data to this peer.
+timeout
+  advance 5000 ms
+
+### t=6000 ###
+  in ACTIVE for 5000 ms (0 ms backoff)
+timeout
+  no timeout
+])
+
+dnl The same 1 ms wake-up is reachable from IDLE: a quiet connection is probed,
+dnl and only then does the peer stop taking data.  The guard belongs in both
+dnl states, not only in ACTIVE.  The probe deadline itself is still
+dnl reported, so a peer that is being received from is still dropped on
+dnl time.
+RECONNECT_CHECK([no wake-up while data is queued in IDLE],
+  [enable
+run
+connected
+
+# A quiet connection is probed, so the FSM is in IDLE.
+timeout
+receive-attempted now
+run
+
+# Only now does the peer stop taking data.
+queued-bytes 182346528
+timeout
+timeout
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# A quiet connection is probed, so the FSM is in IDLE.
+timeout
+  advance 5000 ms
+
+### t=6000 ###
+  in ACTIVE for 5000 ms (0 ms backoff)
+receive-attempted now
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+
+# Only now does the peer stop taking data.
+queued-bytes 182346528
+timeout
+  advance 5000 ms
+
+### t=11000 ###
+  in IDLE for 5000 ms (0 ms backoff)
+timeout
+  no timeout
+])

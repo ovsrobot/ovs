@@ -3161,3 +3161,144 @@ TEST_CONFIG_FILE([complex config], [
     }
 }
 ], [0])
+
+AT_BANNER([OVSDB -- ovsdb-server poll loop])
+
+AT_SETUP([ovsdb-server does not spin on a peer that stops reading])
+AT_KEYWORDS([ovsdb server positive tcp poll])
+dnl A session with a standing backlog is never received from, so the probe
+dnl expiration never moves and the poll loop can end up waking every
+dnl millisecond for as long as the peer stays wedged.  poll_create_node counts
+dnl one registration per fd per pass, so its rate stands in for the wake-up
+dnl rate and is reachable through ovs-appctl.
+ordinal_schema > schema
+on_exit 'kill `cat *.pid` 2>/dev/null'
+AT_CHECK([ovsdb-tool create db schema], [0], [stdout], [ignore])
+AT_CHECK([ovsdb-server --log-file --detach --no-chdir --pidfile dnl
+ --remote=ptcp:0:127.0.0.1 db], [0], [ignore], [ignore])
+PARSE_LISTENING_PORT([ovsdb-server.log], [TCP_PORT])
+
+dnl The cumulative poll_create_node counter: one count per fd the poll loop
+dnl registers, per pass.  It stands in for the pass rate, scaled by however
+dnl many fds the server holds, so the check below is a ratio against an idle
+dnl baseline sampled in this same run rather than a fixed number.
+m4_define([POLL_CREATE_NODE_TOTAL],
+  [ovs-appctl -t ovsdb-server coverage/show dnl
+   | awk '/^poll_create_node/ { for (i = 1; i <= NF; i++) dnl
+            if ($i == "total:") { print $(i + 1); exit } }'])
+dnl coverage/show omits a counter it has never hit, so an idle server
+dnl that has not folded a poll_create_node total yet prints no line and
+dnl the sample comes back empty.  Default to 0 rather than letting expr
+dnl fail: an empty operand made a malformed comparison here before.
+idle_before=`POLL_CREATE_NODE_TOTAL`
+sleep 2
+idle_after=`POLL_CREATE_NODE_TOTAL`
+: ${idle_before:=0} ${idle_after:=0}
+dnl No parentheses: expr takes them as operands and fails with "syntax error:
+dnl unexpected ')'".
+idle_delta=`expr $idle_after - $idle_before`
+idle_rate=`expr $idle_delta / 2`
+
+dnl Seed the database and then monitor it from a connection that never reads.
+dnl The seed is what guarantees a backlog: the reply has to exceed whatever
+dnl the socket will buffer, and autotuning does not grow a buffer for a peer
+dnl that is not reading.  If a host ever buffers all of it, the wait below
+dnl times out rather than measuring: raise the row count, do not shrink the
+dnl socket, which would stop a reading peer from arming at all.
+$PYTHON3 $srcdir/ovsdb-stall-client.py 127.0.0.1:$TCP_PORT 200 60000 dnl
+  > stall.log 2>&1 &
+echo $! > stall.pid
+OVS_WAIT_UNTIL([grep -q READY stall.log])
+
+dnl The arm is a hard precondition, not an assumption: without a standing
+dnl backlog this test would pass on a server that still spins.
+OVS_WAIT_UNTIL([test `ovs-appctl -t ovsdb-server memory/show dnl
+  | tr ' ' '\n' | sed -n 's/^backlog:\(.*\)/\1/p'` -gt 0])
+
+dnl Past the 5 s default probe of a command-line remote, which is when the
+dnl expiration lapses and the fast wake-up would begin.
+sleep 6
+
+stalled_before=`POLL_CREATE_NODE_TOTAL`
+sleep 2
+stalled_after=`POLL_CREATE_NODE_TOTAL`
+: ${stalled_before:=0} ${stalled_after:=0}
+stalled_delta=`expr $stalled_after - $stalled_before`
+stalled_rate=`expr $stalled_delta / 2`
+
+dnl Unpatched, this test measured 4266/s (tcp) and 3315/s (ssl) here against
+dnl an idle 10/s.  A tenfold allowance over the idle baseline leaves the
+dnl limit a factor of twenty below the spinning case, with margin both ways.
+limit=`expr $idle_rate + 10`
+limit=`expr $limit \* 10`
+echo "poll_create_node/s: idle $idle_rate stalled $stalled_rate dnl
+ limit $limit"
+AT_CHECK([test -n "$stalled_rate" && test -n "$limit" dnl
+  && test $stalled_rate -lt $limit], [0], [], [])
+
+dnl Dropping the wedged peer at the ordinary probe is the CORRECT outcome and
+dnl logs an ERR; only the wake-up rate is under test here.
+OVSDB_SERVER_SHUTDOWN(["/no response to inactivity probe/d"])
+AT_CLEANUP
+
+AT_SETUP([ovsdb-server does not spin on an SSL peer that stops reading])
+AT_KEYWORDS([ovsdb server positive ssl tls poll])
+dnl The tcp case above is not enough on its own.  Over tcp a stalled
+dnl peer leaves megabytes in ovsdb's own queue, so a guard fed a stale
+dnl copy of that length still holds a large value and the pin does not
+dnl appear.  Over ssl the payload is accounted as sent and only the
+dnl queued probe stands -- tens of bytes -- which is the shape seen in
+dnl production, and the one that catches a guard reading anything but
+dnl the live queue length.
+AT_SKIP_IF([test "$HAVE_OPENSSL" = no])
+PKIDIR="$abs_top_builddir/tests"
+AT_SKIP_IF([expr "$PKIDIR" : ".*[[	 '\"
+\\]]"])
+ordinal_schema > schema
+on_exit 'kill `cat *.pid` 2>/dev/null'
+AT_CHECK([ovsdb-tool create db schema], [0], [stdout], [ignore])
+AT_CHECK([ovsdb-server --log-file --detach --no-chdir --pidfile dnl
+ --private-key=$PKIDIR/testpki-privkey.pem dnl
+ --certificate=$PKIDIR/testpki-cert.pem dnl
+ --ca-cert=$PKIDIR/testpki-cacert.pem dnl
+ --remote=pssl:0:127.0.0.1 db], [0], [ignore], [ignore])
+PARSE_LISTENING_PORT([ovsdb-server.log], [SSL_PORT])
+
+idle_before=`POLL_CREATE_NODE_TOTAL`
+sleep 2
+idle_after=`POLL_CREATE_NODE_TOTAL`
+: ${idle_before:=0} ${idle_after:=0}
+idle_delta=`expr $idle_after - $idle_before`
+idle_rate=`expr $idle_delta / 2`
+
+$PYTHON3 $srcdir/ovsdb-stall-client.py 127.0.0.1:$SSL_PORT 200 60000 dnl
+  --tls $PKIDIR/testpki-privkey.pem $PKIDIR/testpki-cert.pem dnl
+  $PKIDIR/testpki-cacert.pem > stall.log 2>&1 &
+echo $! > stall.pid
+OVS_WAIT_UNTIL([grep -q READY stall.log])
+
+dnl Over ssl the standing queue is small -- the probe alone -- so this
+dnl waits for any backlog at all, not for a large one.
+OVS_WAIT_UNTIL([test `ovs-appctl -t ovsdb-server memory/show dnl
+  | tr ' ' '\n' | sed -n 's/^backlog:\(.*\)/\1/p'` -gt 0])
+
+sleep 6
+
+stalled_before=`POLL_CREATE_NODE_TOTAL`
+sleep 2
+stalled_after=`POLL_CREATE_NODE_TOTAL`
+: ${stalled_before:=0} ${stalled_after:=0}
+stalled_delta=`expr $stalled_after - $stalled_before`
+stalled_rate=`expr $stalled_delta / 2`
+
+limit=`expr $idle_rate + 10`
+limit=`expr $limit \* 10`
+echo "poll_create_node/s: idle $idle_rate stalled $stalled_rate dnl
+ limit $limit"
+AT_CHECK([test -n "$stalled_rate" && test -n "$limit" dnl
+  && test $stalled_rate -lt $limit], [0], [], [])
+
+dnl Dropping the wedged peer at the ordinary probe is the CORRECT outcome and
+dnl logs an ERR; only the wake-up rate is under test here.
+OVSDB_SERVER_SHUTDOWN(["/no response to inactivity probe/d"])
+AT_CLEANUP

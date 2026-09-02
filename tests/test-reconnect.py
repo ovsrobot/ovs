@@ -61,8 +61,18 @@ def do_connected(_):
     r.connected(now)
 
 
-def do_activity(_):
+def do_set_probe_interval(arg):
+    r.set_probe_interval(int(arg))
+
+
+def do_activity(arg):
+    if arg is not None:
+        r.set_queued_bytes(int(arg))
     r.activity(now)
+
+
+def do_queued_bytes(arg):
+    r.set_queued_bytes(int(arg))
 
 
 def do_run(arg):
@@ -181,6 +191,8 @@ def main():
         "connect-failed": do_connect_failed,
         "connected": do_connected,
         "activity": do_activity,
+        "queued-bytes": do_queued_bytes,
+        "set-probe-interval": do_set_probe_interval,
         "run": do_run,
         "advance": do_advance,
         "timeout": do_timeout,

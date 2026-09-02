@@ -492,9 +492,11 @@ class Session(object):
                 self.pstream = None
 
         if self.rpc:
-            backlog = self.rpc.get_backlog()
+            backlog_before = self.rpc.get_backlog()
             self.rpc.run()
-            if self.rpc.get_backlog() < backlog:
+            backlog_after = self.rpc.get_backlog()
+            self.reconnect.set_queued_bytes(backlog_after)
+            if backlog_after < backlog_before:
                 # Data previously caught in a queue was successfully sent (or
                 # there's an error, which we'll catch below).
                 #

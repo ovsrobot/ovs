@@ -31,6 +31,7 @@
  * revisited later.) */
 
 #include <stdbool.h>
+#include <stddef.h>
 
 struct reconnect *reconnect_create(long long int now);
 void reconnect_destroy(struct reconnect *);
@@ -83,6 +84,7 @@ void reconnect_connected(struct reconnect *, long long int now);
 void reconnect_connect_failed(struct reconnect *, long long int now,
                               int error);
 void reconnect_activity(struct reconnect *, long long int now);
+void reconnect_set_queued_bytes(struct reconnect *, size_t queued_bytes);
 void reconnect_receive_attempted(struct reconnect *, long long int now);
 
 enum reconnect_action {
