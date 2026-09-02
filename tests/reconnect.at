@@ -1368,11 +1368,10 @@ listening
 dnl The guard belongs on the 1 ms retry alone.  That retry is reached only once
 dnl the interval has lapsed *and* no receive was attempted.  ovsdb-server gates
 dnl its receive on any backlog at all -- "if (!jsonrpc_session_get_backlog())"
-dnl -- so a wedged session of its own never attempts one, never leaves that
-dnl retry, and is neither probed nor dropped: the echo is not even queued for
-dnl it.  Every other jsonrpc_session user calls jsonrpc_session_recv()
-dnl unconditionally, so for those the deadline is still reached with a queue
-dnl standing.  Guarding the whole probe-deadline branch instead would withhold
+dnl -- so a wedged session of its own never attempts one and cannot answer the
+dnl probe, and runs on to the disconnect.  Every other jsonrpc_session user
+dnl calls jsonrpc_session_recv() unconditionally, so for those an answer can
+dnl still arrive and reset the deadline.  Guarding the whole probe-deadline branch instead would withhold
 dnl the probe and the disconnect from them -- a raft leader would hold a
 dnl follower that stopped taking data for ever -- and no ovsdb-server check
 dnl would notice.
@@ -1435,7 +1434,7 @@ run
   should disconnect
 ])
 ######################################################################
-RECONNECT_CHECK([no wake-up while data is queued],
+RECONNECT_CHECK([peer with queued data is dropped],
   [enable
 
 # Connection succeeds.
@@ -1445,9 +1444,12 @@ connected
 # Data is queued for the peer that we could not send.
 activity 1000
 
-# Long past the probe interval the FSM asks for no wake-up at all, and
-# nothing happens: the connection is neither probed nor disconnected.
-advance 60000
+# Past the probe interval the connection is probed, on the ordinary
+# schedule rather than after a fast wake-up.
+timeout
+run
+
+# And a probe interval later, with nothing taken, it is given up on.
 timeout
 run
 ],
@@ -1468,15 +1470,25 @@ connected
 # Data is queued for the peer that we could not send.
 activity 1000
 
-# Long past the probe interval the FSM asks for no wake-up at all, and
-# nothing happens: the connection is neither probed nor disconnected.
-advance 60000
-
-### t=61000 ###
-  in ACTIVE for 60000 ms (0 ms backoff)
+# Past the probe interval the connection is probed, on the ordinary
+# schedule rather than after a fast wake-up.
 timeout
-  no timeout
+  advance 5000 ms
+
+### t=6000 ###
+  in ACTIVE for 5000 ms (0 ms backoff)
 run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+
+# And a probe interval later, with nothing taken, it is given up on.
+timeout
+  advance 5000 ms
+
+### t=11000 ###
+  in IDLE for 5000 ms (0 ms backoff)
+run
+  should disconnect
 ])
 
 ######################################################################
@@ -1485,7 +1497,7 @@ RECONNECT_CHECK([draining the queue restores probing],
 run
 connected
 
-# Queued: no wake-up, no probe.
+# Queued and nothing moving: probed on the ordinary schedule.
 activity 1000
 advance 10000
 run
@@ -1508,23 +1520,26 @@ connected
   connected
   last connected 0 ms ago, connected 0 ms total
 
-# Queued: no wake-up, no probe.
+# Queued and nothing moving: probed on the ordinary schedule.
 activity 1000
 advance 10000
 
 ### t=11000 ###
   in ACTIVE for 10000 ms (0 ms backoff)
 run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
 
 # The queue drains, so the ordinary probe interval applies again.
 activity 0
+  in ACTIVE for 0 ms (0 ms backoff)
   created 1000, last activity 11000, last connected 1000
 receive-attempted LLONG_MAX
 timeout
   advance 5000 ms
 
 ### t=16000 ###
-  in ACTIVE for 15000 ms (0 ms backoff)
+  in ACTIVE for 5000 ms (0 ms backoff)
 run
   should send probe
   in IDLE for 0 ms (0 ms backoff)
@@ -1592,7 +1607,7 @@ dnl A peer that stops reading leaves the queue standing, so there is no
 dnl activity left to report and the length has to be reported on its own.
 dnl Remove the 'queued-bytes' line from the input below and the second
 dnl timeout returns "advance 1 ms": the wake-up this suppresses.
-RECONNECT_CHECK([no wake-up when data is queued after the last activity],
+RECONNECT_CHECK([the probe deadline is kept when data is queued after the last activity],
   [enable
 
 # Connection succeeds.
@@ -1608,13 +1623,11 @@ activity 0
 # publishing it.
 queued-bytes 182346528
 
-# The FSM still sleeps to the probe deadline: that is an ordinary wake-up,
-# not the 1 ms retry.  Only once the deadline has lapsed with no receive
-# attempted -- the retry's own case -- does it ask for no wake-up at all,
-# because nothing a receive could do would settle anything while the caller
-# cannot get data to this peer.
+# The probe deadline is still reported, so the connection is probed on the
+# ordinary schedule rather than after the 1 ms retry.
 timeout
 timeout
+run
 ],
   [### t=1000 ###
 enable
@@ -1639,18 +1652,18 @@ activity 0
 # publishing it.
 queued-bytes 182346528
 
-# The FSM still sleeps to the probe deadline: that is an ordinary wake-up,
-# not the 1 ms retry.  Only once the deadline has lapsed with no receive
-# attempted -- the retry's own case -- does it ask for no wake-up at all,
-# because nothing a receive could do would settle anything while the caller
-# cannot get data to this peer.
+# The probe deadline is still reported, so the connection is probed on the
+# ordinary schedule rather than after the 1 ms retry.
 timeout
   advance 5000 ms
 
 ### t=6000 ###
   in ACTIVE for 5000 ms (0 ms backoff)
 timeout
-  no timeout
+  advance 0 ms
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
 ])
 
 dnl The same 1 ms wake-up is reachable from IDLE: a quiet connection is probed,
@@ -1658,7 +1671,7 @@ dnl and only then does the peer stop taking data.  The guard belongs in both
 dnl states, not only in ACTIVE.  The probe deadline itself is still
 dnl reported, so a peer that is being received from is still dropped on
 dnl time.
-RECONNECT_CHECK([no wake-up while data is queued in IDLE],
+RECONNECT_CHECK([the probe deadline is kept while data is queued in IDLE],
   [enable
 run
 connected
@@ -1668,10 +1681,12 @@ timeout
 receive-attempted now
 run
 
-# Only now does the peer stop taking data.
+# Only now does the peer stop taking data.  The deadline is still reported, so
+# the disconnect runs on the ordinary schedule.
 queued-bytes 182346528
 timeout
 timeout
+run
 ],
   [### t=1000 ###
 enable
@@ -1696,7 +1711,8 @@ run
   should send probe
   in IDLE for 0 ms (0 ms backoff)
 
-# Only now does the peer stop taking data.
+# Only now does the peer stop taking data.  The deadline is still reported, so
+# the disconnect runs on the ordinary schedule.
 queued-bytes 182346528
 timeout
   advance 5000 ms
@@ -1704,5 +1720,87 @@ timeout
 ### t=11000 ###
   in IDLE for 5000 ms (0 ms backoff)
 timeout
-  no timeout
+  advance 0 ms
+run
+  should disconnect
+])
+######################################################################
+dnl The property commit 633f72479 restored when it reverted disconnect-on-
+dnl backlog: a slow reader is not a dead one.  All the server can see is its
+dnl own queue shrinking, and a receiver defers window updates until a
+dnl worthwhile part of its buffer is free, so a healthy slow reader moves the
+dnl queue in bursts that are far apart in time.  Every burst is activity, and
+dnl activity returns the FSM to ACTIVE from IDLE, so a peer that is still
+dnl reading survives being probed however far behind it has fallen.
+RECONNECT_CHECK([a queue that keeps moving is never given up on],
+  [enable
+run
+connected
+
+# The peer is reading, just slowly: the queue shrinks once every three probe
+# intervals, so the session is probed each time -- but every shrink is
+# activity, which returns the FSM to ACTIVE, so it is never given up on.
+queued-bytes 182346528
+advance 15000
+run
+activity 182300000
+advance 15000
+run
+activity 182200000
+advance 15000
+run
+activity 182100000
+timeout
+],
+  [### t=1000 ###
+enable
+  in BACKOFF for 0 ms (0 ms backoff)
+run
+  should connect
+connected
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 1000, last connected 1000
+  1 successful connections out of 1 attempts, seqno 1
+  connected
+  last connected 0 ms ago, connected 0 ms total
+
+# The peer is reading, just slowly: the queue shrinks once every three probe
+# intervals, so the session is probed each time -- but every shrink is
+# activity, which returns the FSM to ACTIVE, so it is never given up on.
+queued-bytes 182346528
+advance 15000
+
+### t=16000 ###
+  in ACTIVE for 15000 ms (0 ms backoff)
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+activity 182300000
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 16000, last connected 1000
+advance 15000
+
+### t=31000 ###
+  in ACTIVE for 15000 ms (0 ms backoff)
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+activity 182200000
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 31000, last connected 1000
+advance 15000
+
+### t=46000 ###
+  in ACTIVE for 15000 ms (0 ms backoff)
+run
+  should send probe
+  in IDLE for 0 ms (0 ms backoff)
+activity 182100000
+  in ACTIVE for 0 ms (0 ms backoff)
+  created 1000, last activity 46000, last connected 1000
+timeout
+  advance 5000 ms
+
+### t=51000 ###
+  in ACTIVE for 5000 ms (0 ms backoff)
 ])

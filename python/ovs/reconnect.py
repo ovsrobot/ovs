@@ -98,13 +98,14 @@ class Reconnect(object):
                 expiration = base + fsm.probe_interval
                 if (now < expiration or
                     fsm.last_receive_attempt is None or
-                    fsm.last_receive_attempt >= expiration):
+                    fsm.last_receive_attempt >= expiration or
+                    fsm.queued_bytes):
                     # We still have time before the expiration or the time has
                     # already passed and there was no activity.  In the first
                     # case we need to wait for the expiration, in the second -
                     # we're already past the deadline. */
                     return expiration
-                elif not fsm.queued_bytes:
+                else:
                     # Time has already passed, but we didn't attempt to receive
                     # anything.  We need to wake up and try to receive even if
                     # nothing is pending, so we can update the expiration time
@@ -130,17 +131,25 @@ class Reconnect(object):
                 expiration = fsm.state_entered + fsm.probe_interval
                 if (now < expiration or
                     fsm.last_receive_attempt is None or
-                    fsm.last_receive_attempt >= expiration):
+                    fsm.last_receive_attempt >= expiration or
+                    fsm.queued_bytes):
                     return expiration
-                elif not fsm.queued_bytes:
+                else:
                     return now + 1
             return None
 
         @staticmethod
         def run(fsm, now):
-            vlog.err("%s: no response to inactivity probe after %.3g "
-                     "seconds, disconnecting"
-                      % (fsm.name, (now - fsm.state_entered) / 1000.0))
+            if fsm.queued_bytes:
+                vlog.err("%s: no response to inactivity probe after %.3g "
+                         "seconds, with %d bytes still queued for the peer, "
+                         "disconnecting"
+                          % (fsm.name, (now - fsm.state_entered) / 1000.0,
+                             fsm.queued_bytes))
+            else:
+                vlog.err("%s: no response to inactivity probe after %.3g "
+                         "seconds, disconnecting"
+                          % (fsm.name, (now - fsm.state_entered) / 1000.0))
             return DISCONNECT
 
     class Reconnect(object):
