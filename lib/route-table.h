@@ -99,6 +99,31 @@
  * netlink notifier and so on, the functions in this module are thread safe.
  */
 
+/* Lightweight tunnel (LWT) encapsulation of a next hop, as extracted from the
+ * RTA_ENCAP_TYPE and RTA_ENCAP Netlink attributes.
+ *
+ * Only the LWTUNNEL_ENCAP_IP and LWTUNNEL_ENCAP_IP6 encapsulations are
+ * understood; for any other encapsulation type only 'encap_type' is set and
+ * the remaining members are left zeroed. */
+struct route_data_lwt_tunnel {
+    /* LWTUNNEL_ENCAP_* value, LWTUNNEL_ENCAP_NONE if the next hop has no
+     * encapsulation.  Use route_data_lwt_encap_type_to_string() to format. */
+    uint16_t encap_type;
+
+    /* A tunnel id of 0 is valid, so 'id' is meaningful only if 'id_present'
+     * is true. */
+    bool id_present;
+    uint64_t id;                 /* Tunnel id, e.g. a VXLAN VNI. */
+
+    /* Tunnel endpoints, IPv4-mapped for LWTUNNEL_ENCAP_IP.  0 if missing. */
+    struct in6_addr dst;
+    struct in6_addr src;
+
+    uint8_t ttl;                 /* Hop limit for IP6.  0 if missing. */
+    uint8_t tos;                 /* Traffic class for IP6.  0 if missing. */
+    uint16_t flags;              /* TUNNEL_* flags.  0 if missing. */
+};
+
 /* Information about a next hop stored in a linked list with base in struct
  * route_data.  Please refer to comment in struct route_data for details. */
 struct route_data_nexthop {
@@ -107,6 +132,10 @@ struct route_data_nexthop {
     sa_family_t family;
     struct in6_addr addr;
     char ifname[IFNAMSIZ]; /* Interface name. */
+
+    /* Encapsulation to apply when forwarding to this next hop.  The kernel
+     * keeps this per next hop, both for single path and multipath routes. */
+    struct route_data_lwt_tunnel lwt;
 };
 
 struct route_data {
@@ -181,4 +210,5 @@ bool route_table_dump_one_table(uint32_t id, sa_family_t family,
                                 void *aux);
 int route_table_parse(struct ofpbuf *, void *change);
 void route_data_destroy(struct route_data *);
+const char *route_data_lwt_encap_type_to_string(uint16_t encap_type);
 #endif /* route-table.h */

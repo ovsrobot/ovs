@@ -25,8 +25,12 @@
 #include <sys/socket.h>
 #include <linux/fib_rules.h>
 #include <linux/rtnetlink.h>
+#ifdef HAVE_LINUX_LWTUNNEL_H
+#include <linux/lwtunnel.h>
+#endif
 #include <net/if.h>
 
+#include "byte-order.h"
 #include "coverage.h"
 #include "hash.h"
 #include "netdev.h"
@@ -48,6 +52,21 @@
 #define FRA_SUPPRESS_PREFIXLEN 14 /* Linux 3.12 */
 #define FRA_TABLE 15 /* Linux 2.6.19 */
 #define FRA_PROTOCOL 21 /* Linux 4.17 */
+#define RTA_ENCAP_TYPE 21 /* Linux 4.3 */
+#define RTA_ENCAP 22 /* Linux 4.3 */
+
+/* The subset of linux/lwtunnel.h that we use, for builds against headers
+ * older than Linux 4.3, which is where that header was introduced. */
+#ifndef HAVE_LINUX_LWTUNNEL_H
+enum { LWTUNNEL_ENCAP_NONE = 0,
+       LWTUNNEL_ENCAP_IP = 2,
+       LWTUNNEL_ENCAP_IP6 = 4 };
+enum { LWTUNNEL_IP_ID = 1, LWTUNNEL_IP_DST = 2, LWTUNNEL_IP_SRC = 3,
+       LWTUNNEL_IP_TTL = 4, LWTUNNEL_IP_TOS = 5, LWTUNNEL_IP_FLAGS = 6 };
+enum { LWTUNNEL_IP6_ID = 1, LWTUNNEL_IP6_DST = 2, LWTUNNEL_IP6_SRC = 3,
+       LWTUNNEL_IP6_HOPLIMIT = 4, LWTUNNEL_IP6_TC = 5,
+       LWTUNNEL_IP6_FLAGS = 6 };
+#endif
 
 /* Linux 4.1 added RTA_VIA. */
 #ifndef HAVE_RTA_VIA
@@ -431,6 +450,114 @@ rule_parse(struct ofpbuf *buf, void *change_)
     return ipv4 ? RTNLGRP_IPV4_RULE : RTNLGRP_IPV6_RULE;
 }
 
+/* Returns a string describing 'encap_type', which is expected to be one of
+ * the LWTUNNEL_ENCAP_* values.  Encapsulation types whose attributes this
+ * module does not parse are reported as "unsupported". */
+const char *
+route_data_lwt_encap_type_to_string(uint16_t encap_type)
+{
+    switch (encap_type) {
+    case LWTUNNEL_ENCAP_NONE: return "none";
+    case LWTUNNEL_ENCAP_IP: return "ip";
+    case LWTUNNEL_ENCAP_IP6: return "ip6";
+    default: return "unsupported";
+    }
+}
+
+/* Stores the tunnel endpoint in 'attr' into 'addr', as an IPv4-mapped address
+ * if 'ipv4'. */
+static void
+route_table_parse_lwt_addr__(const struct nlattr *attr, bool ipv4,
+                             struct in6_addr *addr)
+{
+    if (ipv4) {
+        in6_addr_set_mapped_ipv4(addr, nl_attr_get_be32(attr));
+    } else {
+        *addr = nl_attr_get_in6_addr(attr);
+    }
+}
+
+/* Parses the nested lightweight tunnel encapsulation attributes in 'encap'
+ * into 'lwt', whose 'encap_type' must already be set.  Encapsulation types
+ * other than LWTUNNEL_ENCAP_IP and LWTUNNEL_ENCAP_IP6 are left with only
+ * 'encap_type' filled in.
+ *
+ * Returns true on success, false on a parse error. */
+static bool
+route_table_parse_lwt_tunnel__(const struct nlattr *encap,
+                               struct route_data_lwt_tunnel *lwt)
+{
+    /* The LWTUNNEL_IP_* and LWTUNNEL_IP6_* attributes are numbered
+     * identically and only differ in the size of the tunnel endpoints, so the
+     * IPv4 names are used to index both policies. */
+    static const struct nl_policy policy[] = {
+        [LWTUNNEL_IP_ID] = { .type = NL_A_BE64, .optional = true },
+        [LWTUNNEL_IP_DST] = { .type = NL_A_BE32, .optional = true },
+        [LWTUNNEL_IP_SRC] = { .type = NL_A_BE32, .optional = true },
+        [LWTUNNEL_IP_TTL] = { .type = NL_A_U8, .optional = true },
+        [LWTUNNEL_IP_TOS] = { .type = NL_A_U8, .optional = true },
+        [LWTUNNEL_IP_FLAGS] = { .type = NL_A_BE16, .optional = true },
+    };
+
+    static const struct nl_policy policy6[] = {
+        [LWTUNNEL_IP6_ID] = { .type = NL_A_BE64, .optional = true },
+        [LWTUNNEL_IP6_DST] = { .type = NL_A_IPV6, .optional = true },
+        [LWTUNNEL_IP6_SRC] = { .type = NL_A_IPV6, .optional = true },
+        [LWTUNNEL_IP6_HOPLIMIT] = { .type = NL_A_U8, .optional = true },
+        [LWTUNNEL_IP6_TC] = { .type = NL_A_U8, .optional = true },
+        [LWTUNNEL_IP6_FLAGS] = { .type = NL_A_BE16, .optional = true },
+    };
+
+    struct nlattr *attrs[ARRAY_SIZE(policy)];
+    bool ipv4;
+
+    BUILD_ASSERT(ARRAY_SIZE(policy) == ARRAY_SIZE(policy6));
+
+    /* The casts avoid warnings about comparing the two distinct enums. */
+    BUILD_ASSERT((int) LWTUNNEL_IP_ID == (int) LWTUNNEL_IP6_ID
+                 && (int) LWTUNNEL_IP_DST == (int) LWTUNNEL_IP6_DST
+                 && (int) LWTUNNEL_IP_SRC == (int) LWTUNNEL_IP6_SRC
+                 && (int) LWTUNNEL_IP_TTL == (int) LWTUNNEL_IP6_HOPLIMIT
+                 && (int) LWTUNNEL_IP_TOS == (int) LWTUNNEL_IP6_TC
+                 && (int) LWTUNNEL_IP_FLAGS == (int) LWTUNNEL_IP6_FLAGS);
+
+    if (lwt->encap_type == LWTUNNEL_ENCAP_IP) {
+        ipv4 = true;
+    } else if (lwt->encap_type == LWTUNNEL_ENCAP_IP6) {
+        ipv4 = false;
+    } else {
+        return true;
+    }
+
+    if (!nl_parse_nested(encap, ipv4 ? policy : policy6, attrs,
+                         ARRAY_SIZE(attrs))) {
+        VLOG_DBG_RL(&rl, "received unparseable lwtunnel encap attributes");
+        return false;
+    }
+
+    if (attrs[LWTUNNEL_IP_ID]) {
+        lwt->id = ntohll(nl_attr_get_be64(attrs[LWTUNNEL_IP_ID]));
+        lwt->id_present = true;
+    }
+    if (attrs[LWTUNNEL_IP_DST]) {
+        route_table_parse_lwt_addr__(attrs[LWTUNNEL_IP_DST], ipv4, &lwt->dst);
+    }
+    if (attrs[LWTUNNEL_IP_SRC]) {
+        route_table_parse_lwt_addr__(attrs[LWTUNNEL_IP_SRC], ipv4, &lwt->src);
+    }
+    if (attrs[LWTUNNEL_IP_TTL]) {
+        lwt->ttl = nl_attr_get_u8(attrs[LWTUNNEL_IP_TTL]);
+    }
+    if (attrs[LWTUNNEL_IP_TOS]) {
+        lwt->tos = nl_attr_get_u8(attrs[LWTUNNEL_IP_TOS]);
+    }
+    if (attrs[LWTUNNEL_IP_FLAGS]) {
+        lwt->flags = ntohs(nl_attr_get_be16(attrs[LWTUNNEL_IP_FLAGS]));
+    }
+
+    return true;
+}
+
 /* Returns true if the given route requires nexthop information (output
  * interface, nexthop IP, ...).  Returns false for special route types
  * that don't need this information. */
@@ -468,6 +595,8 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_RTA_VIA, .optional = true },
         [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
+        [RTA_ENCAP_TYPE] = { .type = NL_A_U16, .optional = true },
+        [RTA_ENCAP] = { .type = NL_A_NESTED, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -480,6 +609,8 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
         [RTA_VIA] = { .type = NL_A_RTA_VIA, .optional = true },
         [RTA_MULTIPATH] = { .type = NL_A_NESTED, .optional = true },
+        [RTA_ENCAP_TYPE] = { .type = NL_A_U16, .optional = true },
+        [RTA_ENCAP] = { .type = NL_A_NESTED, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -584,6 +715,14 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
         }
         if (attrs[RTA_PRIORITY]) {
             change->rd.rta_priority = nl_attr_get_u32(attrs[RTA_PRIORITY]);
+        }
+        if (attrs[RTA_ENCAP_TYPE]) {
+            rdnh->lwt.encap_type = nl_attr_get_u16(attrs[RTA_ENCAP_TYPE]);
+            if (attrs[RTA_ENCAP]
+                && !route_table_parse_lwt_tunnel__(attrs[RTA_ENCAP],
+                                                   &rdnh->lwt)) {
+                goto error_out;
+            }
         }
         if (attrs[RTA_VIA]) {
             const struct rtvia *rtvia = nl_attr_get(attrs[RTA_VIA]);

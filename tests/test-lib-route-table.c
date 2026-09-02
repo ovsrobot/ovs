@@ -70,6 +70,37 @@ rt_table_name(uint32_t id)
            tid;
 }
 
+/* Prints the lightweight tunnel encapsulation of a next hop, if any.  Nothing
+ * is printed for a next hop without encapsulation, so that the expected
+ * output of tests that do not exercise encapsulation stays unchanged. */
+static void
+print_lwt_tunnel(const struct route_data_lwt_tunnel *lwt)
+{
+    struct ds addr = DS_EMPTY_INITIALIZER;
+
+    if (!lwt->encap_type) {
+        return;
+    }
+
+    printf(" encap: %s",
+           route_data_lwt_encap_type_to_string(lwt->encap_type));
+    if (lwt->id_present) {
+        printf(" id: %"PRIu64, lwt->id);
+    }
+
+    ipv6_format_mapped(&lwt->dst, &addr);
+    printf(" dst: %s", ds_cstr(&addr));
+
+    ds_clear(&addr);
+    ipv6_format_mapped(&lwt->src, &addr);
+    printf(" src: %s", ds_cstr(&addr));
+
+    printf(" ttl: %"PRIu8" tos: %"PRIu8" flags: 0x%"PRIx16,
+           lwt->ttl, lwt->tos, lwt->flags);
+
+    ds_destroy(&addr);
+}
+
 static void
 test_lib_route_table_handle_msg(const struct route_table_msg *change,
                                 void *data OVS_UNUSED,
@@ -95,13 +126,15 @@ test_lib_route_table_handle_msg(const struct route_table_msg *change,
     LIST_FOR_EACH (rdnh, nexthop_node, &rd->nexthops) {
         ds_clear(&nexthop_addr);
         ipv6_format_mapped(&rdnh->addr, &nexthop_addr);
-        printf("    %s/%u nexthop family: %s addr: %s ifname: %s\n",
+        printf("    %s/%u nexthop family: %s addr: %s ifname: %s",
                ds_cstr(&rta_dst), rd->rtm_dst_len,
                rdnh->family == AF_INET ? "AF_INET" :
                rdnh->family == AF_INET6 ? "AF_INET6" :
                "UNKNOWN",
                ds_cstr(&nexthop_addr),
                rdnh->ifname);
+        print_lwt_tunnel(&rdnh->lwt);
+        printf("\n");
     }
 
     ds_destroy(&nexthop_addr);

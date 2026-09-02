@@ -331,6 +331,56 @@ AT_CHECK([ovstest test-lib-route-table-dump | \
 192.168.10.12/32 rtm_protocol: RTPROT_BOOT
 ])
 
+dnl A route without encapsulation reports nothing on its next hop.
+AT_CHECK([ovstest test-lib-route-table-dump | \
+          grep '192.168.10.12.*nexthop'], [0], [dnl
+    192.168.10.12/32 nexthop family: AF_INET addr: 10.0.0.18 ifname: p1-route
+])
+
+dnl Add a route with an IP lightweight-tunnel (LWT) encapsulation.  Its
+dnl attributes are parsed into the next hop's lwt member.  A tunnel id is used
+dnl by, for example, EVPN type-5 routes to carry an L3 VNI.
+AT_CHECK([ip route add 192.168.10.13/32 encap ip id 5000 dst 10.0.0.19 \
+          src 10.0.0.17 ttl 10 tos 8 dev p1-route via 10.0.0.18], [0],
+         [stdout])
+AT_CHECK([ovstest test-lib-route-table-dump | \
+          grep '192.168.10.13.*nexthop'], [0], [dnl
+    192.168.10.13/32 nexthop family: AF_INET addr: 10.0.0.18 ifname: p1-route encap: ip id: 5000 dst: 10.0.0.19 src: 10.0.0.17 ttl: 10 tos: 8 flags: 0x0
+])
+
+dnl The kernel keeps the encapsulation per next hop, so each next hop of a
+dnl multipath route can have its own.
+AT_CHECK([ip route add 192.168.10.14/32 \
+          nexthop encap ip id 100 dst 10.0.0.20 dev p1-route via 10.0.0.18 \
+          nexthop encap ip id 200 dst 10.0.0.21 dev p1-route via 10.0.0.19],
+         [0], [stdout])
+AT_CHECK([ovstest test-lib-route-table-dump | \
+          grep '192.168.10.14.*nexthop' | sort], [0], [dnl
+    192.168.10.14/32 nexthop family: AF_INET addr: 10.0.0.18 ifname: p1-route encap: ip id: 100 dst: 10.0.0.20 src: 0.0.0.0 ttl: 0 tos: 0 flags: 0x0
+    192.168.10.14/32 nexthop family: AF_INET addr: 10.0.0.19 ifname: p1-route encap: ip id: 200 dst: 10.0.0.21 src: 0.0.0.0 ttl: 0 tos: 0 flags: 0x0
+])
+
+AT_CLEANUP
+
+AT_SETUP([route-table - lwtunnel encap attributes - ipv6])
+AT_KEYWORDS([route])
+
+dnl Create tap ports.
+AT_CHECK([ip tuntap add name p1-route mode tap])
+AT_CHECK([ip link set p1-route up])
+on_exit 'ip link del p1-route'
+
+AT_CHECK([ip -6 addr add fc00:db8:dead::10/64 dev p1-route], [0], [stdout])
+
+dnl Add a route with an IP6 lightweight-tunnel (LWT) encapsulation.
+AT_CHECK([ip -6 route add fc00:db8:cafe::/64 encap ip6 id 5000 \
+          dst fc00:db8:dead::19 src fc00:db8:dead::10 hoplimit 10 tc 8 \
+          dev p1-route via fc00:db8:dead::1], [0], [stdout])
+AT_CHECK([ovstest test-lib-route-table-dump | \
+          grep 'fc00:db8:cafe::.*nexthop'], [0], [dnl
+    fc00:db8:cafe::/64 nexthop family: AF_INET6 addr: fc00:db8:dead::1 ifname: p1-route encap: ip6 id: 5000 dst: fc00:db8:dead::19 src: fc00:db8:dead::10 ttl: 10 tos: 8 flags: 0x0
+])
+
 AT_CLEANUP
 
 dnl Checks that OVS ignores unsupported routing rules.
