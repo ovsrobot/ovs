@@ -150,9 +150,10 @@ xlate_push_stats_entry(struct xc_entry *entry,
                                 stats);
         break;
     case XC_TNL_NEIGH:
-        /* Lookup neighbor to avoid timeout. */
+        /* Record neighbor use for stale-entry eviction. */
         tnl_neigh_lookup(entry->tnl_neigh_cache.br_name,
-                         &entry->tnl_neigh_cache.d_ipv6, &dmac, false);
+                         &entry->tnl_neigh_cache.d_ipv6, &dmac, false,
+                         NULL, NULL);
         break;
     case XC_TUNNEL_HEADER:
         if (entry->tunnel_hdr.operation == ADD) {
