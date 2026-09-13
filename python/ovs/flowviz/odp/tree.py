@@ -141,7 +141,7 @@ class FlowBlock(object):
                 self._next_recirc_nodes.add(recirc_nodes[recirc][in_port])
             except KeyError:
                 print(
-                    f"mising [recirc_id {hex(recirc)} inport {in_port}]. "
+                    f"missing [recirc_id {hex(recirc)} inport {in_port}]. "
                     "Flow tree will be incomplete.",
                     file=sys.stderr,
                 )
