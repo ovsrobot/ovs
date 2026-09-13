@@ -26,7 +26,7 @@ Contributing to Open vSwitch
 ============================
 
 As an open source project, we welcome contributions of any kind. These can
-range from bug reports and code reviews, to signficant code or documentation
+range from bug reports and code reviews, to significant code or documentation
 features.
 
 Extensive guidelines are provided in the docs at
