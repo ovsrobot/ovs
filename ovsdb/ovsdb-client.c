@@ -449,7 +449,7 @@ usage(void)
            "\n  wait [SERVER] DATABASE STATE\n"
            "    wait until DATABASE reaches STATE "
            "(\"added\" or \"connected\" or \"removed\")\n"
-           "    in DATBASE on SERVER.\n"
+           "    in DATABASE on SERVER.\n"
            "\n  dump [SERVER] [DATABASE] [TABLE [COLUMN]...]\n"
            "    dump contents of COLUMNs, TABLE (or all tables) in DATABASE\n"
            "    on SERVER to stdout\n"
