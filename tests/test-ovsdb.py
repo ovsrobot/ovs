@@ -758,6 +758,7 @@ def update_condition(idl, commands, step):
 def do_idl(schema_file, remote, *commands):
     schema_helper = ovs.db.idl.SchemaHelper(schema_file)
     track_notify = False
+    track_notify_reconnect = False
 
     if remote.startswith("ssl:"):
         if len(commands) < 3:
@@ -773,6 +774,11 @@ def do_idl(schema_file, remote, *commands):
     if commands and commands[0] == "track-notify":
         commands = commands[1:]
         track_notify = True
+
+    if commands and commands[0] == "track-notify-reconnect":
+        commands = commands[1:]
+        track_notify = True
+        track_notify_reconnect = True
 
     if commands and commands[0].startswith("?"):
         readonly = {}
@@ -831,8 +837,26 @@ def do_idl(schema_file, remote, *commands):
         sys.stdout.write(output)
         sys.stdout.flush()
 
+    def mock_notify_reconnect(notices):
+        output = "%03d: notify_reconnect:\n" % step
+        for notice in notices:
+            output += "%03d:   event:%s, row={%s}, %s, updates=" % (
+                step, str(notice.event),
+                get_simple_table_printable_row(notice.row, 'l2', 'l1'),
+                get_simple_printable_row_string(notice.row, ["uuid"]))
+            if notice.updates is None:
+                output += "None"
+            else:
+                output += "{" + get_simple_table_printable_row(
+                    notice.updates) + "}"
+            output += "\n"
+        sys.stdout.write(output)
+        sys.stdout.flush()
+
     if track_notify and "simple" in idl.tables:
         idl.notify = mock_notify
+        if track_notify_reconnect:
+            idl.notify_reconnect = mock_notify_reconnect
 
     commands = list(commands)
     if len(commands) >= 1 and "condition" in commands[0]:

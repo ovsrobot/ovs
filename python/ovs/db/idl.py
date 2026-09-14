@@ -47,6 +47,66 @@ Notice = collections.namedtuple('Notice', ('event', 'row', 'updates'))
 Notice.__new__.__defaults__ = (None,)  # default updates=None
 
 
+class ReconciledNotices:
+    """Lazy view over pending notices, reconciling reconnect events.
+
+    On reconnect the IDL discards its local replica with __clear() and
+    repopulates it from a fresh monitor dump.  When notify_reconnect()
+    is in use, __clear() records a ROW_DELETE notice for every
+    pre-existing row and the subsequent dump records a ROW_CREATE notice
+    for every row in the new snapshot.  This view reconciles the
+    DELETE+CREATE pair collected per UUID:
+
+    - Same data: suppressed (the row survived the reconnect unchanged)
+    - Different data: emitted as ROW_UPDATE with only the changed columns
+    - DELETE only: emitted (row was deleted while disconnected)
+    - CREATE only: emitted (row appeared while disconnected)
+
+    Iteration yields the reconciled Notice objects.  __getitem__(uuid)
+    returns the reconciled Notice for a specific UUID, or None if that
+    UUID reconciles away.  Reconciliation is computed on access; nothing
+    is cached.
+    """
+
+    def __init__(self, notices):
+        self._raw = notices
+
+    def __getitem__(self, row_uuid):
+        return self._reconcile(row_uuid, self._raw[row_uuid])
+
+    def __iter__(self):
+        for row_uuid in self._raw:
+            notice = self._reconcile(row_uuid, self._raw[row_uuid])
+            if notice is not None:
+                yield notice
+
+    @staticmethod
+    def _reconcile(row_uuid, events):
+        if len(events) == 1:
+            return events[0]
+        if (
+            len(events) == 2 and
+            events[0].event == ROW_DELETE and
+            events[1].event == ROW_CREATE
+        ):
+            old_row = events[0].row
+            new_row = events[1].row
+            old_data = {}
+            for col in old_row._table.columns:
+                if col in old_row._data and col in new_row._data:
+                    if old_row._data[col] != new_row._data[col]:
+                        old_data[col] = old_row._data[col]
+            if old_data:
+                # Carry the real idl reference (from the new row) on the
+                # "updates" row so reads of reference-typed columns can
+                # resolve, matching notify()'s ROW_UPDATE semantics.
+                return Notice(ROW_UPDATE, new_row,
+                              Row(new_row._idl, old_row._table, row_uuid,
+                                  old_data))
+            return None
+        assert False, "unexpected number of events for row %s" % row_uuid
+
+
 class ColumnDefaultDict(dict):
     """A column dictionary with on-demand generated default values
 
@@ -315,6 +375,12 @@ class Idl(object):
         self.cond_changed = False
         self.cond_seqno = 0
 
+        # Notices produced while parsing a single monitor reply (and the
+        # DELETE notices produced by __clear() on reconnect) are collected
+        # here keyed by row UUID, then flushed once parsing is complete.
+        # See _flush_notices().
+        self._pending_notices = collections.defaultdict(list)
+
     def _parse_remotes(self, remote):
         # If remote is -
         # "tcp:10.0.0.1:6641,unix:/tmp/db.sock,t,s,tcp:10.0.0.2:6642"
@@ -487,6 +553,11 @@ class Idl(object):
                   and self._monitor_request_id == msg.id):
                 # Reply to our "monitor" request.
                 try:
+                    # A non-zero change_seqno means we have downloaded the
+                    # database before, so this reply repopulates the replica
+                    # after a reconnect rather than being the initial
+                    # download.  Compute this before the increment below.
+                    reconnect = self.has_ever_connected()
                     self.change_seqno += 1
                     self._monitor_request_id = None
                     if (self.state ==
@@ -494,15 +565,23 @@ class Idl(object):
                         # If 'found' is false, clear table rows for new dump
                         if not msg.result[0]:
                             self.__clear()
-                        self.__parse_update(msg.result[2], OVSDB_UPDATE3)
+                            self.__parse_update(msg.result[2], OVSDB_UPDATE3,
+                                                reconnect=reconnect)
+                        else:
+                            # 'found' is true: the server sent an incremental
+                            # update since last_id, already reconciled, so
+                            # deliver it through notify() as usual.
+                            self.__parse_update(msg.result[2], OVSDB_UPDATE3)
                         self.last_id = msg.result[1]
                     elif self.state == self.IDL_S_DATA_MONITOR_COND_REQUESTED:
                         self.__clear()
-                        self.__parse_update(msg.result, OVSDB_UPDATE2)
+                        self.__parse_update(msg.result, OVSDB_UPDATE2,
+                                            reconnect=reconnect)
                     else:
                         assert self.state == self.IDL_S_DATA_MONITOR_REQUESTED
                         self.__clear()
-                        self.__parse_update(msg.result, OVSDB_UPDATE)
+                        self.__parse_update(msg.result, OVSDB_UPDATE,
+                                            reconnect=reconnect)
                     self.state = self.IDL_S_MONITORING
 
                 except error.Error as e:
@@ -773,6 +852,11 @@ class Idl(object):
     def notify(self, event, row, updates=None):
         """Hook for implementing create/update/delete notifications
 
+        This is called once per changed row for incremental updates and for
+        the initial database download.  On reconnect the changes are instead
+        delivered to notify_reconnect(), so that the redundant DELETE+CREATE
+        churn from rebuilding the local replica can be reconciled first.
+
         :param event:   The event that was triggered
         :type event:    ROW_CREATE, ROW_UPDATE, or ROW_DELETE
         :param row:     The row as it is after the operation has occured
@@ -781,6 +865,40 @@ class Idl(object):
                         columns
         :type updates:  Row
         """
+
+    def notify_reconnect(self, notices):
+        """Hook for delivering reconciled changes after a reconnect
+
+        On reconnect the IDL discards its local replica and repopulates it
+        from a fresh monitor dump, which would otherwise appear as a
+        DELETE+CREATE for every row.  Rather than replaying that churn, the
+        changes that actually occurred while the IDL was disconnected are
+        collected, reconciled, and delivered through this hook.
+
+        The initial database download and all incremental updates still flow
+        through notify() as usual; this hook is only used for the
+        post-reconnect monitor dump.
+
+        The default implementation forwards each reconciled notice to
+        notify(), so that a subclass which only overrides notify() still
+        receives post-reconnect changes -- reconciled (rows that did not
+        change are suppressed, modified rows arrive as a single ROW_UPDATE)
+        rather than as a create-for-every-row storm.  Override this hook to
+        receive the whole reconciled set in one call instead; doing so
+        suppresses the per-row notify() calls for the reconnect dump.
+
+        :param notices: A ReconciledNotices view.  Iterating it yields one
+                        Notice per row that actually changed while the IDL
+                        was disconnected: a ROW_UPDATE (with only the changed
+                        columns in its 'updates') for a modified row, a
+                        ROW_DELETE for a row that went away, or a ROW_CREATE
+                        for a row that appeared.  Rows that survived the
+                        reconnect unchanged are suppressed.  The view can
+                        also be indexed by row UUID.
+        :type notices:  ReconciledNotices
+        """
+        for notice in notices:
+            self.notify(*notice)
 
     def cooperative_yield(self):
         """Hook for cooperatively yielding to eventlet/gevent/asyncio/etc.
@@ -797,6 +915,14 @@ class Idl(object):
         for table in self.tables.values():
             if table.rows:
                 changed = True
+                # Record a DELETE notice for every row being discarded.  The
+                # subsequent monitor dump records a matching CREATE for rows
+                # that still exist; _flush_notices() reconciles the pairs on
+                # reconnect.  On a first connect the tables are empty, so this
+                # records nothing.
+                for row_uuid, row in table.rows.items():
+                    self._pending_notices[row_uuid].append(
+                        Notice(ROW_DELETE, row))
                 table.rows.clear()
 
         self.cond_seqno = 0
@@ -806,12 +932,16 @@ class Idl(object):
 
     def __update_has_lock(self, new_has_lock):
         if new_has_lock and not self.has_lock:
-            if self._monitor_request_id is None:
+            if self.state == self.IDL_S_MONITORING:
                 self.change_seqno += 1
             else:
-                # We're waiting for a monitor reply, so don't signal that the
-                # database changed.  The monitor reply will increment
-                # change_seqno anyhow.
+                # We haven't finished downloading the database yet, so don't
+                # signal that the database changed.  The monitor reply will
+                # increment change_seqno anyhow.  Gating on the MONITORING
+                # state (rather than merely on no monitor request being in
+                # flight) keeps change_seqno at 0 through the initial
+                # download, so that has_ever_connected() reliably
+                # distinguishes a first connect from a reconnect.
                 pass
             self.is_lock_contended = False
         self.has_lock = new_has_lock
@@ -919,7 +1049,7 @@ class Idl(object):
         self._server_monitor_request_id = msg.id
         self.send_request(msg)
 
-    def __parse_update(self, update, version, tables=None):
+    def __parse_update(self, update, version, tables=None, reconnect=False):
         try:
             if not tables:
                 self.__do_parse_update(update, version, self.tables)
@@ -928,13 +1058,38 @@ class Idl(object):
         except error.Error as e:
             vlog.err("%s: error parsing update: %s"
                      % (self._session.get_name(), e))
+            # Drop any notices buffered before the error rather than
+            # delivering a partial, inconsistent update.
+            self._pending_notices.clear()
+            return
+        self._flush_notices(reconnect)
+
+    def _flush_notices(self, reconnect):
+        """Deliver the notices buffered while parsing a monitor reply.
+
+        On reconnect the buffered per-row DELETE (from __clear()) and CREATE
+        events are reconciled and handed to notify_reconnect() in a single
+        call.  Otherwise (initial download and incremental updates) each
+        buffered notice is delivered individually through notify().
+        """
+        if reconnect:
+            # Hand the buffered notices to the view and start a fresh buffer,
+            # so the (lazy) ReconciledNotices remains valid even if the
+            # callback holds on to it past this call.
+            pending = self._pending_notices
+            self._pending_notices = collections.defaultdict(list)
+            self.notify_reconnect(ReconciledNotices(pending))
+        else:
+            for events in self._pending_notices.values():
+                for notice in events:
+                    self.notify(*notice)
+            self._pending_notices.clear()
 
     def __do_parse_update(self, table_updates, version, tables):
         if not isinstance(table_updates, dict):
             raise error.Error("<table-updates> is not an object",
                               table_updates)
 
-        notices = []
         for table_name, table_update in table_updates.items():
             table = tables.get(table_name)
             if not table:
@@ -964,7 +1119,7 @@ class Idl(object):
                 if version in (OVSDB_UPDATE2, OVSDB_UPDATE3):
                     changes = self.__process_update2(table, uuid, row_update)
                     if changes and tables is not self.server_tables:
-                        notices.append(changes)
+                        self._pending_notices[uuid].append(changes)
                         self.change_seqno += 1
                     continue
 
@@ -979,10 +1134,8 @@ class Idl(object):
 
                 changes = self.__process_update(table, uuid, old, new)
                 if changes and tables is not self.server_tables:
-                    notices.append(changes)
+                    self._pending_notices[uuid].append(changes)
                     self.change_seqno += 1
-        for notice in notices:
-            self.notify(*notice)
 
     def __process_update2(self, table, uuid, row_update):
         """Returns Notice if a column changed, False otherwise."""

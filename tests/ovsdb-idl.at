@@ -2099,12 +2099,31 @@ OVSDB_CHECK_IDL_NOTIFY([simple idl verify notify],
 012: table simple: i=-1 r=125 b=false s=newstring u=<2> ia=[1] ra=[1.5] ba=[false] sa=[] ua=[] uuid=<6>
 012: table simple: i=1 r=123.5 b=false s=mystring u=<3> ia=[1 2 3] ra=[-0.5] ba=[true] sa=[abc def] ua=[<4> <5>] uuid=<0>
 013: reconnect
-014: event:create, row={i=-1 r=125 b=false s=newstring u=<2> ia=[1] ra=[1.5] ba=[false] sa=[] ua=[]}, uuid=<6>, updates=None
-014: event:create, row={i=1 r=123.5 b=false s=mystring u=<3> ia=[1 2 3] ra=[-0.5] ba=[true] sa=[abc def] ua=[<4> <5>]}, uuid=<0>, updates=None
 014: table simple: i=-1 r=125 b=false s=newstring u=<2> ia=[1] ra=[1.5] ba=[false] sa=[] ua=[] uuid=<6>
 014: table simple: i=1 r=123.5 b=false s=mystring u=<3> ia=[1 2 3] ra=[-0.5] ba=[true] sa=[abc def] ua=[<4> <5>] uuid=<0>
 015: done
 ]])
+
+dnl When a client overrides notify_reconnect(), the post-reconnect monitor
+dnl dump is delivered there (reconciled) instead of as per-row notify()
+dnl calls.  A row that is unchanged across the reconnect reconciles away, so
+dnl notify_reconnect() receives an empty set and notify() is not called.
+OVSDB_CHECK_IDL_PY([simple idl, notify_reconnect override], [],
+  [['track-notify-reconnect' \
+    '["idltest",
+      {"op": "insert",
+       "table": "simple",
+       "row": {"i": 1, "s": "mystring"}}]' \
+    'reconnect']],
+  [[000: empty
+001: {"error":null,"result":[{"uuid":["uuid","<0>"]}]}
+002: event:create, row={i=1 r=0 b=false s=mystring u=<1> ia=[] ra=[] ba=[] sa=[] ua=[]}, uuid=<0>, updates=None
+002: table simple: i=1 r=0 b=false s=mystring u=<1> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<0>
+003: reconnect
+004: notify_reconnect:
+004: table simple: i=1 r=0 b=false s=mystring u=<1> ia=[] ra=[] ba=[] sa=[] ua=[] uuid=<0>
+005: done
+]], [notify])
 
 OVSDB_CHECK_IDL_NOTIFY([indexed idl, modification and removal notify],
   [['track-notify' \
