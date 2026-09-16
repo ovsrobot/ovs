@@ -1,5 +1,8 @@
 Post-v4.0.0
 --------------------
+   - Userspace datapath:
+     * Symmetric L4 datapath hashing now includes UDP source and destination
+       ports.  This can change select-group bucket selection for UDP traffic.
 
 
 v4.0.0 - 17 Aug 2026
