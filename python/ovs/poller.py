@@ -109,10 +109,50 @@ class _SelectSelect(object):
         return list(events_dict.items())
 
 
+class _PollPoll(object):
+    """ select.poll wrapper that accumulates the events of each fd.
+
+    select.poll.register() replaces the event mask of a file descriptor that
+    is already registered, whereas a fd passed to Poller.fd_wait() more than
+    once must wake up the following Poller.block() on any of the events
+    requested, the way poll_fd_wait() does in lib/poll-loop.c.  Otherwise
+    waiting for POLLIN after POLLOUT on the same socket, as a jsonrpc
+    connection with pending output does, would drop POLLOUT.
+    """
+    def __init__(self):
+        self._poll = select.poll()
+        self.events = {}
+
+    def register(self, fd, events):
+        if not isinstance(fd, int):
+            fd = fd.fileno()
+
+        events |= self.events.get(fd, 0)
+        self.events[fd] = events
+        self._poll.register(fd, events)
+
+    def poll(self, timeout):
+        return self._poll.poll(timeout)
+
+
 SelectPoll = _SelectSelect
-# If eventlet/gevent isn't used, we can use select.poll by replacing
-# _SelectPoll with select.poll class
-# _SelectPoll = select.poll
+
+
+def _get_poll():
+    """Return a poll object suitable for the current environment.
+
+    Under eventlet or gevent, select.select is replaced by a green
+    implementation that multiplexes through the hub.  _SelectSelect is
+    therefore both cooperative and free of the FD_SETSIZE limit there, so
+    keep using it.  Everywhere else select.select is the real select(2),
+    which cannot handle a file descriptor numbered FD_SETSIZE or higher, so
+    use poll(2), which has no such limit.
+    """
+    if _using_eventlet_green_select() or (
+            gevent_monkey and
+            gevent_monkey.is_object_patched('select', 'select')):
+        return _SelectSelect()
+    return _PollPoll()
 
 
 class Poller(object):
@@ -220,7 +260,7 @@ class Poller(object):
                     vlog.dbg("%s on fd %d" % (s, fd))
 
     def __reset(self):
-        self.poll = SelectPoll()
+        self.poll = _get_poll()
         self.timeout = -1
 
 
