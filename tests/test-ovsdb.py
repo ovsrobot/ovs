@@ -612,8 +612,11 @@ def idl_set(idl, commands, step):
             l1_1.ka = [l1_0, l1_1]
         elif name == 'getattrtest':
             l1 = txn.insert(idl.tables["link1"])
+            # A column that has not been set on a newly-inserted row returns
+            # the schema default (here, 0 for an integer), matching how the
+            # row will look once committed.
             i = getattr(l1, 'i', 1)
-            assert i == 1
+            assert i == 0
             l1.i = 2
             i = getattr(l1, 'i', 1)
             assert i == 2

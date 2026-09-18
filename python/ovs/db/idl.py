@@ -1376,6 +1376,12 @@ class Row(object):
         else:
             return atom
 
+    def _default_to_row(self, atom, base):
+        # A default Datum built by Datum.default() carries scalar atoms whose
+        # .value is itself an Atom (Atom.default() double-wraps), so unwrap the
+        # extra layer before resolving references the usual way.
+        return self._uuid_to_row(atom.value, base)
+
     def __getattr__(self, column_name):
         assert self._changes is not None
         assert self._mutations is not None
@@ -1395,9 +1401,17 @@ class Row(object):
         if datum is None:
             if self._data is None:
                 if inserts is None:
-                    raise AttributeError("%s instance has no attribute '%s'" %
-                                         (self.__class__.__name__,
-                                          column_name))
+                    # This is a newly-inserted row (no committed form) whose
+                    # column has not been set in this transaction. Expose the
+                    # schema default so the uncommitted row presents the same
+                    # columns it will have once committed (the server fills
+                    # unset columns with their defaults). This keeps attribute
+                    # access and index maintenance consistent before and after
+                    # commit. The 'old' row in an update notification instead
+                    # has a (partial) _data dict, so it still raises below for
+                    # columns it does not carry.
+                    return data.Datum.default(column.type).to_python(
+                        self._default_to_row)
                 else:
                     datum = data.Datum.from_python(column.type,
                                                    inserts,

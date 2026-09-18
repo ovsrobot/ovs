@@ -63,6 +63,10 @@ class MultiColumnIndex(object):
         self.values.add(self.index_entry_from_row(row))
 
     def remove(self, row):
+        if not all(hasattr(row, col.column) for col in self.columns):
+            # The row was never added because it lacks the necessary columns
+            # (see add()), so there is nothing to remove.
+            return
         self.values.remove(self.index_entry_from_row(row))
 
     def clear(self):
