@@ -6872,7 +6872,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
                                         OVS_ACTION_ATTR_CHECK_PKT_LEN);
     nl_msg_put_u16(ctx->odp_actions, OVS_CHECK_PKT_LEN_ATTR_PKT_LEN,
                    check_pkt_larger->pkt_len);
-    size_t offset_attr = nl_msg_start_nested(
+    size_t offset_gt_attr = nl_msg_start_nested(
         ctx->odp_actions, OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER);
     value->u8_val = 1;
     mf_write_subfield_flow(&check_pkt_larger->dst, value, &ctx->xin->flow);
@@ -6883,7 +6883,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     if (ctx->freezing) {
         finish_freezing(ctx);
     }
-    nl_msg_end_nested(ctx->odp_actions, offset_attr);
+    nl_msg_end_nested(ctx->odp_actions, offset_gt_attr);
 
     xretain_base_flow_restore(ctx, retained_state);
     xretain_flow_restore(ctx, retained_state);
@@ -6897,7 +6897,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     bool old_exit = ctx->exit;
     ctx->exit = false;
 
-    offset_attr = nl_msg_start_nested(
+    size_t offset_lte_attr = nl_msg_start_nested(
         ctx->odp_actions, OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_LESS_EQUAL);
     value->u8_val = 0;
     mf_write_subfield_flow(&check_pkt_larger->dst, value, &ctx->xin->flow);
@@ -6908,8 +6908,26 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     if (ctx->freezing) {
         finish_freezing(ctx);
     }
-    nl_msg_end_nested(ctx->odp_actions, offset_attr);
+    nl_msg_end_nested(ctx->odp_actions, offset_lte_attr);
+    size_t lte_len = ctx->odp_actions->size - offset_lte_attr - NLA_HDRLEN;
+    size_t gt_len = offset_lte_attr - offset_gt_attr - NLA_HDRLEN;
     nl_msg_end_nested(ctx->odp_actions, offset);
+
+    /* If the two legs are the identical length and content, replace this
+     * check_pkt_len action with one of the legs. */
+    if (gt_len == lte_len) {
+        if (memcmp(ofpbuf_at(ctx->odp_actions, offset_gt_attr + NLA_HDRLEN,
+                             gt_len),
+                   ofpbuf_at(ctx->odp_actions, offset_lte_attr + NLA_HDRLEN,
+                             lte_len),
+                   lte_len) == 0) {
+            memmove((uint8_t *) ctx->odp_actions->data + offset,
+                    (uint8_t *) ctx->odp_actions->data + offset_gt_attr
+                    + NLA_HDRLEN,
+                    lte_len);
+            ofpbuf_truncate(ctx->odp_actions, lte_len + offset);
+        }
+    }
 
     ctx->was_mpls = old_was_mpls;
     ctx->conntracked = old_conntracked;
