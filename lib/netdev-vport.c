@@ -300,7 +300,7 @@ tunnel_check_status_change__(struct netdev_vport *netdev)
     iface[0] = '\0';
     route = &tnl_cfg->ipv6_dst;
     mark = tnl_cfg->egress_pkt_mark;
-    if (ovs_router_lookup(mark, route, iface, NULL, &gw)) {
+    if (ovs_router_lookup(mark, route, NULL, iface, NULL, &gw)) {
         struct netdev *egress_netdev;
 
         if (!netdev_open(iface, NULL, &egress_netdev)) {

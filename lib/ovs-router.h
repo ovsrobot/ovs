@@ -33,9 +33,9 @@ enum {
     CLS_ALL = UINT32_MAX,
 };
 
-bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip_dst,
-                       char output_netdev[],
-                       struct in6_addr *src, struct in6_addr *gw);
+bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
+                       const struct in6_addr *ip6_src, char output_netdev[],
+                       struct in6_addr *out_src, struct in6_addr *gw);
 void ovs_router_init(void);
 bool ovs_router_is_referenced(uint32_t table);
 void ovs_router_insert(uint32_t table, uint32_t mark,
