@@ -708,7 +708,7 @@ class Idl(object):
         # New condition will be sent out after all already requested ones
         # are acked.
         if table.condition_state.new:
-            any_reqs = any(t.condition_state.request
+            any_reqs = any(t.condition_state.requested is not None
                            for t in self.tables.values())
             return self.cond_seqno + int(any_reqs) + 1
 
