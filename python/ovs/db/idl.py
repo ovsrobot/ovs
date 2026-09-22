@@ -1047,11 +1047,9 @@ class Idl(object):
             else:
                 row_update = row_update['initial']
             self.__add_default(table, row_update)
-            changed = self.__row_update(table, row, row_update)
+            self.__row_update(table, row, row_update)
             table.rows[uuid] = row
-            if changed:
-                return OVSDB_IDL_UPDATE_DB_CHANGED, Notice(ROW_CREATE, row)
-            return OVSDB_IDL_UPDATE_NO_CHANGES, None
+            return OVSDB_IDL_UPDATE_DB_CHANGED, Notice(ROW_CREATE, row)
         elif "modify" in row_update:
             if not row:
                 # XXX rate-limit
