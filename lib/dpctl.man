@@ -87,6 +87,9 @@ packets processed by the datapath.
 If one or more datapaths are specified, information on only those
 datapaths are displayed.  Otherwise, \fB\*(PN\fR displays information
 about all configured datapaths.
+.IP
+JSON output is an object keyed by datapath name.  Each entry contains
+roughly the same information as the text output.
 .SS "DATAPATH FLOW TABLE DEBUGGING COMMANDS"
 The following commands are primarily useful for debugging Open
 vSwitch.  The flow table entries (both matches and actions) that they

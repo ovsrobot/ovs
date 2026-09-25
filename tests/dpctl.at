@@ -25,6 +25,22 @@ dummy@br0:
   flows: 0
   port 0: br0 (dummy-internal)
 ])
+
+dnl Check dpctl/show JSON output.
+AT_CHECK([ovs-appctl --format json --pretty dpctl/show dummy@br0], [0], [dnl
+{
+  "dummy@br0": {
+    "flows": 0,
+    "lookups": {
+      "hit": 0,
+      "lost": 0,
+      "missed": 0},
+    "ports": {
+      "br0": {
+        "port-number": 0,
+        "type": "dummy-internal"}}}}
+])
+
 AT_CHECK([ovs-appctl dpctl/add-if dummy@br0 vif1.0,type=dummy,port_no=5])
 AT_CHECK([ovs-appctl dpctl/show dummy@br0], [0], [dnl
 dummy@br0:
@@ -33,6 +49,78 @@ dummy@br0:
   port 0: br0 (dummy-internal)
   port 5: vif1.0 (dummy)
 ])
+
+dnl Check that netdev configuration shows up in the JSON output.
+AT_CHECK([ovs-appctl dpctl/add-if dummy@br0 vif2.0,type=dummy,ifindex=42,port_no=6])
+AT_CHECK([ovs-appctl --format json --pretty dpctl/show dummy@br0], [0], [dnl
+{
+  "dummy@br0": {
+    "flows": 0,
+    "lookups": {
+      "hit": 0,
+      "lost": 0,
+      "missed": 0},
+    "ports": {
+      "br0": {
+        "port-number": 0,
+        "type": "dummy-internal"},
+      "vif1.0": {
+        "port-number": 5,
+        "type": "dummy"},
+      "vif2.0": {
+        "config": {
+          "ifindex": "42"},
+        "port-number": 6,
+        "type": "dummy"}}}}
+])
+
+dnl Check port statistics in the JSON output.  Dummy netdevs only collect
+dnl rx/tx packet and byte counters; unavailable counters must be omitted.
+AT_CHECK([ovs-appctl --format json --pretty dpctl/show -s dummy@br0], [0], [dnl
+{
+  "dummy@br0": {
+    "flows": 0,
+    "lookups": {
+      "hit": 0,
+      "lost": 0,
+      "missed": 0},
+    "ports": {
+      "br0": {
+        "port-number": 0,
+        "statistics": {
+          "rx-bytes": 0,
+          "rx-packets": 0,
+          "tx-bytes": 0,
+          "tx-packets": 0},
+        "type": "dummy-internal"},
+      "vif1.0": {
+        "port-number": 5,
+        "statistics": {
+          "rx-bytes": 0,
+          "rx-packets": 0,
+          "tx-bytes": 0,
+          "tx-packets": 0},
+        "type": "dummy"},
+      "vif2.0": {
+        "config": {
+          "ifindex": "42"},
+        "port-number": 6,
+        "statistics": {
+          "rx-bytes": 0,
+          "rx-packets": 0,
+          "tx-bytes": 0,
+          "tx-packets": 0},
+        "type": "dummy"}}}}
+])
+
+dnl Check that errors are reported as text even if JSON was requested.
+AT_CHECK([ovs-appctl --format json dpctl/show dummy@nodp], [2], [], [stderr])
+AT_CHECK([sed 's/(.*)/(...)/' stderr], [0], [dnl
+ovs-vswitchd: opening datapath dummy@nodp failed (...)
+ovs-appctl: ovs-vswitchd: server returned an error
+])
+
+AT_CHECK([ovs-appctl dpctl/del-if dummy@br0 vif2.0])
 AT_CHECK([ovs-appctl dpctl/add-if dummy@br0 vif1.0,type=dummy], [2], [],
   [stderr])
 AT_CHECK([sed 's/(.*)/(...)/' stderr], [0],
