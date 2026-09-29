@@ -155,6 +155,10 @@ char *parse_ofp_exact_flow(struct flow *flow, struct flow_wildcards *wc,
                            const struct tun_table *tun_table, const char *s,
                            const struct ofputil_port_map *port_map);
 
+char *parse_ofp_flow_match(struct match *match,
+                           const struct tun_table *tun_table, const char *s,
+                           const struct ofputil_port_map *port_map);
+
 /* Flow stats or aggregate stats request, independent of protocol. */
 struct ofputil_flow_stats_request {
     bool aggregate;             /* Aggregate results? */
