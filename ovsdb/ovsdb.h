@@ -71,6 +71,7 @@ bool ovsdb_is_valid_version(const char *);
 struct ovsdb_txn_history_node {
     struct ovs_list node; /* Element in struct ovsdb's txn_history list */
     struct ovsdb_txn *txn;
+    long long int timestamp; /* Time of addition to the history, in msec. */
 };
 
 struct ovsdb_compaction_state {
@@ -108,6 +109,8 @@ struct ovsdb {
 
     /* History trasanctions for incremental monitor transfer. */
     bool need_txn_history;     /* Need to maintain history of transactions. */
+    long long int txn_history_time_max; /* Keep entries younger than this
+                                         * many msec. */
     unsigned int n_txn_history; /* Current number of history transactions. */
     unsigned int n_txn_history_atoms; /* Total number of atoms in history. */
     struct ovs_list txn_history; /* Contains "struct ovsdb_txn_history_node. */

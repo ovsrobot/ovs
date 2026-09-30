@@ -156,7 +156,14 @@ struct db_config {
         bool backup;  /* If true, the database is read-only and receives
                        * updates from the 'source'. */
     } ab;
+
+    /* Valid for SM_CLUSTERED or SM_RELAY. */
+    long long int txn_history_time_max; /* Keep history entries younger than
+                                         * this many seconds. */
 };
+
+/* Default value for 'txn_history_time_max', in seconds. */
+#define TXN_HISTORY_TIME_MAX_DEFAULT 60
 
 struct db {
     struct ovsdb *db;
@@ -459,6 +466,7 @@ db_config_clone(const struct db_config *c)
         conf->options = ovsdb_jsonrpc_options_clone(c->options);
     }
     conf->ab.sync_exclude = nullable_xstrdup(c->ab.sync_exclude);
+    conf->txn_history_time_max = c->txn_history_time_max;
 
     return conf;
 }
@@ -485,6 +493,8 @@ add_database_config(struct shash *db_conf, const char *opt,
 {
     struct db_config *conf = xzalloc(sizeof *conf);
     char *filename = NULL;
+
+    conf->txn_history_time_max = TXN_HISTORY_TIME_MAX_DEFAULT;
 
     if (parse_relay_args(opt, &filename, &conf->source)) {
         conf->model = SM_RELAY;
@@ -568,6 +578,11 @@ database_update_config(struct server_config *server_config,
         server_uuid = ovsdb_jsonrpc_server_get_uuid(server_config->jsonrpc);
         replication_set_db(db->db, conf->source, conf->ab.sync_exclude,
                            server_uuid, &conf->options->rpc);
+    }
+
+    if (conf->model == SM_CLUSTERED || conf->model == SM_RELAY) {
+        ovsdb_txn_history_update(db->db,
+                                 conf->txn_history_time_max * 1000);
     }
 }
 
@@ -1174,6 +1189,10 @@ open_db(struct server_config *server_config,
      * other modes for now, since txn id is available for clustered and relay
      * modes only. */
     ovsdb_txn_history_init(db->db, model == SM_RELAY || model == SM_CLUSTERED);
+
+    if (model == SM_RELAY || model == SM_CLUSTERED) {
+        ovsdb_txn_history_update(db->db, conf->txn_history_time_max * 1000);
+    }
 
     read_db(server_config, db);
 
@@ -2901,6 +2920,12 @@ db_config_to_json(const struct db_config *conf)
         }
         json_object_put(json, "backup", json_boolean_create(conf->ab.backup));
     }
+
+    if (conf->txn_history_time_max != TXN_HISTORY_TIME_MAX_DEFAULT) {
+        json_object_put(json, "transaction-history-time-limit",
+                        json_integer_create(conf->txn_history_time_max));
+    }
+
     return json;
 }
 
@@ -3024,12 +3049,13 @@ remotes_from_json(struct shash *remotes, const struct json *json)
 static struct db_config *
 db_config_from_json(const char *name, const struct json *json)
 {
-    const struct json *model, *source, *sync_exclude, *backup;
+    const struct json *model, *source, *sync_exclude, *backup, *txn_time_limit;
     struct db_config *conf = xzalloc(sizeof *conf);
     struct ovsdb_parser parser;
     struct ovsdb_error *error;
 
     conf->model = SM_UNDEFINED;
+    conf->txn_history_time_max = TXN_HISTORY_TIME_MAX_DEFAULT;
 
     ovs_assert(json);
     if (json->type == JSON_NULL) {
@@ -3102,6 +3128,22 @@ db_config_from_json(const char *name, const struct json *json)
                 ovsdb_parser_raise_error(&parser,
                     "JSON-RPC options is not a JSON object or null");
             }
+        }
+    }
+
+    txn_time_limit = ovsdb_parser_member(&parser,
+                                         "transaction-history-time-limit",
+                                         OP_INTEGER | OP_OPTIONAL);
+    if (txn_time_limit) {
+        if (json_integer(txn_time_limit) < 0) {
+            ovsdb_parser_raise_error(&parser,
+                "transaction-history-time-limit must not be negative");
+        } else if (json_integer(txn_time_limit) > INT_MAX) {
+            ovsdb_parser_raise_error(&parser,
+                "transaction-history-time-limit must not be greater than %d",
+                INT_MAX);
+        } else {
+            conf->txn_history_time_max = json_integer(txn_time_limit);
         }
     }
 

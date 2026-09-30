@@ -33,6 +33,7 @@
 #include "row.h"
 #include "storage.h"
 #include "table.h"
+#include "timeval.h"
 #include "uuid.h"
 #include "util.h"
 
@@ -1189,6 +1190,7 @@ ovsdb_txn_add_to_history(struct ovsdb_txn *txn)
     if (txn->db->need_txn_history) {
         struct ovsdb_txn_history_node *node = xzalloc(sizeof *node);
         node->txn = ovsdb_txn_clone_for_history(txn);
+        node->timestamp = time_msec();
         ovs_list_push_back(&txn->db->txn_history, &node->node);
         txn->db->n_txn_history++;
         txn->db->n_txn_history_atoms += txn->n_atoms;
@@ -1683,15 +1685,22 @@ ovsdb_txn_history_run(struct ovsdb *db)
      * the number of ovsdb atoms in history becomes less than the number of
      * atoms in the database, because it will be faster to just get a database
      * snapshot than re-constructing changes from the history that big.
+     * Entries older than 'txn_history_time_max' are removed as well.
      * Keeping at least one transaction to avoid sending UUID_ZERO as a last id
      * if all entries got removed due to the size limit. */
-    while (db->n_txn_history > 1 &&
-           (db->n_txn_history > 100 ||
-            db->n_txn_history_atoms > db->n_atoms)) {
-        struct ovsdb_txn_history_node *txn_h_node = CONTAINER_OF(
-                ovs_list_pop_front(&db->txn_history),
-                struct ovsdb_txn_history_node, node);
+    long long int now = time_msec();
 
+    while (db->n_txn_history > 1) {
+        struct ovsdb_txn_history_node *txn_h_node = CONTAINER_OF(
+                ovs_list_front(&db->txn_history),
+                struct ovsdb_txn_history_node, node);
+        bool expired = now - txn_h_node->timestamp > db->txn_history_time_max;
+
+        if (!expired && db->n_txn_history_atoms <= db->n_atoms) {
+            break;
+        }
+
+        ovs_list_remove(&txn_h_node->node);
         db->n_txn_history_atoms -= txn_h_node->txn->n_atoms;
         ovsdb_txn_destroy_cloned(txn_h_node->txn);
         free(txn_h_node);
@@ -1724,4 +1733,12 @@ ovsdb_txn_history_destroy(struct ovsdb *db)
     }
     db->n_txn_history = 0;
     db->n_txn_history_atoms = 0;
+}
+
+void
+ovsdb_txn_history_update(struct ovsdb *db, long long int txn_history_time_max)
+{
+    ovs_assert(txn_history_time_max >= 0);
+    db->txn_history_time_max = txn_history_time_max;
+    ovsdb_txn_history_run(db);
 }

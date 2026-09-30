@@ -1642,6 +1642,46 @@ AT_CHECK([test $(get_memory_value atoms) -eq $db_atoms_before_conversion])
 
 OVSDB_SERVER_SHUTDOWN
 AT_CLEANUP
+
+AT_SETUP([ovsdb-server transaction history time limit])
+AT_KEYWORDS([ovsdb server transaction])
+on_exit 'kill `cat *.pid`'
+AT_CHECK([ovsdb-tool create-cluster db dnl
+            $abs_top_srcdir/vswitchd/vswitch.ovsschema unix:s1.raft],
+         [0], [ignore], [ignore])
+AT_DATA([config.json], [
+{"remotes": {"punix:db.sock": {}},
+ "databases": {"db": {"service-model": "clustered"}}}
+])
+AT_CHECK([ovsdb-server --detach --no-chdir --pidfile --log-file dnl
+            --config-file=config.json], [0], [ignore], [ignore])
+
+dnl Make the database large enough to not limit the history by atoms.
+AT_CHECK([ovs-vsctl --no-wait init -- add-br br0 dnl
+            $(for i in $(seq 250); do echo -- add-port br0 p$i; done)])
+AT_CHECK([for i in $(seq 110); do
+              ovs-vsctl --no-wait set port p1 external_ids:k=$i || exit 1
+          done])
+
+n_txns () {
+    ovs-appctl -t ovsdb-server memory/show | tr ' ' '\n' | sed -n 's/^txn-history://p'
+}
+
+dnl All transactions are younger than the default limit, so all are kept.
+AT_CHECK([test $(n_txns) -ge 110])
+
+dnl Set a short limit, so all the entries expire.  The last one is always kept.
+sleep 2
+AT_DATA([config.json], [
+{"remotes": {"punix:db.sock": {}},
+ "databases": {"db": {"service-model": "clustered",
+                      "transaction-history-time-limit": 1}}}
+])
+AT_CHECK([ovs-appctl -t ovsdb-server ovsdb-server/reload])
+AT_CHECK([test $(n_txns) -eq 1])
+
+OVSDB_SERVER_SHUTDOWN
+AT_CLEANUP
 
 AT_BANNER([OVSDB -- ovsdb-server transactions (SSL/TLS IPv4 sockets)])
 
@@ -3051,6 +3091,34 @@ TEST_CONFIG_FILE([relay with unrelated options], [
 WARN|syntax "{"dscp":42,"inactivity-probe":10000,"max-backoff":8000,"role":"My-RBAC-role"}":dnl
  syntax error: Parsing JSON-RPC options failed: Member 'role' is present but not allowed here.
 ])
+
+TEST_CONFIG_FILE([negative transaction-history-time-limit], [
+{
+    "remotes": { "punix:db.sock": {} },
+    "databases": {
+        "db": { "service-model": "clustered",
+                "transaction-history-time-limit": -1 }
+    }
+}
+], [1], [dnl
+WARN|syntax "{"service-model":"clustered","transaction-history-time-limit":-1}": dnl
+syntax error: Parsing database db failed: dnl
+transaction-history-time-limit must not be negative
+WARN|config: failed to parse 'databases'])
+
+TEST_CONFIG_FILE([too large transaction-history-time-limit], [
+{
+    "remotes": { "punix:db.sock": {} },
+    "databases": {
+        "db": { "service-model": "clustered",
+                "transaction-history-time-limit": 2147483648 }
+    }
+}
+], [1], [dnl
+WARN|syntax "{"service-model":"clustered","transaction-history-time-limit":2147483648}": dnl
+syntax error: Parsing database db failed: dnl
+transaction-history-time-limit must not be greater than 2147483647
+WARN|config: failed to parse 'databases'])
 
 TEST_CONFIG_FILE([unknown config], [
 {
