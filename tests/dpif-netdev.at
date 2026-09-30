@@ -3333,6 +3333,67 @@ AT_CHECK_UNQUOTED([ovs-pcap p2.pcap], [0], [dnl
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([dpif-netdev - tso + l2 padding])
+AT_KEYWORDS([userspace offload])
+OVS_VSWITCHD_START(
+  [set Open_vSwitch . other_config:userspace-tso-enable=true -- \
+   add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-port br1 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=output:p2])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap -- \
+                    set Interface p1 options:ol_tso_segsz=500])
+
+dnl IPv4/TCP and IPv6/TCP packets with 1000 bytes of payload, to be
+dnl followed by L2 padding.
+zero500=$(printf '%0*d' 1000 0)
+pkt4="0a8f394fe0738abf7e2f0584080045010410000000004006000"
+pkt4="${pkt4}0c0a87b02c0a87b01d47814510000000000000000501000000000"
+pkt4="${pkt4}0000${zero500}${zero500}"
+pkt6="0a8f394fe0738abf7e2f058486dd6000000003fc06002001cafe00000000000000"
+pkt6="${pkt6}00000000882001cafe000000000000000000000092d47814510000000000000000"
+pkt6="${pkt6}5010000000000000${zero500}${zero500}"
+
+dnl Padding shorter and longer than the first segment's TCP header and
+dnl payload.
+pad_short=$(printf '%0*d' 20 0)
+pad_long=$(printf '%0*d' 1200 0)
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "${pkt4}${pad_short}"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "${pkt4}${pad_long}"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "${pkt6}${pad_short}"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "${pkt6}${pad_long}"])
+
+dnl Padding must be dropped: 2x 500 byte payloads per packet.
+AT_CHECK_UNQUOTED([ovs-pcap p2.pcap], [0], [dnl
+[0a8f394fe0738abf7e2f058408004501021c0000000040060187c0a87b02c0a87b01]dnl
+[d47814510000000000000000501000004dc20000${zero500}]
+[0a8f394fe0738abf7e2f058408004501021c0001000040060186c0a87b02c0a87b01]dnl
+[d4781451000001f400000000501000004bce0000${zero500}]
+[0a8f394fe0738abf7e2f058408004501021c0000000040060187c0a87b02c0a87b01]dnl
+[d47814510000000000000000501000004dc20000${zero500}]
+[0a8f394fe0738abf7e2f058408004501021c0001000040060186c0a87b02c0a87b01]dnl
+[d4781451000001f400000000501000004bce0000${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000000000000000050100000edfd0000]dnl
+[${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000001f40000000050100000ec090000]dnl
+[${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000000000000000050100000edfd0000]dnl
+[${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000001f40000000050100000ec090000]dnl
+[${zero500}]
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([dpif-netdev - tunnel tso fallback])
 AT_KEYWORDS([userspace offload])
 OVS_VSWITCHD_START([set Open_vSwitch . other_config:userspace-tso-enable=true \

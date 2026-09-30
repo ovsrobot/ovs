@@ -179,6 +179,15 @@ dp_packet_gso_update_segment(struct dp_packet *seg, unsigned int seg_no,
     }
 }
 
+/* Trims the first segment 'p' to 'size' bytes.  The L2 padding, if any,
+ * follows the TCP payload and is cut off along with it. */
+static void
+dp_packet_gso_trim_first_seg(struct dp_packet *p, size_t size)
+{
+    dp_packet_set_size(p, size);
+    dp_packet_set_l2_pad_size(p, 0);
+}
+
 static void
 dp_packet_gso__(struct dp_packet *p, struct dp_packet_batch *batch,
                 bool partial_seg)
@@ -241,7 +250,8 @@ last_seg:
 first_seg:
     if (partial_seg) {
         if (dp_packet_gso_partial_nr_segs(p) != 1) {
-            dp_packet_set_size(p, hdr_len + (n_segs - 1) * tso_segsz);
+            dp_packet_gso_trim_first_seg(p,
+                                         hdr_len + (n_segs - 1) * tso_segsz);
             if (n_segs == 2) {
                 /* No need to ask HW segmentation, we already did the job. */
                 dp_packet_set_tso_segsz(p, 0);
@@ -249,7 +259,7 @@ first_seg:
         }
     } else {
         /* Trim the first segment and reset TSO. */
-        dp_packet_set_size(p, hdr_len + tso_segsz);
+        dp_packet_gso_trim_first_seg(p, hdr_len + tso_segsz);
         dp_packet_set_tso_segsz(p, 0);
     }
     dp_packet_gso_update_segment(p, 0, n_segs, tso_segsz, udp_tnl, gre_tnl);
