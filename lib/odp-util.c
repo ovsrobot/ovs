@@ -2801,6 +2801,9 @@ parse_odp_action__(struct parse_odp_context *context, const char *s,
             if (retval < 0) {
                 return retval;
             }
+            if (retval > INT_MAX - 1) {
+                return -EINVAL;
+            }
             return retval + 1;
         }
     }
