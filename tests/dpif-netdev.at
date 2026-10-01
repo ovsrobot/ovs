@@ -3333,6 +3333,81 @@ AT_CHECK_UNQUOTED([ovs-pcap p2.pcap], [0], [dnl
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([dpif-netdev - tso + l2 padding])
+AT_KEYWORDS([userspace offload])
+OVS_VSWITCHD_START(
+  [set Open_vSwitch . other_config:userspace-tso-enable=true -- \
+   add-br br1 -- set bridge br1 datapath-type=dummy -- \
+   add-port br1 p1 -- \
+       set Interface p1 type=dummy -- \
+   add-port br1 p2 -- \
+       set Interface p2 type=dummy])
+
+AT_CHECK([ovs-ofctl add-flow br1 in_port=p1,actions=output:p2])
+
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap -- \
+                    set Interface p1 options:ol_tso_segsz=500])
+
+dnl IPv4/TCP and IPv6/TCP packets with 1000 bytes of payload.
+AT_DATA([tcp4_frame], m4_join([],
+dnl p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73')
+[0a8f394fe0738abf7e2f05840800],
+dnl p /= IP(src='192.168.123.2', dst='192.168.123.1', tos=1, id=0)
+[45010410000000004006ff92c0a87b02c0a87b01],
+dnl p /= TCP(sport=54392, dport=5201, flags='A', window=0)
+[d47814510000000000000000501000004bce0000],
+dnl p /= Raw(bytes(1000))
+m4_format([%02000d], [0])
+))
+
+AT_DATA([tcp6_frame], m4_join([],
+dnl p = Ether(src='8a:bf:7e:2f:05:84', dst='0a:8f:39:4f:e0:73')
+[0a8f394fe0738abf7e2f058486dd],
+dnl p /= IPv6(src='2001:cafe::88', dst='2001:cafe::92', hlim=0)
+[6000000003fc06002001cafe0000000000000000000000882001cafe000000000000000000000092],
+dnl p /= TCP(sport=54392, dport=5201, flags='A', window=0)
+[d4781451000000000000000050100000ec090000],
+dnl p /= Raw(bytes(1000))
+m4_format([%02000d], [0])
+))
+
+dnl Append L2 padding shorter (10 bytes) and longer (600 bytes) than the
+dnl TCP header and payload of the first segment.
+pad_short=$(printf '%0*d' 20 0)
+pad_long=$(printf '%0*d' 1200 0)
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "$(cat tcp4_frame)${pad_short}"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "$(cat tcp4_frame)${pad_long}"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "$(cat tcp6_frame)${pad_short}"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 "$(cat tcp6_frame)${pad_long}"])
+
+dnl Padding must be dropped: 2x 500 byte payloads per packet.
+zero500=$(printf '%0*d' 1000 0)
+AT_CHECK_UNQUOTED([ovs-pcap p2.pcap], [0], [dnl
+[0a8f394fe0738abf7e2f058408004501021c0000000040060187c0a87b02c0a87b01]dnl
+[d47814510000000000000000501000004dc20000${zero500}]
+[0a8f394fe0738abf7e2f058408004501021c0001000040060186c0a87b02c0a87b01]dnl
+[d4781451000001f400000000501000004bce0000${zero500}]
+[0a8f394fe0738abf7e2f058408004501021c0000000040060187c0a87b02c0a87b01]dnl
+[d47814510000000000000000501000004dc20000${zero500}]
+[0a8f394fe0738abf7e2f058408004501021c0001000040060186c0a87b02c0a87b01]dnl
+[d4781451000001f400000000501000004bce0000${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000000000000000050100000edfd0000]dnl
+[${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000001f40000000050100000ec090000]dnl
+[${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000000000000000050100000edfd0000]dnl
+[${zero500}]
+[0a8f394fe0738abf7e2f058486dd60000000020806002001cafe0000000000000000000000]dnl
+[882001cafe000000000000000000000092d4781451000001f40000000050100000ec090000]dnl
+[${zero500}]
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([dpif-netdev - tunnel tso fallback])
 AT_KEYWORDS([userspace offload])
 OVS_VSWITCHD_START([set Open_vSwitch . other_config:userspace-tso-enable=true \

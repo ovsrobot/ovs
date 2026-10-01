@@ -183,7 +183,9 @@ static void
 dp_packet_gso__(struct dp_packet *p, struct dp_packet_batch *batch,
                 bool partial_seg)
 {
+    bool sw_last_seg = false;
     struct dp_packet *seg;
+    uint16_t l2_pad_size;
     unsigned int n_segs;
     uint16_t tso_segsz;
     size_t data_len;
@@ -216,7 +218,10 @@ dp_packet_gso__(struct dp_packet *p, struct dp_packet_batch *batch,
     }
 
     if (partial_seg) {
-        if (dp_packet_gso_partial_nr_segs(p) != 1) {
+        /* Evaluated only once, as the result depends on the L2 padding
+         * which is dropped below. */
+        sw_last_seg = dp_packet_gso_partial_nr_segs(p) != 1;
+        if (sw_last_seg) {
             goto last_seg;
         }
         goto first_seg;
@@ -239,13 +244,21 @@ last_seg:
     dp_packet_batch_add(batch, seg);
 
 first_seg:
+    /* The L2 padding, if any, follows the TCP payload.  Drop it from the
+     * first segment: either it is cut off when trimming the segment below,
+     * or it must not be passed to HW segmentation. */
+    l2_pad_size = dp_packet_l2_pad_size(p);
+    dp_packet_set_l2_pad_size(p, 0);
+
     if (partial_seg) {
-        if (dp_packet_gso_partial_nr_segs(p) != 1) {
+        if (sw_last_seg) {
             dp_packet_set_size(p, hdr_len + (n_segs - 1) * tso_segsz);
             if (n_segs == 2) {
                 /* No need to ask HW segmentation, we already did the job. */
                 dp_packet_set_tso_segsz(p, 0);
             }
+        } else {
+            dp_packet_set_size(p, dp_packet_size(p) - l2_pad_size);
         }
     } else {
         /* Trim the first segment and reset TSO. */
