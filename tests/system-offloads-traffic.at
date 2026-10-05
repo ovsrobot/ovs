@@ -449,7 +449,7 @@ table=0,in_port=2 actions=output:1
 table=0,in_port=1 actions=load:0x1->NXM_NX_REG1[[]],resubmit(,1),load:0x2->NXM_NX_REG1[[]],resubmit(,1)
 table=1,in_port=1,reg1=0x1 actions=check_pkt_larger(200)->NXM_NX_REG0[[0]],resubmit(,4)
 table=4,in_port=1,reg0=0x1 actions=output:2
-table=4,in_port=1,reg0=0x0 actions=output:2
+table=4,in_port=1,reg0=0x0 actions=output:2,3
 ])
 AT_CHECK([ovs-ofctl --protocols=OpenFlow10 add-flows br0 flows.txt])
 
@@ -463,7 +463,7 @@ NS_CHECK_EXEC([at_ns1], [ping -q -c 10 -i 0.1 -W 2 -s 1024 10.1.1.2 | FORMAT_PIN
 ], [], [ovs-appctl dpctl/dump-flows; ovs-ofctl dump-flows br0])
 
 AT_CHECK([ovs-appctl dpctl/dump-flows | grep "eth_type(0x0800)" | DUMP_CLEAN_SORTED | sed 's/bytes:11348/bytes:11614/'], [0], [dnl
-in_port(2),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0.001s, actions:check_pkt_len(size=200,gt(3),le(3))
+in_port(2),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0.001s, actions:check_pkt_len(size=200,gt(3),le(3,4))
 in_port(3),eth(),eth_type(0x0800),ipv4(frag=no), packets:19, bytes:11614, used:0.001s, actions:output
 ])
 
@@ -621,7 +621,7 @@ table=0,in_port=2 actions=output:1
 table=0,in_port=1 actions=load:0x1->NXM_NX_REG1[[]],resubmit(,1),load:0x2->NXM_NX_REG1[[]],resubmit(,1)
 table=1,in_port=1,reg1=0x1 actions=check_pkt_larger(200)->NXM_NX_REG0[[0]],resubmit(,4)
 table=1,in_port=1,reg1=0x2 actions=output:2
-table=4,in_port=1,reg0=0x1 actions=output:br0
+table=4,in_port=1,reg0=0x1 actions=output:br0,3
 table=4,in_port=1,reg0=0x0 actions=output:br0
 ])
 AT_CHECK([ovs-ofctl --protocols=OpenFlow10 add-flows br0 flows.txt])
@@ -629,7 +629,7 @@ sleep 1
 NS_CHECK_EXEC([at_ns1], [ping -q -c 10 -i 0.1 -W 2 -s 64 10.1.1.2 | FORMAT_PING], [0], [dnl
 10 packets transmitted, 10 received, 0% packet loss, time 0ms
 ], [], [ovs-appctl dpctl/dump-flows; ovs-ofctl dump-flows br0])
-OVS_CHECK_ACTIONS([check_pkt_len(size=200,gt(1),le(1)),3])
+OVS_CHECK_ACTIONS([check_pkt_len(size=200,gt(1,4),le(1)),3])
 
 
 AT_CHECK([ovs-appctl revalidator/wait], [0])
@@ -674,13 +674,14 @@ table=0,in_port=2 actions=output:1
 table=0,in_port=1 actions=load:0x1->NXM_NX_REG1[[]],resubmit(,1),load:0x2->NXM_NX_REG1[[]],resubmit(,1)
 table=1,in_port=1,reg1=0x1 actions=check_pkt_larger(200)->NXM_NX_REG0[[0]],resubmit(,4)
 table=1,in_port=1,reg1=0x2 actions=output:2
+table=4,in_port=1,reg0=0x1 actions=output:br0
 ])
 AT_CHECK([ovs-ofctl --protocols=OpenFlow10 add-flows br0 flows.txt])
 sleep 1
 NS_CHECK_EXEC([at_ns1], [ping -q -c 10 -i 0.1 -W 2 -s 64 10.1.1.2 | FORMAT_PING], [0], [dnl
 10 packets transmitted, 10 received, 0% packet loss, time 0ms
 ], [], [ovs-appctl dpctl/dump-flows; ovs-ofctl dump-flows br0])
-OVS_CHECK_ACTIONS([check_pkt_len(size=200,gt(drop),le(drop)),3])
+OVS_CHECK_ACTIONS([check_pkt_len(size=200,gt(1),le(drop)),3])
 
 
 AT_CHECK([ovs-appctl revalidator/wait], [0])
