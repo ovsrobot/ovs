@@ -3467,7 +3467,6 @@ compose_sample_action(struct xlate_ctx *ctx,
      * insert a meter action before the user space action.  */
     struct ofproto *ofproto = &ctx->xin->ofproto->up;
     uint32_t meter_id = ofproto->slowpath_meter_id;
-    size_t observe_offset = UINT32_MAX;
     size_t cookie_offset = 0;
 
     /* The meter action is only used to throttle userspace actions.
@@ -3486,7 +3485,6 @@ compose_sample_action(struct xlate_ctx *ctx,
     }
 
     if (args->psample) {
-        observe_offset = ctx->odp_actions->size;
         odp_put_psample_action(ctx->odp_actions,
                                args->psample->group_id,
                                (void *) &args->psample->cookie,
@@ -3498,7 +3496,6 @@ compose_sample_action(struct xlate_ctx *ctx,
             nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_METER, meter_id);
         }
 
-        observe_offset = ctx->odp_actions->size;
         odp_port_t odp_port = ofp_port_to_odp_port(
             ctx->xbridge, ctx->xin->flow.in_port.ofp_port);
         uint32_t pid = dpif_port_get_pid(ctx->xbridge->dpif, odp_port);
@@ -3513,9 +3510,6 @@ compose_sample_action(struct xlate_ctx *ctx,
     if (is_sample) {
         nl_msg_end_nested(ctx->odp_actions, actions_offset);
         nl_msg_end_nested(ctx->odp_actions, sample_offset);
-        ctx->xout->last_observe_offset = sample_offset;
-    } else {
-        ctx->xout->last_observe_offset = observe_offset;
     }
 
     return cookie_offset;
@@ -6253,7 +6247,6 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
     struct xretained_state *retained_state;
     bool old_was_mpls, old_conntracked;
     size_t body_offset, body_size;
-    uint32_t old_observe_offset;
 
     /* Commit pending datapath actions before translating the clone body
      * so that body_offset accurately marks the start of the clone body's
@@ -6268,7 +6261,6 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
 
     old_was_mpls = ctx->was_mpls;
     old_conntracked = ctx->conntracked;
-    old_observe_offset = ctx->xout->last_observe_offset;
 
     body_offset = ctx->odp_actions->size;
 
@@ -6287,12 +6279,10 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
     if (!is_last_action && body_size > 0
         && !odp_actions_are_reversible(
                 (char *) ctx->odp_actions->data + body_offset, body_size)) {
-        size_t observe_shift = 0;
 
         if (ctx->xbridge->support.clone) {
             nl_msg_wrap_nested(ctx->odp_actions, OVS_ACTION_ATTR_CLONE,
                                body_offset, body_size);
-            observe_shift = NLA_HDRLEN;
         } else if (ctx->xbridge->support.sample_nesting > 3) {
             /* Use sample action as datapath clone fallback. */
             nl_msg_wrap_nested(ctx->odp_actions, OVS_SAMPLE_ATTR_ACTIONS,
@@ -6302,18 +6292,11 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
             nl_msg_wrap_nested(ctx->odp_actions, OVS_ACTION_ATTR_SAMPLE,
                                body_offset,
                                ctx->odp_actions->size - body_offset);
-            observe_shift = 2 * NLA_HDRLEN;
         } else {
             /* Datapath does not support clone.  Discard the clone body
              * since we cannot isolate its non-reversible effects. */
             ctx->odp_actions->size = body_offset;
-            ctx->xout->last_observe_offset = old_observe_offset;
             xlate_report_error(ctx, "Failed to compose clone action");
-        }
-
-        if (ctx->xout->last_observe_offset != UINT32_MAX
-            && ctx->xout->last_observe_offset >= body_offset) {
-            ctx->xout->last_observe_offset += observe_shift;
         }
 
         /* Datapath's clone isolates all packet modifications, so restore
@@ -8235,6 +8218,54 @@ xlate_wc_finish(struct xlate_ctx *ctx)
     }
 }
 
+static bool
+act_is_observe(struct nlattr *action)
+{
+    static const struct nl_policy ovs_userspace_policy[] = {
+        [OVS_USERSPACE_ATTR_USERDATA] = { .type = NL_A_UNSPEC,
+                                          .optional = true },
+    };
+    struct nlattr *attr[ARRAY_SIZE(ovs_userspace_policy)];
+    const struct user_action_cookie *cookie;
+    const struct nlattr *userdata_attr;
+    size_t userdata_len;
+
+    switch (nl_attr_type(action)) {
+        case OVS_ACTION_ATTR_USERSPACE: {
+            if (!nl_parse_nested(action, ovs_userspace_policy, attr,
+                                 ARRAY_SIZE(attr))) {
+                break;
+            }
+
+            userdata_attr = attr[OVS_USERSPACE_ATTR_USERDATA];
+            if (!userdata_attr) {
+                break;
+            }
+
+            userdata_len = nl_attr_get_size(userdata_attr);
+            if (userdata_len != sizeof *cookie) {
+                break;
+            }
+
+            cookie = nl_attr_get(userdata_attr);
+            switch (cookie->type) {
+                case USER_ACTION_COOKIE_SFLOW:
+                case USER_ACTION_COOKIE_FLOW_SAMPLE:
+                case USER_ACTION_COOKIE_IPFIX:
+                    return true;
+            }
+
+            return false;
+        }
+        case OVS_ACTION_ATTR_METER:
+        case OVS_ACTION_ATTR_SAMPLE:
+        case OVS_ACTION_ATTR_PSAMPLE:
+            return true;
+    }
+
+    return false;
+}
+
 /* This will tweak the odp actions generated. For now, it will:
  *  - Remove trailing clone actions that are unnecessary.
  *  - Add an explicit drop action if the action list is empty.
@@ -8243,7 +8274,6 @@ xlate_wc_finish(struct xlate_ctx *ctx)
 static void
 xlate_tweak_odp_actions(struct xlate_ctx *ctx)
 {
-    uint32_t last_observe_offset = ctx->xout->last_observe_offset;
     struct ofpbuf *actions = ctx->xin->odp_actions;
     struct nlattr *last_action = NULL;
     struct nlattr *a;
@@ -8268,16 +8298,6 @@ xlate_tweak_odp_actions(struct xlate_ctx *ctx)
     if (nl_attr_type(last_action) == OVS_ACTION_ATTR_CLONE) {
         void *dest;
 
-        if (last_observe_offset != UINT32_MAX &&
-            (unsigned char *) actions->data + last_observe_offset >
-                 (unsigned char *) last_action) {
-            /* The last sample is inside the trailing clone.
-             * Adjust its offset. */
-            last_observe_offset -= (unsigned char *) nl_attr_get(last_action) -
-                                   (unsigned char *) last_action;
-            ctx->xout->last_observe_offset = last_observe_offset;
-        }
-
         nl_msg_reset_size(actions,
                           (unsigned char *) last_action -
                           (unsigned char *) actions->data);
@@ -8288,11 +8308,10 @@ xlate_tweak_odp_actions(struct xlate_ctx *ctx)
 
     /* If the last action of the list is an observability action, add an
      * explicit drop action so that drop statistics remain reliable. */
-    if (ctx->xbridge->ofproto->explicit_sampled_drops &&
-        last_observe_offset != UINT32_MAX &&
-        (unsigned char *) last_action == (unsigned char *) actions->data +
-                                         last_observe_offset) {
-        put_drop_action(ctx->xbridge->ofproto, actions, XLATE_OK);
+    if (ctx->xbridge->ofproto->explicit_sampled_drops) {
+        if (act_is_observe(last_action)) {
+            put_drop_action(ctx->xbridge->ofproto, actions, XLATE_OK);
+        }
     }
 }
 
@@ -8310,7 +8329,6 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     *xout = (struct xlate_out) {
         .slow = 0,
         .recircs = RECIRC_REFS_EMPTY_INITIALIZER,
-        .last_observe_offset = UINT32_MAX,
     };
 
     struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);
