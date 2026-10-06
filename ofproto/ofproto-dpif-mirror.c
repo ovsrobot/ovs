@@ -336,9 +336,9 @@ mirror_set(struct mbridge *mbridge, const struct ofproto *ofproto,
             char *err;
 
             ofproto_append_ports_to_map(&map, ofproto->ports);
-            err = parse_ofp_exact_flow(&flow, &wc,
-                                       ofproto_get_tun_tab(ofproto),
-                                       ms->filter, &map);
+            err = parse_ofp_masked_flow(&flow, &wc,
+                                        ofproto_get_tun_tab(ofproto),
+                                        ms->filter, &map);
             ofputil_port_map_destroy(&map);
             if (err) {
                 VLOG_WARN("filter is invalid: %s", err);

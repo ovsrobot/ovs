@@ -1916,19 +1916,24 @@ parse_ofp_flow_mod_file(const char *file_name,
     return NULL;
 }
 
-/* Parses a specification of a flow from 's' into 'flow'.  's' must take the
- * form FIELD=VALUE[,FIELD=VALUE]... where each FIELD is the name of a
- * mf_field.  Fields must be specified in a natural order for satisfying
- * prerequisites. If 'wc' is specified, masks the field in 'wc' for each of the
- * field specified in flow. If the map, 'names_portno' is specfied, converts
- * the in_port name into port no while setting the 'flow'.
+/* Parses a specification of a flow from 's' into 'flow' (and 'wc', if
+ * nonnull).  's' must take the form FIELD=VALUE[,FIELD=VALUE]... where each
+ * FIELD is the name of an mf_field.  Fields must be specified in a natural
+ * order for satisfying prerequisites.  If 'wc' is specified, masks the field
+ * in 'wc' for each field specified in 'flow'.  If the map 'port_map' is
+ * specified, converts the in_port name into port number while setting the
+ * 'flow'.
+ *
+ * If 'masked' is true, each VALUE may include a mask (e.g.
+ * "nw_src=10.0.0.0/24"), so a field can be partially wildcarded; otherwise
+ * every field must be given as an exact value.
  *
  * Returns NULL on success, otherwise a malloc()'d string that explains the
  * problem. */
-char *
-parse_ofp_exact_flow(struct flow *flow, struct flow_wildcards *wc,
-                     const struct tun_table *tun_table, const char *s,
-                     const struct ofputil_port_map *port_map)
+static char *
+parse_ofp_flow__(struct flow *flow, struct flow_wildcards *wc,
+                 const struct tun_table *tun_table, const char *s,
+                 const struct ofputil_port_map *port_map, bool masked)
 {
     char *pos, *key, *value_s;
     char *error = NULL;
@@ -1966,7 +1971,7 @@ parse_ofp_exact_flow(struct flow *flow, struct flow_wildcards *wc,
             }
         } else {
             const struct mf_field *mf;
-            union mf_value value;
+            union mf_value value, mask;
             char *field_error;
 
             mf = mf_from_name(key);
@@ -1986,7 +1991,11 @@ parse_ofp_exact_flow(struct flow *flow, struct flow_wildcards *wc,
                 goto exit;
             }
 
-            field_error = mf_parse_value(mf, value_s, port_map, &value);
+            if (masked) {
+                field_error = mf_parse(mf, value_s, port_map, &value, &mask);
+            } else {
+                field_error = mf_parse_value(mf, value_s, port_map, &value);
+            }
             if (field_error) {
                 error = xasprintf("%s: bad value for %s (%s)",
                                   s, key, field_error);
@@ -1994,9 +2003,16 @@ parse_ofp_exact_flow(struct flow *flow, struct flow_wildcards *wc,
                 goto exit;
             }
 
-            mf_set_flow_value(mf, &value, flow);
-            if (wc) {
-                mf_mask_field(mf, wc);
+            if (masked) {
+                mf_set_flow_value_masked(mf, &value, &mask, flow);
+                if (wc) {
+                    mf_mask_field_masked(mf, &mask, wc);
+                }
+            } else {
+                mf_set_flow_value(mf, &value, flow);
+                if (wc) {
+                    mf_mask_field(mf, wc);
+                }
             }
         }
     }
@@ -2015,4 +2031,35 @@ exit:
         }
     }
     return error;
+}
+
+/* Parses a specification of a flow from 's' into 'flow'.  Each field must be
+ * given as an exact value; masks are not accepted.  See parse_ofp_flow__() for
+ * the full description of the syntax and the other arguments.
+ *
+ * Returns NULL on success, otherwise a malloc()'d string that explains the
+ * problem. */
+char *
+parse_ofp_exact_flow(struct flow *flow, struct flow_wildcards *wc,
+                     const struct tun_table *tun_table, const char *s,
+                     const struct ofputil_port_map *port_map)
+{
+    return parse_ofp_flow__(flow, wc, tun_table, s, port_map, false);
+}
+
+/* Parses a specification of a flow from 's' into 'flow' and 'wc'.  Unlike
+ * parse_ofp_exact_flow(), each value may include a mask (e.g.
+ * "nw_src=10.0.0.0/24"), so a field can be partially wildcarded.  'wc' must be
+ * nonnull, since it receives the mask for each field.  See parse_ofp_flow__()
+ * for the full description of the syntax and the other arguments.
+ *
+ * Returns NULL on success, otherwise a malloc()'d string that explains the
+ * problem. */
+char *
+parse_ofp_masked_flow(struct flow *flow, struct flow_wildcards *wc,
+                      const struct tun_table *tun_table, const char *s,
+                      const struct ofputil_port_map *port_map)
+{
+    ovs_assert(wc);
+    return parse_ofp_flow__(flow, wc, tun_table, s, port_map, true);
 }
