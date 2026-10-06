@@ -545,7 +545,7 @@ static void dp_netdev_pmd_unref(struct dp_netdev_pmd_thread *pmd);
 static void dp_netdev_pmd_flow_flush(struct dp_netdev_pmd_thread *pmd);
 static void pmd_load_cached_ports(struct dp_netdev_pmd_thread *pmd)
     OVS_REQUIRES(pmd->port_mutex);
-static inline void
+static inline void ALWAYS_INLINE
 dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
                            struct polled_queue *poll_list, int poll_cnt);
 static void
@@ -568,11 +568,12 @@ dpif_netdev_xps_revalidate_pmd(const struct dp_netdev_pmd_thread *pmd,
                                bool purge);
 static int dpif_netdev_xps_get_tx_qid(const struct dp_netdev_pmd_thread *pmd,
                                       struct tx_port *tx);
-static inline struct dpcls *dp_netdev_pmd_lookup_dpcls(
-    struct dp_netdev_pmd_thread *pmd, odp_port_t in_port);
+static inline struct dpcls * ALWAYS_INLINE
+dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
+                           odp_port_t in_port);
 
 static void dp_netdev_request_reconfigure(struct dp_netdev *dp);
-static inline bool
+static inline bool ALWAYS_INLINE
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd);
 
 static void dp_netdev_simple_match_insert(struct dp_netdev_pmd_thread *pmd,
@@ -600,7 +601,7 @@ static bool dp_netdev_flow_is_simple_match(const struct match *);
  *
  * 'pmd->ctx.now' should be used without update in all other cases if possible.
  */
-static inline void
+static inline void ALWAYS_INLINE
 pmd_thread_ctx_time_update(struct dp_netdev_pmd_thread *pmd)
 {
     pmd->ctx.now = time_usec();
@@ -1868,7 +1869,7 @@ void dp_netdev_flow_unref(struct dp_netdev_flow *flow)
     }
 }
 
-static inline struct dpcls *
+static inline struct dpcls * ALWAYS_INLINE
 dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
                            odp_port_t in_port)
 {
@@ -1883,7 +1884,7 @@ dp_netdev_pmd_lookup_dpcls(struct dp_netdev_pmd_thread *pmd,
     return NULL;
 }
 
-static inline struct dpcls *
+static inline struct dpcls * ALWAYS_INLINE
 dp_netdev_pmd_find_dpcls(struct dp_netdev_pmd_thread *pmd,
                          odp_port_t in_port)
     OVS_REQUIRES(pmd->flow_mutex)
@@ -2261,7 +2262,7 @@ static bool dp_netdev_flow_ref(struct dp_netdev_flow *flow)
  *   single memcmp().
  * - These functions can be inlined by the compiler. */
 
-static inline bool
+static inline bool ALWAYS_INLINE
 netdev_flow_key_equal(const struct netdev_flow_key *a,
                       const struct netdev_flow_key *b)
 {
@@ -2269,7 +2270,7 @@ netdev_flow_key_equal(const struct netdev_flow_key *a,
     return a->hash == b->hash && !memcmp(&a->mf, &b->mf, a->len);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 netdev_flow_key_clone(struct netdev_flow_key *dst,
                       const struct netdev_flow_key *src)
 {
@@ -2278,7 +2279,7 @@ netdev_flow_key_clone(struct netdev_flow_key *dst,
 }
 
 /* Initialize a netdev_flow_key 'mask' from 'match'. */
-static inline void
+static inline void ALWAYS_INLINE
 netdev_flow_mask_init(struct netdev_flow_key *mask,
                       const struct match *match)
 {
@@ -2314,7 +2315,7 @@ netdev_flow_mask_init(struct netdev_flow_key *mask,
 }
 
 /* Initializes 'dst' as a copy of 'flow' masked with 'mask'. */
-static inline void
+static inline void ALWAYS_INLINE
 netdev_flow_key_init_masked(struct netdev_flow_key *dst,
                             const struct flow *flow,
                             const struct netdev_flow_key *mask)
@@ -2336,7 +2337,7 @@ netdev_flow_key_init_masked(struct netdev_flow_key *dst,
 }
 
 /* Initializes 'key' as a copy of 'flow'. */
-static inline void
+static inline void ALWAYS_INLINE
 netdev_flow_key_init(struct netdev_flow_key *key,
                      const struct flow *flow)
 {
@@ -2356,7 +2357,7 @@ netdev_flow_key_init(struct netdev_flow_key *key,
     key->len = netdev_flow_key_size(n);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 emc_change_entry(struct emc_entry *ce, struct dp_netdev_flow *flow,
                  const struct netdev_flow_key *key)
 {
@@ -2376,7 +2377,7 @@ emc_change_entry(struct emc_entry *ce, struct dp_netdev_flow *flow,
     }
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
            struct dp_netdev_flow *flow)
 {
@@ -2405,7 +2406,7 @@ emc_insert(struct emc_cache *cache, const struct netdev_flow_key *key,
     emc_change_entry(to_be_replaced, flow, key);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 emc_probabilistic_insert(struct dp_netdev_pmd_thread *pmd,
                          const struct netdev_flow_key *key,
                          struct dp_netdev_flow *flow)
@@ -2421,7 +2422,7 @@ emc_probabilistic_insert(struct dp_netdev_pmd_thread *pmd,
     }
 }
 
-static inline const struct cmap_node *
+static inline const struct cmap_node * ALWAYS_INLINE
 smc_entry_get(struct dp_netdev_pmd_thread *pmd, const uint32_t hash)
 {
     struct smc_cache *cache = &(pmd->flow_cache).smc_cache;
@@ -2447,7 +2448,7 @@ smc_entry_get(struct dp_netdev_pmd_thread *pmd, const uint32_t hash)
  * updated. If there is no existing entry, but an empty entry is available,
  * the empty entry will be taken. If no empty entry or existing same signature,
  * a random entry from the hashed bucket will be picked. */
-static inline void
+static inline void ALWAYS_INLINE
 smc_insert(struct dp_netdev_pmd_thread *pmd,
            const struct netdev_flow_key *key,
            uint32_t hash)
@@ -4327,7 +4328,7 @@ dp_netdev_rxq_get_intrvl_cycles(struct dp_netdev_rxq *rx, unsigned idx)
 }
 
 #if ATOMIC_ALWAYS_LOCK_FREE_8B
-static inline bool
+static inline bool ALWAYS_INLINE
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd)
 {
     bool pmd_perf_enabled;
@@ -4338,7 +4339,7 @@ pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd)
 /* If stores and reads of 64-bit integers are not atomic, the full PMD
  * performance metrics are not available as locked access to 64 bit
  * integers would be prohibitively expensive. */
-static inline bool
+static inline bool ALWAYS_INLINE
 pmd_perf_metrics_enabled(const struct dp_netdev_pmd_thread *pmd OVS_UNUSED)
 {
     return false;
@@ -7056,7 +7057,7 @@ dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
                          actions, wc, put_actions, dp->upcall_aux);
 }
 
-static inline uint32_t
+static inline uint32_t ALWAYS_INLINE
 dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
                                 const struct miniflow *mf)
 {
@@ -7086,7 +7087,7 @@ struct packet_batch_per_flow {
     struct dp_packet_batch array;
 };
 
-static inline void
+static inline void ALWAYS_INLINE
 packet_batch_per_flow_update(struct packet_batch_per_flow *batch,
                              struct dp_packet *packet,
                              uint16_t tcp_flags)
@@ -7096,7 +7097,7 @@ packet_batch_per_flow_update(struct packet_batch_per_flow *batch,
     dp_packet_batch_add(&batch->array, packet);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 packet_batch_per_flow_init(struct packet_batch_per_flow *batch,
                            struct dp_netdev_flow *flow)
 {
@@ -7108,7 +7109,7 @@ packet_batch_per_flow_init(struct packet_batch_per_flow *batch,
     batch->tcp_flags = 0;
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 packet_batch_per_flow_execute(struct packet_batch_per_flow *batch,
                               struct dp_netdev_pmd_thread *pmd)
 {
@@ -7125,7 +7126,7 @@ packet_batch_per_flow_execute(struct packet_batch_per_flow *batch,
                               actions->actions, actions->size);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 dp_netdev_queue_batches(struct dp_packet *pkt,
                         struct dp_netdev_flow *flow, uint16_t tcp_flags,
                         struct packet_batch_per_flow *batches,
@@ -7141,7 +7142,7 @@ dp_netdev_queue_batches(struct dp_packet *pkt,
     packet_batch_per_flow_update(batch, pkt, tcp_flags);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 packet_enqueue_to_flow_map(struct dp_packet *packet,
                            struct dp_netdev_flow *flow,
                            uint16_t tcp_flags,
@@ -7158,7 +7159,7 @@ packet_enqueue_to_flow_map(struct dp_packet *packet,
  * By doing batching SMC lookup, we can use prefetch
  * to hide memory access latency.
  */
-static inline void
+static inline void ALWAYS_INLINE
 smc_lookup_batch(struct dp_netdev_pmd_thread *pmd,
             struct netdev_flow_key *keys,
             struct netdev_flow_key **missed_keys,
@@ -7253,7 +7254,7 @@ smc_lookup_single(struct dp_netdev_pmd_thread *pmd,
     return NULL;
 }
 
-static inline int
+static inline int ALWAYS_INLINE
 dp_netdev_hw_flow(const struct dp_netdev_pmd_thread *pmd,
                   struct dp_packet *packet,
                   struct dp_netdev_flow **flow)
@@ -7288,7 +7289,7 @@ dp_netdev_hw_flow(const struct dp_netdev_pmd_thread *pmd,
 
 /* Enqueues already classified packet into per-flow batches or the flow map,
  * depending on the fact if batching enabled. */
-static inline void
+static inline void ALWAYS_INLINE
 dfc_processing_enqueue_classified_packet(struct dp_packet *packet,
                                          struct dp_netdev_flow *flow,
                                          uint16_t tcp_flags,
@@ -7328,7 +7329,7 @@ dfc_processing_enqueue_classified_packet(struct dp_packet *packet,
  * If 'md_is_valid' is true, the metadata is already valid and 'port_no'
  * will be ignored.
  */
-static inline size_t
+static inline size_t ALWAYS_INLINE
 dfc_processing(struct dp_netdev_pmd_thread *pmd,
                struct dp_packet_batch *packets_,
                struct netdev_flow_key *keys,
@@ -7469,7 +7470,7 @@ dfc_processing(struct dp_netdev_pmd_thread *pmd,
     return dp_packet_batch_size(packets_);
 }
 
-static inline int
+static inline int ALWAYS_INLINE
 handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
                      struct dp_packet *packet,
                      const struct netdev_flow_key *key,
@@ -7550,7 +7551,7 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
     return error;
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 fast_path_processing(struct dp_netdev_pmd_thread *pmd,
                      struct dp_packet_batch *packets_,
                      struct netdev_flow_key **keys,
@@ -9110,7 +9111,7 @@ dpcls_create_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
     return subtable;
 }
 
-static inline struct dpcls_subtable *
+static inline struct dpcls_subtable * ALWAYS_INLINE
 dpcls_find_subtable(struct dpcls *cls, const struct netdev_flow_key *mask)
 {
     struct dpcls_subtable *subtable;
@@ -9138,7 +9139,7 @@ dpcls_sort_subtable_vector(struct dpcls *cls)
     pvector_publish(pvec);
 }
 
-static inline void
+static inline void ALWAYS_INLINE
 dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd,
                            struct polled_queue *poll_list, int poll_cnt)
 {
@@ -9275,7 +9276,7 @@ dpcls_remove(struct dpcls *cls, struct dpcls_rule *rule)
 }
 
 /* Inner loop for mask generation of a unit, see dpcls_flow_key_gen_masks. */
-static inline void
+static inline void ALWAYS_INLINE
 dpcls_flow_key_gen_mask_unit(uint64_t iter, const uint64_t count,
                              uint64_t *mf_masks)
 {
