@@ -4408,6 +4408,11 @@ raft_handle_install_snapshot_request__(
 {
     raft_reset_election_timer(raft);
 
+    /* Reject last_index that would overflow new_log_start computation. */
+    if (rq->last_index == UINT64_MAX) {
+        return false;
+    }
+
     /*
      * Our behavior here depend on new_log_start in the snapshot compared to
      * log_start and log_end.  There are three cases:
