@@ -94,6 +94,8 @@ struct dp_packet *bond_compose_learning_packet(struct bond *,
                                                uint16_t vlan, void **port_aux);
 bool bond_get_changed_active_member(const char *name, struct eth_addr *mac,
                                     bool force);
+bool bond_should_send_mcast(struct bond *);
+void *bond_get_active_member(const struct bond *, struct eth_addr *mac);
 
 /* Packet processing. */
 enum bond_verdict {

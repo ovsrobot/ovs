@@ -336,7 +336,12 @@ mcast_snooping_flush_group__(struct mcast_snooping *ms,
                              struct mcast_group *grp)
     OVS_REQ_WRLOCK(ms->rwlock)
 {
+    struct mcast_group_source *src;
+
     ovs_assert(ovs_list_is_empty(&grp->bundle_lru));
+    LIST_FOR_EACH_POP (src, node, &grp->sources) {
+        free(src);
+    }
     hmap_remove(&ms->table, &grp->hmap_node);
     ovs_list_remove(&grp->group_node);
     free(grp);
@@ -411,6 +416,42 @@ mcast_snooping_prune_expired(struct mcast_snooping *ms,
     return expired;
 }
 
+static void
+mcast_group_add_source(struct mcast_snooping *ms,
+                       struct mcast_group *grp,
+                       const struct in6_addr *src_addr,
+                       struct eth_addr src_mac)
+    OVS_REQ_WRLOCK(ms->rwlock)
+{
+    struct mcast_group_source *src;
+
+    while (!ovs_list_is_empty(&grp->sources)) {
+        src = CONTAINER_OF(ovs_list_front(&grp->sources),
+                           struct mcast_group_source, node);
+
+        if (src->expires > time_now()) {
+            break;
+        }
+        ovs_list_remove(&src->node);
+        free(src);
+    }
+
+    LIST_FOR_EACH (src, node, &grp->sources) {
+        if (ipv6_addr_equals(&src->addr, src_addr)) {
+            ovs_list_remove(&src->node);
+            ovs_list_push_back(&grp->sources, &src->node);
+            src->expires = time_now() + ms->idle_time;
+            return;
+        }
+    }
+
+    src = xmalloc(sizeof *src);
+    src->addr = *src_addr;
+    src->mac = src_mac;
+    src->expires = time_now() + ms->idle_time;
+    ovs_list_push_back(&grp->sources, &src->node);
+}
+
 /* Add a multicast group to the mdb. If it exists, then
  * move to the last position in the LRU list.
  */
@@ -418,7 +459,9 @@ bool
 mcast_snooping_add_group(struct mcast_snooping *ms,
                          const struct in6_addr *addr,
                          uint16_t vlan, void *port,
-                         enum mcast_group_proto grp_proto)
+                         enum mcast_group_proto grp_proto,
+                         const struct in6_addr *src_addr,
+                         struct eth_addr src_mac)
     OVS_REQ_WRLOCK(ms->rwlock)
 {
     bool learned;
@@ -447,6 +490,7 @@ mcast_snooping_add_group(struct mcast_snooping *ms,
         grp->addr = *addr;
         grp->vlan = vlan;
         ovs_list_init(&grp->bundle_lru);
+        ovs_list_init(&grp->sources);
         learned = true;
         ms->need_revalidate = true;
         COVERAGE_INC(mcast_snooping_learned);
@@ -454,6 +498,7 @@ mcast_snooping_add_group(struct mcast_snooping *ms,
         ovs_list_remove(&grp->group_node);
     }
     mcast_group_insert_bundle(ms, grp, port, ms->idle_time);
+    mcast_group_add_source(ms, grp, src_addr, src_mac);
 
     /* update the protocol version. */
     grp->protocol_version = grp_proto;
@@ -466,17 +511,22 @@ mcast_snooping_add_group(struct mcast_snooping *ms,
 bool
 mcast_snooping_add_group4(struct mcast_snooping *ms, ovs_be32 ip4,
                          uint16_t vlan, void *port,
-                         enum mcast_group_proto grp_proto)
+                         enum mcast_group_proto grp_proto,
+                         ovs_be32 src_ip4, struct eth_addr src_mac)
     OVS_REQ_WRLOCK(ms->rwlock)
 {
     struct in6_addr addr = in6_addr_mapped_ipv4(ip4);
-    return mcast_snooping_add_group(ms, &addr, vlan, port, grp_proto);
+    struct in6_addr src_addr = in6_addr_mapped_ipv4(src_ip4);
+
+    return mcast_snooping_add_group(ms, &addr, vlan, port, grp_proto,
+                                    &src_addr, src_mac);
 }
 
 int
 mcast_snooping_add_report(struct mcast_snooping *ms,
                           const struct dp_packet *p,
-                          uint16_t vlan, void *port)
+                          uint16_t vlan, void *port,
+                          ovs_be32 src_ip4, struct eth_addr src_mac)
 {
     ovs_be32 ip4;
     size_t offset;
@@ -514,7 +564,8 @@ mcast_snooping_add_report(struct mcast_snooping *ms,
             ret = mcast_snooping_leave_group4(ms, ip4, vlan, port);
         } else {
             ret = mcast_snooping_add_group4(ms, ip4, vlan, port,
-                                            MCAST_GROUP_IGMPV3);
+                                            MCAST_GROUP_IGMPV3, src_ip4,
+                                            src_mac);
         }
         if (ret) {
             count++;
@@ -528,7 +579,9 @@ mcast_snooping_add_report(struct mcast_snooping *ms,
 int
 mcast_snooping_add_mld(struct mcast_snooping *ms,
                           const struct dp_packet *p,
-                          uint16_t vlan, void *port)
+                          uint16_t vlan, void *port,
+                          const struct in6_addr *src_addr,
+                          struct eth_addr src_mac)
 {
     const struct in6_addr *addr;
     size_t offset;
@@ -558,7 +611,7 @@ mcast_snooping_add_mld(struct mcast_snooping *ms,
     switch (mld->type) {
     case MLD_REPORT:
         ret = mcast_snooping_add_group(ms, addr, vlan, port,
-                                       MCAST_GROUP_MLDV1);
+                                       MCAST_GROUP_MLDV1, src_addr, src_mac);
         if (ret) {
             count++;
         }
@@ -591,7 +644,8 @@ mcast_snooping_add_mld(struct mcast_snooping *ms,
                     ret = mcast_snooping_leave_group(ms, addr, vlan, port);
                 } else {
                     ret = mcast_snooping_add_group(ms, addr, vlan, port,
-                                                   MCAST_GROUP_MLDV2);
+                                                   MCAST_GROUP_MLDV2,
+                                                   src_addr, src_mac);
                 }
                 if (ret) {
                     count++;

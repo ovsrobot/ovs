@@ -1866,6 +1866,176 @@ compose_ipv6(struct dp_packet *packet, uint8_t proto,
     return data;
 }
 
+static void
+multicast_to_ethernet(struct eth_addr *eth, ovs_be32 ip4)
+{
+    uint8_t *ip = (uint8_t *)&ip4;
+
+    eth->ea[0] = 0x01;
+    eth->ea[1] = 0x00;
+    eth->ea[2] = 0x5e;
+    eth->ea[3] = ip[1] & 0x7f;
+    eth->ea[4] = ip[2];
+    eth->ea[5] = ip[3];
+}
+
+void
+compose_igmpv2(struct dp_packet *packet, const struct in6_addr *gaddr,
+                const struct in6_addr *saddr, struct eth_addr smac)
+{
+    ovs_be32 group_ip = in6_addr_get_mapped_ipv4(gaddr);
+    ovs_be32 src_ip = in6_addr_get_mapped_ipv4(saddr);
+    struct igmp_header *igmp;
+    struct eth_addr eth_dst;
+    struct ip_header *ip;
+    size_t igmp_len;
+
+    multicast_to_ethernet(&eth_dst, group_ip);
+    igmp_len = IGMP_HEADER_LEN;
+
+    ip = eth_compose(packet, eth_dst, smac, ETH_TYPE_IP,
+                     IP_HEADER_LEN + igmp_len);
+    ip->ip_ihl_ver = IP_IHL_VER(5,4);
+    ip->ip_tos = IP_DSCP_CS6;
+    ip->ip_tot_len = htons(IP_HEADER_LEN + igmp_len);
+    ip->ip_ttl = 1;
+    ip->ip_proto = IPPROTO_IGMP;
+    put_16aligned_be32(&ip->ip_src, src_ip);
+    put_16aligned_be32(&ip->ip_dst, group_ip);
+    ip->ip_csum = csum(ip, IP_HEADER_LEN);
+
+    igmp = ALIGNED_CAST(struct igmp_header *, ip + 1);
+
+    igmp->igmp_type = IGMPV2_HOST_MEMBERSHIP_REPORT;
+    put_16aligned_be32(&igmp->group, group_ip);
+    igmp->igmp_csum = csum(igmp, igmp_len);
+}
+
+
+void
+compose_igmpv3(struct dp_packet *packet, const struct in6_addr *gaddr,
+                const struct in6_addr *saddr, struct eth_addr smac)
+{
+    ovs_be32 group_ip = in6_addr_get_mapped_ipv4(gaddr);
+    ovs_be32 src_ip = in6_addr_get_mapped_ipv4(saddr);
+    struct igmpv3_record *record;
+    struct igmpv3_header *igmp3;
+    struct eth_addr eth_dst;
+    struct ip_header *ip;
+    size_t igmp_len;
+
+    multicast_to_ethernet(&eth_dst, group_ip);
+    igmp_len = IGMPV3_HEADER_LEN + IGMPV3_RECORD_LEN + sizeof(ovs_be32);
+
+    ip = eth_compose(packet, eth_dst, smac, ETH_TYPE_IP,
+                     IP_HEADER_LEN + igmp_len);
+    ip->ip_ihl_ver = IP_IHL_VER(5,4);
+    ip->ip_tos = IP_DSCP_CS6;
+    ip->ip_tot_len = htons(IP_HEADER_LEN + igmp_len);
+    ip->ip_ttl = 1;
+    ip->ip_proto = IPPROTO_IGMP;
+    put_16aligned_be32(&ip->ip_src, src_ip);
+    put_16aligned_be32(&ip->ip_dst, htonl(0xe0000016));
+    ip->ip_csum = csum(ip, IP_HEADER_LEN);
+
+    igmp3 = ALIGNED_CAST(struct igmpv3_header *, ip + 1);
+    record = ALIGNED_CAST(struct igmpv3_record *, igmp3 + 1);
+
+    igmp3->type = IGMPV3_HOST_MEMBERSHIP_REPORT;
+    igmp3->ngrp = htons(1);
+    record->type = IGMPV3_MODE_IS_INCLUDE;
+    record->nsrcs = htons(1);
+    put_16aligned_be32(&record->maddr, group_ip);
+    put_16aligned_be32(ALIGNED_CAST(ovs_16aligned_be32 *, record + 1), src_ip);
+    igmp3->csum = csum(igmp3, igmp_len);
+}
+
+void
+compose_mldv1(struct dp_packet *packet, const struct in6_addr *gaddr,
+                     const struct in6_addr *saddr, struct eth_addr smac)
+{
+    struct eth_addr eth_dst;
+    struct ip6_hop_hdr *hbh;
+    struct mld_header *mld;
+    struct in6_addr *grp;
+    struct in6_addr dst;
+    size_t mld_len;
+
+    dst = *gaddr;
+    mld_len = sizeof *hbh + sizeof dst;
+
+    ipv6_multicast_to_ethernet(&eth_dst, &dst);
+    eth_compose(packet, eth_dst, smac, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
+
+    hbh = compose_ipv6(packet, IPPROTO_HOPOPTS, saddr, &dst,
+                              0, 0, 1, mld_len + IP6_HOP_HDR_LEN);
+    hbh->nexthdr = IPPROTO_ICMPV6;
+    hbh->hdrlen = 0;
+    hbh->opts[0] = 0x05; /* Router Alert. */
+    hbh->opts[1] = 2;
+    hbh->opts[2] = 0;
+    hbh->opts[3] = 0; /* MLD. */
+    hbh->opts[4] = 0x01; /* PadN. */
+    hbh->opts[5] = 0;
+
+    mld = ALIGNED_CAST(struct mld_header *, hbh + 1);
+    grp = ALIGNED_CAST(struct in6_addr *, mld + 1);
+
+    mld->type = MLD_REPORT;
+    memcpy(grp, gaddr, sizeof *grp);
+    mld->csum = 0;
+    mld->csum = packet_csum_upperlayer6(dp_packet_l3(packet),
+                                        mld, IPPROTO_ICMPV6, mld_len);
+}
+
+void
+compose_mldv2(struct dp_packet *packet, const struct in6_addr *gaddr,
+              const struct in6_addr *saddr, struct eth_addr smac)
+{
+    struct in6_addr dst = in6addr_any;
+    struct mld2_record *record;
+    struct eth_addr eth_dst;
+    struct ip6_hop_hdr *hbh;
+    struct mld_header *mld;
+    struct in6_addr *src6;
+    size_t mld_len;
+
+    /* ff02::16, the "all MLDv2 routers" group. */
+    dst.s6_addr[0] = 0xff;
+    dst.s6_addr[1] = 0x02;
+    dst.s6_addr[15] = 0x16;
+    mld_len = sizeof *mld + sizeof *record + sizeof *src6;
+
+    ipv6_multicast_to_ethernet(&eth_dst, &dst);
+    eth_compose(packet, eth_dst, smac, ETH_TYPE_IPV6, IPV6_HEADER_LEN);
+    hbh = compose_ipv6(packet, IPPROTO_HOPOPTS, saddr, &dst, 0, 0, 1,
+                       mld_len + IP6_HOP_HDR_LEN);
+    hbh->nexthdr = IPPROTO_ICMPV6;
+    hbh->hdrlen = 0;
+    hbh->opts[0] = 0x05; /* Router Alert. */
+    hbh->opts[1] = 2;
+    hbh->opts[2] = 0;
+    hbh->opts[3] = 0; /* MLD. */
+    hbh->opts[4] = 0x01; /* PadN. */
+    hbh->opts[5] = 0;
+
+    mld = ALIGNED_CAST(struct mld_header *, hbh + 1);
+    record = ALIGNED_CAST(struct mld2_record *, mld + 1);
+    src6 = ALIGNED_CAST(struct in6_addr *, record + 1);
+
+    mld->type = MLD2_REPORT;
+    mld->ngrp = htons(1);
+    record->type = IGMPV3_MODE_IS_INCLUDE;
+    record->nsrcs = htons(1);
+    memcpy(record->maddr.be16, gaddr->s6_addr, 16);
+    *src6 = *saddr;
+
+    mld->csum = 0;
+    mld->csum = packet_csum_upperlayer6(dp_packet_l3(packet), mld,
+                                        IPPROTO_ICMPV6, mld_len);
+
+}
+
 /* Compose an IPv6 Neighbor Discovery Neighbor Solicitation message. */
 void
 compose_nd_ns(struct dp_packet *b, bool multicast,

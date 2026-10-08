@@ -134,6 +134,7 @@ struct bond {
     int rebalance_interval;      /* Interval between rebalances, in ms. */
     long long int next_rebalance; /* Next rebalancing time. */
     bool send_learning_packets;
+    bool send_mcast_packets;
     uint32_t recirc_id;          /* Non zero if recirculation can be used.*/
     struct hmap pr_rule_ops;     /* Helps to maintain post recirculation rules.*/
 
@@ -577,6 +578,7 @@ bond_active_member_changed(struct bond *bond)
         bond->active_member_mac = eth_addr_zero;
     }
     bond->active_member_changed = true;
+    bond->send_mcast_packets = true;
     if (!bond_is_balanced(bond)) {
         bond->bond_revalidate = true;
     }
@@ -858,6 +860,35 @@ bond_compose_learning_packet(struct bond *bond, const struct eth_addr eth_src,
     *port_aux = member->aux;
     ovs_rwlock_unlock(&rwlock);
     return packet;
+}
+
+bool
+bond_should_send_mcast(struct bond *bond)
+{
+    bool send;
+
+    ovs_rwlock_wrlock(&rwlock);
+    send = bond->send_mcast_packets && may_send_learning_packets(bond);
+    bond->send_mcast_packets = false;
+    ovs_rwlock_unlock(&rwlock);
+    return send;
+}
+
+void *
+bond_get_active_member(const struct bond *bond, struct eth_addr *mac)
+{
+    void *aux;
+
+    ovs_rwlock_rdlock(&rwlock);
+    if (bond->active_member) {
+        aux = bond->active_member->aux;
+        netdev_get_etheraddr(bond->active_member->netdev, mac);
+    } else {
+        aux = NULL;
+        *mac = eth_addr_zero;
+    }
+    ovs_rwlock_unlock(&rwlock);
+    return aux;
 }
 
 

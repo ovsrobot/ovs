@@ -3806,6 +3806,96 @@ bundle_send_learning_packets(struct ofbundle *bundle)
 }
 
 static void
+bundle_send_mcast_packets(struct ofbundle *bundle)
+{
+    struct ofproto_dpif *ofproto = bundle->ofproto;
+    struct mcast_snooping *ms = ofproto->ms;
+    struct ofport_dpif *port;
+    struct eth_addr eth_src;
+    struct mcast_group *grp;
+    int n_packets = 0, n_errors = 0, error = 0;
+
+    if (!ms || !mcast_snooping_enabled(ms)) {
+        return;
+    }
+
+    port = bond_get_active_member(bundle->bond, &eth_src);
+    if (!port) {
+        return;
+    }
+
+    struct pkt_list {
+        struct ovs_list list_node;
+        struct dp_packet *pkt;
+    } *pkt_node;
+    struct ovs_list packets;
+
+    ovs_list_init(&packets);
+    ovs_rwlock_rdlock(&ms->rwlock);
+    HMAP_FOR_EACH (grp, hmap_node, &ms->table) {
+        struct mcast_group_source *src;
+
+        LIST_FOR_EACH (src, node, &grp->sources) {
+            pkt_node = xmalloc(sizeof *pkt_node);
+            pkt_node->pkt = dp_packet_new(0);
+
+            switch (grp->protocol_version) {
+            case MCAST_GROUP_IGMPV1:
+            case MCAST_GROUP_IGMPV2:
+                compose_igmpv2(pkt_node->pkt, &grp->addr, &src->addr,
+                                src->mac);
+                break;
+            case MCAST_GROUP_IGMPV3:
+                compose_igmpv3(pkt_node->pkt, &grp->addr, &src->addr,
+                                src->mac);
+                break;
+            case MCAST_GROUP_MLDV1:
+                compose_mldv1(pkt_node->pkt, &grp->addr, &src->addr,
+                              src->mac);
+                break;
+            case MCAST_GROUP_MLDV2:
+                compose_mldv2(pkt_node->pkt, &grp->addr, &src->addr,
+                              src->mac);
+                break;
+            default:
+                OVS_NOT_REACHED();
+            }
+
+            if (grp->vlan) {
+                eth_push_vlan(pkt_node->pkt, htons(ETH_TYPE_VLAN),
+                              htons(grp->vlan));
+            }
+
+            ovs_list_push_back(&packets, &pkt_node->list_node);
+        }
+    }
+    ovs_rwlock_unlock(&ms->rwlock);
+
+    error = n_packets = n_errors = 0;
+    LIST_FOR_EACH_POP (pkt_node, list_node, &packets) {
+        int ret = ofproto_dpif_send_packet(port, false, pkt_node->pkt);
+        dp_packet_delete(pkt_node->pkt);
+        free(pkt_node);
+
+        n_packets++;
+        if (ret) {
+            error = ret;
+            n_errors++;
+        }
+    }
+
+    if (n_errors) {
+        static struct vlog_rate_limit rll = VLOG_RATE_LIMIT_INIT(1, 5);
+        VLOG_WARN_RL(&rll, "bond %s: %d errors sending %d multicast "
+                     "membership packets, last error was: %s",
+                     bundle->name, n_errors, n_packets, ovs_strerror(error));
+    } else {
+        VLOG_DBG("bond %s: sent %d multicast membership packets",
+                 bundle->name, n_packets);
+    }
+}
+
+static void
 bundle_run(struct ofbundle *bundle)
 {
     if (bundle->lacp) {
@@ -3824,6 +3914,10 @@ bundle_run(struct ofbundle *bundle)
 
         if (bond_should_send_learning_packets(bundle->bond)) {
             bundle_send_learning_packets(bundle);
+        }
+
+        if (bond_should_send_mcast(bundle->bond)) {
+            bundle_send_mcast_packets(bundle);
         }
     }
 }

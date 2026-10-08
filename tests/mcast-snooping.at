@@ -687,3 +687,108 @@ AT_CHECK([ovs-appctl mdb/show br0], [0], [dnl
     1     0  MLDv1     ff02::1:ff0e:4c67           0
 ])
 AT_CLEANUP
+
+AT_SETUP([mcast - send IGMP/MLD reports on bond failover])
+OVS_VSWITCHD_START([])
+
+AT_CHECK([
+    ovs-vsctl set bridge br0 \
+    datapath_type=dummy \
+    mcast_snooping_enable=true \
+    other-config:mcast-snooping-disable-flood-unregistered=true
+], [0])
+
+AT_CHECK([ovs-ofctl add-flow br0 action=normal])
+
+AT_CHECK([ovs-vsctl add-bond br0 bond0 p1 p2 bond_mode=active-backup -- dnl
+          set interface p1 type=dummy ofport_request=1 -- dnl
+          set interface p2 type=dummy ofport_request=2 -- dnl
+          set interface p1 options:tx_pcap=p1.pcap -- dnl
+          set interface p2 options:tx_pcap=p2.pcap -- dnl
+          add-port br0 ph -- set interface ph type=dummy ofport_request=3], [0])
+
+AT_CHECK([ovs-appctl bond/set-active-member bond0 p1], [0], [ignore])
+
+ovs-appctl time/stop
+
+dnl Send IGMPv2 packet
+dnl load_contrib("igmp")
+dnl Ether(dst="01:00:5e:01:01:01", src="50:54:00:00:00:11") /
+dnl IP(src="10.0.0.99", dst="239.1.1.1", tos=0, ttl=1) /
+dnl IGMP(type=0x16, gaddr="239.1.1.1")
+AT_CHECK([ovs-appctl netdev-dummy/receive ph ]dnl
+[01005e0101015054000000110800]dnl
+[4500001c000100000102bf7a0a000063ef010101]dnl
+[1614f9e8ef010101])
+
+dnl Send IGMPv3 packet
+dnl Ether(dst="01:00:5e:01:01:32", src="50:54:00:00:00:11") /
+dnl IP(src="10.0.0.99", dst="239.1.1.50", tos=0xc0, ttl=1, id=0) /
+dnl IGMPv3(type=0x22) /
+dnl IGMPv3mr(numgrp=1, records=[IGMPv3gr(rtype=1, maddr="239.1.1.50", srcaddrs="10.0.0.99")])
+AT_CHECK([ovs-appctl netdev-dummy/receive ph ]dnl
+[01005e0101325054000000110800]dnl
+[45c00028000000000102be7e0a000063ef010132]dnl
+[2200e2660000000101000001ef0101320a000063])
+
+dnl Send MLDv1 packet
+dnl Ether(dst="33:33:ff:0e:4c:67", src="00:0c:29:0e:4c:67") /
+dnl IPv6(src="::", dst="ff02::1:ff0e:4c67") /
+dnl IPv6ExtHdrHopByHop(autopad=True, options=[RouterAlert(otype=5, value=0)]) /
+dnl ICMPv6MLReport(type="MLD Report", code=0, mrd=0, mladdr="ff02::1:ff0e:4c67")
+AT_CHECK([ovs-appctl netdev-dummy/receive ph ]dnl
+[3333ff0e4c67000c290e4c6786dd]dnl
+[600000000020004000000000000000000000000000000000ff0200000000000000000001ff0e4c67]dnl
+[3a00050200000100]dnl
+[8300e7b800000000ff0200000000000000000001ff0e4c67])
+
+dnl Send MLDv2
+dnl Ether(dst="33:33:00:00:00:16", src="00:0c:29:0e:4c:67") /
+dnl IPv6(src="::", dst="ff02::16", hlim=1) /
+dnl IPv6ExtHdrHopByHop(autopad=True, options=[RouterAlert(otype=5, value=0)]) /
+dnl ICMPv6MLReport2(records=[ICMPv6MLDMultAddrRec(rtype=2, dst="ff02::1:ff0e:4d00", sources=[])])
+AT_CHECK([ovs-appctl netdev-dummy/receive ph ]dnl
+[333300000016000c290e4c6786dd]dnl
+[600000000024000100000000000000000000000000000000ff020000000000000000000000000016]dnl
+[3a00050200000100]dnl
+[8f00247c0000000102000000ff0200000000000000000001ff0e4d00])
+
+OVS_WAIT_UNTIL([ovs-appctl mdb/show br0 | grep -q ff02::1:ff0e:4d00])
+AT_CHECK([ovs-appctl mdb/show br0 | grep 0 | sort], [0], [dnl
+    3     0  IGMPv2    239.1.1.1           0
+    3     0  IGMPv3    239.1.1.50           0
+    3     0  MLDv1     ff02::1:ff0e:4c67           0
+    3     0  MLDv2     ff02::1:ff0e:4d00           0
+])
+
+dnl Force failover
+AT_CHECK([ovs-appctl bond/set-active-member bond0 p2], [0], [ignore])
+ovs-appctl time/warp 1000
+
+dnl Check IGMPv2 packet
+OVS_WAIT_UNTIL([ovs-pcap p2.pcap | grep -q ]dnl
+[01005e0101015054000000110800]dnl
+[45c0001c000000000102bebb0a000063ef010101]dnl
+[1600f9fcef010101])
+
+dnl Check IGMPv3 packet
+OVS_WAIT_UNTIL([ovs-pcap p2.pcap | grep -q ]dnl
+[01005e0101325054000000110800]dnl
+[45c00028000000000102ce9b0a000063e0000016]dnl
+[2200e2660000000101000001ef0101320a000063])
+
+dnl Check MLDv1 packet
+OVS_WAIT_UNTIL([ovs-pcap p2.pcap | grep -q ]dnl
+[3333ff0e4c67000c290e4c6786dd]dnl
+[600000000020000100000000000000000000000000000000ff0200000000000000000001ff0e4c67]dnl
+[3a000502000001008300e7b800000000ff0200000000000000000001ff0e4c67])
+
+dnl Check MLDv2 packet
+OVS_WAIT_UNTIL([ovs-pcap p2.pcap | grep -q ]dnl
+[333300000016000c290e4c6786dd]dnl
+[600000000034000100000000000000000000000000000000ff020000000000000000000000000016]dnl
+[3a000502000001008f00256b0000000101000001ff0200000000000000000001ff0e4d0000000000000000000000000000000000])
+
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP

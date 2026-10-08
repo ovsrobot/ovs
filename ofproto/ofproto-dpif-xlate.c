@@ -2873,7 +2873,7 @@ update_mcast_snooping_table4__(const struct xlate_ctx *ctx,
                     ? MCAST_GROUP_IGMPV1
                     : MCAST_GROUP_IGMPV2;
         if (mcast_snooping_add_group4(ms, ip4, vlan, in_xbundle->ofbundle,
-                                      grp_proto)) {
+                                      grp_proto, flow->nw_src, flow->dl_src)) {
             xlate_report_debug(ctx, OFT_DETAIL,
                                "multicast snooping learned that "
                                IP_FMT" is on port %s in VLAN %d",
@@ -2897,7 +2897,8 @@ update_mcast_snooping_table4__(const struct xlate_ctx *ctx,
         break;
     case IGMPV3_HOST_MEMBERSHIP_REPORT:
         count = mcast_snooping_add_report(ms, packet, vlan,
-                                          in_xbundle->ofbundle);
+                                          in_xbundle->ofbundle, flow->nw_src,
+                                          flow->dl_src);
         if (count) {
             xlate_report_debug(ctx, OFT_DETAIL, "multicast snooping processed "
                                "%d addresses on port %s in VLAN %d",
@@ -2943,7 +2944,8 @@ update_mcast_snooping_table6__(const struct xlate_ctx *ctx,
     case MLD_REPORT:
     case MLD_DONE:
     case MLD2_REPORT:
-        count = mcast_snooping_add_mld(ms, packet, vlan, in_xbundle->ofbundle);
+        count = mcast_snooping_add_mld(ms, packet, vlan, in_xbundle->ofbundle,
+                                       &flow->ipv6_src, flow->dl_src);
         if (count) {
             xlate_report_debug(ctx, OFT_DETAIL, "multicast snooping processed "
                                "%d addresses on port %s in VLAN %d",

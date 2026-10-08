@@ -69,6 +69,15 @@ struct mcast_group {
     /* Contains struct mcast_group_bundle (ports), least recently used
      * at the front, most recently used at the back. */
     struct ovs_list bundle_lru OVS_GUARDED;
+
+    struct ovs_list sources OVS_GUARDED;
+};
+
+struct mcast_group_source {
+    struct ovs_list node OVS_GUARDED;
+    struct in6_addr addr OVS_GUARDED;
+    struct eth_addr mac OVS_GUARDED;
+    time_t expires;
 };
 
 /* The bundle associated to the multicast group.
@@ -198,19 +207,25 @@ mcast_snooping_lookup4(const struct mcast_snooping *ms, ovs_be32 ip4,
 bool mcast_snooping_add_group(struct mcast_snooping *ms,
                               const struct in6_addr *addr,
                               uint16_t vlan, void *port,
-                              enum mcast_group_proto grp_proto)
+                              enum mcast_group_proto grp_proto,
+                              const struct in6_addr *src_addr,
+                              struct eth_addr src_mac)
     OVS_REQ_WRLOCK(ms->rwlock);
 bool mcast_snooping_add_group4(struct mcast_snooping *ms, ovs_be32 ip4,
                                uint16_t vlan, void *port,
-                               enum mcast_group_proto grp_proto)
+                               enum mcast_group_proto grp_proto,
+                               ovs_be32 src_ip4, struct eth_addr src_mac)
     OVS_REQ_WRLOCK(ms->rwlock);
 int mcast_snooping_add_report(struct mcast_snooping *ms,
                               const struct dp_packet *p,
-                              uint16_t vlan, void *port)
+                              uint16_t vlan, void *port,
+                              ovs_be32 src_ip4, struct eth_addr src_mac)
     OVS_REQ_WRLOCK(ms->rwlock);
 int mcast_snooping_add_mld(struct mcast_snooping *ms,
                            const struct dp_packet *p,
-                           uint16_t vlan, void *port)
+                           uint16_t vlan, void *port,
+                           const struct in6_addr *src_addr,
+                           struct eth_addr src_mac)
     OVS_REQ_WRLOCK(ms->rwlock);
 bool mcast_snooping_leave_group(struct mcast_snooping *ms,
                                 const struct in6_addr *addr,

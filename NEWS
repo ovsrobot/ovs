@@ -1,5 +1,8 @@
 Post-v4.0.0
 --------------------
+   - Bonding:
+     * Send IGMP and MLD packets on bonding failover when mcast snooping is
+       enabled and the bond can send learning packets.
 
 
 v4.0.0 - 17 Aug 2026

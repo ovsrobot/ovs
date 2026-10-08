@@ -1016,6 +1016,14 @@ struct ip6_rt_hdr {
 };
 BUILD_ASSERT_DECL(IP6_RT_HDR_LEN == sizeof(struct ip6_rt_hdr));
 
+#define IP6_HOP_HDR_LEN 8
+struct ip6_hop_hdr {
+    uint8_t nexthdr;
+    uint8_t hdrlen;
+    uint8_t opts[6];
+};
+BUILD_ASSERT_DECL(IP6_HOP_HDR_LEN == sizeof(struct ip6_hop_hdr));
+
 #define ICMP6_HEADER_LEN 4
 struct icmp6_header {
     uint8_t icmp6_type;
@@ -1673,6 +1681,14 @@ void compose_arp(struct dp_packet *, uint16_t arp_op,
                  const struct eth_addr arp_sha,
                  const struct eth_addr arp_tha, bool broadcast,
                  ovs_be32 arp_spa, ovs_be32 arp_tpa);
+void compose_igmpv2(struct dp_packet *packet, const struct in6_addr *gaddr,
+                     const struct in6_addr *saddr, struct eth_addr smac);
+void compose_igmpv3(struct dp_packet *packet, const struct in6_addr *gaddr,
+                     const struct in6_addr *saddr, struct eth_addr smac);
+void compose_mldv1(struct dp_packet *packet, const struct in6_addr *gaddr,
+                   const struct in6_addr *saddr, struct eth_addr smac);
+void compose_mldv2(struct dp_packet *packet, const struct in6_addr *gaddr,
+                   const struct in6_addr *saddr, struct eth_addr smac);
 void compose_nd_ns(struct dp_packet *, bool multicast,
                    struct eth_addr eth_src,
                    struct eth_addr eth_dst,
