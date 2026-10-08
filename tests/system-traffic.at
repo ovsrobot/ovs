@@ -295,6 +295,136 @@ NS_CHECK_EXEC([at_ns0], [ping -s 3200 -q -c 3 -i 0.3 -W 2 10.1.1.2 | FORMAT_PING
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([IGMP - send reports on bond failover])
+OVS_TRAFFIC_VSWITCHD_START()
+AT_CHECK([ovs-vsctl set bridge br0 mcast_snooping_enable=true -- \
+    set bridge br0 other-config:mcast-snooping-disable-flood-unregistered=true])
+AT_CHECK([ovs-ofctl add-flow br0 "actions=NORMAL"])
+ADD_NAMESPACES(at_ns0, at_ns1)
+ADD_VETH(p0, at_ns0, br0, "10.1.1.1/24")
+AT_CHECK([ip link add p1 type veth peer name ovs-p1 || return 77])
+on_exit 'ip link del ovs-p1'
+CONFIGURE_VETH_OFFLOADS([p1])
+AT_CHECK([ip link set p1 netns at_ns1])
+AT_CHECK([ip link set dev ovs-p1 up])
+AT_CHECK([ip link add p2 type veth peer name ovs-p2 || return 77])
+on_exit 'ip link del ovs-p2'
+CONFIGURE_VETH_OFFLOADS([p2])
+AT_CHECK([ip link set p2 netns at_ns1])
+AT_CHECK([ip link set dev ovs-p2 up])
+NS_CHECK_EXEC([at_ns1], [ip link add br1 type bridge])
+NS_CHECK_EXEC([at_ns1], [ip link set p1 master br1])
+NS_CHECK_EXEC([at_ns1], [ip link set p2 master br1])
+NS_CHECK_EXEC([at_ns1], [ip link set dev p1 up])
+NS_CHECK_EXEC([at_ns1], [ip link set dev p2 up])
+NS_CHECK_EXEC([at_ns1], [ip link set br1 up])
+NS_CHECK_EXEC([at_ns1], [ip addr add 10.1.1.2/24 dev br1])
+NS_CHECK_EXEC([at_ns1], [sh -c "echo 1 > /sys/class/net/br1/bridge/multicast_snooping"])
+NS_CHECK_EXEC([at_ns1], [sh -c "echo 0 > /sys/class/net/br1/bridge/multicast_querier"])
+AT_CHECK([ovs-vsctl add-bond br0 bond0 ovs-p1 ovs-p2 \
+    bond_mode=active-backup])
+
+AT_CHECK([ip link set dev ovs-p1 down])
+AT_CHECK([ip link set dev ovs-p2 down])
+AT_CHECK([ip link set dev ovs-p1 up])
+sleep 1
+AT_CHECK([ovs-appctl bond/set-active-member bond0 ovs-p1], [0], [ignore])
+OVS_WAIT_UNTIL([ovs-appctl bond/show bond0 | grep -q "active member.*ovs-p1"])
+OVS_WAIT_UNTIL([ip netns exec at_ns0 ping -c 1 -i 0.3 -W 2 10.1.1.2])
+AT_CHECK([ip link set dev ovs-p2 up])
+
+sleep 1
+NETNS_DAEMONIZE([at_ns0],
+    [$PYTHON3 -c "
+import socket, struct, time
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('10.1.1.1', 5000))
+mreq = struct.pack('4s4s',
+                    socket.inet_aton('239.1.1.1'),
+                    socket.inet_aton('10.1.1.1'))
+s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+time.sleep(300)
+"], [mcast_join.pid])
+OVS_WAIT_UNTIL([ovs-appctl mdb/show br0 | grep -q "239.1.1.1"])
+AT_CHECK([ip link set dev ovs-p1 down])
+OVS_WAIT_UNTIL([ovs-appctl bond/show bond0 | grep -q "active member.*ovs-p2"])
+OVS_WAIT_UNTIL([NS_EXEC([at_ns1],
+    [bridge mdb show dev br1 | grep "239.1.1.1" | grep -q p2])])
+OVS_TRAFFIC_VSWITCHD_STOP(["/Network is down/d
+/No such device/d"])
+AT_CLEANUP
+
+AT_SETUP([MLD - send reports on bond failover])
+OVS_TRAFFIC_VSWITCHD_START()
+AT_CHECK([ovs-vsctl set bridge br0 mcast_snooping_enable=true -- \
+    set bridge br0 other-config:mcast-snooping-disable-flood-unregistered=true])
+AT_CHECK([ovs-ofctl add-flow br0 "actions=NORMAL"])
+ADD_NAMESPACES(at_ns0, at_ns1)
+ADD_VETH(p0, at_ns0, br0, "fc00::1/96")
+
+dnl Create veth pairs for bond members.
+AT_CHECK([ip link add p1 type veth peer name ovs-p1 || return 77])
+on_exit 'ip link del ovs-p1'
+CONFIGURE_VETH_OFFLOADS([p1])
+AT_CHECK([ip link set p1 netns at_ns1])
+AT_CHECK([ip link set dev ovs-p1 up])
+AT_CHECK([ip link add p2 type veth peer name ovs-p2 || return 77])
+on_exit 'ip link del ovs-p2'
+CONFIGURE_VETH_OFFLOADS([p2])
+AT_CHECK([ip link set p2 netns at_ns1])
+AT_CHECK([ip link set dev ovs-p2 up])
+
+dnl Linux bridge in at_ns1 with p1 and p2 as individual ports.
+dnl This lets us verify exactly which port the replayed MLD arrives on.
+NS_CHECK_EXEC([at_ns1], [ip link add br1 type bridge])
+NS_CHECK_EXEC([at_ns1], [ip link set p1 master br1])
+NS_CHECK_EXEC([at_ns1], [ip link set p2 master br1])
+NS_CHECK_EXEC([at_ns1], [ip link set dev p1 up])
+NS_CHECK_EXEC([at_ns1], [ip link set dev p2 up])
+NS_CHECK_EXEC([at_ns1], [ip link set br1 up])
+NS_CHECK_EXEC([at_ns1], [ip -6 addr add fc00::2/96 dev br1 nodad])
+NS_CHECK_EXEC([at_ns1], [sh -c "echo 1 > /sys/class/net/br1/bridge/multicast_snooping"])
+NS_CHECK_EXEC([at_ns1], [sh -c "echo 0 > /sys/class/net/br1/bridge/multicast_querier"])
+
+dnl OVS active-backup bond.
+AT_CHECK([ovs-vsctl add-bond br0 bond0 ovs-p1 ovs-p2 \
+    bond_mode=active-backup])
+AT_CHECK([ip link set dev ovs-p1 down])
+AT_CHECK([ip link set dev ovs-p2 down])
+AT_CHECK([ip link set dev ovs-p1 up])
+sleep 1
+AT_CHECK([ovs-appctl bond/set-active-member bond0 ovs-p1], [0], [ignore])
+OVS_WAIT_UNTIL([ip netns exec at_ns0 ping6 -c 1 fc00::2])
+AT_CHECK([ip link set dev ovs-p2 up])
+
+dnl Join IPv6 multicast group from at_ns0 using a real socket.
+NETNS_DAEMONIZE([at_ns0],
+    [$PYTHON3 -c "
+import socket, struct, time
+s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('::', 5000))
+ifindex = socket.if_nametoindex('p0')
+mreq = struct.pack('16sI',
+                    socket.inet_pton(socket.AF_INET6, 'ff35::db8:1'),
+                    ifindex)
+s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+time.sleep(300)
+"], [mcast_join.pid])
+OVS_WAIT_UNTIL([ovs-appctl mdb/show br0 | grep -q "ff35::db8:1"])
+
+dnl Trigger failover.
+AT_CHECK([ip link set dev ovs-p1 down])
+OVS_WAIT_UNTIL([ovs-appctl bond/show bond0 | grep -q "active member.*ovs-p2"])
+
+dnl The replayed MLD must arrive on p2, the new active member's peer.
+OVS_WAIT_UNTIL([NS_EXEC([at_ns1],
+    [bridge mdb show dev br1 | grep "ff35::db8:1" | grep -q p2])])
+OVS_TRAFFIC_VSWITCHD_STOP(["/Network is down/d
+/No such device/d"])
+AT_CLEANUP
+
 AT_SETUP([datapath - ping over vxlan tunnel])
 AT_SKIP_IF([test $HAVE_NC = no])
 OVS_CHECK_VXLAN()
