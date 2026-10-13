@@ -203,6 +203,10 @@ netdev_vport_construct(struct netdev *netdev_)
 
     ovs_mutex_init(&dev->mutex);
     atomic_count_init(&dev->gre_seqno, 0);
+    atomic_init(&dev->rx_packets, 0);
+    atomic_init(&dev->rx_bytes, 0);
+    atomic_init(&dev->tx_packets, 0);
+    atomic_init(&dev->tx_bytes, 0);
     eth_addr_random(&dev->etheraddr);
 
     if (name && dpif_port && (strlen(name) > strlen(dpif_port) + 1) &&
@@ -1119,11 +1123,10 @@ netdev_vport_inc_rx(const struct netdev *netdev,
 {
     if (is_vport_class(netdev_get_class(netdev))) {
         struct netdev_vport *dev = netdev_vport_cast(netdev);
+        uint64_t orig;
 
-        ovs_mutex_lock(&dev->mutex);
-        dev->stats.rx_packets += stats->n_packets;
-        dev->stats.rx_bytes += stats->n_bytes;
-        ovs_mutex_unlock(&dev->mutex);
+        atomic_add_relaxed(&dev->rx_packets, stats->n_packets, &orig);
+        atomic_add_relaxed(&dev->rx_bytes, stats->n_bytes, &orig);
     }
 }
 
@@ -1133,11 +1136,10 @@ netdev_vport_inc_tx(const struct netdev *netdev,
 {
     if (is_vport_class(netdev_get_class(netdev))) {
         struct netdev_vport *dev = netdev_vport_cast(netdev);
+        uint64_t orig;
 
-        ovs_mutex_lock(&dev->mutex);
-        dev->stats.tx_packets += stats->n_packets;
-        dev->stats.tx_bytes += stats->n_bytes;
-        ovs_mutex_unlock(&dev->mutex);
+        atomic_add_relaxed(&dev->tx_packets, stats->n_packets, &orig);
+        atomic_add_relaxed(&dev->tx_bytes, stats->n_bytes, &orig);
     }
 }
 
@@ -1196,13 +1198,10 @@ netdev_vport_get_stats(const struct netdev *netdev, struct netdev_stats *stats)
 {
     struct netdev_vport *dev = netdev_vport_cast(netdev);
 
-    ovs_mutex_lock(&dev->mutex);
-    /* Passing only collected counters */
-    stats->tx_packets = dev->stats.tx_packets;
-    stats->tx_bytes = dev->stats.tx_bytes;
-    stats->rx_packets = dev->stats.rx_packets;
-    stats->rx_bytes = dev->stats.rx_bytes;
-    ovs_mutex_unlock(&dev->mutex);
+    atomic_read_relaxed(&dev->rx_packets, &stats->rx_packets);
+    atomic_read_relaxed(&dev->rx_bytes, &stats->rx_bytes);
+    atomic_read_relaxed(&dev->tx_packets, &stats->tx_packets);
+    atomic_read_relaxed(&dev->tx_bytes, &stats->tx_bytes);
 
     return 0;
 }

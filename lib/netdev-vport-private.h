@@ -33,11 +33,16 @@ struct netdev_vport {
     /* Sequence number for outgoing GRE packets. */
     atomic_count gre_seqno;
 
+    /* packet/byte counters updated lock-free */
+    atomic_uint64_t rx_packets;
+    atomic_uint64_t rx_bytes;
+    atomic_uint64_t tx_packets;
+    atomic_uint64_t tx_bytes;
+
     /* Protects all members below. */
     struct ovs_mutex mutex;
 
     struct eth_addr etheraddr;
-    struct netdev_stats stats;
 
     /* Tunnels. */
     char egress_iface[IFNAMSIZ];
