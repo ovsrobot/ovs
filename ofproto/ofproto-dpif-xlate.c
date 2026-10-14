@@ -6541,6 +6541,7 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_CLONE:
         case OFPACT_ENCAP:
         case OFPACT_DECAP:
+        case OFPACT_RECIRC:
         case OFPACT_DEBUG_RECIRC:
         case OFPACT_DEBUG_SLOW:
         case OFPACT_CT:
@@ -7325,6 +7326,7 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_CT:
     case OFPACT_CT_CLEAR:
     case OFPACT_NAT:
+    case OFPACT_RECIRC:
     case OFPACT_DEBUG_RECIRC:
     case OFPACT_DEBUG_SLOW:
     case OFPACT_METER:
@@ -7457,6 +7459,7 @@ reset_mirror_ctx(struct xlate_ctx *ctx, const struct flow *flow,
     case OFPACT_METER:
     case OFPACT_SAMPLE:
     case OFPACT_CLONE:
+    case OFPACT_RECIRC:
     case OFPACT_DEBUG_RECIRC:
     case OFPACT_DEBUG_SLOW:
     case OFPACT_CT:
@@ -7919,6 +7922,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             ctx->ct_nat_action = ofpact_get_NAT(a);
             break;
 
+        case OFPACT_RECIRC:
         case OFPACT_DEBUG_RECIRC:
             ctx_trigger_freeze(ctx);
             a = ofpact_next(a);

@@ -126,6 +126,7 @@ struct vl_mff_map;
     OFPACT(CLONE,           ofpact_nest,        actions, "clone")       \
     OFPACT(CHECK_PKT_LARGER, ofpact_check_pkt_larger, ofpact,           \
            "check_pkt_larger")                                          \
+    OFPACT(RECIRC,          ofpact_null,        ofpact, "recirc")       \
                                                                         \
     /* Debugging actions.                                               \
      *                                                                  \

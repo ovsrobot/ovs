@@ -2022,6 +2022,37 @@ overall pipeline.  Actions in the action set are still executed (specify
 ``clear_actions`` before ``exit`` to discard them).
 
 
+The ``recirc`` action
+---------------------
+..
+  name: RECIRC
+
+**Syntax**:
+  | ``recirc``
+
+Ends the datapath flow that Open vSwitch is currently building and resumes the
+actions that follow this one in a new one, by recirculating the packet.
+Registers, metadata, the stack, and the remaining actions are carried across
+the boundary, so the actions after ``recirc`` observe the state that the
+actions before it left behind.
+
+``resubmit`` does not do this.  Open vSwitch follows a ``resubmit`` while it is
+still building the same datapath flow, so every action it reaches is appended
+to a single action list.  Recirculation is the only way to begin a new one.  A
+pipeline too large for one action list, which a datapath limits to the 16-bit
+length of a Netlink attribute, can therefore be divided across several flows
+with ``recirc``.
+
+Recirculation has a cost: the packet is looked up in the datapath a second
+time, and a datapath limits how many times one packet may be recirculated.  Use
+this action only where a single datapath flow will not do.  If no actions
+follow ``recirc``, the packet is recirculated only to find nothing left to
+execute, and is dropped.
+
+**Conformance**
+  Open vSwitch 4.1 introduced ``recirc`` as an OpenFlow extension action.
+
+
 The ``multipath`` action
 ------------------------
 ..

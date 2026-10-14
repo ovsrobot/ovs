@@ -366,6 +366,9 @@ enum ofp_raw_action_type {
     /* NX1.0+(50): struct nx_action_delete_field. VLMFF */
     NXAST_RAW_DELETE_FIELD,
 
+    /* NX1.0+(52): void. */
+    NXAST_RAW_RECIRC,
+
 /* ## ------------------ ## */
 /* ## Debugging actions. ## */
 /* ## ------------------ ## */
@@ -495,6 +498,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_SAMPLE:
     case OFPACT_UNROLL_XLATE:
     case OFPACT_CT_CLEAR:
+    case OFPACT_RECIRC:
     case OFPACT_DEBUG_RECIRC:
     case OFPACT_DEBUG_SLOW:
     case OFPACT_METER:
@@ -5997,6 +6001,46 @@ check_EXIT(const struct ofpact_null *a OVS_UNUSED,
     return 0;
 }
 
+/* Recirc action.
+ *
+ * Ends the datapath flow being built and resumes the actions that follow in a
+ * new one. */
+
+static enum ofperr
+decode_NXAST_RAW_RECIRC(struct ofpbuf *out)
+{
+    ofpact_put_RECIRC(out);
+    return 0;
+}
+
+static void
+encode_RECIRC(const struct ofpact_null *null OVS_UNUSED,
+              enum ofp_version ofp_version OVS_UNUSED, struct ofpbuf *out)
+{
+    put_NXAST_RECIRC(out);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_RECIRC(char *arg OVS_UNUSED, const struct ofpact_parse_params *pp)
+{
+    ofpact_put_RECIRC(pp->ofpacts);
+    return NULL;
+}
+
+static void
+format_RECIRC(const struct ofpact_null *a OVS_UNUSED,
+              const struct ofpact_format_params *fp)
+{
+    ds_put_format(fp->s, "%srecirc%s", colors.special, colors.end);
+}
+
+static enum ofperr
+check_RECIRC(const struct ofpact_null *a OVS_UNUSED,
+             const struct ofpact_check_params *cp OVS_UNUSED)
+{
+    return 0;
+}
+
 /* Unroll xlate action. */
 
 static void
@@ -8239,6 +8283,7 @@ action_set_classify(const struct ofpact *a)
     case OFPACT_STACK_PUSH:
     case OFPACT_WRITE_ACTIONS:
     case OFPACT_WRITE_METADATA:
+    case OFPACT_RECIRC:
     case OFPACT_DEBUG_RECIRC:
     case OFPACT_DEBUG_SLOW:
     case OFPACT_CHECK_PKT_LARGER:
@@ -8437,6 +8482,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type,
     case OFPACT_EXIT:
     case OFPACT_UNROLL_XLATE:
     case OFPACT_SAMPLE:
+    case OFPACT_RECIRC:
     case OFPACT_DEBUG_RECIRC:
     case OFPACT_DEBUG_SLOW:
     case OFPACT_CT:
@@ -9349,6 +9395,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_GOTO_TABLE:
     case OFPACT_METER:
     case OFPACT_GROUP:
+    case OFPACT_RECIRC:
     case OFPACT_DEBUG_RECIRC:
     case OFPACT_DEBUG_SLOW:
     case OFPACT_CT:

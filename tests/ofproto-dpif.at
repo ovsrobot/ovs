@@ -6654,6 +6654,39 @@ AT_CHECK_UNQUOTED([tail -1 stdout], [0], [Datapath actions: 2
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+
+# This test verifies that "recirc" ends the current datapath flow and
+# resumes the actions that follow it in a new one.  "resubmit" is
+# followed during translation instead, so everything it reaches lands in
+# a single datapath flow; the test covers both in one pipeline.
+AT_SETUP([ofproto-dpif - recirc action])
+OVS_VSWITCHD_START
+add_of_ports br0 1 2 3 4
+
+AT_DATA([flows.txt], [dnl
+table=0 in_port=1 actions=2,load:0xabcd->NXM_NX_REG0[[]],recirc,resubmit(,1)
+table=1 reg0=0xabcd actions=3,resubmit(,2)
+table=2 actions=4
+])
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+flow="in_port(1),eth(src=50:54:00:00:00:05,dst=50:54:00:00:00:07),eth_type(0x0800),ipv4(src=192.168.0.1,dst=192.168.0.2,proto=1,tos=0,ttl=128,frag=no),icmp(type=8,code=0)"
+
+# Only the actions before "recirc" are in this datapath flow.
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy "$flow" -generate], [0], [stdout])
+AT_CHECK_UNQUOTED([tail -1 stdout], [0], [Datapath actions: 2,recirc(0x1)
+])
+
+# The continuation is a separate datapath flow.  reg0 survives the
+# boundary, so table 1 matches, and its "resubmit" is followed during
+# this translation rather than starting a third flow.
+AT_CHECK([ovs-appctl ofproto/trace ovs-dummy "$flow,recirc_id(1)" -generate], [0], [stdout])
+AT_CHECK_UNQUOTED([tail -1 stdout], [0], [Datapath actions: 3,4
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 # Checks for regression against a bug in which OVS dropped packets
 # with in_port=CONTROLLER when they were recirculated (because
 # CONTROLLER isn't a real port and could not be looked up).
