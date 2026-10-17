@@ -519,6 +519,26 @@ ovsdb_monitor_add_column(struct ovsdb_monitor *dbmon,
         mt->n_monitored_columns++;
     }
 
+    mcs = dbmon->new_change_set;
+    if (mcs) {
+        /* The change set that tracks new changes is handed out to sessions
+         * whose conditions may use the new column.  Between transactions it
+         * doesn't have any rows, since it stops being tracked as new as soon
+         * as a transaction adds rows to it, so it only needs to cover the new
+         * column.  Changes to the new column made by earlier transactions
+         * were not tracked, so it can't be reused for them. */
+        struct ovsdb_monitor_change_set_for_table *mcst;
+
+        LIST_FOR_EACH (mcst, list_in_change_set,
+                       &mcs->change_set_for_tables) {
+            if (mcst->mt == mt) {
+                ovs_assert(hmap_is_empty(&mcst->rows));
+                mcst->n_columns = mt->n_columns;
+            }
+        }
+        mcs->prev_txn = *ovsdb_monitor_get_last_txnid(dbmon);
+    }
+
     return NULL;
 }
 

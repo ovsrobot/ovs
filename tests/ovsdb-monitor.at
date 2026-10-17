@@ -1072,3 +1072,144 @@ row,action,name
 <1>,initial,"""zero"""
 ])
 AT_CLEANUP
+
+AT_SETUP([monitor-cond updates with condition on non-monitored column])
+AT_KEYWORDS([ovsdb server monitor monitor-cond positive update non-monitored])
+
+ordinal_schema > schema
+AT_CHECK([ovsdb-tool create db schema], [0], [stdout], [ignore])
+on_exit 'kill `cat ovsdb-server.pid`'
+AT_CAPTURE_FILE([ovsdb-server.log])
+AT_CHECK([ovsdb-server --detach --no-chdir --pidfile \
+            --remote=punix:socket --log-file db], [0], [ignore], [ignore])
+
+AT_CHECK([ovsdb-client transact unix:socket '[["ordinals",
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 0, "name": "zero"}}]]'], [0], [ignore], [ignore])
+
+dnl Start a first client that monitors only the column 'name'.
+on_exit 'kill `cat client-1.pid`'
+AT_CAPTURE_FILE([client-1.out])
+AT_CHECK([ovsdb-client -vjsonrpc --pidfile=client-1.pid --detach --no-chdir \
+            -d json monitor-cond --format=csv unix:socket \
+            ordinals '[[true]]' ordinals ["name"] \
+            > client-1.out 2> client-1.err], [0], [ignore], [ignore])
+dnl Wait for the initial monitor reply.
+OVS_WAIT_UNTIL([grep -q 'initial' client-1.out])
+
+dnl Start a second client that monitors the column 'name', but has a condition
+dnl on column 'number'.
+on_exit 'kill `cat client-2.pid`'
+AT_CAPTURE_FILE([client-2.out])
+AT_CHECK([ovsdb-client -vjsonrpc --pidfile=client-2.pid --detach --no-chdir \
+            -d json monitor-cond --format=csv unix:socket \
+            ordinals '[[["number", "!=", 1]]]' ordinals ["name"] \
+            > client-2.out 2> client-2.err], [0], [ignore], [ignore])
+dnl Wait for the initial monitor reply.
+OVS_WAIT_UNTIL([grep -q 'initial' client-2.out])
+
+dnl Both clients receive updates from the same change set.
+AT_CHECK([ovsdb-client transact unix:socket '[["ordinals",
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 1, "name": "one"}},
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 2, "name": "two"}}]]'], [0], [ignore], [ignore])
+OVS_WAIT_UNTIL([grep -q 'two' client-1.out && grep -q 'two' client-2.out])
+
+OVSDB_SERVER_SHUTDOWN
+OVS_WAIT_UNTIL([test ! -e ovsdb-server.pid && \
+                    test ! -e client-1.pid && test ! -e client-2.pid])
+
+dnl The first client should have all the names.
+AT_CHECK([$PYTHON3 $srcdir/ovsdb-monitor-sort.py < client-1.out | uuidfilt],
+         [0], [dnl
+row,action,name
+<0>,initial,"""zero"""
+
+row,action,name
+<1>,insert,"""one"""
+<2>,insert,"""two"""
+])
+
+dnl The second client should not have the name 'one'.
+AT_CHECK([$PYTHON3 $srcdir/ovsdb-monitor-sort.py < client-2.out | uuidfilt],
+         [0], [dnl
+row,action,name
+<0>,initial,"""zero"""
+
+row,action,name
+<1>,insert,"""two"""
+])
+AT_CLEANUP
+
+AT_SETUP([monitor-cond-since with condition on non-monitored column])
+AT_KEYWORDS([ovsdb server monitor monitor-cond-since positive non-monitored])
+
+ordinal_schema > schema
+AT_CHECK([ovsdb-tool create-cluster db schema unix:db.raft], [0], [stdout], [ignore])
+on_exit 'kill `cat ovsdb-server.pid`'
+AT_CAPTURE_FILE([ovsdb-server.log])
+AT_CHECK([ovsdb-server --detach --no-chdir --pidfile \
+            --remote=punix:socket --log-file db], [0], [ignore], [ignore])
+
+AT_CHECK([ovsdb-client transact unix:socket '[["ordinals",
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 0, "name": "zero"}},
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 1, "name": "one"}},
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 2, "name": "two"}},
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 3, "name": "three"}}]]'], [0], [ignore], [ignore])
+
+dnl A small transaction, so that the history keeps it.
+AT_CHECK([ovsdb-client transact unix:socket '[["ordinals",
+      {"op": "insert",
+       "table": "ordinals",
+       "row": {"number": 10, "name": "ten"}}]]'], [0], [ignore], [ignore])
+
+dnl Start a first client that monitors only the column 'name'.
+on_exit 'kill `cat client-1.pid`'
+AT_CAPTURE_FILE([client-1.out])
+AT_CHECK([ovsdb-client -vjsonrpc --pidfile=client-1.pid --detach --no-chdir \
+            -d json monitor-cond-since --format=csv unix:socket \
+            ordinals '[[true]]' ordinals ["name"] \
+            > client-1.out 2> client-1.err], [0], [ignore], [ignore])
+OVS_WAIT_UNTIL([grep -q 'initial' client-1.out])
+last_id=$(sed -n 's/.*last_id: \([[0-9a-f-]]*\).*/\1/p' client-1.out)
+
+dnl Change only the column 'number', which no client monitors yet.
+AT_CHECK([ovsdb-client transact unix:socket '[["ordinals",
+      {"op": "update",
+       "table": "ordinals",
+       "where": [["number", "==", 1]],
+       "row": {"number": 5}}]]'], [0], [ignore], [ignore])
+
+dnl Start a second client from the first transaction with a condition on
+dnl column 'number'.  It should get the change made by the second one.
+on_exit 'kill `cat client-2.pid`'
+AT_CAPTURE_FILE([client-2.out])
+AT_CHECK([ovsdb-client -vjsonrpc --pidfile=client-2.pid --detach --no-chdir \
+            -d json monitor-cond-since --format=csv unix:socket \
+            ordinals $last_id '[[["number", "==", 5]]]' ordinals ["name"] \
+            > client-2.out 2> client-2.err], [0], [ignore], [ignore])
+OVS_WAIT_UNTIL([grep -q 'found' client-2.out])
+
+OVSDB_SERVER_SHUTDOWN
+OVS_WAIT_UNTIL([test ! -e ovsdb-server.pid && \
+                    test ! -e client-1.pid && test ! -e client-2.pid])
+
+AT_CHECK([$PYTHON3 $srcdir/ovsdb-monitor-sort.py < client-2.out | uuidfilt],
+         [0], [dnl
+found: true, last_id: <0>
+row,action,name
+<1>,insert,"""one"""
+])
+AT_CLEANUP
