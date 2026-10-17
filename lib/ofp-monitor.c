@@ -535,6 +535,8 @@ ofputil_decode_flow_monitor_request(struct ofputil_flow_monitor_request *rq,
         rq->command = ofmr->command;
 
         if (ofmr->command == OFPFMC_DELETE) {
+            /* Only the monitor id matters for a delete. */
+            rq->table_id = OFPTT_ALL;
             return ofputil_pull_ofp11_match(msg, NULL, NULL, &rq->match, NULL);
         }
 

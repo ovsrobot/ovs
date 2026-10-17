@@ -5023,6 +5023,40 @@ OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ofproto - OpenFlow14 flow monitor delete])
+AT_KEYWORDS([monitor])
+OVS_VSWITCHD_START
+
+ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
+AT_CAPTURE_FILE([monitor.log])
+
+# Add monitor 5, then delete it in a second request.
+ovs-appctl -t ovs-ofctl ofctl/send 0512002800000002001000000000000000000005ffffffffffffffff000fff000001000400000000
+ovs-appctl -t ovs-ofctl ofctl/send 0512002800000003001000000000000000000005ffffffffffffffff0000ff020001000400000000
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0], [dnl
+send: OFPST_FLOW_MONITOR request (OF1.4):
+ id=5 flags=initial,add,delete,modify
+OFPST_FLOW_MONITOR reply (OF1.4):
+send: OFPST_FLOW_MONITOR request (OF1.4):
+ id=5 command=delete
+OFPST_FLOW_MONITOR reply (OF1.4):
+OFPT_BARRIER_REPLY (OF1.4):
+])
+
+# No monitor is left to report additions.
+ovs-appctl -t ovs-ofctl ofctl/set-output-file monitor.log
+ovs-ofctl add-flow br0 udp,actions=normal
+ovs-appctl -t ovs-ofctl ofctl/barrier
+AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0], [dnl
+OFPT_BARRIER_REPLY (OF1.4):
+])
+
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ofproto - event filtering (OpenFlow 1.3)])
 AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
