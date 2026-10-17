@@ -183,6 +183,7 @@ static inline void dp_packet_set_tso_segsz(struct dp_packet *, uint16_t);
 
 void *dp_packet_resize_l2(struct dp_packet *, int increment);
 void *dp_packet_resize_l2_5(struct dp_packet *, int increment);
+void dp_packet_truncate(struct dp_packet *, uint32_t size);
 static inline void *dp_packet_eth(const struct dp_packet *);
 static inline void dp_packet_reset_outer_offsets(struct dp_packet *);
 static inline void dp_packet_reset_offsets(struct dp_packet *);
@@ -1023,7 +1024,7 @@ dp_packet_batch_apply_cutlen(struct dp_packet_batch *batch)
         struct dp_packet *packet;
 
         DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
-            dp_packet_set_size(packet, dp_packet_get_send_len(packet));
+            dp_packet_truncate(packet, dp_packet_get_send_len(packet));
             dp_packet_reset_cutlen(packet);
         }
         batch->trunc = false;

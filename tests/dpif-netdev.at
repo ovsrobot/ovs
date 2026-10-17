@@ -1234,6 +1234,51 @@ AT_CHECK([ovs-appctl dpif-netdev/pmd-perf-show | grep 'Simple Match hits'], [0],
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([dpif-netdev - tcp csum offload with truncated output])
+AT_KEYWORDS([userspace offload truncate])
+OVS_VSWITCHD_START
+add_of_ports br0 1 2
+AT_CHECK([ovs-vsctl set Interface p2 options:tx_pcap=p2.pcap])
+
+AT_DATA([good_frame], m4_join([],
+dnl eth(src=8a:bf:7e:2f:05:84,dst=0a:8f:39:4f:e0:73,type=0x0800)
+[0a8f394fe0738abf7e2f05840800],
+dnl ipv4(src=192.168.123.2,dst=192.168.123.1,proto=6,tot_len=104)
+[45000068000000000006433cc0a87b02c0a87b01],
+dnl tcp(src=54392,dst=5201,flags=ack)
+[d47814510000000000000000501000006b720000],
+dnl 64 bytes of payload.
+[000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f],
+[202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f]
+))
+
+dnl Output cut to 40 bytes, inside the TCP header.
+AT_DATA([trunc_l4], m4_join([],
+[0a8f394fe0738abf7e2f05840800],
+[45000068000000000006433cc0a87b02c0a87b01],
+[d47814510000]
+))
+
+dnl Output cut to 30 bytes, inside the IPv4 header.
+AT_DATA([trunc_l3], m4_join([],
+[0a8f394fe0738abf7e2f05840800],
+[45000068000000000006433cc0a87b02]
+))
+
+AT_CHECK([ovs-ofctl add-flow br0 \
+          in_port=p1,tcp,actions='output(port=p2,max_len=40)'])
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_partial, [good_frame], [trunc_l4])
+
+AT_CHECK([ovs-ofctl del-flows br0])
+AT_CHECK([ovs-ofctl add-flow br0 \
+          in_port=p1,tcp,actions='output(port=p2,max_len=30)'])
+AT_CHECK([ovs-vsctl set Interface p1 options:ol_ip_rx_csum_set_partial=true])
+CHECK_FWD_PACKET(p1, p2, ol_l4_rx_csum_set_partial, [good_frame], [trunc_l3])
+AT_CHECK([ovs-vsctl remove Interface p1 options ol_ip_rx_csum_set_partial])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([dpif-netdev - udp csum offload])
 AT_KEYWORDS([userspace offload])
 OVS_VSWITCHD_START(
