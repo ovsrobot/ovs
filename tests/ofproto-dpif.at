@@ -12393,6 +12393,108 @@ OVS_WAIT_UNTIL([ovs-pcap p1-tx.pcap | grep -q "$packet3"])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ofproto-dpif - conntrack - related nat with truncated l4 header])
+OVS_VSWITCHD_START
+
+add_of_ports --pcap br0 1 2
+
+AT_DATA([flows.txt], [dnl
+table=0,priority=100,arp,action=normal
+table=0,priority=10,ip,in_port=1,tcp,action=ct(commit,table=1,nat(dst=1.2.3.4:10000-10000))
+table=0,priority=10,ip,in_port=1,sctp,action=ct(commit,table=1,nat(dst=1.2.3.4:10000-10000))
+table=0,priority=10,ip,in_port=2,action=ct(nat,table=1)
+table=0,priority=1,action=drop
+table=1,priority=10,in_port=1,ct_state=+trk,action=2
+table=1,priority=10,in_port=2,ct_state=+trk,action=1
+table=1,priority=1,action=drop
+])
+
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+dnl ICMP errors quote only 8 bytes of the TCP or SCTP header.  The ports
+dnl are translated and the checksum, which is not quoted, is left as is.
+m4_define([TCP_PKT], m4_join([],
+dnl eth(src=e6:4c:47:35:28:c9,dst=c6:f9:4e:cb:72:db,type=0x0800)
+[c6f94ecb72dbe64c473528c90800],
+dnl ipv4(src=172.16.0.1,dst=172.16.0.2,proto=6,tot_len=40)
+[45000028317040004006b13cac100001ac100002],
+dnl tcp(src=41614,dst=5555,seq=1,flags=S)
+[a28e15b30000000100000000500204009b7c0000]))
+
+m4_define([TCP_ICMP], m4_join([],
+dnl eth(src=c6:f9:4e:cb:72:db,dst=e6:4c:47:35:28:c9,type=0x0800)
+[e64c473528c9c6f94ecb72db0800],
+dnl ipv4(src=1.2.3.4,dst=172.16.0.1,proto=1,tot_len=56)
+[45c000382e87000040019b6701020304ac100001],
+dnl icmp(type=3,code=3)
+[0303335d00000000],
+dnl ipv4(src=172.16.0.1,dst=1.2.3.4,proto=6,tot_len=40)
+[450000283170400040065949ac10000101020304],
+dnl First 8 bytes of tcp(src=41614,dst=10000,seq=1).
+[a28e271000000001]))
+
+m4_define([TCP_ICMP_NAT], m4_join([],
+dnl eth(src=c6:f9:4e:cb:72:db,dst=e6:4c:47:35:28:c9,type=0x0800)
+[e64c473528c9c6f94ecb72db0800],
+dnl ipv4(src=172.16.0.2,dst=172.16.0.1,proto=1,tot_len=56)
+[45c000382e8700004001f35aac100002ac100001],
+dnl icmp(type=3,code=3)
+[030344ba00000000],
+dnl ipv4(src=172.16.0.1,dst=172.16.0.2,proto=6,tot_len=40)
+[45000028317040004006b13cac100001ac100002],
+dnl First 8 bytes of tcp(src=41614,dst=5555,seq=1).
+[a28e15b300000001]))
+
+m4_define([SCTP_PKT], m4_join([],
+dnl eth(src=e6:4c:47:35:28:c9,dst=c6:f9:4e:cb:72:db,type=0x0800)
+[c6f94ecb72dbe64c473528c90800],
+dnl ipv4(src=172.16.0.1,dst=172.16.0.2,proto=132,tot_len=52)
+[45000034317040004084b0b2ac100001ac100002],
+dnl sctp(src=41614,dst=5555,vtag=0)
+[a28e15b300000000da5f7a61],
+dnl INIT chunk.
+[01000014112233440000ffff0001000100000001]))
+
+m4_define([SCTP_ICMP], m4_join([],
+dnl eth(src=c6:f9:4e:cb:72:db,dst=e6:4c:47:35:28:c9,type=0x0800)
+[e64c473528c9c6f94ecb72db0800],
+dnl ipv4(src=1.2.3.4,dst=172.16.0.1,proto=1,tot_len=56)
+[45c000382e87000040019b6701020304ac100001],
+dnl icmp(type=3,code=3)
+[0303335e00000000],
+dnl ipv4(src=172.16.0.1,dst=1.2.3.4,proto=132,tot_len=52)
+[4500003431704000408458bfac10000101020304],
+dnl First 8 bytes of sctp(src=41614,dst=10000,vtag=0).
+[a28e271000000000]))
+
+m4_define([SCTP_ICMP_NAT], m4_join([],
+dnl eth(src=c6:f9:4e:cb:72:db,dst=e6:4c:47:35:28:c9,type=0x0800)
+[e64c473528c9c6f94ecb72db0800],
+dnl ipv4(src=172.16.0.2,dst=172.16.0.1,proto=1,tot_len=56)
+[45c000382e8700004001f35aac100002ac100001],
+dnl icmp(type=3,code=3)
+[030344bb00000000],
+dnl ipv4(src=172.16.0.1,dst=172.16.0.2,proto=132,tot_len=52)
+[45000034317040004084b0b2ac100001ac100002],
+dnl First 8 bytes of sctp(src=41614,dst=5555,vtag=0).
+[a28e15b300000000]))
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 \
+            "in_port=1 packet=TCP_PKT actions=resubmit(,0)"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 \
+            "in_port=2 packet=TCP_ICMP actions=resubmit(,0)"])
+OVS_WAIT_UNTIL_EQUAL([ovs-pcap p1-tx.pcap], [TCP_ICMP_NAT])
+
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 \
+            "in_port=1 packet=SCTP_PKT actions=resubmit(,0)"])
+AT_CHECK([ovs-ofctl -O OpenFlow13 packet-out br0 \
+            "in_port=2 packet=SCTP_ICMP actions=resubmit(,0)"])
+OVS_WAIT_UNTIL_EQUAL([ovs-pcap p1-tx.pcap], [TCP_ICMP_NAT
+SCTP_ICMP_NAT])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ofproto-dpif - conntrack - fragmentation nat])
 OVS_VSWITCHD_START
 
