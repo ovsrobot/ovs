@@ -3819,3 +3819,22 @@ OVS_VSWITCHD_STOP(["dnl
   /.*failed to put.*$/d
   /.*failed to flow_del.*$/d"])
 AT_CLEANUP
+
+AT_SETUP([dpif-netdev - set field on truncated ARP header])
+OVS_VSWITCHD_START
+add_of_ports --pcap br0 1 2
+
+AT_CHECK([ovs-ofctl add-flow br0 "in_port=1,arp,actions=set_field:2->arp_op,2"])
+
+dnl ARP header with 10 of its 28 bytes.  It is forwarded unmodified.
+m4_define([ARP_SHORT_PKT], m4_join([],
+dnl eth(src=00:00:00:00:00:01,dst=00:00:00:00:00:02,type=0x0806)
+[0000000000020000000000010806],
+dnl arp(htype=1,ptype=0x0800,hlen=6,plen=4,op=1), first 2 bytes of sha.
+[00010800060400010000]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 ARP_SHORT_PKT])
+OVS_WAIT_UNTIL_EQUAL([ovs-pcap p2-tx.pcap], [ARP_SHORT_PKT])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
