@@ -390,16 +390,23 @@ odp_set_nd(struct dp_packet *packet, const struct ovs_key_nd *key,
     }
 }
 
-/* Set the NSH header. Assumes the NSH header is present and matches the
- * MD format of the key. The slow path must take case of that. */
+/* Set the NSH header.  Leaves the packet unchanged if it does not hold a valid
+ * NSH header.  Only the MD type 1 context is rewritten. */
 static void
 odp_set_nsh(struct dp_packet *packet, const struct nlattr *a, bool has_mask)
 {
     struct ovs_key_nsh key, mask;
     struct nsh_hdr *nsh = dp_packet_l3(packet);
-    uint8_t mdtype = nsh_md_type(nsh);
+    uint8_t mdtype;
     ovs_be32 path_hdr;
 
+    if (!nsh || !nsh_hdr_is_valid(nsh, dp_packet_l3_size(packet))) {
+        return;
+    }
+    mdtype = nsh->md_type;
+
+    memset(&key, 0, sizeof key);
+    memset(&mask, 0, sizeof mask);
     if (has_mask) {
         odp_nsh_key_from_attr(a, &key, &mask, NULL);
     } else {
