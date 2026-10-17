@@ -154,7 +154,7 @@ static void
 odp_set_ipv4(struct dp_packet *packet, const struct ovs_key_ipv4 *key,
              const struct ovs_key_ipv4 *mask)
 {
-    struct ip_header *nh = dp_packet_l3(packet);
+    struct ip_header *nh = dp_packet_l3_hdr(packet, IP_HEADER_LEN);
     ovs_be32 ip_src_nh;
     ovs_be32 ip_dst_nh;
     ovs_be32 new_ip_src;
@@ -162,7 +162,9 @@ odp_set_ipv4(struct dp_packet *packet, const struct ovs_key_ipv4 *key,
     uint8_t new_tos;
     uint8_t new_ttl;
 
-    ovs_assert(nh);
+    if (!nh) {
+        return;
+    }
 
     if (mask->ipv4_src) {
         ip_src_nh = get_16aligned_be32(&nh->ip_src);
@@ -237,10 +239,17 @@ static void
 odp_set_ipv6(struct dp_packet *packet, const struct ovs_key_ipv6 *key,
              const struct ovs_key_ipv6 *mask)
 {
-    struct ovs_16aligned_ip6_hdr *nh = dp_packet_l3(packet);
+    struct ovs_16aligned_ip6_hdr *nh = dp_packet_l3_hdr(packet,
+                                                        IPV6_HEADER_LEN);
     struct in6_addr sbuf, dbuf;
-    uint8_t old_tc = ntohl(get_16aligned_be32(&nh->ip6_flow)) >> 20;
-    ovs_be32 old_fl = get_16aligned_be32(&nh->ip6_flow) & htonl(0xfffff);
+    uint8_t old_tc;
+    ovs_be32 old_fl;
+
+    if (!nh) {
+        return;
+    }
+    old_tc = ntohl(get_16aligned_be32(&nh->ip6_flow)) >> 20;
+    old_fl = get_16aligned_be32(&nh->ip6_flow) & htonl(0xfffff);
 
     packet_set_ipv6(
         packet,
@@ -257,7 +266,7 @@ static void
 odp_set_tcp(struct dp_packet *packet, const struct ovs_key_tcp *key,
              const struct ovs_key_tcp *mask)
 {
-    struct tcp_header *th = dp_packet_l4(packet);
+    struct tcp_header *th = dp_packet_l4_hdr(packet, TCP_HEADER_LEN);
 
     if (OVS_LIKELY(th && dp_packet_get_tcp_payload(packet))) {
         packet_set_tcp_port(packet,
@@ -270,9 +279,9 @@ static void
 odp_set_udp(struct dp_packet *packet, const struct ovs_key_udp *key,
              const struct ovs_key_udp *mask)
 {
-    struct udp_header *uh = dp_packet_l4(packet);
+    struct udp_header *uh = dp_packet_l4_hdr(packet, UDP_HEADER_LEN);
 
-    if (OVS_LIKELY(uh && dp_packet_get_udp_payload(packet))) {
+    if (OVS_LIKELY(uh)) {
         packet_set_udp_port(packet,
                             key->udp_src | (uh->udp_src & ~mask->udp_src),
                             key->udp_dst | (uh->udp_dst & ~mask->udp_dst));
@@ -283,9 +292,9 @@ static void
 odp_set_sctp(struct dp_packet *packet, const struct ovs_key_sctp *key,
              const struct ovs_key_sctp *mask)
 {
-    struct sctp_header *sh = dp_packet_l4(packet);
+    struct sctp_header *sh = dp_packet_l4_hdr(packet, SCTP_HEADER_LEN);
 
-    if (OVS_LIKELY(sh && dp_packet_get_sctp_payload(packet))) {
+    if (OVS_LIKELY(sh)) {
         packet_set_sctp_port(packet,
                              key->sctp_src | (sh->sctp_src & ~mask->sctp_src),
                              key->sctp_dst | (sh->sctp_dst & ~mask->sctp_dst));
@@ -302,9 +311,9 @@ static void
 set_arp(struct dp_packet *packet, const struct ovs_key_arp *key,
         const struct ovs_key_arp *mask)
 {
-    struct arp_eth_header *arp = dp_packet_l3(packet);
+    struct arp_eth_header *arp = dp_packet_l3_hdr(packet, ARP_ETH_HEADER_LEN);
 
-    if (!arp || dp_packet_l3_size(packet) < ARP_ETH_HEADER_LEN) {
+    if (!arp) {
         return;
     }
 
@@ -332,9 +341,14 @@ static void
 odp_set_nd_ext(struct dp_packet *packet, const struct ovs_key_nd_extensions
         *key, const struct ovs_key_nd_extensions *mask)
 {
-    const struct ovs_nd_msg *ns = dp_packet_l4(packet);
-    ovs_16aligned_be32 reserved = ns->rso_flags;
+    const struct ovs_nd_msg *ns = dp_packet_l4_hdr(packet, sizeof *ns);
+    ovs_16aligned_be32 reserved;
     uint8_t opt_type = 0;
+
+    if (!ns) {
+        return;
+    }
+    reserved = ns->rso_flags;
 
     if (dp_packet_l4_size(packet) >= sizeof *ns + ND_LLA_OPT_LEN) {
         opt_type = ns->options[0].type;

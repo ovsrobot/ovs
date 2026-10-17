@@ -1147,20 +1147,26 @@ void
 packet_set_ipv4_addr(struct dp_packet *packet,
                      ovs_16aligned_be32 *addr, ovs_be32 new_addr)
 {
-    struct ip_header *nh = dp_packet_l3(packet);
-    ovs_be32 old_addr = get_16aligned_be32(addr);
-    size_t l4_size = dp_packet_l4_size(packet);
+    struct ip_header *nh = dp_packet_l3_hdr(packet, IP_HEADER_LEN);
+    ovs_be32 old_addr;
+
+    if (!nh) {
+        return;
+    }
+    old_addr = get_16aligned_be32(addr);
 
     pkt_metadata_init_conn(&packet->md);
 
-    if (nh->ip_proto == IPPROTO_TCP && l4_size >= TCP_HEADER_LEN) {
+    if (nh->ip_proto == IPPROTO_TCP
+        && dp_packet_l4_hdr(packet, TCP_HEADER_LEN)) {
         if (dp_packet_l4_checksum_valid(packet)) {
             dp_packet_l4_checksum_set_partial(packet);
         } else {
             struct tcp_header *th = dp_packet_l4(packet);
             th->tcp_csum = recalc_csum32(th->tcp_csum, old_addr, new_addr);
         }
-    } else if (nh->ip_proto == IPPROTO_UDP && l4_size >= UDP_HEADER_LEN ) {
+    } else if (nh->ip_proto == IPPROTO_UDP
+               && dp_packet_l4_hdr(packet, UDP_HEADER_LEN)) {
         if (dp_packet_l4_checksum_valid(packet)) {
             dp_packet_l4_checksum_set_partial(packet);
         } else {
@@ -1185,16 +1191,23 @@ packet_set_ipv4_addr(struct dp_packet *packet,
 /* Returns true, if packet contains at least one routing header where
  * segements_left > 0.
  *
- * This function assumes that L3 and L4 offsets are set in the packet. */
+ * The extension headers are looked for between the L3 header and the L4
+ * offset, or the end of the L3 payload if the L4 offset is not set. */
 bool
 packet_rh_present(struct dp_packet *packet, uint8_t *nexthdr, bool *first_frag)
 {
     const struct ovs_16aligned_ip6_hdr *nh;
     size_t len;
     size_t remaining;
-    uint8_t *data = dp_packet_l3(packet);
+    uint8_t *data = dp_packet_l3_hdr(packet, sizeof *nh);
 
-    remaining = packet->l4_ofs - packet->l3_ofs;
+    if (!data) {
+        return false;
+    }
+    remaining = dp_packet_l3_size(packet);
+    if (dp_packet_l4(packet) && packet->l4_ofs >= packet->l3_ofs) {
+        remaining = MIN(remaining, packet->l4_ofs - packet->l3_ofs);
+    }
     if (remaining < sizeof *nh) {
         return false;
     }
@@ -1272,9 +1285,7 @@ packet_update_csum128(struct dp_packet *packet, uint8_t proto,
                       ovs_16aligned_be32 addr[4],
                       const struct in6_addr *new_addr)
 {
-    size_t l4_size = dp_packet_l4_size(packet);
-
-    if (proto == IPPROTO_TCP && l4_size >= TCP_HEADER_LEN) {
+    if (proto == IPPROTO_TCP && dp_packet_l4_hdr(packet, TCP_HEADER_LEN)) {
         if (dp_packet_l4_checksum_valid(packet)) {
             dp_packet_l4_checksum_set_partial(packet);
         } else {
@@ -1282,7 +1293,8 @@ packet_update_csum128(struct dp_packet *packet, uint8_t proto,
 
             th->tcp_csum = recalc_csum128(th->tcp_csum, addr, new_addr);
         }
-    } else if (proto == IPPROTO_UDP && l4_size >= UDP_HEADER_LEN) {
+    } else if (proto == IPPROTO_UDP
+               && dp_packet_l4_hdr(packet, UDP_HEADER_LEN)) {
         if (dp_packet_l4_checksum_valid(packet)) {
             dp_packet_l4_checksum_set_partial(packet);
         } else {
@@ -1295,11 +1307,13 @@ packet_update_csum128(struct dp_packet *packet, uint8_t proto,
                 }
             }
         }
-    } else if (proto == IPPROTO_ICMPV6 &&
-               l4_size >= sizeof(struct icmp6_header)) {
-        struct icmp6_header *icmp = dp_packet_l4(packet);
+    } else if (proto == IPPROTO_ICMPV6) {
+        struct icmp6_header *icmp = dp_packet_l4_hdr(packet, sizeof *icmp);
 
-        icmp->icmp6_cksum = recalc_csum128(icmp->icmp6_cksum, addr, new_addr);
+        if (icmp) {
+            icmp->icmp6_cksum = recalc_csum128(icmp->icmp6_cksum, addr,
+                                               new_addr);
+        }
     }
 }
 
@@ -1340,7 +1354,11 @@ void
 packet_set_ipv4(struct dp_packet *packet, ovs_be32 src, ovs_be32 dst,
                 uint8_t tos, uint8_t ttl)
 {
-    struct ip_header *nh = dp_packet_l3(packet);
+    struct ip_header *nh = dp_packet_l3_hdr(packet, IP_HEADER_LEN);
+
+    if (!nh) {
+        return;
+    }
 
     if (get_16aligned_be32(&nh->ip_src) != src) {
         packet_set_ipv4_addr(packet, &nh->ip_src, src);
@@ -1386,10 +1404,15 @@ packet_set_ipv6(struct dp_packet *packet, const struct in6_addr *src,
                 const struct in6_addr *dst, uint8_t key_tc, ovs_be32 key_fl,
                 uint8_t key_hl)
 {
-    struct ovs_16aligned_ip6_hdr *nh = dp_packet_l3(packet);
+    struct ovs_16aligned_ip6_hdr *nh = dp_packet_l3_hdr(packet,
+                                                        IPV6_HEADER_LEN);
     bool recalc_csum = true;
     uint8_t proto = 0;
     bool rh_present;
+
+    if (!nh) {
+        return;
+    }
 
     rh_present = packet_rh_present(packet, &proto, &recalc_csum);
 
@@ -1426,8 +1449,13 @@ packet_set_port(ovs_be16 *port, ovs_be16 new_port, ovs_be16 *csum)
 void
 packet_set_tcp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 {
-    struct tcp_header *th = dp_packet_l4(packet);
+    size_t ports_len = offsetof(struct tcp_header, tcp_seq);
+    struct tcp_header *th = dp_packet_l4_hdr(packet, ports_len);
     ovs_be16 *csum = NULL;
+
+    if (!th) {
+        return;
+    }
 
     if (dp_packet_l4_checksum_valid(packet)) {
         dp_packet_l4_checksum_set_partial(packet);
@@ -1446,7 +1474,11 @@ packet_set_tcp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 void
 packet_set_udp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 {
-    struct udp_header *uh = dp_packet_l4(packet);
+    struct udp_header *uh = dp_packet_l4_hdr(packet, UDP_HEADER_LEN);
+
+    if (!uh) {
+        return;
+    }
 
     if (dp_packet_l4_checksum_valid(packet)) {
         dp_packet_l4_checksum_set_partial(packet);
@@ -1473,7 +1505,12 @@ packet_set_udp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 void
 packet_set_sctp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 {
-    struct sctp_header *sh = dp_packet_l4(packet);
+    size_t ports_len = offsetof(struct sctp_header, sctp_vtag);
+    struct sctp_header *sh = dp_packet_l4_hdr(packet, ports_len);
+
+    if (!sh) {
+        return;
+    }
 
     if (dp_packet_l4_checksum_valid(packet)) {
         dp_packet_l4_checksum_set_partial(packet);
@@ -1507,9 +1544,14 @@ packet_set_sctp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 void
 packet_set_icmp(struct dp_packet *packet, uint8_t type, uint8_t code)
 {
-    struct icmp_header *ih = dp_packet_l4(packet);
-    ovs_be16 orig_tc = htons(ih->icmp_type << 8 | ih->icmp_code);
-    ovs_be16 new_tc = htons(type << 8 | code);
+    struct icmp_header *ih = dp_packet_l4_hdr(packet, ICMP_HEADER_LEN);
+    ovs_be16 orig_tc, new_tc;
+
+    if (!ih) {
+        return;
+    }
+    orig_tc = htons(ih->icmp_type << 8 | ih->icmp_code);
+    new_tc = htons(type << 8 | code);
 
     if (orig_tc != new_tc) {
         ih->icmp_type = type;
@@ -1526,9 +1568,9 @@ packet_set_icmp(struct dp_packet *packet, uint8_t type, uint8_t code)
 void
 packet_set_icmp_id(struct dp_packet *packet, ovs_be16 icmp_id)
 {
-    struct icmp_header *ih = dp_packet_l4(packet);
+    struct icmp_header *ih = dp_packet_l4_hdr(packet, ICMP_HEADER_LEN);
 
-    if (!ih || dp_packet_l4_size(packet) < ICMP_HEADER_LEN) {
+    if (!ih) {
         return;
     }
 
@@ -1545,9 +1587,9 @@ packet_set_icmp_id(struct dp_packet *packet, ovs_be16 icmp_id)
 uint8_t
 packet_get_icmp_type(const struct dp_packet *packet)
 {
-    struct icmp_header *ih = dp_packet_l4(packet);
+    struct icmp_header *ih = dp_packet_l4_hdr(packet, ICMP_HEADER_LEN);
 
-    if (!ih || dp_packet_l4_size(packet) < ICMP_HEADER_LEN) {
+    if (!ih) {
         return 0;
     }
 
@@ -1561,11 +1603,14 @@ packet_get_ip_proto(const struct dp_packet *packet)
     uint8_t ip_proto;
 
     if (l2->eth_type == htons(ETH_TYPE_IPV6)) {
-        struct ovs_16aligned_ip6_hdr *nh6 = dp_packet_l3(packet);
-        ip_proto = nh6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+        struct ovs_16aligned_ip6_hdr *nh6;
+
+        nh6 = dp_packet_l3_hdr(packet, IPV6_HEADER_LEN);
+        ip_proto = nh6 ? nh6->ip6_ctlun.ip6_un1.ip6_un1_nxt : 0;
     } else {
-        struct ip_header *l3_hdr = dp_packet_l3(packet);
-        ip_proto = l3_hdr->ip_proto;
+        struct ip_header *l3_hdr = dp_packet_l3_hdr(packet, IP_HEADER_LEN);
+
+        ip_proto = l3_hdr ? l3_hdr->ip_proto : 0;
     }
 
     return ip_proto;
@@ -1602,11 +1647,15 @@ void
 packet_set_igmp3_query(struct dp_packet *packet, uint8_t max_resp,
                        ovs_be32 group, bool srs, uint8_t qrv, uint8_t qqic)
 {
-    struct igmpv3_query_header *igh = dp_packet_l4(packet);
-    ovs_be16 orig_type_max_resp =
-        htons(igh->type << 8 | igh->max_resp);
-    ovs_be16 new_type_max_resp =
-        htons(IGMP_HOST_MEMBERSHIP_QUERY << 8 | max_resp);
+    struct igmpv3_query_header *igh;
+    ovs_be16 orig_type_max_resp, new_type_max_resp;
+
+    igh = dp_packet_l4_hdr(packet, IGMPV3_QUERY_HEADER_LEN);
+    if (!igh) {
+        return;
+    }
+    orig_type_max_resp = htons(igh->type << 8 | igh->max_resp);
+    new_type_max_resp = htons(IGMP_HOST_MEMBERSHIP_QUERY << 8 | max_resp);
 
     if (orig_type_max_resp != new_type_max_resp) {
         igh->type = IGMP_HOST_MEMBERSHIP_QUERY;
@@ -1645,7 +1694,8 @@ packet_set_nd_ext(struct dp_packet *packet, const ovs_16aligned_be32 rso_flags,
     struct ovs_nd_msg *ns;
     struct ovs_nd_lla_opt *opt;
     int bytes_remain = dp_packet_l4_size(packet);
-    struct ovs_16aligned_ip6_hdr * nh = dp_packet_l3(packet);
+    struct ovs_16aligned_ip6_hdr *nh = dp_packet_l3_hdr(packet,
+                                                        IPV6_HEADER_LEN);
     uint32_t pseudo_hdr_csum = 0;
 
     if (OVS_UNLIKELY(bytes_remain < sizeof(*ns))) {
@@ -2080,15 +2130,21 @@ void
 IP_ECN_set_ce(struct dp_packet *pkt, bool is_ipv6)
 {
     if (is_ipv6) {
-        ovs_16aligned_be32 *ip6 = dp_packet_l3(pkt);
+        ovs_16aligned_be32 *ip6 = dp_packet_l3_hdr(pkt, IPV6_HEADER_LEN);
 
+        if (!ip6) {
+            return;
+        }
         put_16aligned_be32(ip6, get_16aligned_be32(ip6) |
                                 htonl(IP_ECN_CE << 20));
     } else {
-        struct ip_header *nh = dp_packet_l3(pkt);
-        uint8_t tos = nh->ip_tos;
+        struct ip_header *nh = dp_packet_l3_hdr(pkt, IP_HEADER_LEN);
+        uint8_t tos;
 
-        tos |= IP_ECN_CE;
+        if (!nh) {
+            return;
+        }
+        tos = nh->ip_tos | IP_ECN_CE;
         if (nh->ip_tos != tos) {
             if (dp_packet_ip_checksum_valid(pkt)) {
                 dp_packet_ip_checksum_set_partial(pkt);
