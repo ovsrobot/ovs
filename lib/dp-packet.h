@@ -507,6 +507,37 @@ dp_packet_l4_size(const struct dp_packet *b)
         : 0;
 }
 
+/* Returns the data at offset 'ofs' of 'b' if at least 'size' bytes follow
+ * it before the L2 padding, otherwise NULL.  'ofs' may be unset. */
+static inline void *
+dp_packet_hdr_at__(const struct dp_packet *b, uint16_t ofs, size_t size)
+{
+    size_t len = dp_packet_size(b);
+    size_t pad = dp_packet_l2_pad_size(b);
+    size_t end = pad <= len ? len - pad : 0;
+
+    return ofs != UINT16_MAX && ofs <= end && size <= end - ofs
+           ? (char *) dp_packet_data(b) + ofs
+           : NULL;
+}
+
+/* Returns the L3 header of 'b' if the packet holds at least 'size' bytes
+ * of it, otherwise NULL.  The L3 offset may be set for a header that flow
+ * extraction found too short. */
+static inline void *
+dp_packet_l3_hdr(const struct dp_packet *b, size_t size)
+{
+    return dp_packet_hdr_at__(b, b->l3_ofs, size);
+}
+
+/* Returns the L4 header of 'b' if the packet holds at least 'size' bytes
+ * of it, otherwise NULL. */
+static inline void *
+dp_packet_l4_hdr(const struct dp_packet *b, size_t size)
+{
+    return dp_packet_hdr_at__(b, b->l4_ofs, size);
+}
+
 static inline void *
 dp_packet_inner_l3(const struct dp_packet *b)
 {
