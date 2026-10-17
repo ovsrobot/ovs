@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "dp-packet.h"
 #include "ovstest.h"
 
 static void
@@ -173,6 +174,74 @@ test_ipv6_parsing(void)
     assert(ipv6_count_cidr_bits(&mask) == 128);
 }
 
+/* Checks that packet_set_nd() changes only the address of the option at
+ * 'lla_ofs' into 'opts', or nothing if 'lla_ofs' is -1. */
+static void
+check_set_nd(const uint8_t *opts, size_t n, int lla_ofs)
+{
+    static const struct eth_addr sll = ETH_ADDR_C(aa, bb, cc, dd, ee, 01);
+    static const struct eth_addr tll = ETH_ADDR_C(aa, bb, cc, dd, ee, 02);
+    size_t size = sizeof(struct ovs_nd_msg) + n;
+    struct ovs_nd_msg *ns = xzalloc(size);
+    struct in6_addr target;
+    struct dp_packet *packet;
+    uint8_t *expected;
+
+    memcpy(ns->options, opts, n);
+    memcpy(&target, &ns->target, sizeof target);
+
+    expected = xmemdup(ns->options, n);
+    if (lla_ofs >= 0) {
+        const struct eth_addr *mac = (opts[lla_ofs] == ND_OPT_SOURCE_LINKADDR
+                                      ? &sll : &tll);
+
+        memcpy(&expected[lla_ofs + 2], mac, sizeof *mac);
+    }
+
+    packet = dp_packet_clone_data(ns, size);
+    free(ns);
+    dp_packet_set_l4(packet, dp_packet_data(packet));
+    packet_set_nd(packet, &target, sll, tll);
+
+    ns = dp_packet_l4(packet);
+    ovs_assert(!memcmp(ns->options, expected, n));
+
+    dp_packet_delete(packet);
+    free(expected);
+}
+
+static void
+test_set_nd(void)
+{
+    static const uint8_t sll[] = {
+        ND_OPT_SOURCE_LINKADDR, 1, 1, 2, 3, 4, 5, 6,
+    };
+    static const uint8_t mtu_tll[] = {
+        5, 1, 0, 0, 0, 0, 5, 220,
+        ND_OPT_TARGET_LINKADDR, 1, 1, 2, 3, 4, 5, 6,
+    };
+    static const uint8_t long_short[] = {
+        3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        3, 1, 0, 0, 0, 0, 0, 0,
+    };
+    static const uint8_t long_sll[] = {
+        3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ND_OPT_SOURCE_LINKADDR, 1, 1, 2, 3, 4, 5, 6,
+    };
+    static const uint8_t tll_sll[] = {
+        ND_OPT_TARGET_LINKADDR, 1, 1, 2, 3, 4, 5, 6,
+        ND_OPT_SOURCE_LINKADDR, 1, 1, 2, 3, 4, 5, 6,
+    };
+
+    check_set_nd(sll, 0, -1);
+    check_set_nd(sll, sizeof sll, 0);
+    check_set_nd(mtu_tll, sizeof mtu_tll, 8);
+    check_set_nd(long_short, sizeof long_short, -1);
+    check_set_nd(long_sll, sizeof long_sll, 16);
+    check_set_nd(long_sll, 16, -1);
+    check_set_nd(tll_sll, sizeof tll_sll, 0);
+}
+
 static void
 test_packets_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
 {
@@ -181,6 +250,7 @@ test_packets_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
     test_ipv6_cidr();
     test_ipv6_masking();
     test_ipv6_parsing();
+    test_set_nd();
 }
 
 OVSTEST_REGISTER("test-packets", test_packets_main);

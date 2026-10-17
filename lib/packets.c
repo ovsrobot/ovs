@@ -1652,7 +1652,9 @@ packet_set_nd_ext(struct dp_packet *packet, const ovs_16aligned_be32 rso_flags,
 
     /* set RSO flags and option type */
     ns->rso_flags = rso_flags;
-    opt->type = opt_type;
+    if (bytes_remain >= sizeof(*ns) + ND_LLA_OPT_LEN) {
+        opt->type = opt_type;
+    }
 
     /* recalculate checksum */
     ovs_be16 *csum_value = &(ns->icmph.icmp6_cksum);
@@ -1707,8 +1709,8 @@ packet_set_nd(struct dp_packet *packet, const struct in6_addr *target,
             break;
         }
 
-        opt += opt->len;
         bytes_remain -= opt->len * ND_LLA_OPT_LEN;
+        opt += opt->len;
     }
 }
 
