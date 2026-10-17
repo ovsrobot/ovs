@@ -999,7 +999,7 @@ ovsdb_monitor_compose_row_update(
     enum ovsdb_monitor_row_type row_type OVS_UNUSED,
     const void *_row,
     bool initial, unsigned long int *changed,
-    size_t n_columns OVS_UNUSED)
+    size_t n_columns)
 {
     const struct ovsdb_monitor_row *row = _row;
     enum ovsdb_monitor_selection type;
@@ -1011,7 +1011,7 @@ ovsdb_monitor_compose_row_update(
     type = ovsdb_monitor_row_update_type(initial, row->old, row->new);
     if (ovsdb_monitor_row_skip_update(mt, row_type, row->old,
                                       row->new, type, changed,
-                                      mt->n_columns)) {
+                                      n_columns)) {
         return NULL;
     }
 
