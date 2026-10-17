@@ -169,6 +169,26 @@ AT_CHECK([ovs-ofctl dump-ports int-br | grep 'port  3'], [0], [dnl
   port  3: rx pkts=1, bytes=98, drop=?, errs=?, frame=?, over=?, crc=?
 ])
 
+dnl ERSPAN v2 header truncated in its metadata is dropped.
+m4_define([ERSPAN_SHORT_PKT], m4_join([],
+dnl eth(src=00:1b:21:3c:ab:64,dst=aa:55:aa:55:00:00,type=0x0800)
+[aa55aa550000001b213cab640800],
+dnl ipv4(src=1.1.2.92,dst=1.1.2.88,proto=47,tot_len=36)
+[4500002479464000402fbaaf0101025c01010258],
+dnl gre(flags=S,proto=0x22eb,seq=1)
+[100022eb00000001],
+dnl erspan(ver=2,sid=567)
+[20000237],
+dnl First 4 of the 8 bytes of ERSPAN v2 metadata.
+[10abcd01]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 ERSPAN_SHORT_PKT])
+AT_CHECK([ovs-appctl revalidator/wait])
+AT_CHECK([ovs-ofctl dump-ports int-br | grep 'port  3'], [0], [dnl
+  port  3: rx pkts=1, bytes=98, drop=?, errs=?, frame=?, over=?, crc=?
+])
+CHECK_COVERAGE([datapath_drop_tunnel_pop_error], [1])
+
 dnl Check ERSPAN encap in pcap file
 dnl This ARP reply from p0 has two effects:
 dnl 1. The ARP cache will learn that 1.1.2.92 is at f8:bc:12:44:34:b6.
