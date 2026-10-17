@@ -12674,6 +12674,47 @@ NXST_FLOW reply:
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ofproto-dpif - conntrack - icmp protocol of the other address family])
+OVS_VSWITCHD_START
+
+add_of_ports br0 1 2
+
+AT_DATA([flows.txt], [dnl
+table=0,priority=10,ip,ct_state=-trk,action=ct(table=1)
+table=0,priority=10,ipv6,ct_state=-trk,action=ct(table=1)
+table=1,priority=10,ct_state=+trk+inv,action=drop
+table=1,priority=10,ct_state=+trk+new,action=output:2
+])
+
+AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
+
+dnl IPv4 with protocol ICMPv6 and IPv6 with next header ICMP, both
+dnl without L4 payload, are tracked like any other protocol.
+m4_define([IP_ICMP6_PKT], m4_join([],
+dnl eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a,type=0x0800)
+[50540000000a5054000000090800],
+dnl ipv4(src=10.0.0.1,dst=10.0.0.2,proto=58,tot_len=20)
+[4500001400000000403a66ae0a0000010a000002]))
+
+m4_define([IP6_ICMP_PKT], m4_join([],
+dnl eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a,type=0x86dd)
+[50540000000a50540000000986dd],
+dnl ipv6(src=2001:db8::1,dst=2001:db8::2,nh=1,plen=0)
+[600000000000014020010db800000000000000000000000120010db8000000000000000000000002]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 IP_ICMP6_PKT])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 IP6_ICMP_PKT])
+
+AT_CHECK([ovs-appctl revalidator/purge])
+AT_CHECK([ovs-ofctl dump-flows br0 table=1 | ofctl_strip | sort], [0], [dnl
+ table=1, n_packets=2, n_bytes=88, priority=10,ct_state=+new+trk actions=output:2
+ table=1, priority=10,ct_state=+inv+trk actions=drop
+NXST_FLOW reply:
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ofproto-dpif - conntrack - zones])
 OVS_VSWITCHD_START
 
