@@ -838,18 +838,26 @@ netdev_gtpu_pop_header(struct dp_packet *packet)
     tnl->tun_id = be32_to_be64(get_16aligned_be32(&gtph->teid));
 
     if (tnl->gtpu_msgtype == GTPU_MSGTYPE_GPDU) {
-        struct ip_header *ip;
+        uint8_t ip_ver = 0;
 
+        gtpu_hlen = GTPU_HLEN;
         if (gtph->md.flags & GTPU_S_MASK) {
-            gtpu_hlen = GTPU_HLEN + sizeof(struct gtpuhdr_opt);
-        } else {
-            gtpu_hlen = GTPU_HLEN;
+            gtpu_hlen += sizeof(struct gtpuhdr_opt);
         }
-        ip = ALIGNED_CAST(struct ip_header *, (char *)gtph + gtpu_hlen);
+        if (gtpu_hlen > dp_packet_l4_size(packet)) {
+            goto err;
+        }
+        if (gtpu_hlen < dp_packet_l4_size(packet)) {
+            const struct ip_header *ip;
 
-        if (IP_VER(ip->ip_ihl_ver) == 4) {
+            ip = ALIGNED_CAST(const struct ip_header *,
+                              (char *) dp_packet_l4(packet) + gtpu_hlen);
+            ip_ver = IP_VER(ip->ip_ihl_ver);
+        }
+
+        if (ip_ver == 4) {
             packet->packet_type = htonl(PT_IPV4);
-        } else if (IP_VER(ip->ip_ihl_ver) == 6) {
+        } else if (ip_ver == 6) {
             packet->packet_type = htonl(PT_IPV6);
         } else {
             VLOG_WARN_RL(&err_rl, "GTP-U: Receive non-IP packet.");
