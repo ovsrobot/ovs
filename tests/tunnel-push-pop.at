@@ -193,6 +193,66 @@ OVS_WAIT_UNTIL([test `ovs-pcap p0.pcap | grep 100022eb0000000120000237 | wc -l` 
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([tunnel_push_pop - gtpu decap with sequence number])
+OVS_VSWITCHD_START([add-port br0 p0 -- set Interface p0 type=dummy ofport_request=1 other-config:hwaddr=aa:55:aa:55:00:00])
+AT_CHECK([ovs-vsctl add-br int-br -- set bridge int-br datapath_type=dummy], [0])
+AT_CHECK([ovs-vsctl add-port int-br t1 -- set Interface t1 type=gtpu \
+                       options:remote_ip=1.1.2.92 options:key=123 ofport_request=2])
+
+AT_CHECK([ovs-appctl netdev-dummy/ip4addr br0 1.1.2.88/24], [0], [OK
+])
+AT_CHECK([ovs-ofctl add-flow br0 action=normal])
+AT_CHECK([ovs-ofctl add-flow int-br "cookie=0x1,in_port=2,ip,actions=drop"])
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 'recirc_id(0),in_port(100),eth(src=f8:bc:12:44:34:b6,dst=ff:ff:ff:ff:ff:ff),eth_type(0x0806),arp(sip=1.1.2.92,tip=1.1.2.88,op=2,sha=f8:bc:12:44:34:b6,tha=00:00:00:00:00:00)'])
+AT_CHECK([ovs-appctl time/warp 1000], [0], [ignore])
+AT_CHECK([ovs-appctl revalidator/wait])
+
+dnl G-PDU with the S flag set is decapsulated as an IPv4 packet.
+m4_define([GTPU_SEQ_PKT], m4_join([],
+dnl eth(src=00:1b:21:3c:ab:64,dst=aa:55:aa:55:00:00,type=0x0800)
+[aa55aa550000001b213cab640800],
+dnl ipv4(src=1.1.2.92,dst=1.1.2.88,proto=17,tot_len=68)
+[4500004400010000401173f30101025c01010258],
+dnl udp(src=4789,dst=2152,len=48)
+[12b5086800300000],
+dnl gtpu(flags=0x32,msgtype=255,len=32,teid=123)
+[32ff00200000007b],
+dnl gtpu optional field (sequence number, N-PDU, next extension).
+[00000000],
+dnl ipv4(src=30.0.0.1,dst=30.0.0.2,proto=1,tot_len=28)
+[4500001c000100008001fedd1e0000011e000002],
+dnl icmp(type=0,code=0)
+[0000ffff00000000]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 GTPU_SEQ_PKT])
+AT_CHECK([ovs-appctl time/warp 1000], [0], [ignore])
+AT_CHECK([ovs-ofctl dump-ports int-br | grep 'port  2'], [0], [dnl
+  port  2: rx pkts=1, bytes=28, drop=?, errs=?, frame=?, over=?, crc=?
+])
+AT_CHECK([ovs-ofctl dump-flows int-br | grep 'cookie=0x1,' | grep -c 'n_packets=1,'], [0], [1
+])
+
+dnl G-PDU with the S flag set, but without the optional field, is dropped.
+m4_define([GTPU_SHORT_PKT], m4_join([],
+dnl eth(src=00:1b:21:3c:ab:64,dst=aa:55:aa:55:00:00,type=0x0800)
+[aa55aa550000001b213cab640800],
+dnl ipv4(src=1.1.2.92,dst=1.1.2.88,proto=17,tot_len=36)
+[4500002400010000401174130101025c01010258],
+dnl udp(src=4789,dst=2152,len=16)
+[12b5086800100000],
+dnl gtpu(flags=0x32,msgtype=255,len=0,teid=123)
+[32ff00000000007b]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 GTPU_SHORT_PKT])
+AT_CHECK([ovs-appctl time/warp 1000], [0], [ignore])
+AT_CHECK([ovs-ofctl dump-ports int-br | grep 'port  2'], [0], [dnl
+  port  2: rx pkts=1, bytes=28, drop=?, errs=?, frame=?, over=?, crc=?
+])
+CHECK_COVERAGE([datapath_drop_tunnel_pop_error], [1])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([tunnel_push_pop - action])
 
 OVS_VSWITCHD_START([add-port br0 p0 -- set Interface p0 type=dummy ofport_request=1 other-config:hwaddr=aa:55:aa:55:00:00])
