@@ -6799,7 +6799,7 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
             continue;
 
         error:
-            ofconn_send_error(ofconn, b->data, error);
+            ofconn_send_error(ofconn, b->header, error);
 
             for (size_t i = 0; i < n_monitors; i++) {
                 ofmonitor_destroy(monitors[i]);
