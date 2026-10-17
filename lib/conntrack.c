@@ -1870,7 +1870,7 @@ sctp_check_len(const struct sctp_header *sh, size_t size)
      */
     for (next = sizeof(struct sctp_header),
          sch = SCTP_NEXT_CHUNK(sh, next);
-         next < size;
+         next + sizeof *sch <= size;
          next += ROUND_UP(ntohs(sch->length), 4),
          sch = SCTP_NEXT_CHUNK(sh, next)) {
         /* rfc4960: This value represents the size of the chunk in bytes,
