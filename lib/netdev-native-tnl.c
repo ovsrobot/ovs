@@ -453,7 +453,7 @@ parse_gre_header(struct dp_packet *packet,
     uint16_t greh_protocol;
 
     greh = ip_extract_tnl_md(packet, tnl, &ulen);
-    if (!greh) {
+    if (!greh || dp_packet_l4_size(packet) < sizeof *greh) {
         return -EINVAL;
     }
 

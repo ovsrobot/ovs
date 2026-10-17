@@ -158,6 +158,20 @@ AT_CHECK([tail -1 stdout], [0],
   [Datapath actions: tnl_push(tnl_port(6),header(size=58,type=109,eth(dst=f8:bc:12:44:34:b6,src=aa:55:aa:55:00:00,dl_type=0x86dd),ipv6(src=2001:cafe::88,dst=2001:cafe::92,label=0,proto=47,tclass=0x0,hlimit=64),gre((flags=0x0,proto=0x6558))),out_port(100)),1
 ])
 
+dnl IPv6 GRE packet whose hop-by-hop options header leaves no room for the
+dnl GRE header is dropped.
+m4_define([GRE_SHORT_PKT], m4_join([],
+dnl eth(src=f8:bc:12:44:34:b6,dst=aa:55:aa:55:00:00,type=0x86dd)
+[aa55aa550000f8bc124434b686dd],
+dnl ipv6(src=2001:cafe::92,dst=2001:cafe::88,nh=0,plen=8)
+[60000000000800402001cafe0000000000000000000000922001cafe000000000000000000000088],
+dnl Hop-by-hop options header with next header GRE, and no GRE header.
+[2f00010400000000]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p0 GRE_SHORT_PKT])
+AT_CHECK([ovs-appctl time/warp 1000], [0], [ignore])
+CHECK_COVERAGE([datapath_drop_tunnel_pop_error], [1])
+
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
