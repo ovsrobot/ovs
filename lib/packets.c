@@ -1417,7 +1417,8 @@ packet_set_port(ovs_be16 *port, ovs_be16 new_port, ovs_be16 *csum)
 
 /* Sets the TCP source and destination port ('src' and 'dst' respectively) of
  * the TCP header contained in 'packet'.  'packet' must be a valid TCP packet
- * with its l4 offset properly populated. */
+ * with its l4 offset properly populated.  If the header is truncated after
+ * the ports, the checksum is left untouched. */
 void
 packet_set_tcp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 {
@@ -1426,7 +1427,7 @@ packet_set_tcp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 
     if (dp_packet_l4_checksum_valid(packet)) {
         dp_packet_l4_checksum_set_partial(packet);
-    } else {
+    } else if (dp_packet_l4_size(packet) >= TCP_HEADER_LEN) {
         csum = &th->tcp_csum;
     }
 
@@ -1463,7 +1464,8 @@ packet_set_udp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 
 /* Sets the SCTP source and destination port ('src' and 'dst' respectively) of
  * the SCTP header contained in 'packet'.  'packet' must be a valid SCTP packet
- * with its l4 offset properly populated. */
+ * with its l4 offset properly populated.  If the header is truncated after
+ * the ports, the checksum is left untouched. */
 void
 packet_set_sctp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 {
@@ -1471,6 +1473,9 @@ packet_set_sctp_port(struct dp_packet *packet, ovs_be16 src, ovs_be16 dst)
 
     if (dp_packet_l4_checksum_valid(packet)) {
         dp_packet_l4_checksum_set_partial(packet);
+        sh->sctp_src = src;
+        sh->sctp_dst = dst;
+    } else if (dp_packet_l4_size(packet) < SCTP_HEADER_LEN) {
         sh->sctp_src = src;
         sh->sctp_dst = dst;
     } else {
