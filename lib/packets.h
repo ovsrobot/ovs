@@ -453,6 +453,33 @@ void push_eth(struct dp_packet *packet, const struct eth_addr *dst,
               const struct eth_addr *src);
 void pop_eth(struct dp_packet *packet);
 
+/* Returns true if the 'size' bytes at 'nsh' start with an NSH header that
+ * flow parsing accepts: version 0, a length that fits within 'size' and, for
+ * MD type 1, the full fixed-length context. */
+static inline bool
+nsh_hdr_is_valid(const struct nsh_hdr *nsh, size_t size)
+{
+    size_t length;
+
+    if (size < NSH_BASE_HDR_LEN || nsh_get_ver(nsh) != 0) {
+        return false;
+    }
+
+    length = nsh_hdr_len(nsh);
+    if (length > size) {
+        return false;
+    }
+
+    switch (nsh->md_type) {
+    case NSH_M_TYPE1:
+        return length == NSH_M_TYPE1_LEN;
+    case NSH_M_TYPE2:
+        return length >= NSH_BASE_HDR_LEN;
+    default:
+        return true;
+    }
+}
+
 void push_nsh(struct dp_packet *packet, const struct nsh_hdr *nsh_hdr_src);
 bool pop_nsh(struct dp_packet *packet);
 
