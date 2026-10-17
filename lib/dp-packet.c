@@ -529,6 +529,62 @@ dp_packet_resize_l2_5(struct dp_packet *b, int increment)
     return dp_packet_data(b);
 }
 
+static void
+dp_packet_truncate_layer_offset(uint16_t *offset, uint32_t size)
+{
+    if (*offset != UINT16_MAX && *offset > size) {
+        *offset = UINT16_MAX;
+    }
+}
+
+/* Returns true if 'size' bytes at 'ip' hold an IPv4 header with all of its
+ * options. */
+static bool
+dp_packet_ip_header_fits(const struct ip_header *ip, size_t size)
+{
+    return ip && size >= IP_HEADER_LEN
+           && IP_IHL(ip->ip_ihl_ver) * 4 <= size;
+}
+
+/* Removes data from the tail of 'b', leaving it 'size' bytes long.  The L2
+ * padding shrinks with the data, layer offsets past the new end are cleared,
+ * and checksum and segmentation offloads that depend on the removed data are
+ * dropped. */
+void
+dp_packet_truncate(struct dp_packet *b, uint32_t size)
+{
+    uint32_t removed;
+
+    ovs_assert(size <= dp_packet_size(b));
+    removed = dp_packet_size(b) - size;
+    dp_packet_set_size(b, size);
+
+    if (removed <= b->l2_pad_size) {
+        b->l2_pad_size -= removed;
+        return;
+    }
+    b->l2_pad_size = 0;
+
+    dp_packet_truncate_layer_offset(&b->l2_5_ofs, size);
+    dp_packet_truncate_layer_offset(&b->l3_ofs, size);
+    dp_packet_truncate_layer_offset(&b->l4_ofs, size);
+    dp_packet_truncate_layer_offset(&b->inner_l3_ofs, size);
+    dp_packet_truncate_layer_offset(&b->inner_l4_ofs, size);
+
+    /* An L4 checksum covers the removed data, so it can no longer be
+     * completed.  An IPv4 header checksum only needs the whole header. */
+    b->offloads &= ~(DP_PACKET_OL_L4_CKSUM_MASK
+                     | DP_PACKET_OL_INNER_L4_CKSUM_MASK);
+    if (!dp_packet_ip_header_fits(dp_packet_l3(b), dp_packet_l3_size(b))) {
+        b->offloads &= ~DP_PACKET_OL_IP_CKSUM_MASK;
+    }
+    if (!dp_packet_ip_header_fits(dp_packet_inner_l3(b),
+                                  dp_packet_inner_l3_size(b))) {
+        b->offloads &= ~DP_PACKET_OL_INNER_IP_CKSUM_MASK;
+    }
+    dp_packet_set_tso_segsz(b, 0);
+}
+
 /* Adjust the size of the l2 portion of the dp_packet, updating the l2
  * pointer and the layer offsets.  The caller is responsible for
  * modifying the contents. */
