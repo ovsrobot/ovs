@@ -2778,6 +2778,33 @@ OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 
+AT_SETUP([ofproto-dpif - controller packet-in longer than OpenFlow maximum])
+OVS_VSWITCHD_START
+add_of_ports br0 1
+
+AT_CHECK([ovs-ofctl add-flow br0 in_port=1,action=controller])
+
+AT_CAPTURE_FILE([ofctl_monitor.log])
+AT_CHECK([ovs-ofctl monitor br0 65534 -P nxt_packet_in --detach --no-chdir --pidfile 2> ofctl_monitor.log])
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x1234)' --len 70000])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=50:54:00:00:00:09,dst=50:54:00:00:00:0a),eth_type(0x1234)'])
+
+OVS_WAIT_UNTIL_EQUAL([grep -c "total_len=14 " ofctl_monitor.log], [1])
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+
+AT_CHECK([cat ofctl_monitor.log], [0], [dnl
+NXT_PACKET_IN (xid=0x0): cookie=0x0 total_len=14 in_port=1 (via action) data_len=14 (unbuffered)
+vlan_tci=0x0000,dl_src=50:54:00:00:00:09,dl_dst=50:54:00:00:00:0a,dl_type=0x1234
+])
+
+AT_CHECK([grep -c "dropping [[0-9]]*-byte message longer than the OpenFlow maximum" ovs-vswitchd.log], [0], [1
+])
+
+OVS_VSWITCHD_STOP(["/dropping .*-byte message longer than the OpenFlow maximum/d"])
+AT_CLEANUP
+
+
 AT_SETUP([ofproto-dpif - controller action without megaflows])
 OVS_VSWITCHD_START
 add_of_ports br0 1

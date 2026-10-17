@@ -745,7 +745,16 @@ rconn_send__(struct rconn *rc, struct ofpbuf *b,
            struct rconn_packet_counter *counter)
     OVS_REQUIRES(rc->mutex)
 {
-    if (rconn_is_connected(rc)) {
+    if (b->size > UINT16_MAX) {
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
+
+        /* vconn_send() would refuse it and 'rc' would disconnect. */
+        VLOG_WARN_RL(&rl, "%s: dropping %"PRIu32"-byte message longer than "
+                     "the OpenFlow maximum", rc->name, b->size);
+        COVERAGE_INC(rconn_discarded);
+        ofpbuf_delete(b);
+        return EMSGSIZE;
+    } else if (rconn_is_connected(rc)) {
         COVERAGE_INC(rconn_queued);
         copy_to_monitor(rc, b);
 
@@ -772,8 +781,9 @@ rconn_send__(struct rconn *rc, struct ofpbuf *b,
     }
 }
 
-/* Sends 'b' on 'rc'.  Returns 0 if successful, or ENOTCONN if 'rc' is not
- * currently connected.  Takes ownership of 'b'.
+/* Sends 'b' on 'rc'.  Returns 0 if successful, EMSGSIZE if 'b' is longer than
+ * an OpenFlow message can be, or ENOTCONN if 'rc' is not currently connected.
+ * Takes ownership of 'b'.
  *
  * If 'counter' is non-null, then 'counter' will be incremented while the
  * packet is in flight, then decremented when it has been sent (or discarded
@@ -801,8 +811,9 @@ rconn_send(struct rconn *rc, struct ofpbuf *b,
 /* Sends 'b' on 'rc'.  Increments 'counter' while the packet is in flight; it
  * will be decremented when it has been sent (or discarded due to
  * disconnection).  Returns 0 if successful, EAGAIN if 'counter->n' is already
- * at least as large as 'queue_limit', or ENOTCONN if 'rc' is not currently
- * connected.  Regardless of return value, 'b' is destroyed.
+ * at least as large as 'queue_limit', EMSGSIZE if 'b' is longer than an
+ * OpenFlow message can be, or ENOTCONN if 'rc' is not currently connected.
+ * Regardless of return value, 'b' is destroyed.
  *
  * Because 'b' may be sent (or discarded) before this function returns, the
  * caller may not be able to observe any change in 'counter'.
