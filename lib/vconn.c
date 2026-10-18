@@ -659,7 +659,8 @@ do_recv(struct vconn *vconn, struct ofpbuf **msgp)
  * only that it has been queued for transmission.
  *
  * Returns a positive errno value on failure, in which case the caller
- * retains ownership of 'msg'.
+ * retains ownership of 'msg'.  Returns EMSGSIZE if 'msg' is longer than
+ * UINT16_MAX bytes, the most an OpenFlow header can express.
  *
  * vconn_send will not block.  If 'msg' cannot be immediately accepted for
  * transmission, it returns EAGAIN immediately. */
@@ -679,6 +680,14 @@ do_send(struct vconn *vconn, struct ofpbuf *msg)
     int retval;
 
     ovs_assert(msg->size >= sizeof(struct ofp_header));
+
+    if (msg->size > UINT16_MAX) {
+        /* The OpenFlow header can't express this length. */
+        VLOG_WARN_RL(&bad_ofmsg_rl, "%s: not sending %"PRIu32"-byte message "
+                     "longer than the OpenFlow maximum", vconn->name,
+                     msg->size);
+        return EMSGSIZE;
+    }
 
     ofpmsg_update_length(msg);
     if (!VLOG_IS_DBG_ENABLED()) {
@@ -968,6 +977,8 @@ vconn_transact_multipart(struct vconn *vconn,
         int error = vconn_send_block(vconn, b);
         if (error) {
             ofpbuf_delete(b);
+            ofpbuf_list_delete(requests);
+            return error;
         }
     }
 
@@ -1243,6 +1254,9 @@ vconn_bundle_add_msg(struct vconn *vconn, struct ofputil_bundle_ctrl_msg *bc,
     struct ofpbuf *request;
     int error;
 
+    if (msg->size > UINT16_MAX) {
+        return EMSGSIZE;
+    }
     ofpmsg_update_length(msg);
 
     bam.bundle_id = bc->bundle_id;
@@ -1256,6 +1270,8 @@ vconn_bundle_add_msg(struct vconn *vconn, struct ofputil_bundle_ctrl_msg *bc,
         /* Check for an error return, so that the socket buffer does not become
          * full of errors. */
         vconn_recv_error(vconn, errors);
+    } else {
+        ofpbuf_delete(request);
     }
     return error;
 }
