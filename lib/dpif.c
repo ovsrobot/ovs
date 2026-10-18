@@ -1245,7 +1245,7 @@ dpif_execute_helper_cb(void *aux_, struct dp_packet_batch *packets_,
             if (!should_steal) {
                 packet = clone = dp_packet_clone(packet);
             }
-            dp_packet_set_size(packet, dp_packet_size(packet) - cutlen);
+            dp_packet_truncate(packet, dp_packet_size(packet) - cutlen);
         }
 
         execute.packet = packet;
