@@ -154,6 +154,7 @@ struct frozen_state {
     mirror_mask_t mirrors;        /* Mirrors already output. */
     bool conntracked;             /* Conntrack occurred prior to freeze. */
     bool was_mpls;                /* MPLS packet */
+    bool dp_hashed;               /* dp_hash occurred prior to freeze. */
     struct uuid xport_uuid;       /* UUID of 1st port packet received on. */
 
     /* Actions to be translated when thawing. */

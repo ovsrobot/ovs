@@ -403,6 +403,11 @@ struct xlate_ctx {
      * state from the datapath should be honored after thawing. */
     bool conntracked;
 
+    /* True if a dp_hash select group has used the dp_hash of this packet.
+     * This is used to determine whether a dp_hash select group needs to
+     * compute a new dp_hash instead of using the one of the packet. */
+    bool dp_hashed;
+
     /* Pointer to an embedded NAT action in a conntrack action, or NULL. */
     struct ofpact_nat *ct_nat_action;
 
@@ -4180,6 +4185,7 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
     bool old_was_mpls = ctx->was_mpls;
     struct flow *flow = &ctx->xin->flow;
     bool old_conntrack = ctx->conntracked;
+    bool old_dp_hashed = ctx->dp_hashed;
     struct xretained_state *retained_state;
     struct ovs_list *old_trace = ctx->xin->trace;
     ovs_version_t old_version = ctx->xin->tables_version;
@@ -4263,6 +4269,10 @@ patch_port_output(struct xlate_ctx *ctx, const struct xport *in_dev,
     /* The out bridge's conntrack execution should have no effect on the
      * original bridge. */
     ctx->conntracked = old_conntrack;
+
+    /* The out bridge's dp_hash select groups should have no effect on the
+     * original bridge. */
+    ctx->dp_hashed = old_dp_hashed;
 
     /* The fact that the out bridge exits (for any reason) does not mean
      * that the original bridge should exit.  Specifically, if the out
@@ -5026,8 +5036,9 @@ pick_dp_hash_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
     /* dp_hash value 0 is special since it means that the dp_hash has not been
      * computed, as all computed dp_hash values are non-zero.  Therefore
      * compare to zero can be used to decide if the dp_hash value is valid
-     * without masking the dp_hash field. */
-    if (!dp_hash) {
+     * without masking the dp_hash field.  The value is also invalid once a
+     * dp_hash select group has used it, as each group computes its own. */
+    if (!dp_hash || ctx->dp_hashed) {
         enum ovs_hash_alg hash_alg = group->hash_alg;
         if (hash_alg > ctx->xbridge->support.max_hash_alg) {
             /* Algorithm supported by all datapaths. */
@@ -5039,6 +5050,8 @@ pick_dp_hash_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
         return NULL;
     } else {
         uint32_t hash_mask = group->hash_mask;
+
+        ctx->dp_hashed = true;
         ctx->wc->masks.dp_hash |= hash_mask;
 
         /* Starting from the original masked dp_hash value iterate over the
@@ -5305,6 +5318,7 @@ xlate_controller_action(struct xlate_ctx *ctx, int len,
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
         .was_mpls = ctx->was_mpls,
+        .dp_hashed = ctx->dp_hashed,
         .ofpacts = NULL,
         .ofpacts_len = 0,
         .action_set = NULL,
@@ -5349,6 +5363,9 @@ finish_freezing__(struct xlate_ctx *ctx, uint8_t table)
         .mirrors = ctx->mirrors,
         .conntracked = ctx->conntracked,
         .was_mpls = ctx->was_mpls,
+        /* No dp_hash select group has used a dp_hash computed right before
+         * the recirculation. */
+        .dp_hashed = ctx->dp_hashed && !ctx->recirc_update_dp_hash,
         .xport_uuid = ctx->xin->xport_uuid,
         .ofpacts = ctx->frozen_actions.data,
         .ofpacts_len = ctx->frozen_actions.size,
@@ -6250,8 +6267,8 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
                     struct xlate_ctx *ctx, bool is_last_action,
                     bool group_bucket_action OVS_UNUSED)
 {
+    bool old_was_mpls, old_conntracked, old_dp_hashed;
     struct xretained_state *retained_state;
-    bool old_was_mpls, old_conntracked;
     size_t body_offset, body_size;
     uint32_t old_observe_offset;
 
@@ -6269,6 +6286,7 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
     old_was_mpls = ctx->was_mpls;
     old_conntracked = ctx->conntracked;
     old_observe_offset = ctx->xout->last_observe_offset;
+    old_dp_hashed = ctx->dp_hashed;
 
     body_offset = ctx->odp_actions->size;
 
@@ -6328,6 +6346,10 @@ clone_xlate_actions(const struct ofpact *actions, size_t actions_len,
      * effect on the original packet. */
     ctx->conntracked = old_conntracked;
     ctx->was_mpls = old_was_mpls;
+
+    /* The clone's dp_hash select groups should have no effect on the original
+     * packet. */
+    ctx->dp_hashed = old_dp_hashed;
 
     xretain_state_restore_and_free(ctx, retained_state);
 }
@@ -6867,6 +6889,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
 
     bool old_was_mpls = ctx->was_mpls;
     bool old_conntracked = ctx->conntracked;
+    bool old_dp_hashed = ctx->dp_hashed;
 
     size_t offset = nl_msg_start_nested(ctx->odp_actions,
                                         OVS_ACTION_ATTR_CHECK_PKT_LEN);
@@ -6889,6 +6912,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
     xretain_flow_restore(ctx, retained_state);
     ctx->was_mpls = old_was_mpls;
     ctx->conntracked = old_conntracked;
+    ctx->dp_hashed = old_dp_hashed;
 
     /* If the flow translation for the IF_GREATER case requires freezing,
      * then ctx->exit would be true. Reset to false so that we can
@@ -6913,6 +6937,7 @@ xlate_check_pkt_larger(struct xlate_ctx *ctx,
 
     ctx->was_mpls = old_was_mpls;
     ctx->conntracked = old_conntracked;
+    ctx->dp_hashed = old_dp_hashed;
     ctx->exit = old_exit;
     xretain_base_flow_restore(ctx, retained_state);
     xretain_state_restore_and_free(ctx, retained_state);
@@ -8365,6 +8390,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
 
         .was_mpls = false,
         .conntracked = false,
+        .dp_hashed = false,
 
         .ct_nat_action = NULL,
 
@@ -8430,6 +8456,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         ctx.table_id = state->table_id;
         xlate_report(&ctx, OFT_THAW,
                      "Resuming from table %"PRIu8, ctx.table_id);
+
+        ctx.dp_hashed = state->dp_hashed;
 
         ctx.conntracked = state->conntracked;
         if (!state->conntracked) {
