@@ -157,6 +157,21 @@ expectation_clean(struct conntrack *ct, const struct conn_key *parent_key);
 
 static struct ct_l4_proto *l4_protos[UINT8_MAX + 1];
 
+/* Returns the l4 protocol handler for 'key'.  ICMP and ICMPv6 handlers are
+ * used only with their own address family, since extract_l4() validates the
+ * ICMP headers only in that case. */
+static struct ct_l4_proto *
+l4_proto_get(const struct conn_key *key)
+{
+    if ((key->nw_proto == IPPROTO_ICMP
+         && key->dl_type != htons(ETH_TYPE_IP))
+        || (key->nw_proto == IPPROTO_ICMPV6
+            && key->dl_type != htons(ETH_TYPE_IPV6))) {
+        return &ct_proto_other;
+    }
+    return l4_protos[key->nw_proto];
+}
+
 static void
 handle_ftp_ctl(struct conntrack *ct, const struct conn_lookup_ctx *ctx,
                struct dp_packet *pkt, struct conn *ec, long long now,
@@ -2667,9 +2682,9 @@ conn_update(struct conntrack *ct, struct conn *conn, struct dp_packet *pkt,
             struct conn_lookup_ctx *ctx, long long now)
 {
     ovs_mutex_lock(&conn->lock);
-    uint8_t nw_proto = conn->key_node[CT_DIR_FWD].key.nw_proto;
     enum ct_update_res update_res =
-        l4_protos[nw_proto]->conn_update(ct, conn, pkt, ctx->reply, now);
+        l4_proto_get(&conn->key_node[CT_DIR_FWD].key)->conn_update(
+            ct, conn, pkt, ctx->reply, now);
     ovs_mutex_unlock(&conn->lock);
     return update_res;
 }
@@ -2703,14 +2718,14 @@ conn_expired(const struct conn *conn, long long now)
 static bool
 valid_new(struct dp_packet *pkt, struct conn_key *key)
 {
-    return l4_protos[key->nw_proto]->valid_new(pkt);
+    return l4_proto_get(key)->valid_new(pkt);
 }
 
 static struct conn *
 new_conn(struct conntrack *ct, struct dp_packet *pkt, struct conn_key *key,
          long long now, uint32_t tp_id)
 {
-    return l4_protos[key->nw_proto]->new_conn(ct, pkt, now, tp_id);
+    return l4_proto_get(key)->new_conn(ct, pkt, now, tp_id);
 }
 
 static void
@@ -2837,7 +2852,7 @@ conn_to_ct_dpif_entry(const struct conn *conn, struct ct_dpif_entry *entry,
 
     long long expiration = conn_expiration(conn) - now;
 
-    struct ct_l4_proto *class = l4_protos[key->nw_proto];
+    struct ct_l4_proto *class = l4_proto_get(key);
     if (class->conn_get_protoinfo) {
         class->conn_get_protoinfo(conn, &entry->protoinfo);
     }
