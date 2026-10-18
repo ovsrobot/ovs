@@ -332,7 +332,11 @@ odp_set_nd_ext(struct dp_packet *packet, const struct ovs_key_nd_extensions
 {
     const struct ovs_nd_msg *ns = dp_packet_l4(packet);
     ovs_16aligned_be32 reserved = ns->rso_flags;
-    uint8_t opt_type = ns->options[0].type;
+    uint8_t opt_type = 0;
+
+    if (dp_packet_l4_size(packet) >= sizeof *ns + ND_LLA_OPT_LEN) {
+        opt_type = ns->options[0].type;
+    }
 
     if (mask->nd_reserved) {
         put_16aligned_be32(&reserved, key->nd_reserved);
@@ -374,8 +378,8 @@ odp_set_nd(struct dp_packet *packet, const struct ovs_key_nd *key,
                 break;
             }
 
-            lla_opt += lla_opt->len;
             bytes_remain -= lla_opt->len * ND_LLA_OPT_LEN;
+            lla_opt += lla_opt->len;
         }
 
         packet_set_nd(packet,
