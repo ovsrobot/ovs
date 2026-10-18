@@ -86,6 +86,42 @@ Datapath actions: set(nsh(flags=2,ttl=63,mdtype=1,np=3,spi=0x123456,si=254,c1=0x
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([nsh - set on truncated header])
+OVS_VSWITCHD_START
+add_of_ports --pcap br0 1 2
+
+AT_DATA([flows.txt], [dnl
+table=0,in_port=1,dl_type=0x894f,actions=set_field:0x123456->nsh_spi,2
+])
+AT_CHECK([ovs-ofctl -Oopenflow13 add-flows br0 flows.txt])
+
+dnl MD type 1 header with a length of 24 bytes, but only 12 bytes present.
+m4_define([NSH_SHORT_PKT], m4_join([],
+dnl eth(src=00:00:00:00:00:01,dst=00:00:00:00:00:02,type=0x894f)
+[000000000002000000000001894f],
+dnl nsh(ttl=63,len=6,mdtype=1,np=3,spi=0x1,si=255)
+[0fc60103000001ff],
+dnl First 4 of the 16 bytes of MD type 1 context.
+[11223344]))
+
+dnl Unknown MD type 0x11 with a length of 8 bytes.  Only the base header
+dnl is rewritten.
+m4_define([NSH_MD11_PKT], m4_join([],
+dnl eth(src=00:00:00:00:00:01,dst=00:00:00:00:00:02,type=0x894f)
+[000000000002000000000001894f],
+dnl nsh(ttl=63,len=2,mdtype=0x11,np=3,spi=0xa,si=255)
+[0fc2110300000aff]))
+
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 NSH_SHORT_PKT])
+AT_CHECK([ovs-appctl netdev-dummy/receive p1 NSH_MD11_PKT])
+
+dnl The first header is not valid, so that packet is forwarded unmodified.
+OVS_WAIT_UNTIL_EQUAL([ovs-pcap p2-tx.pcap], [NSH_SHORT_PKT
+m4_join([], [000000000002000000000001894f], [0fc21103123456ff])])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 
 ### -----------------------------------------------------------------
 ###   NSH MD1 on Ethernet encapsulation over veth link

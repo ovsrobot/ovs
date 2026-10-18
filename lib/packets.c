@@ -530,6 +530,10 @@ pop_nsh(struct dp_packet *packet)
     uint32_t next_pt;
 
     if (packet->packet_type == htonl(PT_NSH) && nsh) {
+        if (!nsh_hdr_is_valid(nsh, dp_packet_l3_size(packet))) {
+            return false;
+        }
+
         switch (nsh->next_proto) {
             case NSH_P_ETHERNET:
                 next_pt = PT_ETH;
