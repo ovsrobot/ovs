@@ -304,7 +304,9 @@ set_arp(struct dp_packet *packet, const struct ovs_key_arp *key,
 {
     struct arp_eth_header *arp = dp_packet_l3(packet);
 
-    ovs_assert(arp);
+    if (!arp || dp_packet_l3_size(packet) < ARP_ETH_HEADER_LEN) {
+        return;
+    }
 
     if (!mask) {
         arp->ar_op = key->arp_op;
