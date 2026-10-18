@@ -244,6 +244,177 @@ test_set_nd(void)
 }
 
 static void
+test_hdr_accessors(void)
+{
+    uint8_t data[24] = { 0 };
+    struct dp_packet *packet = dp_packet_clone_data(data, sizeof data);
+
+    ovs_assert(!dp_packet_l3_hdr(packet, 0));
+    ovs_assert(!dp_packet_l4_hdr(packet, 0));
+
+    dp_packet_set_l3(packet, dp_packet_data(packet));
+    dp_packet_set_l4(packet, (char *) dp_packet_data(packet) + 20);
+    ovs_assert(dp_packet_l3_hdr(packet, 24) == dp_packet_data(packet));
+    ovs_assert(!dp_packet_l3_hdr(packet, 25));
+    ovs_assert(dp_packet_l4_hdr(packet, 4) == dp_packet_l4(packet));
+    ovs_assert(!dp_packet_l4_hdr(packet, 5));
+
+    dp_packet_set_l2_pad_size(packet, 4);
+    ovs_assert(dp_packet_l3_hdr(packet, 20));
+    ovs_assert(!dp_packet_l3_hdr(packet, 21));
+    ovs_assert(dp_packet_l4_hdr(packet, 0));
+    ovs_assert(!dp_packet_l4_hdr(packet, 1));
+
+    dp_packet_set_l2_pad_size(packet, 0);
+    dp_packet_set_size(packet, 16);
+    ovs_assert(dp_packet_l3_hdr(packet, 16));
+    ovs_assert(!dp_packet_l4_hdr(packet, 0));
+
+    dp_packet_delete(packet);
+}
+
+/* Runs 'set' on a packet that holds the first 'n' bytes of 'hdr' as its L3
+ * header, or as its L4 header if 'l4', and returns true if 'set' changed the
+ * packet's data. */
+static bool
+check_set_hdr(const uint8_t *hdr, size_t n, bool l4,
+              void (*set)(struct dp_packet *))
+{
+    struct dp_packet *packet = dp_packet_clone_data(hdr, n);
+    bool changed;
+
+    if (l4) {
+        dp_packet_set_l4(packet, dp_packet_data(packet));
+    } else {
+        dp_packet_set_l3(packet, dp_packet_data(packet));
+    }
+    set(packet);
+    changed = memcmp(dp_packet_data(packet), hdr, n) != 0;
+
+    dp_packet_delete(packet);
+    return changed;
+}
+
+static void
+set_ipv4(struct dp_packet *packet)
+{
+    packet_set_ipv4(packet, htonl(0x0a000009), 0, 0, 0);
+}
+
+static void
+set_ipv6(struct dp_packet *packet)
+{
+    struct in6_addr src = {{{ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                              0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01 }}};
+
+    packet_set_ipv6(packet, &src, &in6addr_any, 0, 0, 0);
+}
+
+static void
+set_tcp_port(struct dp_packet *packet)
+{
+    packet_set_tcp_port(packet, htons(1), htons(2));
+}
+
+static void
+set_udp_port(struct dp_packet *packet)
+{
+    packet_set_udp_port(packet, htons(1), htons(2));
+}
+
+static void
+set_sctp_port(struct dp_packet *packet)
+{
+    packet_set_sctp_port(packet, htons(1), htons(2));
+}
+
+static void
+set_icmp(struct dp_packet *packet)
+{
+    packet_set_icmp(packet, ICMP4_DST_UNREACH, 1);
+}
+
+static void
+set_igmp3_query(struct dp_packet *packet)
+{
+    packet_set_igmp3_query(packet, 10, htonl(0xe0000001), false, 2, 125);
+}
+
+static void
+test_set_short_hdr(void)
+{
+    uint8_t hdr[IPV6_HEADER_LEN + 4] = { 0 };
+
+    ovs_assert(check_set_hdr(hdr, IP_HEADER_LEN, false, set_ipv4));
+    ovs_assert(!check_set_hdr(hdr, IP_HEADER_LEN - 1, false, set_ipv4));
+    ovs_assert(check_set_hdr(hdr, IPV6_HEADER_LEN, false, set_ipv6));
+    ovs_assert(!check_set_hdr(hdr, IPV6_HEADER_LEN - 1, false, set_ipv6));
+    ovs_assert(check_set_hdr(hdr, 4, true, set_tcp_port));
+    ovs_assert(!check_set_hdr(hdr, 3, true, set_tcp_port));
+    ovs_assert(check_set_hdr(hdr, UDP_HEADER_LEN, true, set_udp_port));
+    ovs_assert(!check_set_hdr(hdr, UDP_HEADER_LEN - 1, true, set_udp_port));
+    ovs_assert(check_set_hdr(hdr, 4, true, set_sctp_port));
+    ovs_assert(!check_set_hdr(hdr, 3, true, set_sctp_port));
+    ovs_assert(check_set_hdr(hdr, ICMP_HEADER_LEN, true, set_icmp));
+    ovs_assert(!check_set_hdr(hdr, ICMP_HEADER_LEN - 1, true, set_icmp));
+    ovs_assert(check_set_hdr(hdr, IGMPV3_QUERY_HEADER_LEN, true,
+                             set_igmp3_query));
+    ovs_assert(!check_set_hdr(hdr, IGMPV3_QUERY_HEADER_LEN - 1, true,
+                              set_igmp3_query));
+}
+
+static void
+test_rh_present_no_l4(void)
+{
+    struct ovs_16aligned_ip6_hdr *nh;
+    uint8_t hdr[IPV6_HEADER_LEN + 4] = { 0 };
+    struct dp_packet *packet;
+    bool first_frag = false;
+    uint8_t nexthdr;
+
+    /* A hop-by-hop options header cut after 4 bytes, so flow extraction
+     * leaves the L4 offset unset. */
+    nh = ALIGNED_CAST(struct ovs_16aligned_ip6_hdr *, hdr);
+    nh->ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_HOPOPTS;
+    packet = dp_packet_clone_data(hdr, sizeof hdr);
+    dp_packet_set_l3(packet, dp_packet_data(packet));
+
+    ovs_assert(!packet_rh_present(packet, &nexthdr, &first_frag));
+    ovs_assert(nexthdr == IPPROTO_HOPOPTS);
+
+    dp_packet_delete(packet);
+}
+
+static void
+test_set_ipv6_addr_short_icmp6(void)
+{
+    struct ovs_16aligned_ip6_hdr *nh;
+    uint8_t hdr[IPV6_HEADER_LEN + 2] = { 0 };
+    struct in6_addr src = {{{ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                              0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01 }}};
+    struct dp_packet *packet;
+    uint8_t *l4;
+
+    nh = ALIGNED_CAST(struct ovs_16aligned_ip6_hdr *, hdr);
+    nh->ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMPV6;
+    hdr[IPV6_HEADER_LEN] = 0x12;
+    hdr[IPV6_HEADER_LEN + 1] = 0x34;
+    packet = dp_packet_clone_data(hdr, sizeof hdr);
+    dp_packet_set_l3(packet, dp_packet_data(packet));
+    dp_packet_set_l4(packet, (char *) dp_packet_data(packet)
+                             + IPV6_HEADER_LEN);
+
+    packet_set_ipv6(packet, &src, &in6addr_any, 0, 0, 0);
+
+    nh = dp_packet_l3(packet);
+    ovs_assert(!memcmp(&nh->ip6_src, &src, sizeof src));
+    l4 = dp_packet_l4(packet);
+    ovs_assert(l4[0] == 0x12 && l4[1] == 0x34);
+
+    dp_packet_delete(packet);
+}
+
+static void
 test_packets_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
 {
     test_ipv4_cidr();
@@ -252,6 +423,10 @@ test_packets_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
     test_ipv6_masking();
     test_ipv6_parsing();
     test_set_nd();
+    test_hdr_accessors();
+    test_set_short_hdr();
+    test_rh_present_no_l4();
+    test_set_ipv6_addr_short_icmp6();
 }
 
 OVSTEST_REGISTER("test-packets", test_packets_main);
