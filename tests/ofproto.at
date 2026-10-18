@@ -5096,6 +5096,55 @@ OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+AT_SETUP([ofproto - OpenFlow14 flow monitor request with unknown monitor])
+AT_KEYWORDS([monitor])
+OVS_VSWITCHD_START
+
+ovs-ofctl -O OpenFlow14 monitor br0 --detach --no-chdir --pidfile >monitor.log 2>&1
+AT_CAPTURE_FILE([monitor.log])
+
+# Add monitor 3, delete it, then delete the unknown monitor 4.
+ovs-appctl -t ovs-ofctl ofctl/send 0512005800000004001000000000000000000003ffffffffffffffff000fff00000100040000000000000003ffffffffffffffff0000ff02000100040000000000000004ffffffffffffffff0000ff020001000400000000
+# Add monitors 5 and 6, delete 5, then delete the unknown monitor 7.
+ovs-appctl -t ovs-ofctl ofctl/send 0512007000000005001000000000000000000005ffffffffffffffff000fff00000100040000000000000006ffffffffffffffff000fff00000100040000000000000005ffffffffffffffff0000ff02000100040000000000000007ffffffffffffffff0000ff020001000400000000
+# Monitor 6 was removed with the failed request.
+ovs-appctl -t ovs-ofctl ofctl/send 0512002800000006001000000000000000000006ffffffffffffffff0000ff020001000400000000
+ovs-appctl -t ovs-ofctl ofctl/barrier
+
+dnl Each error carries the whole request.
+AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0], [dnl
+send: OFPST_FLOW_MONITOR request (OF1.4):
+ id=3 flags=initial,add,delete,modify
+ id=3 command=delete
+ id=4 command=delete
+OFPT_ERROR (OF1.4): OFPMOFC_UNKNOWN_MONITOR
+OFPST_FLOW_MONITOR request (OF1.4):
+ id=3 flags=initial,add,delete,modify
+ id=3 command=delete
+ id=4 command=delete
+send: OFPST_FLOW_MONITOR request (OF1.4):
+ id=5 flags=initial,add,delete,modify
+ id=6 flags=initial,add,delete,modify
+ id=5 command=delete
+ id=7 command=delete
+OFPT_ERROR (OF1.4): OFPMOFC_UNKNOWN_MONITOR
+OFPST_FLOW_MONITOR request (OF1.4):
+ id=5 flags=initial,add,delete,modify
+ id=6 flags=initial,add,delete,modify
+ id=5 command=delete
+ id=7 command=delete
+send: OFPST_FLOW_MONITOR request (OF1.4):
+ id=6 command=delete
+OFPT_ERROR (OF1.4): OFPMOFC_UNKNOWN_MONITOR
+OFPST_FLOW_MONITOR request (OF1.4):
+ id=6 command=delete
+OFPT_BARRIER_REPLY (OF1.4):
+])
+
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ofproto - event filtering (OpenFlow 1.3)])
 AT_KEYWORDS([monitor])
 OVS_VSWITCHD_START
