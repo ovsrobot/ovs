@@ -6702,6 +6702,22 @@ flow_monitor_delete(struct ofconn *ofconn, uint32_t id)
     return error;
 }
 
+/* Removes 'm' from the 'n_monitors' elements of 'monitors', if it is there,
+ * so that it can be destroyed while the request is still being processed. */
+static void
+flow_monitor_forget(struct ofmonitor **monitors, size_t *n_monitors,
+                    const struct ofmonitor *m)
+{
+    for (size_t i = 0; i < *n_monitors; i++) {
+        if (monitors[i] == m) {
+            memmove(&monitors[i], &monitors[i + 1],
+                    (*n_monitors - i - 1) * sizeof *monitors);
+            (*n_monitors)--;
+            return;
+        }
+    }
+}
+
 static enum ofperr
 handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
     OVS_EXCLUDED(ofproto_mutex)
@@ -6756,6 +6772,7 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
                     error = OFPERR_OFPMOFC_UNKNOWN_MONITOR;
                     goto error;
                 }
+                flow_monitor_forget(monitors, &n_monitors, m);
                 ofmonitor_destroy(m);
 
                 error = ofmonitor_create(&request, ofconn, &m);
@@ -6775,6 +6792,7 @@ handle_flow_monitor_request(struct ofconn *ofconn, const struct ovs_list *msgs)
                     error = OFPERR_OFPMOFC_UNKNOWN_MONITOR;
                     goto error;
                 }
+                flow_monitor_forget(monitors, &n_monitors, m);
                 ofmonitor_destroy(m);
                 break;
             }
