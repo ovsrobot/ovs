@@ -153,6 +153,8 @@ void jsonrpc_session_set_probe_interval(struct jsonrpc_session *,
                                         int probe_interval);
 void jsonrpc_session_set_dscp(struct jsonrpc_session *,
                               uint8_t dscp);
+void jsonrpc_session_set_backlog_blocks_recv(struct jsonrpc_session *,
+                                             bool backlog_blocks_recv);
 void jsonrpc_session_set_backlog_threshold(struct jsonrpc_session *,
                                            size_t max_n_msgs,
                                            size_t max_backlog_bytes);

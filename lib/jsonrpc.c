@@ -833,6 +833,10 @@ struct jsonrpc_session {
     /* Limits for jsonrpc. */
     size_t max_n_msgs;
     size_t max_backlog_bytes;
+
+    /* The user does not call jsonrpc_session_recv() while there is a send
+     * backlog.  See jsonrpc_session_set_backlog_blocks_recv(). */
+    bool backlog_blocks_recv;
 };
 
 static void
@@ -887,6 +891,7 @@ jsonrpc_session_open_multiple(const struct svec *remotes, bool retry)
     s->seqno = 0;
     s->dscp = 0;
     s->last_error = 0;
+    s->backlog_blocks_recv = false;
 
     jsonrpc_session_set_backlog_threshold(s, 0, 0);
 
@@ -934,6 +939,7 @@ jsonrpc_session_open_unreliably(struct jsonrpc *jsonrpc, uint8_t dscp)
     s->stream = NULL;
     s->pstream = NULL;
     s->seqno = 1;
+    s->backlog_blocks_recv = false;
 
     jsonrpc_session_set_backlog_threshold(s, 0, 0);
     return s;
@@ -1063,6 +1069,17 @@ jsonrpc_session_run(struct jsonrpc_session *s)
              * that has stalled and won't ever recover.
              */
             reconnect_activity(s->reconnect, time_msec());
+        }
+
+        if (s->backlog_blocks_recv && jsonrpc_get_backlog(s->rpc)) {
+            /* Our user will not try to receive until the backlog is sent, so
+             * the receive attempt the inactivity probe waits for would never
+             * happen, and the FSM would ask to be woken up every millisecond
+             * to make it.  Trying to send the backlog is this session's look
+             * at the connection, so count it as one: a peer that takes
+             * nothing for a probe interval is probed and then disconnected,
+             * the same as a peer that sends nothing. */
+            reconnect_receive_attempted(s->reconnect, time_msec());
         }
 
         error = jsonrpc_get_status(s->rpc);
@@ -1353,6 +1370,17 @@ jsonrpc_session_set_options(struct jsonrpc_session *s,
     jsonrpc_session_set_max_backoff(s, options->max_backoff);
     jsonrpc_session_set_probe_interval(s, options->probe_interval);
     jsonrpc_session_set_dscp(s, options->dscp);
+}
+
+/* Declares whether a send backlog on 's' blocks its user from calling
+ * jsonrpc_session_recv().  A user that does not receive while 's' has a
+ * backlog should set 'backlog_blocks_recv' to true, so that a peer which stops
+ * taking data is still subject to the inactivity probe. */
+void
+jsonrpc_session_set_backlog_blocks_recv(struct jsonrpc_session *s,
+                                        bool backlog_blocks_recv)
+{
+    s->backlog_blocks_recv = backlog_blocks_recv;
 }
 
 /* Sets thresholds for send backlog.  If send backlog contains more than

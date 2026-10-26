@@ -3161,3 +3161,113 @@ TEST_CONFIG_FILE([complex config], [
     }
 }
 ], [0])
+
+AT_BANNER([OVSDB -- ovsdb-server peers that stop reading])
+
+dnl One field of ovsdb-server's memory/show, which omits a zero field.
+m4_define([MEMORY_SHOW_FIELD],
+  [ovs-appctl -t ovsdb-server memory/show dnl
+   | tr ' ' '\n' | sed -n 's/^$1:\(.*\)/\1/p'])
+
+dnl The cumulative poll_create_node count: one per fd the poll loop
+dnl registers, per pass, so its rate tracks the pass rate.
+m4_define([POLL_CREATE_NODE_TOTAL],
+  [ovs-appctl -t ovsdb-server coverage/show dnl
+   | awk '/^poll_create_node/ { for (i = 1; i <= NF; i++) dnl
+            if ($i == "total:") { print $(i + 1); exit } }'])
+
+# OVSDB_SERVER_CHECK_STALLED_PEER(PROTOCOL)
+#
+# Monitors a database over a PROTOCOL ("tcp" or "ssl") remote from an
+# ovsdb-client that then stops reading (ovsdb-client/block), and makes
+# ovsdb-server queue more for it than the sockets hold, so a backlog stands
+# in ovsdb-server's own queue.  ovsdb-server does not receive on a session
+# with a backlog, so the inactivity probe, which waits for a receive
+# attempt, used to make the poll loop wake up every millisecond to make
+# one, forever, and the session was neither probed nor disconnected.
+#
+# Checks that the poll loop stays near its idle rate past the probe
+# interval, and that the stalled session is disconnected by the ordinary
+# inactivity probe.  Over ssl the payload sits in the SSL layer and only
+# a few bytes stand in ovsdb-server's queue, which is the shape seen in
+# production.
+m4_define([OVSDB_SERVER_CHECK_STALLED_PEER],
+  [AT_SETUP([ovsdb-server drops a $1 peer that stops reading])
+   AT_KEYWORDS([ovsdb server positive $1 backlog probe])
+   m4_if([$1], [ssl],
+     [AT_SKIP_IF([test "$HAVE_OPENSSL" = no])
+      PKIDIR=$abs_top_builddir/tests
+      server_ssl="--private-key=$PKIDIR/testpki-privkey2.pem"
+      server_ssl="$server_ssl --certificate=$PKIDIR/testpki-cert2.pem"
+      server_ssl="$server_ssl --ca-cert=$PKIDIR/testpki-cacert.pem"
+      client_ssl="--private-key=$PKIDIR/testpki-privkey.pem"
+      client_ssl="$client_ssl --certificate=$PKIDIR/testpki-cert.pem"
+      client_ssl="$client_ssl --ca-cert=$PKIDIR/testpki-cacert.pem"],
+     [server_ssl= client_ssl=])
+   ordinal_schema > schema
+   AT_CHECK([ovsdb-tool create db schema], [0], [ignore], [ignore])
+   on_exit 'kill `cat *.pid`'
+   AT_CHECK([ovsdb-server --log-file --detach --no-chdir --pidfile dnl
+             $server_ssl --remote=p$1:0:127.0.0.1 db], [0], [ignore], [ignore])
+   PARSE_LISTENING_PORT([ovsdb-server.log], [PORT])
+   target=$1:127.0.0.1:$PORT
+
+   idle_before=`POLL_CREATE_NODE_TOTAL`
+   sleep 2
+   idle_after=`POLL_CREATE_NODE_TOTAL`
+   : ${idle_before:=0} ${idle_after:=0}
+   idle_rate=`expr $idle_after - $idle_before`
+   idle_rate=`expr $idle_rate / 2`
+
+   dnl The monitor detaches once it has the (empty) initial contents, and
+   dnl from here on reads nothing at all.
+   AT_CHECK([ovsdb-client --detach --no-chdir --pidfile $client_ssl dnl
+             monitor $target ordinals ordinals > monitor.out], [0], [ignore],
+            [ignore])
+   AT_CHECK([ovs-appctl -t ovsdb-client ovsdb-client/block], [0], [ignore])
+
+   dnl Insert 60 kB rows until updates for the blocked monitor stand in
+   dnl ovsdb-server's queue.  Stop there: the probe interval runs from the
+   dnl last time that queue moved.
+   name=`printf '%060000d' 0`
+   for i in `seq 1 500`; do
+       ovsdb-client $client_ssl transact $target dnl
+         "@<:@\"ordinals\", {\"op\": \"insert\", \"table\": \"ordinals\", dnl
+           \"row\": {\"number\": $i, \"name\": \"$name\"}}@:>@" > /dev/null
+       backlog=`MEMORY_SHOW_FIELD([backlog])`
+       test -n "$backlog" && break
+   done
+
+   dnl Hard preconditions, not assumptions: without a standing backlog the
+   dnl checks below would pass on a server that still spins, and with any
+   dnl other session the disconnect below might not be the stalled one.
+   OVS_WAIT_UNTIL([test "`MEMORY_SHOW_FIELD([backlog])`" -gt 0])
+   OVS_WAIT_UNTIL([test "`MEMORY_SHOW_FIELD([sessions])`" = 1])
+
+   dnl Past the 5 s default probe interval of a command-line remote.
+   sleep 6
+   stalled_before=`POLL_CREATE_NODE_TOTAL`
+   sleep 2
+   stalled_after=`POLL_CREATE_NODE_TOTAL`
+   : ${stalled_before:=0} ${stalled_after:=0}
+   stalled_rate=`expr $stalled_after - $stalled_before`
+   stalled_rate=`expr $stalled_rate / 2`
+
+   dnl Before the fix this measured thousands per second against an idle
+   dnl rate of about 10.  Allow ten times the idle rate.
+   limit=`expr $idle_rate + 10`
+   limit=`expr $limit \* 10`
+   echo "poll_create_node/s: idle $idle_rate, stalled $stalled_rate, dnl
+limit $limit"
+   AT_CHECK([test $stalled_rate -lt $limit])
+
+   dnl Nothing reaches the peer for a probe interval, so it is probed, and
+   dnl the probe cannot get past the backlog either, so it is disconnected
+   dnl one interval later.
+   OVS_WAIT_UNTIL([grep -q 'no response to inactivity probe' ovsdb-server.log])
+   OVS_WAIT_UNTIL([test -z "`MEMORY_SHOW_FIELD([sessions])`"])
+   OVSDB_SERVER_SHUTDOWN(["/no response to inactivity probe/d"])
+   AT_CLEANUP])
+
+OVSDB_SERVER_CHECK_STALLED_PEER([tcp])
+OVSDB_SERVER_CHECK_STALLED_PEER([ssl])

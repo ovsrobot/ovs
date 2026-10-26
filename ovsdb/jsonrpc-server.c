@@ -617,6 +617,10 @@ ovsdb_jsonrpc_session_create(struct ovsdb_jsonrpc_remote *remote,
     s->js_seqno = jsonrpc_session_get_seqno(js);
     s->read_only = read_only;
 
+    /* ovsdb_jsonrpc_session_run() does not receive while there is a
+     * backlog. */
+    jsonrpc_session_set_backlog_blocks_recv(js, true);
+
     remote->server->n_sessions++;
 
     return s;
