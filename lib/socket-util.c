@@ -37,7 +37,7 @@
 #include <unistd.h>
 #include "openvswitch/dynamic-string.h"
 #include "ovs-thread.h"
-#include "packets.h"
+#include "netaddr.h"
 #include "openvswitch/poll-loop.h"
 #include "util.h"
 #include "openvswitch/vlog.h"

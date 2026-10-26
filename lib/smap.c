@@ -19,7 +19,7 @@
 
 #include "hash.h"
 #include "openvswitch/json.h"
-#include "packets.h"
+#include "netaddr.h"
 #include "util.h"
 #include "uuid.h"
 

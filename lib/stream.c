@@ -25,7 +25,6 @@
 #include <string.h>
 #include "coverage.h"
 #include "fatal-signal.h"
-#include "flow.h"
 #include "jsonrpc.h"
 #include "openflow/nicira-ext.h"
 #include "openflow/openflow.h"
@@ -35,10 +34,10 @@
 #include "openvswitch/vlog.h"
 #include "ovs-replay.h"
 #include "ovs-thread.h"
-#include "packets.h"
 #include "openvswitch/poll-loop.h"
 #include "random.h"
 #include "socket-util.h"
+#include "timeval.h"
 #include "util.h"
 
 VLOG_DEFINE_THIS_MODULE(stream);
