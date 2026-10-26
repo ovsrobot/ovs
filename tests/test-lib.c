@@ -22,7 +22,6 @@
 #include <openvswitch/thread.h>
 #include <openvswitch/types.h>
 #include <openvswitch/util.h>
-#include <openvswitch/vconn.h>
 #include <openvswitch/vlog.h>
 
 static void
