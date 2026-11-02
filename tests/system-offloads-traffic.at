@@ -1285,3 +1285,55 @@ m4_for([id], [2], [17], [1], [
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([offloads - dump flow with large actions])
+OVS_CHECK_GENEVE()
+OVS_TRAFFIC_VSWITCHD_START([], [],
+  [-- set Open_vSwitch . other_config:hw-offload=true])
+AT_CHECK([ovs-appctl vlog/set tc:file:dbg dpif_offload_tc:file:dbg])
+
+ADD_BR([br-underlay])
+AT_CHECK([ovs-ofctl add-flow br-underlay "actions=normal"])
+
+ADD_NAMESPACES(at_ns0, at_ns1)
+
+dnl Underlay: the namespace side owns the four remote tunnel endpoints.
+ADD_VETH(p0, at_ns0, br-underlay, "172.31.1.1/24")
+m4_for([id], [2], [4], [1], [
+  NS_CHECK_EXEC([at_ns0], [ip addr add 172.31.1.id/24 dev p0])
+])
+AT_CHECK([ip addr add dev br-underlay "172.31.1.100/24"])
+AT_CHECK([ip link set dev br-underlay up])
+
+m4_for([id], [1], [4], [1], [
+  AT_CHECK([ovs-vsctl add-port br0 at_gnv[]id -- \
+            set int at_gnv[]id type=geneve options:remote_ip=172.31.1.id \
+                               options:key=id])
+])
+
+dnl Overlay source.  Nothing answers for 10.1.1.2, so resolve it statically.
+ADD_VETH(p1, at_ns1, br0, "10.1.1.1/24")
+NS_CHECK_EXEC([at_ns1], [ip neigh replace 10.1.1.2 lladdr 02:00:00:00:00:02 dev p1])
+
+dnl Send every packet from p1 to the four tunnels with a 124-byte Geneve
+dnl option.  That is only 8 tc actions (tunnel_key set + mirred per output),
+dnl but each output dumps back as set(tunnel(...geneve(...))) + output, about
+dnl 190 bytes, so the odp actions of the flow are over 750 bytes.  The dump
+dnl used to parse them into an ODPUTIL_FLOW_KEY_BYTES (640) sized stack
+dnl buffer and abort on overflow.
+AT_CHECK([ovs-ofctl add-tlv-map br0 "{class=0xffff,type=0,len=124}->tun_metadata0"])
+AT_CHECK([ovs-ofctl add-flow br0 "priority=10,in_port=ovs-p1,ip,actions=set_field:0x1234->tun_metadata0,output:at_gnv1,output:at_gnv2,output:at_gnv3,output:at_gnv4"])
+
+dnl No reply is expected, the copies go out through the tunnels.
+NS_CHECK_EXEC([at_ns1], [ping -q -c 3 -i 0.3 -W 1 10.1.1.2], [ignore], [ignore])
+AT_CHECK([ovs-appctl revalidator/wait])
+
+AT_CHECK([ovs-appctl dpctl/dump-flows --names type=tc], [0], [stdout])
+AT_CHECK([grep "in_port(ovs-p1)" stdout | grep "eth_type(0x0800)" | head -1 | \
+          grep -o "set[[(]]tunnel[[(]]" | wc -l], [0], [dnl
+4
+])
+AT_CHECK([grep "in_port(ovs-p1)" stdout | grep -q "geneve[[(]][[{]]class=0xffff,type=0,len=124,"])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
