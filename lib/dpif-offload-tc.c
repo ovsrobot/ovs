@@ -62,7 +62,13 @@ struct tc_flow_dump_thread {
     struct ofpbuf nl_flows;
     struct odputil_keybuf keybuf[FLOW_DUMP_MAX_BATCH];
     struct odputil_keybuf maskbuf[FLOW_DUMP_MAX_BATCH];
+    /* Actions have no upper bound comparable to ODPUTIL_FLOW_KEY_BYTES: a
+     * single tc flower rule may carry up to TCA_ACT_MAX_PRIO actions, each
+     * translating into a tunnel push, a masked set, a ct or an output.  The
+     * fixed-size 'actbuf' is therefore only a stub; 'act' grows onto the
+     * heap when a flow does not fit. */
     struct odputil_keybuf actbuf[FLOW_DUMP_MAX_BATCH];
+    struct ofpbuf act[FLOW_DUMP_MAX_BATCH];
 };
 
 static struct tc_offload *
@@ -413,13 +419,13 @@ tc_flow_dump_next(struct dpif_offload_flow_dump_thread *thread_,
     while (!thread->netdev_dump_done && n_flows < max_flows) {
         struct odputil_keybuf *maskbuf = &thread->maskbuf[n_flows];
         struct odputil_keybuf *keybuf = &thread->keybuf[n_flows];
-        struct odputil_keybuf *actbuf = &thread->actbuf[n_flows];
         struct netdev_tc_flow_dump *netdev_dump;
         struct dpif_flow *f = &flows[n_flows];
         int cur = thread->netdev_dump_index;
-        struct ofpbuf key, mask, act;
+        struct ofpbuf *act = &thread->act[n_flows];
         struct dpif_flow_stats stats;
         struct dpif_flow_attrs attrs;
+        struct ofpbuf key, mask;
         struct nlattr *actions;
         struct match match;
         ovs_u128 ufid;
@@ -427,11 +433,10 @@ tc_flow_dump_next(struct dpif_offload_flow_dump_thread *thread_,
 
         netdev_dump = thread->dump->netdev_dumps[cur];
         ofpbuf_use_stack(&key, keybuf, sizeof *keybuf);
-        ofpbuf_use_stack(&act, actbuf, sizeof *actbuf);
         ofpbuf_use_stack(&mask, maskbuf, sizeof *maskbuf);
         has_next = tc_netdev_flow_dump_next(netdev_dump, &match, &actions,
                                             &stats, &attrs, &ufid,
-                                            &thread->nl_flows, &act);
+                                            &thread->nl_flows, act);
         if (has_next) {
             tc_match_to_dpif_flow(&match, &key, &mask, actions, &stats,
                                   &attrs, &ufid, f, thread->dump->dump.terse);
@@ -473,6 +478,10 @@ tc_flow_dump_thread_create(struct dpif_offload_flow_dump *dump)
     thread->netdev_dump_index = 0;
     thread->netdev_dump_done = !thread->dump->netdev_dump_count;
     ofpbuf_init(&thread->nl_flows, NL_DUMP_BUFSIZE);
+    for (int i = 0; i < FLOW_DUMP_MAX_BATCH; i++) {
+        ofpbuf_use_stub(&thread->act[i], &thread->actbuf[i],
+                        sizeof thread->actbuf[i]);
+    }
     return &thread->thread;
 }
 
@@ -481,6 +490,9 @@ tc_flow_dump_thread_destroy(struct dpif_offload_flow_dump_thread *thread_)
 {
     struct tc_flow_dump_thread *thread = tc_flow_dump_thread_cast(thread_);
 
+    for (int i = 0; i < FLOW_DUMP_MAX_BATCH; i++) {
+        ofpbuf_uninit(&thread->act[i]);
+    }
     ofpbuf_uninit(&thread->nl_flows);
     free(thread);
 }
@@ -628,7 +640,8 @@ tc_parse_flow_get(struct tc_offload *offload_tc, struct dpif_flow_get *get)
     struct ofpbuf buf;
     int err = ENOENT;
 
-    ofpbuf_use_stack(&buf, &act_buf, sizeof act_buf);
+    /* Stub, not stack: the translated actions may exceed 'act_buf'. */
+    ofpbuf_use_stub(&buf, &act_buf, sizeof act_buf);
 
     DPIF_OFFLOAD_PORT_FOR_EACH (port, &offload_tc->offload) {
         if (!tc_netdev_flow_get(port->netdev, &match, &actions, get->ufid,
@@ -639,6 +652,7 @@ tc_parse_flow_get(struct tc_offload *offload_tc, struct dpif_flow_get *get)
     }
 
     if (err) {
+        ofpbuf_uninit(&buf);
         return err;
     }
 
@@ -652,6 +666,7 @@ tc_parse_flow_get(struct tc_offload *offload_tc, struct dpif_flow_get *get)
     ofpbuf_put(get->buffer, nl_attr_get(actions), nl_attr_get_size(actions));
     dpif_flow->actions = ofpbuf_at(get->buffer, 0, 0);
     dpif_flow->actions_len = nl_attr_get_size(actions);
+    ofpbuf_uninit(&buf);
 
     return 0;
 }
