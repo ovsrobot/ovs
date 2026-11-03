@@ -1563,7 +1563,7 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
             if (upcall->out_tun_key) {
                 if (odp_tun_key_from_attr(upcall->out_tun_key,
                                           &output_tunnel_key,
-                                          NULL) != ODP_FIT_ERROR) {
+                                          NULL) == ODP_FIT_ERROR) {
                     return EINVAL;
                 }
             }
