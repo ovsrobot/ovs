@@ -630,12 +630,12 @@ tc_parse_flow_get(struct tc_offload *offload_tc, struct dpif_flow_get *get)
     struct dpif_offload_port *port;
     struct odputil_keybuf maskbuf;
     struct odputil_keybuf keybuf;
-    struct odputil_keybuf actbuf;
-    struct ofpbuf key, mask, act;
+    size_t key_ofs, mask_ofs, act_ofs;
     struct dpif_flow_stats stats;
     struct dpif_flow_attrs attrs;
     uint64_t act_buf[1024 / 8];
     struct nlattr *actions;
+    struct ofpbuf key, mask;
     struct match match;
     struct ofpbuf buf;
     int err = ENOENT;
@@ -659,13 +659,27 @@ tc_parse_flow_get(struct tc_offload *offload_tc, struct dpif_flow_get *get)
     VLOG_DBG("found flow from netdev, translating to dpif flow");
 
     ofpbuf_use_stack(&key, &keybuf, sizeof keybuf);
-    ofpbuf_use_stack(&act, &actbuf, sizeof actbuf);
     ofpbuf_use_stack(&mask, &maskbuf, sizeof maskbuf);
     tc_match_to_dpif_flow(&match, &key, &mask, actions, &stats, &attrs,
                           (ovs_u128 *) get->ufid, dpif_flow, false);
+
+    /* 'key', 'mask' and 'actions' live on this stack frame, so copy them
+     * into the caller's buffer and point the flow at the copies.  Resolve
+     * the pointers only after the last put, as any put may reallocate the
+     * buffer. */
+    key_ofs = get->buffer->size;
+    ofpbuf_put(get->buffer, dpif_flow->key, dpif_flow->key_len);
+    mask_ofs = get->buffer->size;
+    ofpbuf_put(get->buffer, dpif_flow->mask, dpif_flow->mask_len);
+    act_ofs = get->buffer->size;
     ofpbuf_put(get->buffer, nl_attr_get(actions), nl_attr_get_size(actions));
-    dpif_flow->actions = ofpbuf_at(get->buffer, 0, 0);
-    dpif_flow->actions_len = nl_attr_get_size(actions);
+
+    dpif_flow->key = ofpbuf_at_assert(get->buffer, key_ofs,
+                                      dpif_flow->key_len);
+    dpif_flow->mask = ofpbuf_at_assert(get->buffer, mask_ofs,
+                                       dpif_flow->mask_len);
+    dpif_flow->actions = ofpbuf_at_assert(get->buffer, act_ofs,
+                                          dpif_flow->actions_len);
     ofpbuf_uninit(&buf);
 
     return 0;
