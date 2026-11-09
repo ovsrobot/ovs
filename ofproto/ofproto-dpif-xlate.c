@@ -4741,10 +4741,6 @@ xlate_resubmit_resource_check(struct xlate_ctx *ctx)
     } else if (ctx->resubmits >= MAX_RESUBMITS) {
         xlate_report_error(ctx, "over %d resubmit actions", MAX_RESUBMITS);
         ctx->error = XLATE_TOO_MANY_RESUBMITS;
-    } else if (ctx->odp_actions->size > UINT16_MAX) {
-        xlate_report_error(ctx, "resubmits yielded over 64 kB of actions");
-        /* NOT an error, as we'll be slow-pathing the flow in this case? */
-        ctx->exit = true; /* XXX: translation still terminated! */
     } else if (ctx->stack.size >= 65536) {
         xlate_report_error(ctx, "resubmits yielded over 64 kB of stack");
         ctx->error = XLATE_STACK_TOO_DEEP;

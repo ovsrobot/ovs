@@ -11679,19 +11679,20 @@ AT_CLEANUP
 AT_SETUP([ofproto-dpif - too many output actions])
 OVS_VSWITCHD_START
 add_of_ports br0 1
-(for i in `seq 1 12`; do
+dnl Nine levels of doubling reach the output limit while staying inside the
+dnl resubmit budget, so that this tests too_many_output_actions() and not
+dnl MAX_RESUBMITS.
+(for i in `seq 1 9`; do
      j=`expr $i + 1`
      echo "in_port=$i, actions=resubmit:$j, resubmit:$j, local"
  done
- echo "in_port=13, actions=local,local,local,local,local,local,local,local") > flows
+ echo "in_port=10, actions=local,local,local,local,local,local,local,local") > flows
 AT_CHECK([ovs-ofctl add-flows br0 flows])
 AT_CHECK([ovs-appctl -vpoll_loop:off ofproto/trace br0 'in_port=1'], [0], [stdout])
 AT_CHECK([grep -c -e '- Uses action(s) not supported by datapath' stdout],
   [0], [1
 ])
-AT_CHECK([grep -c 'resubmits yielded over 64 kB of actions' stdout], [0], [1
-])
-OVS_VSWITCHD_STOP(["/resubmits yielded over 64 kB of actions/d"])
+OVS_VSWITCHD_STOP
 AT_CLEANUP
 
 AT_SETUP([ofproto-dpif - stack too deep])
