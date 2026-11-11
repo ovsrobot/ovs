@@ -393,10 +393,10 @@ stream_recv(struct stream *stream, void *buffer, size_t n)
  *
  * The send function will not block.  If no bytes can be immediately accepted
  * for transmission, it returns -EAGAIN immediately. */
-int
+ssize_t
 stream_send(struct stream *stream, const void *buffer, size_t n)
 {
-    int retval = stream_connect(stream);
+    ssize_t retval = stream_connect(stream);
     retval = retval ? -retval
              : n == 0 ? 0
              : (stream->class->send)(stream, buffer, n);

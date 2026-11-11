@@ -39,7 +39,7 @@ void stream_close(struct stream *);
 const char *stream_get_name(const struct stream *);
 int stream_connect(struct stream *);
 int stream_recv(struct stream *, void *buffer, size_t n);
-int stream_send(struct stream *, const void *buffer, size_t n);
+ssize_t stream_send(struct stream *, const void *buffer, size_t n);
 
 void stream_run(struct stream *);
 void stream_run_wait(struct stream *);

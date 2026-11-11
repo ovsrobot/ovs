@@ -720,13 +720,15 @@ ssl_do_tx(struct stream *stream)
 
     for (;;) {
         int old_state = SSL_get_state(sslv->ssl);
-        int ret = SSL_write(sslv->ssl, sslv->txbuf->data, sslv->txbuf->size);
+        size_t written;
+        int ret = SSL_write_ex(sslv->ssl, sslv->txbuf->data,
+                               sslv->txbuf->size, &written);
         if (old_state != SSL_get_state(sslv->ssl)) {
             sslv->rx_want = SSL_NOTHING;
         }
         sslv->tx_want = SSL_NOTHING;
         if (ret > 0) {
-            ofpbuf_pull(sslv->txbuf, ret);
+            ofpbuf_pull(sslv->txbuf, written);
             if (sslv->txbuf->size == 0) {
                 return 0;
             }
@@ -736,7 +738,10 @@ ssl_do_tx(struct stream *stream)
                 VLOG_WARN_RL(&rl, "SSL_write: connection closed");
                 return EPIPE;
             } else {
-                return interpret_ssl_error("SSL_write", ret, ssl_error,
+                /* SSL_write_ex() returns 0 on any failure, while
+                 * interpret_ssl_error() expects the SSL_write() convention
+                 * to report system errors, i.e., a negative value. */
+                return interpret_ssl_error("SSL_write", -1, ssl_error,
                                            &sslv->tx_want);
             }
         }

@@ -125,7 +125,7 @@ jsonrpc_run(struct jsonrpc *rpc)
     while (!ovs_list_is_empty(&rpc->output)) {
         struct ovs_list *head = ovs_list_front(&rpc->output);
         struct ofpbuf *buf = ofpbuf_from_list(head);
-        int retval;
+        ssize_t retval;
 
         retval = stream_send(rpc->stream, buf->data, buf->size);
         if (retval >= 0) {
