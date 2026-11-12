@@ -320,22 +320,6 @@ Examples of common tags follow.
   appropriate to cite the URL to the report in a Reported-at
   tag.  Use a Reported-by tag to acknowledge the reporters.
 
-``Assisted-by: Name of model, and/or AI Code Assistant``
-
-  When a patch has been created with the assistance of an AI tool,
-  this tag should be used to disclose that fact.  Provide the name
-  of the underlying model used, if known.  For the name of the tool,
-  only include the name, not an email address.  For example:
-
-  ::
-
-      Assisted-by: model-name-42.0, OVS-Code-Assistant-Pro-9.0
-
-  The author of the patch remains fully responsible for the content
-  and must ensure it complies with the `Developer's Certificate of
-  Origin`_.  See the `AI-assisted Contributions`_ section for more
-  information.
-
 Developer's Certificate of Origin
 ---------------------------------
 
@@ -380,11 +364,10 @@ OVS is a Linux Foundation Collaborative Project, and the Linux Foundation's
 policy for AI-generated patches can be found here:
 https://www.linuxfoundation.org/legal/generative-ai .
 
-OVS allows the use of AI assistants in producing patches.  Contributions
-which have used an AI assistant should disclose the use of the assistant by
-using the "Assisted-by" tag.  While AI-assisted patches are allowed, the author
-of the patch is ultimately responsible for ensuring that the AI-generated code
+OVS allows the use of AI assistants in producing patches.  The author
+of a patch is ultimately responsible for ensuring that the AI-generated code
 has not violated any terms of the Developer's Certificate of Origin.
+Disclosing the use of an AI assistant is not required.
 
 Feature Deprecation Guidelines
 ------------------------------
