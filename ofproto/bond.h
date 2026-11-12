@@ -38,6 +38,14 @@ enum bond_mode {
 bool bond_mode_from_string(enum bond_mode *, const char *);
 const char *bond_mode_to_string(enum bond_mode);
 
+/* How a balance-slb bond treats broadcast and multicast frames received on its
+ * non-active members, configured via other_config:all-members-active. */
+enum bond_all_members_active {
+    BOND_ALL_MEMBERS_ACTIVE_OFF,        /* Drop broadcast and multicast. */
+    BOND_ALL_MEMBERS_ACTIVE_MULTICAST,  /* Admit multicast, drop broadcast. */
+    BOND_ALL_MEMBERS_ACTIVE_ALL,        /* Admit broadcast and multicast. */
+};
+
 /* Configuration for a bond as a whole. */
 struct bond_settings {
     char *name;                 /* Bond's name, for log messages. */
@@ -62,9 +70,10 @@ struct bond_settings {
                                    ovs run. */
     bool use_lb_output_action;  /* Use lb_output action. Only applicable for
                                    bond mode BALANCE TCP. */
-    bool all_members_active;    /* Accept multicast packets on secondary
-                                   interface. Only applicable for non-LACP
-                                   BALANCE SLB bond mode. */
+    enum bond_all_members_active all_members_active;
+                                /* Delivery of broadcast/multicast packets on
+                                   non-active members. Only applicable for
+                                   non-LACP BALANCE SLB bond mode. */
 };
 
 /* Program startup. */

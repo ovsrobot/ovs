@@ -125,8 +125,10 @@ struct bond {
     uint32_t basis;             /* Basis for flow hash function. */
     bool use_lb_output_action;  /* Use lb_output action to avoid recirculation.
                                    Applicable only for Balance TCP mode. */
-    bool all_members_active;    /* Accept multicast packets on secondary
-                                   members of a non-LACP Balance SLB bond. */
+    enum bond_all_members_active all_members_active;
+                                /* Delivery of broadcast/multicast packets on
+                                   non-active members of a non-LACP Balance SLB
+                                   bond. */
     char *primary;              /* Name of the primary member. */
 
     /* SLB specific bonding info. */
@@ -502,7 +504,8 @@ bond_reconfigure(struct bond *bond, const struct bond_settings *s)
     }
 
     bond->all_members_active = (bond->balance == BM_SLB)
-                               ? s->all_members_active : false;
+                               ? s->all_members_active
+                               : BOND_ALL_MEMBERS_ACTIVE_OFF;
 
     if (bond->balance != BM_AB) {
         if (!bond->recirc_id) {
@@ -931,9 +934,15 @@ bond_check_admissibility(struct bond *bond, const void *member_,
         break;
     }
 
-    /* Drop all multicast packets on inactive members. */
-    if (eth_addr_is_multicast(eth_dst)) {
-        if (bond->active_member != member && !bond->all_members_active) {
+    /* Drop broadcast and multicast packets on inactive members, unless
+     * 'all-members-active' admits them: 'true' admits both, 'multicast'
+     * admits multicast but not broadcast. */
+    if (eth_addr_is_multicast(eth_dst) && bond->active_member != member) {
+        enum bond_all_members_active ama = bond->all_members_active;
+        bool admit = ama == BOND_ALL_MEMBERS_ACTIVE_ALL
+                     || (ama == BOND_ALL_MEMBERS_ACTIVE_MULTICAST
+                         && !eth_addr_is_broadcast(eth_dst));
+        if (!admit) {
             goto out;
         }
     }
@@ -1565,8 +1574,14 @@ bond_print_details(struct ds *ds, const struct bond *bond)
                   use_lb_output_action ? recirc_id : -1);
 
     if (bond->balance == BM_SLB) {
-        ds_put_format(ds, "all members active: %s\n",
-                      bond->all_members_active ? "true" : "false");
+        const char *ama = "false";
+        if (bond->all_members_active == BOND_ALL_MEMBERS_ACTIVE_ALL) {
+            ama = "true";
+        } else if (bond->all_members_active
+                   == BOND_ALL_MEMBERS_ACTIVE_MULTICAST) {
+            ama = "multicast";
+        }
+        ds_put_format(ds, "all members active: %s\n", ama);
     }
 
     ds_put_format(ds, "updelay: %d ms\n", bond->updelay);
