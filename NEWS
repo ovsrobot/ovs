@@ -1,5 +1,9 @@
 Post-v4.0.0
 --------------------
+   - Bonding:
+     * The 'other_config:all-members-active' option on balance-slb bonds now
+       accepts the value 'multicast', which admits multicast but not broadcast
+       on non-active members.
    - ovs-appctl:
      * Added JSON output support (--format json) for 'fdb/stats-show',
        'upcall/show', 'dpif-netdev/pmd-sleep-show'.

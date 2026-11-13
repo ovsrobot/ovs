@@ -2246,16 +2246,34 @@
       </column>
 
       <column name="other_config" key="all-members-active"
-              type='{"type": "boolean"}'>
+              type='{"type": "string",
+                     "enum": ["set", ["true", "false", "multicast"]]}'>
         <p>
-          Enable/Disable delivery of broadcast/multicast packets on secondary
-          interface of a balance-slb bond.  Relevant only when
-          <ref column="lacp"/> is <code>off</code>.
+          Controls delivery of broadcast and multicast packets to the
+          non-active members of a balance-slb bond.  Relevant only when
+          <ref column="lacp"/> is <code>off</code>.  Possible values:
         </p>
+        <dl>
+          <dt><code>false</code> (default)</dt>
+          <dd>
+            Drop broadcast and multicast on non-active members.
+          </dd>
+          <dt><code>true</code></dt>
+          <dd>
+            Deliver both broadcast and multicast on non-active members.
+            Identical to <code>all_slaves_active</code> for Linux kernel
+            bonds.
+          </dd>
+          <dt><code>multicast</code></dt>
+          <dd>
+            Deliver multicast but not broadcast on non-active members.  Useful
+            when an upstream switch snoops IGMP/MLD and forwards a group to a
+            single member, which need not be the bond's active one, while
+            still letting that switch handle broadcast.
+          </dd>
+        </dl>
         <p>
-          This parameter is identical to <code>all_slaves_active</code> for
-          Linux kernel bonds.  Disabled by default as it is not a desirable
-          configuration for most users.
+          Disabled (<code>false</code>) by default.
         </p>
       </column>
 
